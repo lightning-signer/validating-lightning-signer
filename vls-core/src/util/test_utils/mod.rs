@@ -1866,7 +1866,7 @@ impl ChainListener for MockListener {
         &self.watch
     }
 
-    fn on_add_block(&self, _txs: Vec<&Transaction>) -> Vec<BitcoinOutPoint> {
+    fn on_add_block(&self, _txs: &[Transaction]) -> Vec<BitcoinOutPoint> {
         let mut watched = self.watched.lock().unwrap();
         if *watched {
             vec![]
@@ -1876,7 +1876,7 @@ impl ChainListener for MockListener {
         }
     }
 
-    fn on_remove_block(&self, _txs: Vec<&Transaction>) {}
+    fn on_remove_block(&self, _txs: &[Transaction]) {}
 }
 
 impl MockListener {

@@ -64,7 +64,7 @@ mod tests {
 
         node.with_ready_channel(&channel_id, |chan| {
             // Construct the EnforcementState prior to the mutual_close.
-            let mut estate = &mut chan.enforcement_state;
+            let estate = &mut chan.enforcement_state;
             estate.next_holder_commit_num = holder_commit_num + 1;
             estate.next_counterparty_commit_num = counterparty_commit_num + 1;
             estate.next_counterparty_revoke_num = counterparty_commit_num;

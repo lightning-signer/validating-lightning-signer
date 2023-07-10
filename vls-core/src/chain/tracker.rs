@@ -245,10 +245,8 @@ impl<L: ChainListener> ChainTracker<L> {
 
     fn notify_listeners_remove(&mut self, txs: &[Transaction]) {
         for (listener, slot) in self.listeners.values_mut() {
-            let mut matched = Vec::new();
             for tx in txs.iter().rev() {
                 // Remove any outpoints that were seen as spent when we added this block
-                let mut found = false;
                 for inp in tx.input.iter().rev() {
                     if slot.seen.remove(&inp.previous_output) {
                         debug!(
@@ -256,31 +254,23 @@ impl<L: ChainListener> ChainTracker<L> {
                             short_function!(),
                             &inp.previous_output
                         );
-                        found = true;
                         let inserted = slot.watches.insert(inp.previous_output);
                         assert!(inserted, "we failed to previously remove a watch");
                     }
                 }
 
                 let txid = tx.txid();
-                if slot.txid_watches.contains(&txid) {
-                    found = true;
-                }
 
                 // Remove any watches that match outputs which are being reorged-out.
                 for (vout, _) in tx.output.iter().enumerate() {
                     let outpoint = OutPoint::new(txid, vout as u32);
                     if slot.watches.remove(&outpoint) {
                         debug!("{}: unwatching outpoint {}", short_function!(), &outpoint);
-                        assert!(found, "a watch was previously added without any inputs matching");
                     }
                 }
-
-                if found {
-                    matched.push(tx);
-                }
             }
-            listener.on_remove_block(matched);
+
+            listener.on_remove_block(txs);
         }
     }
 
@@ -305,25 +295,22 @@ impl<L: ChainListener> ChainTracker<L> {
 
     fn notify_listeners_add(&mut self, txs: &[Transaction]) {
         for (listener, slot) in self.listeners.values_mut() {
-            let mut matched = Vec::new();
             for tx in txs {
-                let mut found = false;
                 for inp in tx.input.iter() {
                     if slot.watches.remove(&inp.previous_output) {
                         debug!("{}: matched input {:?}", short_function!(), &inp.previous_output);
-                        found = true;
                         slot.seen.insert(inp.previous_output);
                     }
                 }
                 if slot.txid_watches.contains(&tx.txid()) {
                     debug!("{}: matched txid {}", short_function!(), &tx.txid());
-                    found = true;
-                }
-                if found {
-                    matched.push(tx);
                 }
             }
-            let new_watches = listener.on_add_block(matched);
+
+            // we provide all txs regardless of whether they matched or not,
+            // because streaming block parsing will not be able to filter
+            // unmatched txs ahead of time
+            let new_watches = listener.on_add_block(txs);
             debug!("{}: adding {:?} watches", short_function!(), new_watches);
             slot.watches.extend(new_watches);
         }
@@ -468,11 +455,11 @@ pub trait ChainListener: SendSync {
 
     /// A block was added, and zero or more transactions consume watched outpoints.
     /// The listener returns zero or more new outpoints to watch.
-    fn on_add_block(&self, txs: Vec<&Transaction>) -> Vec<OutPoint>;
+    fn on_add_block(&self, txs: &[Transaction]) -> Vec<OutPoint>;
 
     /// A block was deleted.
     /// The tracker will revert any changes to the watched outpoints set.
-    fn on_remove_block(&self, txs: Vec<&Transaction>);
+    fn on_remove_block(&self, txs: &[Transaction]);
 }
 
 /// The one in rust-bitcoin is incorrect for Regtest at least
