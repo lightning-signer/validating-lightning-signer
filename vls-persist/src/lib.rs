@@ -6,7 +6,7 @@ extern crate core;
 #[cfg(feature = "std")]
 pub mod backup_persister;
 pub mod model;
-#[cfg(all(feature = "std", feature = "memo"))]
+#[cfg(feature = "memo")]
 pub mod thread_memo_persister;
 pub mod util;
 
