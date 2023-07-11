@@ -246,32 +246,21 @@ impl<L: ChainListener> ChainTracker<L> {
 
     fn notify_listeners_remove(&mut self, txs: &[Transaction]) {
         for (listener, slot) in self.listeners.values_mut() {
-            for tx in txs.iter().rev() {
-                // Remove any outpoints that were seen as spent when we added this block
-                for inp in tx.input.iter().rev() {
-                    if slot.seen.remove(&inp.previous_output) {
-                        debug!(
-                            "{}: unseeing previously seen outpoint {}",
-                            short_function!(),
-                            &inp.previous_output
-                        );
-                        let inserted = slot.watches.insert(inp.previous_output);
-                        assert!(inserted, "we failed to previously remove a watch");
-                    }
-                }
+            let (adds, removes) = listener.on_remove_block(txs);
 
-                let txid = tx.txid();
+            debug!("{}: REVERT adding {:?}, removing {:?}", short_function!(), adds, removes);
 
-                // Remove any watches that match outputs which are being reorged-out.
-                for (vout, _) in tx.output.iter().enumerate() {
-                    let outpoint = OutPoint::new(txid, vout as u32);
-                    if slot.watches.remove(&outpoint) {
-                        debug!("{}: unwatching outpoint {}", short_function!(), &outpoint);
-                    }
-                }
+            // these are going to be re-added to the watches,
+            // so we need to remove them from the seen set
+            for outpoint in removes.iter() {
+                slot.seen.remove(outpoint);
             }
 
-            listener.on_remove_block(txs);
+            // revert what we did to the watches in the forward direction
+            slot.watches.extend(removes);
+            for outpoint in adds.iter() {
+                slot.watches.remove(outpoint);
+            }
         }
     }
 
@@ -297,24 +286,19 @@ impl<L: ChainListener> ChainTracker<L> {
 
     fn notify_listeners_add(&mut self, txs: &[Transaction]) {
         for (listener, slot) in self.listeners.values_mut() {
-            for tx in txs {
-                for inp in tx.input.iter() {
-                    if slot.watches.remove(&inp.previous_output) {
-                        debug!("{}: matched input {:?}", short_function!(), &inp.previous_output);
-                        slot.seen.insert(inp.previous_output);
-                    }
-                }
-                if slot.txid_watches.contains(&tx.txid()) {
-                    debug!("{}: matched txid {}", short_function!(), &tx.txid());
-                }
-            }
-
             // we provide all txs regardless of whether they matched or not,
             // because streaming block parsing will not be able to filter
             // unmatched txs ahead of time
-            let new_watches = listener.on_add_block(txs);
-            debug!("{}: adding {:?} watches", short_function!(), new_watches);
-            slot.watches.extend(new_watches);
+            let (adds, removes) = listener.on_add_block(txs);
+            debug!("{}: adding {:?}, removing {:?}", short_function!(), adds, removes);
+
+            for outpoint in removes.iter() {
+                slot.watches.remove(outpoint);
+            }
+            slot.watches.extend(adds);
+
+            // keep track of what we removed, so we can watch reorgs for it
+            slot.seen.extend(removes);
         }
     }
 
@@ -456,12 +440,12 @@ pub trait ChainListener: SendSync {
     fn key(&self) -> &Self::Key;
 
     /// A block was added, and zero or more transactions consume watched outpoints.
-    /// The listener returns zero or more new outpoints to watch.
-    fn on_add_block(&self, txs: &[Transaction]) -> Vec<OutPoint>;
+    /// The listener returns outpoints to watch in the future, and outpoints to stop watching.
+    fn on_add_block(&self, txs: &[Transaction]) -> (Vec<OutPoint>, Vec<OutPoint>);
 
     /// A block was deleted.
-    /// The tracker will revert any changes to the watched outpoints set.
-    fn on_remove_block(&self, txs: &[Transaction]);
+    /// The listener returns the same thing as on_add_block, so that the changes can be reverted.
+    fn on_remove_block(&self, txs: &[Transaction]) -> (Vec<OutPoint>, Vec<OutPoint>);
 }
 
 /// The one in rust-bitcoin is incorrect for Regtest at least
@@ -538,11 +522,11 @@ mod tests {
         let tx = make_tx(vec![make_txin(1)]);
         let initial_watch = make_outpoint(1);
         let second_watch = OutPoint::new(tx.txid(), 0);
-        let listener = MockListener::new(second_watch);
+        let listener = MockListener::new(initial_watch);
 
         tracker.add_listener(listener.clone(), OrderedSet::new());
 
-        tracker.add_listener_watches(&second_watch, OrderedSet::from_iter(vec![initial_watch]));
+        tracker.add_listener_watches(&initial_watch, OrderedSet::from_iter(vec![initial_watch]));
 
         assert_eq!(tracker.listeners.len(), 1);
         assert_eq!(

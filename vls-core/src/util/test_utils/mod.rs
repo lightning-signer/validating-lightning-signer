@@ -1846,7 +1846,7 @@ impl ChannelBalanceBuilder {
 /// A mock listener for testing
 pub struct MockListener {
     watch: BitcoinOutPoint,
-    watched: Mutex<bool>,
+    watch2: Mutex<Option<BitcoinOutPoint>>,
 }
 
 impl SendSync for MockListener {}
@@ -1855,7 +1855,8 @@ impl Clone for MockListener {
     fn clone(&self) -> Self {
         // We just need this to have the right `Ord` semantics
         // the value of `watched` doesn't matter
-        Self { watch: self.watch, watched: Mutex::new(false) }
+        let watch2 = self.watch2.lock().unwrap();
+        Self { watch: self.watch, watch2: Mutex::new(*watch2) }
     }
 }
 
@@ -1866,22 +1867,31 @@ impl ChainListener for MockListener {
         &self.watch
     }
 
-    fn on_add_block(&self, _txs: &[Transaction]) -> Vec<BitcoinOutPoint> {
-        let mut watched = self.watched.lock().unwrap();
-        if *watched {
-            vec![]
-        } else {
-            *watched = true;
-            vec![self.watch]
+    fn on_add_block(&self, txs: &[Transaction]) -> (Vec<BitcoinOutPoint>, Vec<BitcoinOutPoint>) {
+        for tx in txs {
+            for input in tx.input.iter() {
+                let mut watch2 = self.watch2.lock().unwrap();
+                if input.previous_output == self.watch {
+                    let add = BitcoinOutPoint { txid: tx.txid(), vout: 0 };
+                    *watch2 = Some(add);
+                    return (vec![add], vec![self.watch]);
+                }
+                if Some(input.previous_output) == *watch2 {
+                    return (vec![], vec![input.previous_output]);
+                }
+            }
         }
+        (vec![], vec![])
     }
 
-    fn on_remove_block(&self, _txs: &[Transaction]) {}
+    fn on_remove_block(&self, txs: &[Transaction]) -> (Vec<BitcoinOutPoint>, Vec<BitcoinOutPoint>) {
+        self.on_add_block(txs)
+    }
 }
 
 impl MockListener {
     /// Create a new mock listener
     pub fn new(watch: BitcoinOutPoint) -> Self {
-        MockListener { watch, watched: Mutex::new(false) }
+        MockListener { watch, watch2: Mutex::new(None) }
     }
 }

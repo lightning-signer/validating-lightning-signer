@@ -142,7 +142,7 @@ impl State {
         }
     }
 
-    fn on_add_block_end(&mut self) -> Vec<OutPoint> {
+    fn on_add_block_end(&mut self) -> (Vec<OutPoint>, Vec<OutPoint>) {
         let state = self.decode_state.take().expect("decode state");
         // if we have funding confirmed, ignore any detected double-spends (we didn't
         // know the txid at the point where we saw the spend)
@@ -155,7 +155,8 @@ impl State {
 
         debug!("detected add-changes at height {}: {:?}", self.height, state.changes);
 
-        let mut outpoints = Vec::new();
+        let mut adds = Vec::new();
+        let mut removes = Vec::new();
 
         // apply changes
         for change in state.changes {
@@ -164,9 +165,9 @@ impl State {
                     assert!(self.funding_double_spent_height.is_none());
                     self.funding_height = Some(self.height);
                     self.funding_outpoint = Some(outpoint);
-                    outpoints.push(outpoint);
+                    adds.push(outpoint);
                 }
-                StateChange::FundingDoubleSpent(_outpoint) => {
+                StateChange::FundingDoubleSpent(outpoint) => {
                     if !have_funding_confirmed {
                         // A funding input was spent, but no funding tx was confirmed,
                         // so we have a double spend on funding
@@ -175,18 +176,23 @@ impl State {
                         // don't overwrite the depth if it exists
                         self.funding_double_spent_height.get_or_insert(self.height);
                     }
+                    // no matter whether funding, or double-spend, we want to stop watching these outputs
+                    removes.push(outpoint);
                 }
-                StateChange::ClosingConfirmed(_txid, _closing_tx) => {
-                    // TODO watch the outputs of the closing tx
+                StateChange::ClosingConfirmed(_txid, closing_tx) => {
+                    assert_eq!(closing_tx.input.len(), 1);
                     self.closing_height = Some(self.height);
+                    removes.push(closing_tx.input[0].previous_output);
+                    // TODO watch the outputs of the closing tx
+                    // adds.extend();
                 }
             }
         }
 
-        outpoints
+        (adds, removes)
     }
 
-    fn on_remove_block_end(&mut self) {
+    fn on_remove_block_end(&mut self) -> (Vec<OutPoint>, Vec<OutPoint>) {
         let state = self.decode_state.take().expect("decode state");
 
         // if we have funding confirmed, ignore any detected double-spends (we didn't
@@ -198,15 +204,19 @@ impl State {
 
         debug!("detected remove-changes at height {}: {:?}", self.height, state.changes);
 
+        let mut adds = Vec::new();
+        let mut removes = Vec::new();
+
         for change in state.changes {
             match change {
-                StateChange::FundingConfirmed(_outpoint) => {
+                StateChange::FundingConfirmed(outpoint) => {
                     // A funding tx was reorged-out
                     assert_eq!(self.funding_height, Some(self.height));
                     self.funding_height = None;
                     self.funding_outpoint = None;
+                    adds.push(outpoint);
                 }
-                StateChange::FundingDoubleSpent(_outpoint) => {
+                StateChange::FundingDoubleSpent(outpoint) => {
                     if !have_funding_confirmed {
                         // A funding double-spent was reorged-out
                         // we may have seen some other funding input double-spent, so
@@ -217,15 +227,23 @@ impl State {
                             self.funding_double_spent_height = None
                         }
                     }
+                    // no matter whether funding, or double-spend, we want to stop watching these outputs
+                    removes.push(outpoint);
                 }
-                StateChange::ClosingConfirmed(_txid, _closing_tx) => {
+                StateChange::ClosingConfirmed(_txid, closing_tx) => {
                     // A closing tx was reorged-out
                     assert_eq!(self.closing_height, Some(self.height));
+                    assert_eq!(closing_tx.input.len(), 1);
                     self.closing_height = None;
+                    removes.push(closing_tx.input[0].previous_output);
+                    // TODO watch the outputs of the closing tx
+                    // adds.extend();
                 }
             }
         }
         self.height -= 1;
+
+        (adds, removes)
     }
 }
 
@@ -332,7 +350,7 @@ impl ChainListener for ChainMonitor {
         &self.funding_outpoint
     }
 
-    fn on_add_block(&self, txs: &[Transaction]) -> Vec<OutPoint> {
+    fn on_add_block(&self, txs: &[Transaction]) -> (Vec<OutPoint>, Vec<OutPoint>) {
         // TODO remove this streaming adapter and only support the new API
         debug!("on_add_block for {}", self.funding_outpoint);
         let mut state = self.state.lock().expect("lock");
@@ -354,7 +372,7 @@ impl ChainListener for ChainMonitor {
         state.on_add_block_end()
     }
 
-    fn on_remove_block(&self, txs: &[Transaction]) {
+    fn on_remove_block(&self, txs: &[Transaction]) -> (Vec<OutPoint>, Vec<OutPoint>) {
         let mut state = self.state.lock().expect("lock");
 
         // stream the transactions to the state
@@ -371,7 +389,7 @@ impl ChainListener for ChainMonitor {
             state.on_tx_end(tx.txid(), tx.lock_time);
         }
 
-        state.on_remove_block_end();
+        state.on_remove_block_end()
     }
 }
 
