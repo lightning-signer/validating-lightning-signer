@@ -1,13 +1,13 @@
 use alloc::collections::BTreeSet as Set;
 
-use bitcoin::{OutPoint, PackedLockTime, Transaction, TxIn, TxOut, Txid};
+use bitcoin::{BlockHash, BlockHeader, OutPoint, PackedLockTime, Transaction, TxIn, TxOut, Txid};
+use push_decoder::Listener as PushListener;
 use serde_derive::{Deserialize, Serialize};
 
 use crate::chain::tracker::ChainListener;
 use crate::policy::validator::ChainState;
 use crate::prelude::*;
 use crate::Arc;
-
 use log::*;
 
 /// State
@@ -30,7 +30,11 @@ pub struct State {
     pub funding_double_spent_height: Option<u32>,
     /// Number of confirmations of the closing transaction
     pub closing_height: Option<u32>,
+    /// Whether we saw a block yet - used for sanity check
+    #[serde(default)]
+    pub saw_block: bool,
     // Block decode state, only while in progress
+    #[serde(skip)]
     decode_state: Option<BlockDecodeState>,
 }
 
@@ -46,7 +50,7 @@ enum StateChange {
 }
 
 // Keep track of the state of a block push-decoder parse state
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 struct BlockDecodeState {
     // The changes detected in the current block
     changes: Vec<StateChange>,
@@ -58,22 +62,22 @@ struct BlockDecodeState {
     output_num: u32,
     // The closing transaction, if we detect one
     closing_tx: Option<Transaction>,
+    // The block hash
+    block_hash: BlockHash,
 }
 
 const MAX_COMMITMENT_OUTPUTS: u32 = 600;
 
-impl State {
-    fn on_block_start(&mut self) {
-        self.decode_state = Some(BlockDecodeState {
-            changes: Vec::new(),
-            version: 0,
-            input_num: 0,
-            output_num: 0,
-            closing_tx: None,
-        });
+impl PushListener for State {
+    fn on_block_start(&mut self, header: &BlockHeader) {
+        let block_hash = header.block_hash();
+        self.on_block_start(block_hash);
     }
 
-    fn on_tx_start(&mut self, version: i32) {
+    fn on_transaction_start(&mut self, version: i32) {
+        if self.is_not_ready_for_push() {
+            return;
+        }
         let state = self.decode_state.as_mut().expect("decode state");
         state.version = version;
         state.input_num = 0;
@@ -81,7 +85,10 @@ impl State {
         state.closing_tx = None;
     }
 
-    fn on_tx_input(&mut self, input: &TxIn) {
+    fn on_transaction_input(&mut self, input: &TxIn) {
+        if self.is_not_ready_for_push() {
+            return;
+        }
         let state = self.decode_state.as_mut().expect("decode state");
         if self.funding_inputs.contains(&input.previous_output) {
             // A funding input was spent
@@ -106,7 +113,10 @@ impl State {
         state.input_num += 1;
     }
 
-    fn on_tx_output(&mut self, output: &TxOut) {
+    fn on_transaction_output(&mut self, output: &TxOut) {
+        if self.is_not_ready_for_push() {
+            return;
+        }
         let state = self.decode_state.as_mut().expect("decode state");
         if let Some(closing_tx) = &mut state.closing_tx {
             closing_tx.output.push(output.clone());
@@ -120,7 +130,10 @@ impl State {
         state.output_num += 1;
     }
 
-    fn on_tx_end(&mut self, txid: Txid, lock_time: PackedLockTime) {
+    fn on_transaction_end(&mut self, lock_time: PackedLockTime, txid: Txid) {
+        if self.is_not_ready_for_push() {
+            return;
+        }
         let state = self.decode_state.as_mut().expect("decode state");
 
         if let Some(ind) = self.funding_txids.iter().position(|i| *i == txid) {
@@ -142,8 +155,21 @@ impl State {
         }
     }
 
-    fn on_add_block_end(&mut self) -> (Vec<OutPoint>, Vec<OutPoint>) {
+    fn on_block_end(&mut self) {
+        // we need to wait until we get the following `AddBlock` or `RemoveBlock`
+        // message before actually updating ourselves
+    }
+}
+
+impl State {
+    fn on_add_block_end(&mut self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>) {
+        if self.is_not_ready_for_push() {
+            return (vec![], vec![]);
+        }
+
         let state = self.decode_state.take().expect("decode state");
+        assert_eq!(state.block_hash, *block_hash);
+
         // if we have funding confirmed, ignore any detected double-spends (we didn't
         // know the txid at the point where we saw the spend)
         let have_funding_confirmed = state.changes.iter().any(|c| match c {
@@ -151,6 +177,7 @@ impl State {
             _ => false,
         });
 
+        self.saw_block = true;
         self.height += 1;
 
         debug!("detected add-changes at height {}: {:?}", self.height, state.changes);
@@ -192,8 +219,13 @@ impl State {
         (adds, removes)
     }
 
-    fn on_remove_block_end(&mut self) -> (Vec<OutPoint>, Vec<OutPoint>) {
+    fn on_remove_block_end(&mut self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>) {
+        if self.is_not_ready_for_push() {
+            return (vec![], vec![]);
+        }
+
         let state = self.decode_state.take().expect("decode state");
+        assert_eq!(state.block_hash, *block_hash);
 
         // if we have funding confirmed, ignore any detected double-spends (we didn't
         // know the txid at the point where we saw the spend)
@@ -245,6 +277,25 @@ impl State {
 
         (adds, removes)
     }
+
+    fn on_block_start(&mut self, block_hash: BlockHash) {
+        self.saw_block = true;
+        self.decode_state = Some(BlockDecodeState {
+            changes: Vec::new(),
+            version: 0,
+            input_num: 0,
+            output_num: 0,
+            closing_tx: None,
+            block_hash,
+        });
+    }
+
+    // Check if we ever saw the beginning of a block.  If not, we might get
+    // push events from a block right after we got created, so we need to
+    // ignore them.
+    fn is_not_ready_for_push(&self) -> bool {
+        self.decode_state.is_none() && !self.saw_block
+    }
 }
 
 /// Keep track of channel on-chain events.
@@ -252,9 +303,9 @@ impl State {
 #[derive(Clone)]
 pub struct ChainMonitor {
     /// the first funding outpoint, used to identify the channel / channel monitor
-    pub funding_outpoint: OutPoint,
+    funding_outpoint: OutPoint,
     /// the monitor state
-    pub state: Arc<Mutex<State>>,
+    state: Arc<Mutex<State>>,
 }
 
 impl ChainMonitor {
@@ -270,6 +321,7 @@ impl ChainMonitor {
             funding_outpoint: None,
             funding_double_spent_height: None,
             closing_height: None,
+            saw_block: false,
             decode_state: None,
         };
 
@@ -350,46 +402,71 @@ impl ChainListener for ChainMonitor {
         &self.funding_outpoint
     }
 
-    fn on_add_block(&self, txs: &[Transaction]) -> (Vec<OutPoint>, Vec<OutPoint>) {
-        // TODO remove this streaming adapter and only support the new API
+    fn on_add_block(
+        &self,
+        txs: &[Transaction],
+        block_hash: &BlockHash,
+    ) -> (Vec<OutPoint>, Vec<OutPoint>) {
         debug!("on_add_block for {}", self.funding_outpoint);
         let mut state = self.state.lock().expect("lock");
 
         // stream the transactions to the state
-        state.on_block_start();
+        state.on_block_start(*block_hash);
         for tx in txs {
-            state.on_tx_start(tx.version);
+            state.on_transaction_start(tx.version);
             for input in tx.input.iter() {
-                state.on_tx_input(input);
+                state.on_transaction_input(input);
             }
 
             for output in tx.output.iter() {
-                state.on_tx_output(output);
+                state.on_transaction_output(output);
             }
-            state.on_tx_end(tx.txid(), tx.lock_time);
+            state.on_transaction_end(tx.lock_time, tx.txid());
         }
 
-        state.on_add_block_end()
+        state.on_add_block_end(block_hash)
     }
 
-    fn on_remove_block(&self, txs: &[Transaction]) -> (Vec<OutPoint>, Vec<OutPoint>) {
+    fn on_remove_block(
+        &self,
+        txs: &[Transaction],
+        block_hash: &BlockHash,
+    ) -> (Vec<OutPoint>, Vec<OutPoint>) {
         let mut state = self.state.lock().expect("lock");
 
         // stream the transactions to the state
-        state.on_block_start();
+        state.on_block_start(*block_hash);
         for tx in txs {
-            state.on_tx_start(tx.version);
+            state.on_transaction_start(tx.version);
             for input in tx.input.iter() {
-                state.on_tx_input(input);
+                state.on_transaction_input(input);
             }
 
             for output in tx.output.iter() {
-                state.on_tx_output(output);
+                state.on_transaction_output(output);
             }
-            state.on_tx_end(tx.txid(), tx.lock_time);
+            state.on_transaction_end(tx.lock_time, tx.txid());
         }
 
-        state.on_remove_block_end()
+        state.on_remove_block_end(block_hash)
+    }
+
+    fn on_add_streamed_block(&self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>) {
+        let mut state = self.state.lock().expect("lock");
+        state.on_add_block_end(block_hash)
+    }
+
+    fn on_remove_streamed_block(&self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>) {
+        let mut state = self.state.lock().expect("lock");
+        state.on_remove_block_end(block_hash)
+    }
+
+    fn on_push<F>(&self, f: F)
+    where
+        F: FnOnce(&mut dyn PushListener),
+    {
+        let mut state = self.state.lock().expect("lock");
+        f(&mut *state);
     }
 }
 
@@ -398,6 +475,7 @@ impl SendSync for ChainMonitor {}
 #[cfg(test)]
 mod tests {
     use crate::util::test_utils::*;
+    use bitcoin::hashes::Hash;
     use test_log::test;
 
     use super::*;
@@ -407,18 +485,19 @@ mod tests {
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);
         let outpoint = OutPoint::new(tx.txid(), 0);
         let monitor = ChainMonitor::new(outpoint, 0);
+        let block_hash = BlockHash::all_zeros();
         monitor.add_funding(&tx, 0);
-        monitor.on_add_block(&[]);
-        monitor.on_add_block(&[tx.clone()]);
+        monitor.on_add_block(&[], &block_hash);
+        monitor.on_add_block(&[tx.clone()], &block_hash);
         assert_eq!(monitor.funding_depth(), 1);
         assert_eq!(monitor.funding_double_spent_depth(), 0);
-        monitor.on_add_block(&[]);
+        monitor.on_add_block(&[], &block_hash);
         assert_eq!(monitor.funding_depth(), 2);
-        monitor.on_remove_block(&[]);
+        monitor.on_remove_block(&[], &block_hash);
         assert_eq!(monitor.funding_depth(), 1);
-        monitor.on_remove_block(&[tx]);
+        monitor.on_remove_block(&[tx], &block_hash);
         assert_eq!(monitor.funding_depth(), 0);
-        monitor.on_remove_block(&[]);
+        monitor.on_remove_block(&[], &block_hash);
         assert_eq!(monitor.funding_depth(), 0);
     }
 
@@ -428,19 +507,20 @@ mod tests {
         let tx2 = make_tx(vec![make_txin(2)]);
         let outpoint = OutPoint::new(tx.txid(), 0);
         let monitor = ChainMonitor::new(outpoint, 0);
+        let block_hash = BlockHash::all_zeros();
         monitor.add_funding(&tx, 0);
-        monitor.on_add_block(&[]);
-        monitor.on_add_block(&[tx2.clone()]);
+        monitor.on_add_block(&[], &block_hash);
+        monitor.on_add_block(&[tx2.clone()], &block_hash);
         assert_eq!(monitor.funding_depth(), 0);
         assert_eq!(monitor.funding_double_spent_depth(), 1);
-        monitor.on_add_block(&[]);
+        monitor.on_add_block(&[], &block_hash);
         assert_eq!(monitor.funding_depth(), 0);
         assert_eq!(monitor.funding_double_spent_depth(), 2);
-        monitor.on_remove_block(&[]);
+        monitor.on_remove_block(&[], &block_hash);
         assert_eq!(monitor.funding_double_spent_depth(), 1);
-        monitor.on_remove_block(&[tx2]);
+        monitor.on_remove_block(&[tx2], &block_hash);
         assert_eq!(monitor.funding_double_spent_depth(), 0);
-        monitor.on_remove_block(&[]);
+        monitor.on_remove_block(&[], &block_hash);
         assert_eq!(monitor.funding_double_spent_depth(), 0);
     }
 }

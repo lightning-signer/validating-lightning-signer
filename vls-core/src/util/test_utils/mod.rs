@@ -13,15 +13,13 @@ use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::{hex, hex::FromHex, Hash};
 use bitcoin::network::constants::Network;
-use bitcoin::secp256k1::{
-    self, ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey, SignOnly,
-};
+use bitcoin::secp256k1::{self, ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::hash::bitcoin_merkle_root;
 use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::util::sighash::SighashCache;
 use bitcoin::{
-    Address, Block, BlockHash, BlockHeader, EcdsaSighashType, OutPoint as BitcoinOutPoint,
-    PackedLockTime, Sequence, Transaction, TxIn, TxMerkleNode, TxOut, Witness,
+    Address, Block, BlockHash, BlockHeader, EcdsaSighashType, PackedLockTime, Sequence,
+    Transaction, TxIn, TxMerkleNode, TxOut, Witness,
 };
 use chain::chaininterface;
 use lightning::chain;
@@ -39,6 +37,7 @@ use lightning::ln::chan_utils::{
 use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage, PaymentSecret};
 use lightning::util::test_utils;
 use lightning_invoice::{Currency, InvoiceBuilder};
+use push_decoder::Listener;
 use txoo::proof::TxoProof;
 
 use crate::chain::tracker::{ChainListener, Headers};
@@ -250,7 +249,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
     }
 }
 
-pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<SignOnly>) -> PublicKey {
+pub fn pubkey_from_secret_hex(h: &str, secp_ctx: &Secp256k1<secp256k1::SignOnly>) -> PublicKey {
     PublicKey::from_secret_key(
         secp_ctx,
         &SecretKey::from_slice(&Vec::from_hex(h).unwrap()[..]).unwrap(),
@@ -271,7 +270,10 @@ pub fn make_test_channel_setup() -> ChannelSetup {
         is_outbound: true,
         channel_value_sat: 3_000_000,
         push_value_msat: 0,
-        funding_outpoint: BitcoinOutPoint { txid: Txid::from_slice(&[2u8; 32]).unwrap(), vout: 0 },
+        funding_outpoint: bitcoin::OutPoint {
+            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
+            vout: 0,
+        },
         holder_selected_contest_delay: 6,
         holder_shutdown_script: None,
         counterparty_points: make_test_counterparty_points(),
@@ -661,7 +663,10 @@ pub fn test_chan_ctx_with_push_val(
         is_outbound: true,
         channel_value_sat,
         push_value_msat,
-        funding_outpoint: BitcoinOutPoint { txid: Txid::from_slice(&[2u8; 32]).unwrap(), vout: 0 },
+        funding_outpoint: bitcoin::OutPoint {
+            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
+            vout: 0,
+        },
         holder_selected_contest_delay: 6,
         holder_shutdown_script: None,
         counterparty_points: make_test_counterparty_points(),
@@ -830,14 +835,14 @@ impl TestFundingTxContext {
         node_ctx.node.add_allowlist(&vec![addr.to_string()]).expect("add_allowlist");
     }
 
-    pub fn to_tx(&self) -> bitcoin::Transaction {
+    pub fn to_tx(&self) -> Transaction {
         make_test_funding_tx_with_ins_outs(self.inputs.clone(), self.outputs.clone())
     }
 
     pub fn sign(
         &self,
         node_ctx: &TestNodeContext,
-        tx: &bitcoin::Transaction,
+        tx: &Transaction,
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
         node_ctx.node.check_and_sign_onchain_tx(
             &tx,
@@ -853,7 +858,7 @@ impl TestFundingTxContext {
     pub fn validate_sig(
         &mut self,
         _node_ctx: &TestNodeContext,
-        tx: &mut bitcoin::Transaction,
+        tx: &mut Transaction,
         witvec: &[Vec<Vec<u8>>],
     ) {
         // Index the input_txs by their txid
@@ -876,11 +881,11 @@ impl TestFundingTxContext {
 pub fn funding_tx_ready_channel(
     node_ctx: &TestNodeContext,
     chan_ctx: &mut TestChannelContext,
-    tx: &bitcoin::Transaction,
+    tx: &Transaction,
     vout: u32,
 ) -> Option<Status> {
     let txid = tx.txid();
-    chan_ctx.setup.funding_outpoint = BitcoinOutPoint { txid, vout };
+    chan_ctx.setup.funding_outpoint = bitcoin::OutPoint { txid, vout };
     let holder_shutdown_key_path = vec![];
     node_ctx
         .node
@@ -896,7 +901,7 @@ pub fn funding_tx_ready_channel(
 pub fn synthesize_ready_channel(
     node_ctx: &TestNodeContext,
     chan_ctx: &mut TestChannelContext,
-    outpoint: BitcoinOutPoint,
+    outpoint: bitcoin::OutPoint,
     next_holder_commit_num: u64,
 ) {
     chan_ctx.setup.funding_outpoint = outpoint;
@@ -1213,7 +1218,7 @@ pub fn make_test_funding_tx_with_change(
     value: u64,
     opath: Vec<u32>,
     change_addr: &Address,
-) -> (Vec<u32>, bitcoin::Transaction) {
+) -> (Vec<u32>, Transaction) {
     let outputs = vec![TxOut { value, script_pubkey: change_addr.script_pubkey() }];
     let tx = make_test_funding_tx_with_ins_outs(inputs, outputs);
     (opath, tx)
@@ -1224,7 +1229,7 @@ pub fn make_test_funding_tx(
     node: &Node,
     inputs: Vec<TxIn>,
     value: u64,
-) -> (Vec<u32>, bitcoin::Transaction) {
+) -> (Vec<u32>, Transaction) {
     let opath = vec![0];
     let change_addr =
         Address::p2wpkh(&node.get_wallet_pubkey(&secp_ctx, &opath).unwrap(), Network::Testnet)
@@ -1237,7 +1242,7 @@ pub fn make_test_funding_tx_with_p2shwpkh_change(
     node: &Node,
     inputs: Vec<TxIn>,
     value: u64,
-) -> (Vec<u32>, bitcoin::Transaction) {
+) -> (Vec<u32>, Transaction) {
     let opath = vec![0];
     let change_addr =
         Address::p2shwpkh(&node.get_wallet_pubkey(&secp_ctx, &opath).unwrap(), Network::Testnet)
@@ -1245,14 +1250,14 @@ pub fn make_test_funding_tx_with_p2shwpkh_change(
     make_test_funding_tx_with_change(inputs, value, opath, &change_addr)
 }
 
-pub fn make_test_commitment_tx() -> bitcoin::Transaction {
+pub fn make_test_commitment_tx() -> Transaction {
     let input = TxIn {
-        previous_output: BitcoinOutPoint { txid: Txid::all_zeros(), vout: 0 },
+        previous_output: bitcoin::OutPoint { txid: Txid::all_zeros(), vout: 0 },
         script_sig: Script::new(),
         sequence: Sequence::ZERO,
         witness: Witness::default(),
     };
-    bitcoin::Transaction {
+    Transaction {
         version: 2,
         lock_time: PackedLockTime::ZERO,
         input: vec![input],
@@ -1468,7 +1473,7 @@ pub fn get_channel_revocation_pubkey(
 }
 
 pub fn check_signature(
-    tx: &bitcoin::Transaction,
+    tx: &Transaction,
     input: usize,
     signature: TypedSignature,
     pubkey: &PublicKey,
@@ -1487,7 +1492,7 @@ pub fn check_signature(
 }
 
 pub fn check_counterparty_htlc_signature(
-    tx: &bitcoin::Transaction,
+    tx: &Transaction,
     input: usize,
     signature: TypedSignature,
     pubkey: &PublicKey,
@@ -1509,7 +1514,7 @@ pub fn check_counterparty_htlc_signature(
 }
 
 pub fn check_signature_with_sighash_type(
-    tx: &bitcoin::Transaction,
+    tx: &Transaction,
     input: usize,
     signature: TypedSignature,
     pubkey: &PublicKey,
@@ -1679,8 +1684,8 @@ pub fn make_txin(vout: u32) -> TxIn {
     }
 }
 
-pub fn make_outpoint(vout: u32) -> BitcoinOutPoint {
-    BitcoinOutPoint { txid: Txid::all_zeros(), vout }
+pub fn make_outpoint(vout: u32) -> bitcoin::OutPoint {
+    bitcoin::OutPoint { txid: Txid::all_zeros(), vout }
 }
 
 pub fn make_header(tip: BlockHeader, merkle_root: TxMerkleNode) -> BlockHeader {
@@ -1708,7 +1713,7 @@ pub fn make_testnet_header(tip: &Headers, tip_height: u32) -> (BlockHeader, TxoP
     let regtest_genesis = genesis_block(Network::Regtest);
     let bits = regtest_genesis.header.bits;
     let header = mine_header_with_bits(tip.0.block_hash(), merkle_root, bits);
-    let block = bitcoin::Block { header, txdata: txs };
+    let block = Block { header, txdata: txs };
     let proof = TxoProof::prove_unchecked(&block, &tip.1, tip_height + 1);
     (header, proof)
 }
@@ -1845,8 +1850,9 @@ impl ChannelBalanceBuilder {
 
 /// A mock listener for testing
 pub struct MockListener {
-    watch: BitcoinOutPoint,
-    watch2: Mutex<Option<BitcoinOutPoint>>,
+    watch: bitcoin::OutPoint,
+    watch2: Mutex<Option<bitcoin::OutPoint>>,
+    watch_delta: Mutex<(Vec<bitcoin::OutPoint>, Vec<bitcoin::OutPoint>)>,
 }
 
 impl SendSync for MockListener {}
@@ -1856,23 +1862,32 @@ impl Clone for MockListener {
         // We just need this to have the right `Ord` semantics
         // the value of `watched` doesn't matter
         let watch2 = self.watch2.lock().unwrap();
-        Self { watch: self.watch, watch2: Mutex::new(*watch2) }
+        let watch_delta = self.watch_delta.lock().unwrap();
+        Self {
+            watch: self.watch,
+            watch2: Mutex::new(*watch2),
+            watch_delta: Mutex::new(watch_delta.clone()),
+        }
     }
 }
 
 impl ChainListener for MockListener {
-    type Key = BitcoinOutPoint;
+    type Key = bitcoin::OutPoint;
 
     fn key(&self) -> &Self::Key {
         &self.watch
     }
 
-    fn on_add_block(&self, txs: &[Transaction]) -> (Vec<BitcoinOutPoint>, Vec<BitcoinOutPoint>) {
+    fn on_add_block(
+        &self,
+        txs: &[Transaction],
+        _block_hash: &BlockHash,
+    ) -> (Vec<bitcoin::OutPoint>, Vec<bitcoin::OutPoint>) {
         for tx in txs {
             for input in tx.input.iter() {
                 let mut watch2 = self.watch2.lock().unwrap();
                 if input.previous_output == self.watch {
-                    let add = BitcoinOutPoint { txid: tx.txid(), vout: 0 };
+                    let add = bitcoin::OutPoint { txid: tx.txid(), vout: 0 };
                     *watch2 = Some(add);
                     return (vec![add], vec![self.watch]);
                 }
@@ -1884,14 +1899,75 @@ impl ChainListener for MockListener {
         (vec![], vec![])
     }
 
-    fn on_remove_block(&self, txs: &[Transaction]) -> (Vec<BitcoinOutPoint>, Vec<BitcoinOutPoint>) {
-        self.on_add_block(txs)
+    fn on_add_streamed_block(
+        &self,
+        _block_hash: &BlockHash,
+    ) -> (Vec<bitcoin::OutPoint>, Vec<bitcoin::OutPoint>) {
+        let watch_delta = self.watch_delta.lock().unwrap();
+        watch_delta.clone()
     }
+
+    fn on_remove_block(
+        &self,
+        txs: &[Transaction],
+        block_hash: &BlockHash,
+    ) -> (Vec<bitcoin::OutPoint>, Vec<bitcoin::OutPoint>) {
+        self.on_add_block(txs, block_hash)
+    }
+
+    fn on_remove_streamed_block(
+        &self,
+        _block_hash: &BlockHash,
+    ) -> (Vec<bitcoin::OutPoint>, Vec<bitcoin::OutPoint>) {
+        unimplemented!()
+    }
+
+    fn on_push<F>(&self, f: F)
+    where
+        F: FnOnce(&mut dyn Listener),
+    {
+        f(&mut MockPushListener(&self));
+    }
+}
+
+struct MockPushListener<'a>(&'a MockListener);
+
+impl<'a> Listener for MockPushListener<'a> {
+    fn on_block_start(&mut self, _header: &BlockHeader) {}
+
+    fn on_transaction_start(&mut self, _version: i32) {}
+
+    fn on_transaction_input(&mut self, input: &TxIn) {
+        let watch2 = self.0.watch2.lock().unwrap();
+        let mut watch_delta = self.0.watch_delta.lock().unwrap();
+        let watch = self.0.watch;
+        if input.previous_output == watch {
+            watch_delta.1.push(watch);
+        }
+        if Some(input.previous_output) == *watch2 {
+            watch_delta.1.push(input.previous_output);
+        }
+    }
+
+    fn on_transaction_output(&mut self, _txout: &TxOut) {}
+
+    fn on_transaction_end(&mut self, _locktime: PackedLockTime, txid: Txid) {
+        let mut watch2 = self.0.watch2.lock().unwrap();
+        let mut watch_delta = self.0.watch_delta.lock().unwrap();
+        let watch = self.0.watch;
+        if watch_delta.1.contains(&watch) {
+            let add = bitcoin::OutPoint { txid, vout: 0 };
+            watch_delta.0.push(add);
+            *watch2 = Some(add);
+        }
+    }
+
+    fn on_block_end(&mut self) {}
 }
 
 impl MockListener {
     /// Create a new mock listener
-    pub fn new(watch: BitcoinOutPoint) -> Self {
-        MockListener { watch, watch2: Mutex::new(None) }
+    pub fn new(watch: bitcoin::OutPoint) -> Self {
+        MockListener { watch, watch2: Mutex::new(None), watch_delta: Mutex::new((vec![], vec![])) }
     }
 }

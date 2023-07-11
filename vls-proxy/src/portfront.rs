@@ -1,6 +1,7 @@
 //! The SignerPortFront and NodePortFront provide a client RPC interface to the
 //! core MultiSigner and Node objects via a communications link.
 
+use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -21,6 +22,7 @@ use vls_protocol_client::SignerPort;
 use lightning_signer::node::SignedHeartbeat;
 use lightning_signer::txoo::proof::TxoProof;
 use log::*;
+use vls_protocol::model;
 
 /// Implements ChainTrackDirectory using RPC to remote MultiSigner
 pub struct SignerPortFront {
@@ -59,14 +61,28 @@ pub(crate) struct NodePortFront {
     signer_port: Arc<dyn SignerPort>,
     network: Network,
     node_keys: Mutex<Option<NodeKeys>>,
+    block_chunk_size: usize,
 }
 
 const LOG_INTERVAL: u64 = 100;
 
+// blocks will be streamed in chunks of this size
+const BLOCK_CHUNK_SIZE: usize = 8192;
+
 impl NodePortFront {
     fn new(signer_port: Arc<dyn SignerPort>, network: Network) -> Self {
         debug!("NodePortFront::new network: {}", network);
-        Self { signer_port, network, node_keys: Mutex::new(None) }
+        let test_streaming = std::env::var("VLS_CHAINFOLLOWER_TEST_STREAMING")
+            .map(|s| s == "1" || s == "true")
+            .unwrap_or(false);
+        let block_chunk_size = if test_streaming {
+            // create more chunks for better system testing
+            23
+        } else {
+            BLOCK_CHUNK_SIZE
+        };
+
+        Self { signer_port, network, node_keys: Mutex::new(None), block_chunk_size }
     }
 
     async fn wait_ready(&self) {
@@ -98,6 +114,29 @@ impl NodePortFront {
         } else {
             panic!("unexpected NodeInfoReply");
         }
+    }
+
+    async fn maybe_stream_block(&self, proof: TxoProof) -> TxoProof {
+        // stream the block to the signer, if this is a false positive
+        let (proof, block_opt) = proof.take_block();
+        if let Some(block) = block_opt {
+            let block_hash = block.block_hash();
+            let bytes = serialize(&block);
+            let mut offset = 0;
+            for chunk in bytes.chunks(self.block_chunk_size) {
+                let hash = model::BlockHash(block_hash[..].try_into().unwrap());
+                let req = msgs::BlockChunk { hash, offset, content: Octets(chunk.to_vec()) };
+                let reply_bytes =
+                    self.signer_port.handle_message(req.as_vec()).await.expect("BlockChunk failed");
+                let result = msgs::from_vec(reply_bytes);
+                match result {
+                    Ok(Message::BlockChunkReply(_)) => {}
+                    _ => panic!("unexpected {:?} when looking for BlockChunkReply", result),
+                }
+                offset += chunk.len() as u32;
+            }
+        }
+        proof
     }
 }
 
@@ -202,6 +241,9 @@ impl ChainTrack for NodePortFront {
 
     async fn add_block(&self, header: BlockHeader, proof: TxoProof) {
         self.wait_ready().await;
+
+        let proof = self.maybe_stream_block(proof).await;
+
         let req = msgs::AddBlock {
             header: Octets(serialize(&header)),
             unspent_proof: Some(LargeOctets(serialize(&proof))),
@@ -216,6 +258,9 @@ impl ChainTrack for NodePortFront {
 
     async fn remove_block(&self, proof: TxoProof) {
         self.wait_ready().await;
+
+        let proof = self.maybe_stream_block(proof).await;
+
         let req = msgs::RemoveBlock { unspent_proof: Some(LargeOctets(serialize(&proof))) };
         let reply =
             self.signer_port.handle_message(req.as_vec()).await.expect("RemoveBlock failed");

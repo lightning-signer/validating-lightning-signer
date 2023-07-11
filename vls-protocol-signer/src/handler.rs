@@ -672,6 +672,12 @@ impl Handler for RootHandler {
                     });
                 Ok(Box::new(msgs::RemoveBlockReply {}))
             }
+            Message::BlockChunk(m) => {
+                let mut tracker = self.node.get_tracker();
+                let hash = bitcoin::BlockHash::from_slice(&m.hash.0).expect("hash");
+                tracker.block_chunk(hash, m.offset, &m.content.0).expect("block_chunk");
+                Ok(Box::new(msgs::BlockChunkReply {}))
+            }
             Message::GetHeartbeat(_m) => {
                 let heartbeat = self.node.get_heartbeat();
                 let ser_hb = to_vec(&heartbeat).expect("heartbeat");

@@ -786,8 +786,8 @@ pub struct GetHeartbeatReply {
 /// Used when the compact proof has a false positive.
 /// The hash and the offset are provided to fail fast
 /// if there is a communication error.
-/// This message is always followed by an `AddBlock` with
-/// a proof containing an `ExternalBlock`.
+/// The stream of messages is always followed by an `AddBlock` with
+/// a proof type `ExternalBlock`.
 #[derive(SerBolt, Debug, Serialize, Deserialize)]
 #[message_id(2009)]
 pub struct BlockChunk {
