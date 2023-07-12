@@ -464,7 +464,7 @@ impl Channel {
 // Phase 2
 impl Channel {
     // Phase 2
-    pub(crate) fn make_counterparty_tx_keys(
+    pub fn make_counterparty_tx_keys(
         &self,
         per_commitment_point: &PublicKey,
     ) -> Result<TxCreationKeys, Status> {
@@ -660,7 +660,7 @@ impl Channel {
         commitment_tx
     }
 
-    pub(crate) fn make_counterparty_commitment_tx(
+    pub fn make_counterparty_commitment_tx(
         &self,
         remote_per_commitment_point: &PublicKey,
         commitment_number: u64,
