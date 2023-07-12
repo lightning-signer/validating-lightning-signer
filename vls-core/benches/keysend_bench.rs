@@ -13,9 +13,11 @@ use lightning_signer::{
     channel::TypedSignature,
     tx::tx::HTLCInfo2,
     util::test_utils::{
-        build_tx_scripts, check_signature, get_channel_funding_pubkey, init_node_and_channel,
+        build_tx_scripts, channel_commitment, check_signature, counterparty_sign_holder_commitment,
+        fund_test_channel, get_channel_funding_pubkey, init_node_and_channel,
         key::{make_test_counterparty_points, make_test_pubkey},
-        make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
+        make_test_channel_setup, test_node_ctx, validate_holder_commitment, TEST_NODE_CONFIG,
+        TEST_SEED,
     },
 };
 
@@ -156,9 +158,54 @@ pub fn sign_counterparty_commitment_tx_bench(c: &mut Criterion) {
     );
 }
 
+fn validate_holder_commitment_bench(c: &mut Criterion) {
+    let node_ctx = test_node_ctx(1);
+
+    let channel_amount = 3_000_000;
+    let chan_ctx = fund_test_channel(&node_ctx, channel_amount);
+
+    let offered_htlcs = vec![
+        HTLCInfo2 { value_sat: 10_000, payment_hash: PaymentHash([1; 32]), cltv_expiry: 1 << 16 },
+        HTLCInfo2 { value_sat: 10_000, payment_hash: PaymentHash([2; 32]), cltv_expiry: 2 << 16 },
+    ];
+    let received_htlcs = vec![
+        HTLCInfo2 { value_sat: 10_000, payment_hash: PaymentHash([3; 32]), cltv_expiry: 3 << 16 },
+        HTLCInfo2 { value_sat: 10_000, payment_hash: PaymentHash([4; 32]), cltv_expiry: 4 << 16 },
+        HTLCInfo2 { value_sat: 10_000, payment_hash: PaymentHash([5; 32]), cltv_expiry: 5 << 16 },
+    ];
+    let sum_htlc = 50_000;
+
+    let commit_num = 1;
+    let feerate_per_kw = 1100;
+    let fees = 20_000;
+    let to_broadcaster = 1_000_000;
+    let to_countersignatory = channel_amount - to_broadcaster - sum_htlc - fees;
+
+    let mut commit_tx_ctx = channel_commitment(
+        &node_ctx,
+        &chan_ctx,
+        commit_num,
+        feerate_per_kw,
+        to_broadcaster,
+        to_countersignatory,
+        offered_htlcs,
+        received_htlcs,
+    );
+    let (csig, hsigs) =
+        counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
+
+    c.bench_function("validate holder commitment", |b| {
+        b.iter(|| {
+            validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
+                .expect("valid holder commitment")
+        })
+    });
+}
+
 criterion_group! {
     name = benches;
-    config = Criterion::default().measurement_time(Duration::from_secs(10));
-    targets = sign_counterparty_commitment_tx_bench
+    config = Criterion::default().measurement_time(Duration::from_secs(20));
+    targets = sign_counterparty_commitment_tx_bench, validate_holder_commitment_bench
 }
+
 criterion_main!(benches);
