@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bitcoin::psbt::serialize::Serialize;
 use criterion::{criterion_group, criterion_main, Criterion};
 use lightning::{
@@ -154,5 +156,9 @@ pub fn sign_counterparty_commitment_tx_bench(c: &mut Criterion) {
     );
 }
 
-criterion_group!(benches, sign_counterparty_commitment_tx_bench);
+criterion_group! {
+    name = benches;
+    config = Criterion::default().measurement_time(Duration::from_secs(10));
+    targets = sign_counterparty_commitment_tx_bench
+}
 criterion_main!(benches);
