@@ -99,7 +99,7 @@ tokio = { version = "1.0", default-features = false, features = ["macros"] }
 paste = "1.0"
 # For logging in unit tests
 test-log = "0.2.8"
-bencher = "0.1"
+criterion = { version = "0.5.1", features = ["html_reports"]}
 
 # TODO point this and lightning-invoice at next release
 [dependencies.lightning]
@@ -140,4 +140,8 @@ features = ["serde", "bitcoinconsensus"]
 
 [[bench]]
 name = "secp_bench"
+harness = false
+
+[[bench]]
+name = "keysend_bench"
 harness = false
