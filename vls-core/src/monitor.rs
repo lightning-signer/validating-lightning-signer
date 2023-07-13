@@ -13,26 +13,26 @@ use log::*;
 /// State
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct State {
-    /// Chain height
-    pub height: u32,
-    /// funding txids
-    pub funding_txids: Vec<Txid>,
-    /// the funding output index for each funding tx
-    pub funding_vouts: Vec<u32>,
-    /// inputs derived from funding_txs for convenience
-    pub funding_inputs: Set<OutPoint>,
-    /// Number of confirmations of the funding transaction
-    pub funding_height: Option<u32>,
-    /// The actual funding outpoint on-chain
-    pub funding_outpoint: Option<OutPoint>,
-    /// Number of confirmations of a transaction that double-spends
-    /// a funding input
-    pub funding_double_spent_height: Option<u32>,
-    /// Number of confirmations of the closing transaction
-    pub closing_height: Option<u32>,
-    /// Whether we saw a block yet - used for sanity check
+    // Chain height
+    height: u32,
+    // funding txids
+    funding_txids: Vec<Txid>,
+    // the funding output index for each funding tx
+    funding_vouts: Vec<u32>,
+    // inputs derived from funding_txs for convenience
+    funding_inputs: Set<OutPoint>,
+    // Number of confirmations of the funding transaction
+    funding_height: Option<u32>,
+    // The actual funding outpoint on-chain
+    funding_outpoint: Option<OutPoint>,
+    // Number of confirmations of a transaction that double-spends
+    // a funding input
+    funding_double_spent_height: Option<u32>,
+    // Number of confirmations of the closing transaction
+    closing_height: Option<u32>,
+    // Whether we saw a block yet - used for sanity check
     #[serde(default)]
-    pub saw_block: bool,
+    saw_block: bool,
     // Block decode state, only while in progress
     #[serde(skip)]
     decode_state: Option<BlockDecodeState>,
@@ -302,9 +302,9 @@ impl State {
 /// Note that this object has refcounted state, so is lightweight to clone.
 #[derive(Clone)]
 pub struct ChainMonitor {
-    /// the first funding outpoint, used to identify the channel / channel monitor
+    // the first funding outpoint, used to identify the channel / channel monitor
     funding_outpoint: OutPoint,
-    /// the monitor state
+    // the monitor state
     state: Arc<Mutex<State>>,
 }
 
@@ -427,6 +427,11 @@ impl ChainListener for ChainMonitor {
         state.on_add_block_end(block_hash)
     }
 
+    fn on_add_streamed_block(&self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>) {
+        let mut state = self.state.lock().expect("lock");
+        state.on_add_block_end(block_hash)
+    }
+
     fn on_remove_block(
         &self,
         txs: &[Transaction],
@@ -449,11 +454,6 @@ impl ChainListener for ChainMonitor {
         }
 
         state.on_remove_block_end(block_hash)
-    }
-
-    fn on_add_streamed_block(&self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>) {
-        let mut state = self.state.lock().expect("lock");
-        state.on_add_block_end(block_hash)
     }
 
     fn on_remove_streamed_block(&self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>) {
