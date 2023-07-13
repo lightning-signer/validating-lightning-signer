@@ -464,6 +464,7 @@ impl Channel {
 // Phase 2
 impl Channel {
     // Phase 2
+    /// Public for testing purposes
     pub fn make_counterparty_tx_keys(
         &self,
         per_commitment_point: &PublicKey,
@@ -633,6 +634,7 @@ impl Channel {
     }
 
     // This function is needed for testing with mutated keys.
+    /// Public for testing purposes
     pub fn make_counterparty_commitment_tx_with_keys(
         &self,
         keys: TxCreationKeys,
@@ -660,6 +662,7 @@ impl Channel {
         commitment_tx
     }
 
+    /// Public for testing purposes
     pub fn make_counterparty_commitment_tx(
         &self,
         remote_per_commitment_point: &PublicKey,
@@ -1164,6 +1167,7 @@ impl Channel {
         commitment_tx
     }
 
+    /// Public for testing purposes
     pub fn htlcs_info2_to_oic(
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
