@@ -84,13 +84,6 @@ version = "0.5.0"
 #path = "../../txoo"
 default-features = false
 
-[dev-dependencies.txoo]
-version = "0.5.0"
-#git = "https://gitlab.com/lightning-signer/txoo"
-#branch = "main"
-#path = "../../txoo"
-default-features = false
-
 [dev-dependencies.txoo-bitcoind-client]
 version = "0.5.0"
 #git = "https://gitlab.com/lightning-signer/txoo"
