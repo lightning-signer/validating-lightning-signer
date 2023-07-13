@@ -19,19 +19,14 @@ use lightning_signer::{
         test_utils::{
             build_tx_scripts, channel_commitment, counterparty_sign_holder_commitment,
             fund_test_channel, init_node_and_channel, key::make_test_pubkey,
-            make_test_channel_setup, sign_commitment_tx_with_mutators_setup, test_node_ctx,
-            validate_holder_commitment, TEST_NODE_CONFIG, TEST_SEED,
+            make_test_channel_setup, test_node_ctx, validate_holder_commitment, TEST_NODE_CONFIG,
+            TEST_SEED,
         },
         INITIAL_COMMITMENT_NUMBER,
     },
 };
 
-fn sign_counterparty_commitment_tx_bench(c: &mut Criterion) {
-    let setup = make_test_channel_setup();
-    let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
-
-    let remote_percommitment_point = make_test_pubkey(10);
-
+fn provide_htlc() -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
     let htlc1 =
         HTLCInfo2 { value_sat: 4000, payment_hash: PaymentHash([1; 32]), cltv_expiry: 2 << 16 };
 
@@ -43,6 +38,16 @@ fn sign_counterparty_commitment_tx_bench(c: &mut Criterion) {
 
     let offered_htlcs = vec![htlc1];
     let received_htlcs = vec![htlc2, htlc3];
+
+    (offered_htlcs, received_htlcs)
+}
+
+fn sign_counterparty_commitment_tx_bench(c: &mut Criterion) {
+    let setup = make_test_channel_setup();
+    let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
+
+    let remote_percommitment_point = make_test_pubkey(10);
+    let (offered_htlcs, received_htlcs) = provide_htlc();
 
     node.with_ready_channel(&channel_id, |chan| {
         let channel_parameters = chan.make_channel_parameters();
@@ -90,7 +95,6 @@ fn sign_counterparty_commitment_tx_bench(c: &mut Criterion) {
         let commit_num = 23;
         let feerate_per_kw = 0;
 
-        // Set the commit_num and revoke_num.
         chan.enforcement_state
             .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
         chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
@@ -103,7 +107,7 @@ fn sign_counterparty_commitment_tx_bench(c: &mut Criterion) {
             to_broadcaster_value_sat,
             htlcs,
         );
-        // rebuild to get the scripts
+
         let trusted_tx = commitment_tx.trust();
         let tx = trusted_tx.built_transaction();
         let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
@@ -131,19 +135,7 @@ fn sign_counterparty_commitment_tx_bench(c: &mut Criterion) {
             })
         });
 
-        let sig = chan
-            .sign_counterparty_commitment_tx(
-                &tx.transaction,
-                &output_witscripts,
-                &remote_percommitment_point,
-                commit_num,
-                feerate_per_kw,
-                offered_htlcs.clone(),
-                received_htlcs.clone(),
-            )
-            .expect("sign");
-
-        Ok((sig, tx.transaction.clone()))
+        Ok(())
     })
     .expect("build_commitment_tx");
 }
@@ -154,16 +146,14 @@ fn validate_holder_commitment_bench(c: &mut Criterion) {
     let channel_amount = 3_000_000;
     let chan_ctx = fund_test_channel(&node_ctx, channel_amount);
 
-    let offered_htlcs = vec![
-        HTLCInfo2 { value_sat: 10_000, payment_hash: PaymentHash([1; 32]), cltv_expiry: 1 << 16 },
-        HTLCInfo2 { value_sat: 10_000, payment_hash: PaymentHash([2; 32]), cltv_expiry: 2 << 16 },
-    ];
-    let received_htlcs = vec![
-        HTLCInfo2 { value_sat: 10_000, payment_hash: PaymentHash([3; 32]), cltv_expiry: 3 << 16 },
-        HTLCInfo2 { value_sat: 10_000, payment_hash: PaymentHash([4; 32]), cltv_expiry: 4 << 16 },
-        HTLCInfo2 { value_sat: 10_000, payment_hash: PaymentHash([5; 32]), cltv_expiry: 5 << 16 },
-    ];
-    let sum_htlc = 50_000;
+    let (offered_htlcs, received_htlcs) = provide_htlc();
+    let mut sum_htlc = 0;
+    for htlc in &offered_htlcs {
+        sum_htlc += htlc.value_sat;
+    }
+    for htlc in &received_htlcs {
+        sum_htlc += htlc.value_sat;
+    }
 
     let commit_num = 1;
     let feerate_per_kw = 1100;
@@ -208,8 +198,10 @@ fn make_per_commitment(idx: u64) -> (PublicKey, SecretKey) {
 }
 
 fn validate_counterparty_revocation_bench(c: &mut Criterion) {
-    let (node, _setup, channel_id, offered_htlcs, received_htlcs) =
-        sign_commitment_tx_with_mutators_setup(CommitmentType::StaticRemoteKey);
+    let mut setup = make_test_channel_setup();
+    setup.commitment_type = CommitmentType::StaticRemoteKey;
+    let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
+    let (offered_htlcs, received_htlcs) = provide_htlc();
 
     node.with_ready_channel(&channel_id, |chan| {
         let channel_parameters = chan.make_channel_parameters();
@@ -218,7 +210,6 @@ fn validate_counterparty_revocation_bench(c: &mut Criterion) {
         let to_broadcaster = 1_979_997;
         let to_countersignatory = 1_000_000;
 
-        // provide all secrets so that we don't worry about secret chaining
         for idx in 0..REV_COMMIT_NUM {
             let (_, secret) = make_per_commitment(idx);
             let secrets = chan.enforcement_state.counterparty_secrets.as_mut().unwrap();
@@ -230,10 +221,6 @@ fn validate_counterparty_revocation_bench(c: &mut Criterion) {
         chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM - 1);
         chan.enforcement_state
             .set_next_counterparty_commit_num_for_testing(REV_COMMIT_NUM, make_test_pubkey(0x10));
-
-        // commit 21: revoked
-        // commit 22: current  <- next revoke
-        // commit 23: next     <- next commit
 
         let parameters = channel_parameters.as_counterparty_broadcastable();
         let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
@@ -282,26 +269,12 @@ fn validate_counterparty_revocation_bench(c: &mut Criterion) {
             received_htlcs.clone(),
         )?;
 
-        // commit 21: revoked
-        // commit 22: unrevoked <- next revoke
-        // commit 23: current
-        // commit 24: next      <- next commit
-
-        // Advance the state one full cycle:
-        // - validate_counterparty_revocation(22, ..)
-        // - sign_counterparty_commitment_tx(.., 24)
         chan.set_next_counterparty_revoke_num_for_testing(REV_COMMIT_NUM);
         chan.set_next_counterparty_commit_num_for_testing(
             REV_COMMIT_NUM + 2,
             make_test_pubkey(0x10),
         );
 
-        // commit 23: unrevoked <- next revoke
-        // commit 24: current
-        // commit 25: next      <- next commit
-
-        // Validate the revocation, but defer error returns till after we've had
-        // a chance to validate the channel state for side-effects
         c.bench_function("validate revocation", |b| {
             b.iter(|| {
                 chan.validate_counterparty_revocation(REV_COMMIT_NUM, &remote_percommit_secret)
@@ -309,7 +282,7 @@ fn validate_counterparty_revocation_bench(c: &mut Criterion) {
             })
         });
 
-        chan.validate_counterparty_revocation(REV_COMMIT_NUM, &remote_percommit_secret)
+        Ok(())
     })
     .expect("success")
 }

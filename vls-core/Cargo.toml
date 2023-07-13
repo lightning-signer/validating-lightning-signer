@@ -143,5 +143,5 @@ name = "secp_bench"
 harness = false
 
 [[bench]]
-name = "keysend_bench"
+name = "commitment_bench"
 harness = false
