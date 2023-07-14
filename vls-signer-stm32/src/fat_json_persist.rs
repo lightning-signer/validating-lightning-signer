@@ -357,6 +357,7 @@ impl Persist for FatJsonPersister {
             channel_setup: None,
             id: None,
             enforcement_state: EnforcementState::new(0),
+            blockheight: Some(stub.blockheight),
         };
         let value = json!(entry).to_string();
         self.insert_value(&Self::channel_bucket_path(), &key, &value).map_err(|err| err.into())
@@ -375,6 +376,7 @@ impl Persist for FatJsonPersister {
             channel_setup: Some(channel.setup.clone()),
             id: channel.id.clone(),
             enforcement_state: channel.enforcement_state.clone(),
+            blockheight: None,
         };
         let value = json!(entry).to_string();
         self.update_value(&Self::channel_bucket_path(), &key, &value).map_err(|err| err.into())

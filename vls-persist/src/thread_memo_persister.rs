@@ -297,6 +297,7 @@ impl Persist for ThreadMemoPersister {
             channel_setup: None,
             id: None,
             enforcement_state: EnforcementState::new(0),
+            blockheight: Some(stub.blockheight),
         };
         let value = to_vec(&entry).unwrap();
         self.with_state(|state| state.insert2(CHANNEL_PREFIX, node_key, channel_key, value));
@@ -347,6 +348,7 @@ impl Persist for ThreadMemoPersister {
             channel_setup: Some(channel.setup.clone()),
             id: channel.id.clone(),
             enforcement_state: channel.enforcement_state.clone(),
+            blockheight: None,
         };
         let value = to_vec(&entry).unwrap();
         self.with_state(|state| state.insert2(CHANNEL_PREFIX, node_key, channel_key, value));

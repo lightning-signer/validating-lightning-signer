@@ -257,6 +257,8 @@ pub struct ChannelStub {
     // Incomplete, channel_value_sat is placeholder.
     /// The initial channel ID, used to find the channel in the node
     pub id0: ChannelId,
+    /// Blockheight when created
+    pub blockheight: u32,
 }
 
 // Need to define manually because InMemorySigner doesn't derive Debug.

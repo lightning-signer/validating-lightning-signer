@@ -112,6 +112,8 @@ pub struct ChannelEntry {
     #[serde_as(as = "Option<ChannelIdHandler>")]
     pub id: Option<ChannelId>,
     pub enforcement_state: EnforcementState,
+    // birth blockheight for stub, None for channel
+    pub blockheight: Option<u32>,
 }
 
 impl From<ChannelEntry> for CoreChannelEntry {
@@ -121,6 +123,7 @@ impl From<ChannelEntry> for CoreChannelEntry {
             channel_setup: e.channel_setup,
             id: e.id,
             enforcement_state: e.enforcement_state,
+            blockheight: e.blockheight,
         }
     }
 }

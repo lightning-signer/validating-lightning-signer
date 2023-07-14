@@ -1365,11 +1365,13 @@ impl Node {
         let keys =
             self.keys_manager.get_channel_keys_with_id(channel_id.clone(), channel_value_sat);
 
+        let blockheight = arc_self.get_tracker().height();
         let stub = ChannelStub {
             node: Arc::downgrade(arc_self),
             secp_ctx: Secp256k1::new(),
             keys,
             id0: channel_id.clone(),
+            blockheight,
         };
         // TODO this clone is expensive
         channels.insert(channel_id.clone(), Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone()))));
@@ -1389,6 +1391,7 @@ impl Node {
         channel_value_sat: u64,
         channel_setup: Option<ChannelSetup>,
         enforcement_state: EnforcementState,
+        blockheight: u32,
         arc_self: &Arc<Node>,
     ) -> Result<Arc<Mutex<ChannelSlot>>, ()> {
         let mut channels = self.channels.lock().unwrap();
@@ -1403,6 +1406,7 @@ impl Node {
                     secp_ctx: Secp256k1::new(),
                     keys,
                     id0: channel_id0.clone(),
+                    blockheight,
                 };
                 // TODO this clone is expensive
                 let slot = Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone())));
@@ -1484,6 +1488,19 @@ impl Node {
         let node = Arc::new(Node::new_from_persistence(config, seed, allowlist, services, state));
         assert_eq!(&node.get_id(), node_id);
         info!("Restore node {} on {}", node_id, config.network);
+
+        if let Some((height, _hash, filter_header, header)) = get_latest_checkpoint(network) {
+            let mut tracker = node.get_tracker();
+            if tracker.height() == 0 {
+                // Fast-forward the tracker to the checkpoint
+                tracker.headers = VecDeque::new();
+                tracker.tip = Headers(header, filter_header);
+                tracker.height = height;
+            }
+        }
+        // Use the current blockheight if stub blockheight was not persisted
+        let blockheight = node.get_tracker().height();
+
         for (channel_id0, channel_entry) in
             persister.get_node_channels(node_id).expect("node channels")
         {
@@ -1495,21 +1512,13 @@ impl Node {
                     channel_entry.channel_value_satoshis,
                     channel_entry.channel_setup,
                     channel_entry.enforcement_state,
+                    channel_entry.blockheight.unwrap_or(blockheight),
                     &node,
                 )
                 .expect("restore channel");
             let slot = slot_arc.lock().unwrap();
             if let ChannelSlot::Ready(channel) = &*slot {
                 channel.restore_payments();
-            }
-        }
-        if let Some((height, _hash, filter_header, header)) = get_latest_checkpoint(network) {
-            let mut tracker = node.get_tracker();
-            if tracker.height() == 0 {
-                // Fast-forward the tracker to the checkpoint
-                tracker.headers = VecDeque::new();
-                tracker.tip = Headers(header, filter_header);
-                tracker.height = height;
             }
         }
 
