@@ -176,6 +176,13 @@ impl FatJsonPersister {
         Ok(())
     }
 
+    // Delete a value in a bucket, fail if NotFound
+    fn delete_value(&self, bucket: &str, key: &str) -> Result<(), Error> {
+        self.retire_cur_file(bucket, key)?;
+        self.expunge_old_file(bucket, key)?;
+        Ok(())
+    }
+
     // Read a value from a bucket
     fn read_value(&self, bucket: &str, key: &str) -> Result<String, Error> {
         let setupfs = self.setupfs.borrow();
@@ -361,6 +368,16 @@ impl Persist for FatJsonPersister {
         };
         let value = json!(entry).to_string();
         self.insert_value(&Self::channel_bucket_path(), &key, &value).map_err(|err| err.into())
+    }
+
+    fn delete_channel(
+        &self,
+        _node_id: &PublicKey,
+        channel_id: &ChannelId,
+    ) -> Result<(), persist::Error> {
+        let key = Self::channel_key(&channel_id.inner());
+        info!("delete_channel: {}", key);
+        self.delete_value(&Self::channel_bucket_path(), &key).map_err(|err| err.into())
     }
 
     fn update_channel(

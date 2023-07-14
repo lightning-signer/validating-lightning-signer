@@ -126,6 +126,13 @@ impl<'a> Persist for KVJsonPersister<'a> {
         Ok(())
     }
 
+    fn delete_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<(), Error> {
+        let key = NodeChannelId::new(node_id, channel_id);
+        self.channel_bucket.remove(&key).unwrap();
+        self.channel_bucket.flush().expect("flush");
+        Ok(())
+    }
+
     fn new_chain_tracker(
         &self,
         node_id: &PublicKey,

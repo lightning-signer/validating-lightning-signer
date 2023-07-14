@@ -123,6 +123,16 @@ impl State {
 
     fn remove(&mut self, prefix: impl Into<String>, key: &[u8]) {
         let full_key = Self::make_key(prefix, key);
+        self.do_remove(full_key);
+    }
+
+    // use for nested items (e.g. node -> channel)
+    fn remove2(&mut self, prefix: impl Into<String>, key1: &[u8], key2: &[u8]) {
+        let full_key = Self::make_key2(prefix, key1, key2);
+        self.do_remove(full_key);
+    }
+
+    fn do_remove(&mut self, full_key: String) {
         let mut store = self.store.lock().unwrap();
         let revision = store.get(&full_key).map(|(r, _)| r + 1).unwrap_or(0);
         store.insert(full_key.clone(), (revision, Vec::new()));
@@ -301,6 +311,13 @@ impl Persist for ThreadMemoPersister {
         };
         let value = to_vec(&entry).unwrap();
         self.with_state(|state| state.insert2(CHANNEL_PREFIX, node_key, channel_key, value));
+        Ok(())
+    }
+
+    fn delete_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<(), Error> {
+        let node_key = &node_id.serialize();
+        let channel_key = channel_id.as_slice();
+        self.with_state(|state| state.remove2(CHANNEL_PREFIX, node_key, channel_key));
         Ok(())
     }
 
