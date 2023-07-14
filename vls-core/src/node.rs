@@ -80,6 +80,9 @@ const INVOICE_PRUNE_TIME: Duration = Duration::from_secs(60 * 60 * 24);
 /// Prune keysends expired more than this long ago
 const KEYSEND_PRUNE_TIME: Duration = Duration::from_secs(0);
 
+/// Number of blocks to wait before removing failed channel stubs
+const CHANNEL_STUB_PRUNE_BLOCKS: u32 = 6;
+
 /// Node configuration parameters.
 
 #[derive(Copy, Clone, Debug)]
@@ -1726,6 +1729,9 @@ impl Node {
         drop(state); // minimize lock time
 
         let tracker = self.tracker.lock().unwrap();
+
+        self.prune_channels(tracker.height());
+
         let tip = tracker.tip();
         let current_timestamp = self.clock.now().as_secs() as u32;
         let heartbeat = Heartbeat {
@@ -2506,6 +2512,42 @@ impl Node {
     fn make_fee_velocity_control(policy: &Box<dyn Policy>) -> VelocityControl {
         let velocity_control_spec = policy.fee_velocity_control();
         VelocityControl::new(velocity_control_spec)
+    }
+
+    fn prune_channels(&self, current_blockheight: u32) {
+        // Prune stubs/channels which are no longer needed in memory.
+        let mut channels = self.channels.lock().unwrap();
+        // unfortunately `btree_drain_filter` is unstable
+        let keys_to_remove: Vec<_> = channels
+            .iter()
+            .filter_map(|(key, slot_arc)| {
+                let slot = slot_arc.lock().unwrap();
+                match &*slot {
+                    ChannelSlot::Ready(_chan) => None,
+                    ChannelSlot::Stub(stub) => {
+                        // Stubs are priomordial channel placeholders. As soon as a commitment can
+                        // be formed (and is subject to BOLT-2's 2016 block hold time) they are
+                        // converted to channels.  Stubs are left behind when a channel open fails
+                        // before a funding tx and commitment can be established.  LDK removes these
+                        // after a few minutes.
+                        if current_blockheight.saturating_sub(stub.blockheight)
+                            > CHANNEL_STUB_PRUNE_BLOCKS
+                        {
+                            info!("pruning channel stub {}", &key);
+                            Some(key.clone()) // clone the channel_id0 for removal
+                        } else {
+                            None
+                        }
+                    }
+                }
+            })
+            .collect();
+        for channel_id0 in keys_to_remove {
+            channels.remove(&channel_id0);
+            self.persister.delete_channel(&self.get_id(), &channel_id0).unwrap_or_else(|err| {
+                panic!("trouble deleting channel {}: {:?}", &channel_id0, err)
+            });
+        }
     }
 }
 
@@ -3843,5 +3885,34 @@ mod tests {
             assert!(!state.velocity_control.is_unlimited());
             assert!(state.velocity_control.spec_matches(&spec));
         }
+    }
+
+    #[test]
+    fn prune_failed_stubs() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+
+        // Create a channel stub
+        let (channel_id, _) = node.new_channel(None, &node).unwrap();
+        assert!(node.get_channel(&channel_id).is_ok());
+
+        // Do a heartbeat
+        let heartbeat = node.get_heartbeat();
+        let secp = Secp256k1::new();
+        assert!(heartbeat.verify(&node.get_account_extended_pubkey().public_key, &secp));
+
+        // Channel stub is still there
+        assert!(node.get_channel(&channel_id).is_ok());
+
+        // Pretend some blocks have gone by
+        assert_eq!(node.get_tracker().height(), 0);
+        node.get_tracker().height = 20;
+
+        // Do a heartbeat
+        let heartbeat = node.get_heartbeat();
+        let secp = Secp256k1::new();
+        assert!(heartbeat.verify(&node.get_account_extended_pubkey().public_key, &secp));
+
+        // Channel stub is no longer there
+        assert!(node.get_channel(&channel_id).is_err());
     }
 }
