@@ -26,18 +26,43 @@ use lightning_signer::{
     },
 };
 
+const CHANNEL_AMOUNT: u64 = 3_000_000;
+
+struct BenchTestConfig {
+    commit_num: u64,
+    feerate_per_kw: u32,
+    to_broadcaster: u64,
+    to_countersignator: u64,
+}
+
+impl BenchTestConfig {
+    fn new(
+        commit_num: u64,
+        fees: u64,
+        feerate_per_kw: u32,
+        to_broadcaster: u64,
+        sum_htlcs: u64,
+    ) -> Self {
+        let to_countersignator = CHANNEL_AMOUNT - to_broadcaster - sum_htlcs - fees;
+        Self {
+            commit_num: commit_num,
+            feerate_per_kw: feerate_per_kw,
+            to_broadcaster: to_broadcaster,
+            to_countersignator: to_countersignator,
+        }
+    }
+}
+
 fn provide_htlc() -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
-    let htlc1 =
-        HTLCInfo2 { value_sat: 4000, payment_hash: PaymentHash([1; 32]), cltv_expiry: 2 << 16 };
-
-    let htlc2 =
-        HTLCInfo2 { value_sat: 5000, payment_hash: PaymentHash([3; 32]), cltv_expiry: 3 << 16 };
-
-    let htlc3 =
-        HTLCInfo2 { value_sat: 10_003, payment_hash: PaymentHash([5; 32]), cltv_expiry: 4 << 16 };
-
-    let offered_htlcs = vec![htlc1];
-    let received_htlcs = vec![htlc2, htlc3];
+    let offered_htlcs = vec![HTLCInfo2 {
+        value_sat: 4000,
+        payment_hash: PaymentHash([1; 32]),
+        cltv_expiry: 2 << 16,
+    }];
+    let received_htlcs = vec![
+        HTLCInfo2 { value_sat: 5000, payment_hash: PaymentHash([3; 32]), cltv_expiry: 3 << 16 },
+        HTLCInfo2 { value_sat: 10_003, payment_hash: PaymentHash([5; 32]), cltv_expiry: 4 << 16 },
+    ];
 
     (offered_htlcs, received_htlcs)
 }
@@ -48,6 +73,15 @@ fn sign_counterparty_commitment_tx_bench(c: &mut Criterion) {
 
     let remote_percommitment_point = make_test_pubkey(10);
     let (offered_htlcs, received_htlcs) = provide_htlc();
+    let mut sum_htlcs = 0;
+    for htlc in &offered_htlcs {
+        sum_htlcs += htlc.value_sat;
+    }
+    for htlc in &received_htlcs {
+        sum_htlcs += htlc.value_sat;
+    }
+
+    let test_config = BenchTestConfig::new(23, 20_000, 1100, 1_000_000, sum_htlcs);
 
     node.with_ready_channel(&channel_id, |chan| {
         let channel_parameters = chan.make_channel_parameters();
@@ -79,12 +113,10 @@ fn sign_counterparty_commitment_tx_bench(c: &mut Criterion) {
 
         let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point).unwrap();
 
-        let to_broadcaster_value_sat = 1_000_000;
-        let to_countersignatory_value_sat = 1_979_997;
         let redeem_scripts = build_tx_scripts(
             &keys,
-            to_broadcaster_value_sat,
-            to_countersignatory_value_sat,
+            test_config.to_broadcaster,
+            test_config.to_countersignator,
             &mut htlcs,
             &parameters,
             &chan.keys.pubkeys().funding_pubkey,
@@ -92,19 +124,19 @@ fn sign_counterparty_commitment_tx_bench(c: &mut Criterion) {
         )
         .expect("scripts");
 
-        let commit_num = 23;
-        let feerate_per_kw = 0;
-
+        chan.enforcement_state.set_next_counterparty_commit_num_for_testing(
+            test_config.commit_num,
+            make_test_pubkey(0x10),
+        );
         chan.enforcement_state
-            .set_next_counterparty_commit_num_for_testing(commit_num, make_test_pubkey(0x10));
-        chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
+            .set_next_counterparty_revoke_num_for_testing(test_config.commit_num - 1);
 
         let commitment_tx = chan.make_counterparty_commitment_tx(
             &remote_percommitment_point,
-            commit_num,
-            feerate_per_kw,
-            to_countersignatory_value_sat,
-            to_broadcaster_value_sat,
+            test_config.commit_num,
+            test_config.feerate_per_kw,
+            test_config.to_countersignator,
+            test_config.to_broadcaster,
             htlcs,
         );
 
@@ -126,8 +158,8 @@ fn sign_counterparty_commitment_tx_bench(c: &mut Criterion) {
                     &tx.transaction,
                     &output_witscripts,
                     &remote_percommitment_point,
-                    commit_num,
-                    feerate_per_kw,
+                    test_config.commit_num,
+                    test_config.feerate_per_kw,
                     offered_htlcs.clone(),
                     received_htlcs.clone(),
                 )
@@ -147,27 +179,23 @@ fn validate_holder_commitment_bench(c: &mut Criterion) {
     let chan_ctx = fund_test_channel(&node_ctx, channel_amount);
 
     let (offered_htlcs, received_htlcs) = provide_htlc();
-    let mut sum_htlc = 0;
+    let mut sum_htlcs = 0;
     for htlc in &offered_htlcs {
-        sum_htlc += htlc.value_sat;
+        sum_htlcs += htlc.value_sat;
     }
     for htlc in &received_htlcs {
-        sum_htlc += htlc.value_sat;
+        sum_htlcs += htlc.value_sat;
     }
 
-    let commit_num = 1;
-    let feerate_per_kw = 1100;
-    let fees = 20_000;
-    let to_broadcaster = 1_000_000;
-    let to_countersignatory = channel_amount - to_broadcaster - sum_htlc - fees;
+    let test_config = BenchTestConfig::new(1, 20_000, 1100, 1_000_000, sum_htlcs);
 
     let mut commit_tx_ctx = channel_commitment(
         &node_ctx,
         &chan_ctx,
-        commit_num,
-        feerate_per_kw,
-        to_broadcaster,
-        to_countersignatory,
+        test_config.commit_num,
+        test_config.feerate_per_kw,
+        test_config.to_broadcaster,
+        test_config.to_countersignator,
         offered_htlcs,
         received_htlcs,
     );
@@ -202,13 +230,17 @@ fn validate_counterparty_revocation_bench(c: &mut Criterion) {
     setup.commitment_type = CommitmentType::StaticRemoteKey;
     let (node, channel_id) = init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
     let (offered_htlcs, received_htlcs) = provide_htlc();
+    let mut sum_htlcs = 0;
+    for htlc in &offered_htlcs {
+        sum_htlcs += htlc.value_sat;
+    }
+    for htlc in &received_htlcs {
+        sum_htlcs += htlc.value_sat;
+    }
 
+    let test_config = BenchTestConfig::new(1, 20_000, 1100, 1_979_997, sum_htlcs);
     node.with_ready_channel(&channel_id, |chan| {
         let channel_parameters = chan.make_channel_parameters();
-
-        let feerate_per_kw = 0;
-        let to_broadcaster = 1_979_997;
-        let to_countersignatory = 1_000_000;
 
         for idx in 0..REV_COMMIT_NUM {
             let (_, secret) = make_per_commitment(idx);
@@ -228,8 +260,8 @@ fn validate_counterparty_revocation_bench(c: &mut Criterion) {
 
         let redeem_scripts = build_tx_scripts(
             &keys,
-            to_countersignatory,
-            to_broadcaster,
+            test_config.to_countersignator,
+            test_config.to_broadcaster,
             &htlcs,
             &parameters,
             &chan.keys.pubkeys().funding_pubkey,
@@ -242,9 +274,9 @@ fn validate_counterparty_revocation_bench(c: &mut Criterion) {
         let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
             keys,
             REV_COMMIT_NUM,
-            feerate_per_kw,
-            to_broadcaster,
-            to_countersignatory,
+            test_config.feerate_per_kw,
+            test_config.to_broadcaster,
+            test_config.to_countersignator,
             htlcs.clone(),
         );
 
@@ -264,7 +296,7 @@ fn validate_counterparty_revocation_bench(c: &mut Criterion) {
             &output_witscripts,
             &remote_percommit_point,
             REV_COMMIT_NUM,
-            feerate_per_kw,
+            test_config.feerate_per_kw,
             offered_htlcs.clone(),
             received_htlcs.clone(),
         )?;
