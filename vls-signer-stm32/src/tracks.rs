@@ -125,6 +125,7 @@ fn track_char(msg: &Message) -> char {
         Message::HsmdInit2(_m) => '%',
         Message::NodeInfo(_m) => '#',
         Message::Ecdh(_m) => 'e',
+        Message::CheckPubKey(_m) => '=',
 
         Message::SignNodeAnnouncement(_m) => 'n',
         Message::SignChannelAnnouncement(_m) => 'c',
@@ -157,9 +158,13 @@ fn track_char(msg: &Message) -> char {
         Message::SignCommitmentTx(_m) => 'S',
         Message::SignLocalCommitmentTx2(_m) => 'S',
         Message::SignLocalHtlcTx(_m) => 'L',
+        Message::SignAnyLocalHtlcTx(_m) => 'L',
         Message::SignDelayedPaymentToUs(_m) => 'D',
+        Message::SignAnyDelayedPaymentToUs(_m) => 'D',
         Message::SignRemoteHtlcToUs(_m) => 'H',
-        Message::SignPenaltyToUs(_m) => 'J',
+        Message::SignAnyRemoteHtlcToUs(_m) => 'H',
+        Message::SignPenaltyToUs(_m) => '^',
+        Message::SignAnyPenaltyToUs(_m) => '^',
 
         Message::TipInfo(_m) => '<',
         Message::GetHeartbeat(_m) => 'B',
@@ -171,6 +176,47 @@ fn track_char(msg: &Message) -> char {
         Message::Ping(_m) => '.',
         Message::Memleak(_m) => '_',
         Message::Unknown(_m) => '?',
-        _m => '*',
+
+        // we shouldn't see any of these
+        Message::Pong(_)
+        | Message::HsmdInitReplyV2(_)
+        | Message::HsmdInitReplyV4(_)
+        | Message::HsmdInit2Reply(_)
+        | Message::ClientHsmFd(_)
+        | Message::ClientHsmFdReply(_)
+        | Message::NodeInfoReply(_)
+        | Message::SignInvoiceReply(_)
+        | Message::SignWithdrawalReply(_)
+        | Message::EcdhReply(_)
+        | Message::MemleakReply(_)
+        | Message::CheckFutureSecretReply(_)
+        | Message::SignMessageReply(_)
+        | Message::SignBolt12Reply(_)
+        | Message::PreapproveInvoiceReply(_)
+        | Message::PreapproveKeysendReply(_)
+        | Message::DeriveSecretReply(_)
+        | Message::CheckPubKeyReply(_)
+        | Message::SignChannelUpdateReply(_)
+        | Message::SignChannelAnnouncementReply(_)
+        | Message::SignNodeAnnouncementReply(_)
+        | Message::GetPerCommitmentPointReply(_)
+        | Message::GetPerCommitmentPoint2Reply(_)
+        | Message::ReadyChannelReply(_)
+        | Message::ValidateCommitmentTxReply(_)
+        | Message::ValidateRevocationReply(_)
+        | Message::SignCommitmentTxWithHtlcsReply(_)
+        | Message::SignCommitmentTxReply(_)
+        | Message::SignTxReply(_)
+        | Message::NewChannelReply(_)
+        | Message::GetChannelBasepointsReply(_)
+        | Message::TipInfoReply(_)
+        | Message::ForwardWatchesReply(_)
+        | Message::ReverseWatchesReply(_)
+        | Message::AddBlockReply(_)
+        | Message::RemoveBlockReply(_)
+        | Message::GetHeartbeatReply(_)
+        | Message::SignGossipMessage(_) => {
+            panic!("{:?} invalid in this context", msg);
+        }
     }
 }
