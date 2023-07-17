@@ -67,14 +67,17 @@ path = "src/test_main.rs"
 [profile.dev]
 opt-level = "z"
 debug = 2
-lto = true
+# lto = true
+
+[profile.release]
+opt-level = "z"
+debug = 1
+# lto = true
+codegen-units = 1
 
 # helpful: https://github.com/johnthagen/min-sized-rust
 # `lto = true` reduces from 1030 -> 873
 # `codegen-units` reduces from 873 -> 855
 
-[profile.release]
-opt-level = "z"
-debug = 1
-lto = true
-codegen-units = 1
+# 2023-07-12: turning lto off because truncated backtraces ([#352])
+# 977 KiB -> 1124KiB
