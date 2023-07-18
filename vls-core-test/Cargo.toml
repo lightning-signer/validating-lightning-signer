@@ -20,20 +20,6 @@ version = "0.4.0"
 default-features = false
 features = ["html_reports"]
 
-[dev-dependencies.bitcoin]
-version = "0.29"
-default-features = false
-features = ["serde", "bitcoinconsensus"]
-
-[dev-dependencies.lightning]
-#git = "https://github.com/lightningdevkit/rust-lightning.git"
-#rev = "a7600dcd584db0c46fdcd99d71d5b271f3052892"
-#branch = "main"
-#path = "../../rust-lightning/lightning"
-version = "0.0.115"
-default-features = false
-features = ["grind_signatures", "unsafe_revoked_tx_signing"]
-
 [[bin]]
 name = "example_main"
 path = "src/example_main.rs"

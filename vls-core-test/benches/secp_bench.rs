@@ -1,7 +1,8 @@
-use bitcoin::hashes::{sha256, Hash};
-use bitcoin::secp256k1::rand::thread_rng;
-use bitcoin::secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use lightning_signer::bitcoin::{
+    hashes::{sha256, Hash},
+    secp256k1::{rand::thread_rng, Message, PublicKey, Secp256k1, SecretKey},
+};
 
 fn sign_bench(c: &mut Criterion) {
     let secp = Secp256k1::new();

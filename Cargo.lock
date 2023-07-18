@@ -2401,11 +2401,9 @@ dependencies = [
 name = "vls-core-test"
 version = "0.9.1"
 dependencies = [
- "bitcoin",
  "criterion",
  "env_logger",
  "itertools",
- "lightning",
  "log",
  "test-log",
  "vls-core",

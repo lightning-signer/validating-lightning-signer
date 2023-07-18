@@ -1,19 +1,20 @@
 use std::time::Duration;
 
-use bitcoin::{
-    psbt::serialize::Serialize,
-    secp256k1::{PublicKey, Secp256k1, SecretKey},
-};
 use criterion::{criterion_group, criterion_main, Criterion};
-use lightning::{
-    chain::keysinterface::ChannelSigner,
-    ln::{
-        chan_utils::{self, HTLCOutputInCommitment},
-        PaymentHash,
-    },
-};
+use itertools::Itertools;
 use lightning_signer::{
+    bitcoin::{
+        psbt::serialize::Serialize,
+        secp256k1::{PublicKey, Secp256k1, SecretKey},
+    },
     channel::{Channel, CommitmentType},
+    lightning::{
+        chain::keysinterface::ChannelSigner,
+        ln::{
+            chan_utils::{self, HTLCOutputInCommitment},
+            PaymentHash,
+        },
+    },
     tx::tx::HTLCInfo2,
     util::{
         test_utils::{
