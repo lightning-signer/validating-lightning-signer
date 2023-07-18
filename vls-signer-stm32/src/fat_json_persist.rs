@@ -226,7 +226,7 @@ impl FatJsonPersister {
         let setupfs = self.setupfs.borrow();
         let mut new_file =
             setupfs.rundir().create_file(&Self::file_path(bucket, &Self::new_file_rel(key)))?;
-        new_file.write(value.as_bytes())?;
+        new_file.write_all(value.as_bytes())?;
         new_file.flush()?;
         Ok(())
     }

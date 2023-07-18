@@ -40,7 +40,7 @@ impl log::Log for FatLogger {
             let setupfs = self.setupfs.borrow();
             let mut log_file = setupfs.rundir().create_file(&self.logpath).expect("log file");
             log_file.seek(SeekFrom::End(0)).expect("seek end");
-            log_file.write(buffer.as_bytes()).expect("write bytes");
+            log_file.write_all(buffer.as_bytes()).expect("write bytes");
             log_file.flush().expect("flush");
         }
     }
