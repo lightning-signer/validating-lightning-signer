@@ -157,6 +157,9 @@ pub trait Persist: SendSync {
     /// Will error if exists
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), Error>;
 
+    /// Delete a channel
+    fn delete_channel(&self, node_id: &PublicKey, channel: &ChannelId) -> Result<(), Error>;
+
     /// Create a new tracker
     fn new_chain_tracker(
         &self,
@@ -255,6 +258,10 @@ impl Persist for DummyPersister {
     }
 
     fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn delete_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<(), Error> {
         Ok(())
     }
 

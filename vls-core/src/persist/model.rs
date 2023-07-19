@@ -21,4 +21,5 @@ pub struct ChannelEntry {
     // Permanent channel ID if different from the initial channel ID
     pub id: Option<ChannelId>,
     pub enforcement_state: EnforcementState,
+    pub blockheight: Option<u32>,
 }

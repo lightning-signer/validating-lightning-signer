@@ -111,6 +111,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
                     channel_setup: None,
                     id: None,
                     enforcement_state: EnforcementState::new(0),
+                    blockheight: Some(stub.blockheight),
                 };
                 if txn.get(&id).unwrap().is_some() {
                     return Err(TransactionError::Abort(kv::Error::Message(
@@ -121,6 +122,13 @@ impl<'a> Persist for KVJsonPersister<'a> {
                 Ok(())
             })
             .expect("new transaction");
+        self.channel_bucket.flush().expect("flush");
+        Ok(())
+    }
+
+    fn delete_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<(), Error> {
+        let key = NodeChannelId::new(node_id, channel_id);
+        self.channel_bucket.remove(&key).unwrap();
         self.channel_bucket.flush().expect("flush");
         Ok(())
     }
@@ -173,6 +181,7 @@ impl<'a> Persist for KVJsonPersister<'a> {
                     channel_setup: Some(channel.setup.clone()),
                     id: channel.id.clone(),
                     enforcement_state: channel.enforcement_state.clone(),
+                    blockheight: None,
                 };
                 if txn.get(&node_channel_id).unwrap().is_none() {
                     return Err(TransactionError::Abort(kv::Error::Message(

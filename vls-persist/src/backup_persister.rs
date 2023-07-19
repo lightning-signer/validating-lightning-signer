@@ -83,6 +83,13 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
         self.backup.new_channel(node_id, stub)
     }
 
+    fn delete_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<(), Error> {
+        if self.main_is_ready() {
+            self.main.delete_channel(node_id, channel_id)?;
+        }
+        self.backup.delete_channel(node_id, channel_id)
+    }
+
     fn new_chain_tracker(
         &self,
         node_id: &PublicKey,
@@ -248,6 +255,10 @@ mod tests {
         }
 
         fn new_channel(&self, node_id: &PublicKey, stub: &ChannelStub) -> Result<(), Error> {
+            todo!()
+        }
+
+        fn delete_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<(), Error> {
             todo!()
         }
 

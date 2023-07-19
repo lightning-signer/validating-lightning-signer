@@ -3,6 +3,7 @@
 set -e
 
 export CARGO_TARGET_DIR=target/kcov
+export FIXTURES_DIR=`pwd`/data
 export VLS_DISABLE_UPDATE_VERSION=0
 
 cargo_kcov_args="$*"
