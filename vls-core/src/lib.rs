@@ -150,7 +150,7 @@ pub trait CommitmentPointProvider: SendSync {
     fn clone_box(&self) -> Box<dyn CommitmentPointProvider>;
 }
 
-impl Clone for Box<CommitmentPointProvider> {
+impl Clone for Box<dyn CommitmentPointProvider> {
     fn clone(&self) -> Self {
         (**self).clone_box()
     }
