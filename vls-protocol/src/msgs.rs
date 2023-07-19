@@ -21,6 +21,7 @@ const MAX_MESSAGE_SIZE: u32 = 128 * 1024;
 /// Serialize a message with a type prefix, in BOLT style
 pub trait SerBolt: Debug + AsAny + Send {
     fn as_vec(&self) -> Vec<u8>;
+    fn name(&self) -> &'static str;
 }
 
 pub trait DeBolt: Debug + Sized {
@@ -810,6 +811,12 @@ pub struct Unknown {
     pub data: Vec<u8>,
 }
 
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(65535)]
+pub struct UnknownPlaceholder {}
+
+pub const UNKNOWN_PLACEHOLDER: UnknownPlaceholder = UnknownPlaceholder {};
+
 /// An enum representing all messages we can read and write
 #[derive(ReadMessage, Debug, Serialize)]
 pub enum Message {
@@ -1081,5 +1088,14 @@ mod tests {
         } else {
             panic!("bad deser type")
         }
+    }
+
+    #[test]
+    fn name_test() {
+        assert_eq!(Message::NodeInfo(NodeInfo {}).inner().name(), "NodeInfo");
+        assert_eq!(
+            Message::Unknown(Unknown { message_type: 0, data: vec![] }).inner().name(),
+            "UnknownPlaceholder"
+        );
     }
 }

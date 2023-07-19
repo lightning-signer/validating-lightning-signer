@@ -218,5 +218,6 @@ fn track_char(msg: &Message) -> char {
         | Message::SignGossipMessage(_) => {
             panic!("{:?} invalid in this context", msg);
         }
+        _ => ' ',
     }
 }

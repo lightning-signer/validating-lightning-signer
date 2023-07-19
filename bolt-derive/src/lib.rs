@@ -26,6 +26,10 @@ pub fn derive_ser_bolt(input: TokenStream) -> TokenStream {
                 buf.append(&mut val_buf);
                 buf
             }
+
+            fn name(&self) -> &'static str {
+                stringify!(#ident)
+            }
         }
 
         impl DeBolt for #ident {
@@ -84,6 +88,13 @@ pub fn derive_read_message(input: TokenStream) -> TokenStream {
                     _ => Message::Unknown(Unknown { message_type, data: data.clone() }),
                 };
                 Ok(message)
+            }
+
+            pub fn inner(&self) -> alloc::boxed::Box<&dyn SerBolt> {
+                match self {
+                    #(#ident::#vs(inner) => alloc::boxed::Box::new(inner)),*,
+                    _ => alloc::boxed::Box::new(&UNKNOWN_PLACEHOLDER),
+                }
             }
         }
     };
