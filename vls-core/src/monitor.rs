@@ -427,7 +427,7 @@ impl ChainListener for ChainMonitor {
         state.on_add_block_end(block_hash)
     }
 
-    fn on_add_streamed_block(&self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>) {
+    fn on_add_streamed_block_end(&self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>) {
         let mut state = self.state.lock().expect("lock");
         state.on_add_block_end(block_hash)
     }
@@ -456,7 +456,10 @@ impl ChainListener for ChainMonitor {
         state.on_remove_block_end(block_hash)
     }
 
-    fn on_remove_streamed_block(&self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>) {
+    fn on_remove_streamed_block_end(
+        &self,
+        block_hash: &BlockHash,
+    ) -> (Vec<OutPoint>, Vec<OutPoint>) {
         let mut state = self.state.lock().expect("lock");
         state.on_remove_block_end(block_hash)
     }

@@ -1899,7 +1899,7 @@ impl ChainListener for MockListener {
         (vec![], vec![])
     }
 
-    fn on_add_streamed_block(
+    fn on_add_streamed_block_end(
         &self,
         _block_hash: &BlockHash,
     ) -> (Vec<bitcoin::OutPoint>, Vec<bitcoin::OutPoint>) {
@@ -1915,7 +1915,7 @@ impl ChainListener for MockListener {
         self.on_add_block(txs, block_hash)
     }
 
-    fn on_remove_streamed_block(
+    fn on_remove_streamed_block_end(
         &self,
         _block_hash: &BlockHash,
     ) -> (Vec<bitcoin::OutPoint>, Vec<bitcoin::OutPoint>) {
