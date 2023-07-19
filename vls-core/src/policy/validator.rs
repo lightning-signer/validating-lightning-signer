@@ -8,8 +8,8 @@ use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::{
-    self, BlockHeader, EcdsaSighashType, FilterHeader, Network, OutPoint, Script, Sighash,
-    Transaction,
+    self, BlockHash, BlockHeader, EcdsaSighashType, FilterHeader, Network, OutPoint, Script,
+    Sighash, Transaction,
 };
 use core::time::Duration;
 use lightning::chain::keysinterface::InMemorySigner;
@@ -389,11 +389,19 @@ pub trait Validator {
         proof: &TxoProof,
         height: u32,
         header: &BlockHeader,
+        external_block_hash: Option<&BlockHash>,
         prev_filter_header: &FilterHeader,
         outpoint_watches: &[OutPoint],
     ) -> Result<(), ValidationError> {
         let secp = Secp256k1::new();
-        let result = proof.verify(height, header, prev_filter_header, outpoint_watches, &secp);
+        let result = proof.verify(
+            height,
+            header,
+            external_block_hash,
+            prev_filter_header,
+            outpoint_watches,
+            &secp,
+        );
         match result {
             Ok(()) => {}
             Err(VerifyError::InvalidAttestation) => {

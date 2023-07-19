@@ -1,5 +1,7 @@
 ## VLS Environment Variables
 
+### Main Environment Variables
+
 #### `VLS_MODE` - Choose VLS integration mode for system tests
 
 The `VLS_MODE` env variable is interpreted by the top-level `vls-hsmd` repo Makefile.
@@ -25,7 +27,7 @@ this behavior.  This is useful in development when building repeatedly.
 
 The `VLS_AUTOAPPROVE` env variable is interpreted by `vlsd2` and `remote_hsmd_inplace`.
 
-By default if an invoice payment, keysend, or onchain payment is not allowlisted it requires
+By default, if an invoice payment, keysend, or onchain payment is not allowlisted it requires
 explicit approval.  When `VLS_AUTOAPPROVE=1` these payments will be automatically approved.
 This is useful for integration testing.
 
@@ -45,11 +47,6 @@ Setting `VLS_ONCHAIN_VALIDATION_DISABLE=1` disables policy checking
 involving onchain events.  For example ensuring that the funding
 transaction is locked before allowing further channel operations.
 
-#### `VLS_FRONTEND_DISABLE` - Disable the frontend services (chainfollower, heartbeats)
-
-The `VLS_FRONTEND_DISABLE` env variable is interpreted by
-`remote_hsmd_socket`, `remote_hsmd_serial`, and `remote_hsmd_inplace`.
-
 #### `RUST_LOG` - Set the logging level
 
 The `RUST_LOG` env variable is interpreted by all VLS rust programs.
@@ -62,3 +59,9 @@ The `RUST_BACKTRACE` env variable is interpreted by all VLS rust programs.
 
 Set `RUST_BACKTRACE=1` if you desire backtraces.
 
+### Miscellaneous Frontend Environment Variables
+
+These are interpreted by `remote_hsmd_socket`, `remote_hsmd_serial`, and `remote_hsmd_inplace`.
+
+- `VLS_FRONTEND_DISABLE` - Disable the frontend services (chainfollower, heartbeats)
+- `VLS_CHAINFOLLOWER_TEST_STREAMING` - cause all blocks to be considered false positives in the frontend, so that the entire block is streamed

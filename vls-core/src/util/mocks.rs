@@ -9,7 +9,8 @@ use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
 use crate::wallet::Wallet;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{
-    BlockHeader, EcdsaSighashType, FilterHeader, Network, OutPoint, Script, Sighash, Transaction,
+    BlockHash, BlockHeader, EcdsaSighashType, FilterHeader, Network, OutPoint, Script, Sighash,
+    Transaction,
 };
 use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
@@ -238,6 +239,7 @@ impl Validator for MockValidator {
         proof: &TxoProof,
         height: u32,
         header: &BlockHeader,
+        external_block_hash: Option<&BlockHash>,
         prev_filter_header: &FilterHeader,
         outpoint_watches: &[OutPoint],
     ) -> Result<(), ValidationError> {

@@ -10,6 +10,9 @@ use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
 
 use crate::persist::ExternalPersistWithHelper;
 use lightning_signer::bitcoin;
+use lightning_signer::bitcoin::consensus::serialize;
+use lightning_signer::chain::tracker::ChainTracker;
+use lightning_signer::monitor::ChainMonitor;
 use lightning_signer::node::{Node, SignedHeartbeat};
 use lightning_signer::persist::Persist;
 use lightning_signer::signer::multi_signer::MultiSigner;
@@ -68,6 +71,7 @@ impl NodeFront {
 
     fn do_add_block(&self, header: BlockHeader, proof: TxoProof, persister: Arc<dyn Persist>) {
         let mut tracker = self.node.get_tracker();
+        let proof = self.maybe_stream_block(&mut *tracker, proof);
         tracker
             .add_block(header, proof)
             .unwrap_or_else(|e| panic!("{}: add_block failed: {:?}", self.node.log_prefix(), e));
@@ -78,12 +82,33 @@ impl NodeFront {
 
     fn do_remove_block(&self, proof: TxoProof, persister: Arc<dyn Persist>) {
         let mut tracker = self.node.get_tracker();
+        let proof = self.maybe_stream_block(&mut *tracker, proof);
         tracker
             .remove_block(proof)
             .unwrap_or_else(|e| panic!("{}: remove_block failed: {:?}", self.node.log_prefix(), e));
         persister.update_tracker(&self.node.get_id(), &tracker).unwrap_or_else(|e| {
             panic!("{}: persist tracker failed: {:?}", self.node.log_prefix(), e)
         });
+    }
+
+    fn maybe_stream_block(
+        &self,
+        tracker: &mut ChainTracker<ChainMonitor>,
+        proof: TxoProof,
+    ) -> TxoProof {
+        // stream the block to the signer, if this is a false positive
+        let (proof, block_opt) = proof.take_block();
+        if let Some(block) = block_opt {
+            let block_hash = block.block_hash();
+            let bytes = serialize(&block);
+            let mut offset = 0;
+            // small prime chunk size to test streaming
+            for chunk in bytes.chunks(23) {
+                tracker.block_chunk(block_hash, offset, chunk).expect("block_chunk");
+                offset += chunk.len() as u32;
+            }
+        }
+        proof
     }
 
     async fn with_persist_context<F>(

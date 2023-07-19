@@ -18,6 +18,7 @@ use lightning_signer::bitcoin::hashes::Hash;
 use lightning_signer::bitcoin::FilterHeader;
 use lightning_signer::txoo::filter::BlockSpendFilter;
 use lightning_signer::txoo::get_latest_checkpoint;
+use lightning_signer::txoo::proof::{ProofType, TxoProof};
 #[allow(unused_imports)]
 use log::{debug, error, info, trace};
 
@@ -33,6 +34,9 @@ pub struct ChainFollower {
     update_interval: u64,
     // sleep before performing an update, to test race conditions
     debug_update_sleep: u32,
+    // makes all TXO proofs false positives (i.e. full blocks), for system testing
+    // of block streaming
+    test_streaming: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -105,6 +109,9 @@ impl ChainFollower {
         let debug_update_sleep = std::env::var("VLS_CHAINFOLLOWER_DEBUG_UPDATE_SLEEP")
             .map(|s| s.parse().expect("VLS_CHAINFOLLOWER_DEBUG_UPDATE_SLEEP parse"))
             .unwrap_or(0);
+        let test_streaming = std::env::var("VLS_CHAINFOLLOWER_TEST_STREAMING")
+            .map(|s| s == "1" || s == "true")
+            .unwrap_or(false);
         Arc::new(ChainFollower {
             tracker,
             heartbeat_monitor: OnceCell::new(),
@@ -112,6 +119,7 @@ impl ChainFollower {
             state: Mutex::new(State::Scanning),
             update_interval,
             debug_update_sleep,
+            test_streaming,
         })
     }
 
@@ -192,7 +200,14 @@ impl ChainFollower {
                 self.do_heartbeat().await;
                 return Ok(ScheduleNext::Pause);
             }
-            FollowWithProofAction::BlockAdded(block, proof) => {
+            FollowWithProofAction::BlockAdded(block, mut proof) => {
+                if self.test_streaming {
+                    let fp_proof = TxoProof {
+                        attestations: proof.attestations,
+                        proof: ProofType::Block(block.clone()),
+                    };
+                    proof = fp_proof;
+                }
                 *state = State::Scanning;
                 let height = height0 + 1;
                 if height % 2016 == 0 {

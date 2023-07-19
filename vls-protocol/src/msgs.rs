@@ -782,6 +782,25 @@ pub struct GetHeartbeatReply {
     pub heartbeat: Octets,
 }
 
+/// Start or continue streaming a full block.
+/// Used when the compact proof has a false positive.
+/// The hash and the offset are provided to fail fast
+/// if there is a communication error.
+/// The stream of messages is always followed by an `AddBlock` with
+/// a proof type `ExternalBlock`.
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2009)]
+pub struct BlockChunk {
+    pub hash: BlockHash,
+    pub offset: u32,
+    pub content: Octets,
+}
+
+///
+#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[message_id(2109)]
+pub struct BlockChunkReply {}
+
 /// An unknown message
 #[derive(Debug, Serialize)]
 pub struct Unknown {
@@ -881,6 +900,8 @@ pub enum Message {
     GetHeartbeatReply(GetHeartbeatReply),
     NodeInfo(NodeInfo),
     NodeInfoReply(NodeInfoReply),
+    BlockChunk(BlockChunk),
+    BlockChunkReply(BlockChunkReply),
     Unknown(Unknown),
 }
 

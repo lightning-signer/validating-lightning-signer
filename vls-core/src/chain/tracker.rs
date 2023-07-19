@@ -1,5 +1,6 @@
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
+use core::cell::RefCell;
 use core::mem;
 
 use bitcoin::blockdata::constants::{genesis_block, DIFFCHANGE_INTERVAL};
@@ -8,11 +9,15 @@ use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::uint::Uint256;
-use bitcoin::{BlockHeader, FilterHeader, Network, OutPoint, Transaction, Txid};
+use bitcoin::{
+    BlockHash, BlockHeader, FilterHeader, Network, OutPoint, PackedLockTime, Transaction, TxIn,
+    TxOut, Txid,
+};
 
 use crate::policy::validator::ValidatorFactory;
 #[allow(unused_imports)]
 use log::{debug, error};
+use push_decoder::{BlockDecoder, Listener as PushListener};
 use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
 use txoo::filter::BlockSpendFilter;
@@ -99,6 +104,19 @@ impl Decodable for Headers {
     }
 }
 
+// the decode state while we are receiving a block
+struct BlockDecodeState {
+    decoder: BlockDecoder,
+    offset: u32,
+    block_hash: BlockHash,
+}
+
+impl BlockDecodeState {
+    fn new(block_hash: BlockHash) -> Self {
+        BlockDecodeState { decoder: BlockDecoder::new(), offset: 0, block_hash }
+    }
+}
+
 /// Track chain, with basic validation
 pub struct ChainTracker<L: ChainListener> {
     /// headers past the tip
@@ -113,6 +131,8 @@ pub struct ChainTracker<L: ChainListener> {
     pub listeners: OrderedMap<L::Key, (L, ListenSlot)>,
     node_id: PublicKey,
     validator_factory: Arc<dyn ValidatorFactory>,
+    // Block decoder, only while streaming a block is in progress
+    decode_state: Option<RefCell<BlockDecodeState>>,
 }
 
 impl<L: ChainListener> ChainTracker<L> {
@@ -138,7 +158,16 @@ impl<L: ChainListener> ChainTracker<L> {
             .map_err(|e| error_invalid_block!("validate pow {}: {}", header.target(), e))?;
         let headers = VecDeque::new();
         let listeners = OrderedMap::new();
-        Ok(ChainTracker { headers, tip, height, network, listeners, node_id, validator_factory })
+        Ok(ChainTracker {
+            headers,
+            tip,
+            height,
+            network,
+            listeners,
+            node_id,
+            validator_factory,
+            decode_state: None,
+        })
     }
 
     /// Restore a tracker
@@ -151,7 +180,16 @@ impl<L: ChainListener> ChainTracker<L> {
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
     ) -> Self {
-        ChainTracker { headers, tip, height, network, listeners, node_id, validator_factory }
+        ChainTracker {
+            headers,
+            tip,
+            height,
+            network,
+            listeners,
+            node_id,
+            validator_factory,
+            decode_state: None,
+        }
     }
 
     /// Create a tracker at genesis
@@ -225,17 +263,44 @@ impl<L: ChainListener> ChainTracker<L> {
 
     /// Remove block at tip due to reorg
     pub fn remove_block(&mut self, proof: TxoProof) -> Result<BlockHeader, Error> {
+        // there are four block hashes in play here:
+        // - the block hash in the BlockChunk messages
+        // - our idea of the tip's block hash (`tip_block_hash`)
+        // - the hash of the block that was actually streamed (`external_block_hash`)
+        // - the hash in the proof
+        //
+        // we need to make sure they are all the same:
+        // - `maybe_finish_decoding_block` here checks 1 vs 2
+        // - `ChainTrackerPushListener` checks 1 vs 3
+        // - `validate_block` checks 2 vs 4
+
         if self.headers.is_empty() {
             return Err(Error::ReorgTooDeep);
         }
+
+        let tip_block_hash = self.headers[0].0.block_hash();
+        self.maybe_finish_decoding_block(&proof, &tip_block_hash);
+
         let prev_headers = &self.headers[0];
 
-        self.validate_block(self.height - 1, prev_headers, &self.tip, &proof, true)?;
-        let txs = match proof.proof {
-            ProofType::Filter(_, spv_proof) => spv_proof.txs,
-            ProofType::Block(b) => b.txdata,
+        // we assume here that the external block hash and the tip block hash are the same
+        // this is actually validated below in notify_listeners_remove
+        let expected_external_block_hash =
+            if proof.proof.is_external() { Some(&tip_block_hash) } else { None };
+        self.validate_block(
+            self.height - 1,
+            expected_external_block_hash,
+            prev_headers,
+            &self.tip,
+            &proof,
+            true,
+        )?;
+        match proof.proof {
+            ProofType::Filter(_, spv_proof) =>
+                self.notify_listeners_remove(Some(spv_proof.txs.as_slice()), tip_block_hash),
+            ProofType::Block(b) => panic!("non-streamed block not supported {}", b.block_hash()),
+            ProofType::ExternalBlock() => self.notify_listeners_remove(None, tip_block_hash),
         };
-        self.notify_listeners_remove(&txs);
 
         let mut headers = self.headers.pop_front().expect("already checked");
         mem::swap(&mut self.tip, &mut headers);
@@ -243,58 +308,101 @@ impl<L: ChainListener> ChainTracker<L> {
         Ok(headers.0)
     }
 
-    fn notify_listeners_remove(&mut self, txs: &[Transaction]) {
+    // Notify listeners of a block add.
+    // If txs is None, this is a streamed block, and the transactions were already
+    // provided as push events.
+    fn notify_listeners_remove(&mut self, txs: Option<&[Transaction]>, block_hash: BlockHash) {
         for (listener, slot) in self.listeners.values_mut() {
-            let mut matched = Vec::new();
-            for tx in txs.iter().rev() {
-                // Remove any outpoints that were seen as spent when we added this block
-                let mut found = false;
-                for inp in tx.input.iter().rev() {
-                    if slot.seen.remove(&inp.previous_output) {
-                        debug!(
-                            "{}: unseeing previously seen outpoint {}",
-                            short_function!(),
-                            &inp.previous_output
-                        );
-                        found = true;
-                        let inserted = slot.watches.insert(inp.previous_output);
-                        assert!(inserted, "we failed to previously remove a watch");
-                    }
-                }
+            let (adds, removes) = if let Some(txs) = txs {
+                listener.on_remove_block(txs, &block_hash)
+            } else {
+                listener.on_remove_streamed_block(&block_hash)
+            };
 
-                let txid = tx.txid();
-                if slot.txid_watches.contains(&txid) {
-                    found = true;
-                }
+            debug!("{}: REVERT adding {:?}, removing {:?}", short_function!(), adds, removes);
 
-                // Remove any watches that match outputs which are being reorged-out.
-                for (vout, _) in tx.output.iter().enumerate() {
-                    let outpoint = OutPoint::new(txid, vout as u32);
-                    if slot.watches.remove(&outpoint) {
-                        debug!("{}: unwatching outpoint {}", short_function!(), &outpoint);
-                        assert!(found, "a watch was previously added without any inputs matching");
-                    }
-                }
-
-                if found {
-                    matched.push(tx);
-                }
+            // these are going to be re-added to the watches,
+            // so we need to remove them from the seen set
+            for outpoint in removes.iter() {
+                slot.seen.remove(outpoint);
             }
-            listener.on_remove_block(matched);
+
+            // revert what we did to the watches in the forward direction
+            slot.watches.extend(removes);
+            // remove after adding, in case there were intra-block spends
+            for outpoint in adds.iter() {
+                slot.watches.remove(outpoint);
+            }
         }
+    }
+
+    /// Handle a streamed block
+    pub fn block_chunk(&mut self, hash: BlockHash, offset: u32, chunk: &[u8]) -> Result<(), Error> {
+        if offset == 0 {
+            assert!(self.decode_state.is_none(), "already decoding, and got chunk at offset 0");
+            self.decode_state = Some(RefCell::new(BlockDecodeState::new(hash)));
+        }
+
+        // we jump through some hoops here to prevent the borrow checker from complaining
+        if let Some(decode_state_cell) = self.decode_state.as_ref() {
+            let mut decode_state = decode_state_cell.borrow_mut();
+            assert_eq!(
+                decode_state.block_hash, hash,
+                "got chunk for wrong block {} != {}",
+                hash, decode_state.block_hash
+            );
+            assert_eq!(
+                decode_state.offset, offset,
+                "got chunk for wrong offset {} != {}",
+                offset, decode_state.offset
+            );
+            let decoder = &mut decode_state.decoder;
+            let mut listener = ChainTrackerPushListener(self, hash);
+            decoder.decode_next(chunk, &mut listener).expect("decode failure");
+            decode_state.offset += chunk.len() as u32;
+        } else {
+            panic!("got chunk at offset {} without decoder", offset);
+        }
+        Ok(())
     }
 
     /// Add a block, which becomes the new tip
     pub fn add_block(&mut self, header: BlockHeader, proof: TxoProof) -> Result<(), Error> {
+        // there are four block hashes in play here:
+        // - the block hash in the BlockChunk messages
+        // - the block hash of the AddBlock message's header (`message_block_hash`)
+        // - the hash of the block that was actually streamed (`external_block_hash`)
+        // - the hash in the proof
+        //
+        // we need to make sure they are all the same:
+        // - `maybe_finish_decoding_block` here checks 1 vs 2
+        // - `ChainTrackerPushListener` checks 1 vs 3
+        // - `validate_block` checks 2 vs 4
+
+        let message_block_hash = header.block_hash();
+        self.maybe_finish_decoding_block(&proof, &message_block_hash);
+
         let filter_header = proof.filter_header();
         let headers = Headers(header, filter_header);
-        self.validate_block(self.height, &self.tip, &headers, &proof, false)?;
-        let txs = match proof.proof {
-            ProofType::Filter(_, spv_proof) => spv_proof.txs,
-            ProofType::Block(b) => b.txdata,
-        };
 
-        self.notify_listeners_add(&txs);
+        // we assume here that the external block hash and the message block hash are the same
+        // this is actually validated below in notify_listeners_remove
+        let expected_external_block_hash =
+            if proof.proof.is_external() { Some(&message_block_hash) } else { None };
+        self.validate_block(
+            self.height,
+            expected_external_block_hash,
+            &self.tip,
+            &headers,
+            &proof,
+            false,
+        )?;
+        match proof.proof {
+            ProofType::Filter(_, spv_proof) =>
+                self.notify_listeners_add(Some(spv_proof.txs.as_slice()), message_block_hash),
+            ProofType::Block(b) => panic!("non-streamed block not supported {}", b.block_hash()),
+            ProofType::ExternalBlock() => self.notify_listeners_add(None, message_block_hash),
+        };
 
         self.headers.truncate(Self::MAX_REORG_SIZE - 1);
         self.headers.push_front(self.tip.clone());
@@ -303,29 +411,45 @@ impl<L: ChainListener> ChainTracker<L> {
         Ok(())
     }
 
-    fn notify_listeners_add(&mut self, txs: &[Transaction]) {
+    // if we're decoding a block, tell the decoder we are done.
+    // will panic if the proof is external and we are not decoding or vice versa.
+    fn maybe_finish_decoding_block(&mut self, proof: &TxoProof, expected_block_hash: &BlockHash) {
+        assert_eq!(
+            proof.proof.is_external(),
+            self.decode_state.is_some(),
+            "is_external != decode_state"
+        );
+        if let Some(decode_state_cell) = self.decode_state.take() {
+            let decode_state = decode_state_cell.into_inner();
+            decode_state.decoder.finish().expect("decode finish failure");
+            assert_eq!(
+                decode_state.block_hash, *expected_block_hash,
+                "wrong block was sent {} != {}",
+                decode_state.block_hash, expected_block_hash
+            );
+        }
+    }
+
+    // Notify listeners of a block add.
+    // If txs is None, this is a streamed block, and the transactions were already
+    // provided as push events.
+    fn notify_listeners_add(&mut self, txs: Option<&[Transaction]>, block_hash: BlockHash) {
         for (listener, slot) in self.listeners.values_mut() {
-            let mut matched = Vec::new();
-            for tx in txs {
-                let mut found = false;
-                for inp in tx.input.iter() {
-                    if slot.watches.remove(&inp.previous_output) {
-                        debug!("{}: matched input {:?}", short_function!(), &inp.previous_output);
-                        found = true;
-                        slot.seen.insert(inp.previous_output);
-                    }
-                }
-                if slot.txid_watches.contains(&tx.txid()) {
-                    debug!("{}: matched txid {}", short_function!(), &tx.txid());
-                    found = true;
-                }
-                if found {
-                    matched.push(tx);
-                }
+            let (adds, removes) = if let Some(txs) = txs {
+                listener.on_add_block(txs, &block_hash)
+            } else {
+                listener.on_add_streamed_block(&block_hash)
+            };
+            debug!("{}: adding {:?}, removing {:?}", short_function!(), adds, removes);
+
+            slot.watches.extend(adds);
+            // remove after adding, in case there were intra-block spends
+            for outpoint in removes.iter() {
+                slot.watches.remove(outpoint);
             }
-            let new_watches = listener.on_add_block(matched);
-            debug!("{}: adding {:?} watches", short_function!(), new_watches);
-            slot.watches.extend(new_watches);
+
+            // keep track of what we removed, so we can watch reorgs for it
+            slot.seen.extend(removes);
         }
     }
 
@@ -376,6 +500,7 @@ impl<L: ChainListener> ChainTracker<L> {
     fn validate_block(
         &self,
         height: u32,
+        external_block_hash: Option<&BlockHash>,
         prev_headers: &Headers,
         headers: &Headers,
         proof: &TxoProof,
@@ -427,7 +552,14 @@ impl<L: ChainListener> ChainTracker<L> {
             log::warn!("bypassing filter validation because prev_filter_header is all zeroes");
         } else {
             validator
-                .validate_block(proof, height + 1, header, prev_filter_header, &outpoint_watches)
+                .validate_block(
+                    proof,
+                    height + 1,
+                    header,
+                    external_block_hash,
+                    prev_filter_header,
+                    &outpoint_watches,
+                )
                 .map_err(|e| error_invalid_proof!("{:?}", e))?;
         }
         Ok(())
@@ -458,6 +590,53 @@ fn validate_retarget(prev_target: Uint256, target: Uint256, network: Network) ->
     Ok(())
 }
 
+// work around unecessary mutable borrow tripping us up
+struct ChainTrackerPushListener<'a, L: ChainListener>(&'a ChainTracker<L>, BlockHash);
+
+impl<'a, L: ChainListener> ChainTrackerPushListener<'a, L> {
+    // broadcast push events to all listeners
+    fn do_push<F: FnMut(&mut PushListener)>(&mut self, mut f: F) {
+        for (listener, _) in self.0.listeners.values() {
+            listener.on_push(&mut f)
+        }
+    }
+}
+
+impl<'a, L: ChainListener> PushListener for ChainTrackerPushListener<'a, L> {
+    fn on_block_start(&mut self, header: &BlockHeader) {
+        // ensure that the block hash in the BlockChunk message
+        // matches the streamed block header
+        assert_eq!(
+            header.block_hash(),
+            self.1,
+            "streamed block hash does not match header {} != {}",
+            header.block_hash(),
+            self.1
+        );
+        self.do_push(|pl| pl.on_block_start(header));
+    }
+
+    fn on_block_end(&mut self) {
+        self.do_push(|pl| pl.on_block_end());
+    }
+
+    fn on_transaction_start(&mut self, version: i32) {
+        self.do_push(|pl| pl.on_transaction_start(version));
+    }
+
+    fn on_transaction_end(&mut self, locktime: PackedLockTime, txid: Txid) {
+        self.do_push(|pl| pl.on_transaction_end(locktime, txid));
+    }
+
+    fn on_transaction_input(&mut self, txin: &TxIn) {
+        self.do_push(|pl| pl.on_transaction_input(txin));
+    }
+
+    fn on_transaction_output(&mut self, txout: &TxOut) {
+        self.do_push(|pl| pl.on_transaction_output(txout));
+    }
+}
+
 /// Listen to chain events
 pub trait ChainListener: SendSync {
     /// The key type
@@ -466,13 +645,36 @@ pub trait ChainListener: SendSync {
     /// The key
     fn key(&self) -> &Self::Key;
 
-    /// A block was added, and zero or more transactions consume watched outpoints.
-    /// The listener returns zero or more new outpoints to watch.
-    fn on_add_block(&self, txs: Vec<&Transaction>) -> Vec<OutPoint>;
+    /// A block was added via a compact proof.
+    /// The listener returns outpoints to watch in the future, and outpoints to stop watching.
+    fn on_add_block(
+        &self,
+        txs: &[Transaction],
+        block_hash: &BlockHash,
+    ) -> (Vec<OutPoint>, Vec<OutPoint>);
 
-    /// A block was deleted.
-    /// The tracker will revert any changes to the watched outpoints set.
-    fn on_remove_block(&self, txs: Vec<&Transaction>);
+    /// A block was added via streaming (see `on_block_chunk`).
+    /// The listener returns outpoints to watch in the future, and outpoints to stop watching.
+    /// The decoded block hash is also returned.
+    fn on_add_streamed_block(&self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>);
+
+    /// A block was deleted via a compact proof.
+    /// The listener returns the same thing as on_add_block, so that the changes can be reverted.
+    /// The decoded block hash is also returned.
+    fn on_remove_block(
+        &self,
+        txs: &[Transaction],
+        block_hash: &BlockHash,
+    ) -> (Vec<OutPoint>, Vec<OutPoint>);
+
+    /// A block was deleted via streaming (see `on_block_chunk`).
+    /// The listener returns the same thing as on_add_block, so that the changes can be reverted.
+    fn on_remove_streamed_block(&self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>);
+
+    /// Get the block push decoder listener
+    fn on_push<F>(&self, f: F)
+    where
+        F: FnOnce(&mut dyn PushListener);
 }
 
 /// The one in rust-bitcoin is incorrect for Regtest at least
@@ -487,6 +689,7 @@ pub fn max_target(network: Network) -> Uint256 {
 mod tests {
     use crate::util::test_utils::*;
     use bitcoin::blockdata::constants::genesis_block;
+    use bitcoin::consensus::serialize;
     use bitcoin::hashes::Hash;
     use bitcoin::network::constants::Network;
     use bitcoin::util::hash::bitcoin_merkle_root;
@@ -549,11 +752,11 @@ mod tests {
         let tx = make_tx(vec![make_txin(1)]);
         let initial_watch = make_outpoint(1);
         let second_watch = OutPoint::new(tx.txid(), 0);
-        let listener = MockListener::new(second_watch);
+        let listener = MockListener::new(initial_watch);
 
         tracker.add_listener(listener.clone(), OrderedSet::new());
 
-        tracker.add_listener_watches(&second_watch, OrderedSet::from_iter(vec![initial_watch]));
+        tracker.add_listener_watches(&initial_watch, OrderedSet::from_iter(vec![initial_watch]));
 
         assert_eq!(tracker.listeners.len(), 1);
         assert_eq!(
@@ -615,6 +818,38 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn test_streamed() -> Result<(), Error> {
+        let source = make_source().await;
+        let (mut tracker, _validator_factory) = make_tracker()?;
+
+        let _header1 = add_block(&mut tracker, &source, &[]).await?;
+
+        let tx = make_tx(vec![make_txin(1)]);
+        let initial_watch = make_outpoint(1);
+        let second_watch = OutPoint::new(tx.txid(), 0);
+        let listener = MockListener::new(initial_watch);
+
+        tracker.add_listener(listener.clone(), OrderedSet::new());
+
+        tracker.add_listener_watches(&initial_watch, OrderedSet::from_iter(vec![initial_watch]));
+
+        assert_eq!(tracker.listeners.len(), 1);
+        assert_eq!(
+            tracker.listeners.get(listener.key()).unwrap().1.watches,
+            OrderedSet::from_iter(vec![initial_watch])
+        );
+
+        let _header2 = add_streamed_block(&mut tracker, &source, &[tx.clone()]).await?;
+
+        assert_eq!(
+            tracker.listeners.get(listener.key()).unwrap().1.watches,
+            OrderedSet::from_iter(vec![second_watch])
+        );
+
+        Ok(())
+    }
+
     // returns the new block's header
     async fn add_block(
         tracker: &mut ChainTracker<MockListener>,
@@ -629,6 +864,29 @@ mod tests {
         let (_attestation, filter_header) = source.get(height, &block).await.unwrap();
         let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
 
+        tracker.add_block(block.header.clone(), proof)?;
+        Ok(block.header)
+    }
+
+    // returns the new block's header
+    async fn add_streamed_block(
+        tracker: &mut ChainTracker<MockListener>,
+        source: &DummyTxooSource,
+        txs: &[Transaction],
+    ) -> Result<BlockHeader, Error> {
+        let txs = txs_with_coinbase(txs);
+
+        let block = make_block(tracker.tip().0, txs);
+        let height = tracker.height() + 1;
+        source.on_new_block(height, &block).await;
+        let (_attestation, filter_header) = source.get(height, &block).await.unwrap();
+        let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
+
+        let proof =
+            TxoProof { attestations: proof.attestations, proof: ProofType::ExternalBlock() };
+
+        let bytes = serialize(&block);
+        tracker.block_chunk(block.block_hash(), 0, &bytes)?;
         tracker.add_block(block.header.clone(), proof)?;
         Ok(block.header)
     }
@@ -683,7 +941,12 @@ mod tests {
         let mut txs = txs.to_vec();
         txs.insert(
             0,
-            Transaction { version: 0, lock_time: PackedLockTime(0), input: vec![], output: vec![] },
+            Transaction {
+                version: 0,
+                lock_time: PackedLockTime(0),
+                input: vec![],
+                output: vec![Default::default()],
+            },
         );
         txs
     }
