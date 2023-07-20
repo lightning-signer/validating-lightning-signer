@@ -15,6 +15,11 @@ log = "0.4.14"
 [dev-dependencies]
 vls-core = { path = "../vls-core", features = ["test_utils"] }
 
+[dev-dependencies.criterion]
+version = "0.4.0"
+default-features = false
+features = ["html_reports"]
+
 [[bin]]
 name = "example_main"
 path = "src/example_main.rs"
@@ -22,3 +27,11 @@ path = "src/example_main.rs"
 [[test]]
 name = "functional_test"
 path = "tests/functional_test.rs"
+
+[[bench]]
+name = "secp_bench"
+harness = false
+
+[[bench]]
+name = "commitment_bench"
+harness = false

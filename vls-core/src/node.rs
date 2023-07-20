@@ -1308,15 +1308,20 @@ impl Node {
     /// Execute a function with an existing ready channel.
     ///
     /// An invalid_argument [Status] will be returned if the channel does not exist.
-    pub fn with_ready_channel<F: Sized, T>(&self, channel_id: &ChannelId, f: F) -> Result<T, Status>
+    pub fn with_ready_channel<F: Sized, T>(
+        &self,
+        channel_id: &ChannelId,
+        mut f: F,
+    ) -> Result<T, Status>
     where
-        F: Fn(&mut Channel) -> Result<T, Status>,
+        F: FnMut(&mut Channel) -> Result<T, Status>,
     {
         let slot_arc = self.get_channel(channel_id)?;
         let mut slot = slot_arc.lock().unwrap();
         match &mut *slot {
-            ChannelSlot::Stub(_) =>
-                Err(invalid_argument(format!("channel not ready: {}", &channel_id))),
+            ChannelSlot::Stub(_) => {
+                Err(invalid_argument(format!("channel not ready: {}", &channel_id)))
+            }
             ChannelSlot::Ready(chan) => f(chan),
         }
     }
@@ -1817,8 +1822,9 @@ impl Node {
                 let (privkey, mut witness) = match uck {
                     // There was a unilateral_close_key.
                     // TODO we don't care about the network here
-                    Some((key, stack)) =>
-                        (bitcoin::PrivateKey::new(key.clone(), Network::Testnet), stack),
+                    Some((key, stack)) => {
+                        (bitcoin::PrivateKey::new(key.clone(), Network::Testnet), stack)
+                    }
                     // Derive the HD key.
                     None => {
                         let key = self.get_wallet_privkey(&secp_ctx, &ipaths[idx])?;
@@ -2582,10 +2588,11 @@ fn find_channel_with_funding_outpoint(
     for (_, slot_arc) in channels_lock.iter() {
         let slot = slot_arc.lock().unwrap();
         match &*slot {
-            ChannelSlot::Ready(chan) =>
+            ChannelSlot::Ready(chan) => {
                 if chan.setup.funding_outpoint == *outpoint {
                     return Some(Arc::clone(slot_arc));
-                },
+                }
+            }
             ChannelSlot::Stub(_stub) => {
                 // ignore stubs ...
             }
