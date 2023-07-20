@@ -169,6 +169,7 @@ fn track_char(msg: &Message) -> char {
         Message::TipInfo(_m) => '<',
         Message::GetHeartbeat(_m) => 'B',
         Message::ForwardWatches(_m) => '[',
+        Message::BlockChunk(_m) => ':',
         Message::AddBlock(_m) => ']',
         Message::ReverseWatches(_m) => '{',
         Message::RemoveBlock(_m) => '}',
@@ -212,12 +213,12 @@ fn track_char(msg: &Message) -> char {
         | Message::TipInfoReply(_)
         | Message::ForwardWatchesReply(_)
         | Message::ReverseWatchesReply(_)
+        | Message::BlockChunkReply(_)
         | Message::AddBlockReply(_)
         | Message::RemoveBlockReply(_)
         | Message::GetHeartbeatReply(_)
         | Message::SignGossipMessage(_) => {
             panic!("{:?} invalid in this context", msg);
         }
-        _ => ' ',
     }
 }
