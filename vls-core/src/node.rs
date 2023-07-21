@@ -156,7 +156,7 @@ pub enum PaymentType {
 
 /// Display as string for PaymentType
 impl fmt::Display for PaymentType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -1821,8 +1821,7 @@ impl Node {
                 let (privkey, mut witness) = match uck {
                     // There was a unilateral_close_key.
                     // TODO we don't care about the network here
-                    Some((key, stack)) =>
-                        (bitcoin::PrivateKey::new(key.clone(), Network::Testnet), stack),
+                    Some((key, stack)) => (PrivateKey::new(key.clone(), Network::Testnet), stack),
                     // Derive the HD key.
                     None => {
                         let key = self.get_wallet_privkey(&secp_ctx, &ipaths[idx])?;
@@ -2178,7 +2177,7 @@ impl Node {
         let invoice_preimage = construct_invoice_preimage(&hrp_bytes, &invoice_data);
         let secp_ctx = Secp256k1::signing_only();
         let hash = Sha256Hash::hash(&invoice_preimage);
-        let message = secp256k1::Message::from_slice(&hash).unwrap();
+        let message = Message::from_slice(&hash).unwrap();
         let sig = secp_ctx.sign_ecdsa_recoverable(&message, &self.get_node_secret());
 
         raw_invoice
@@ -2192,7 +2191,7 @@ impl Node {
         buffer.extend(message);
         let secp_ctx = Secp256k1::signing_only();
         let hash = Sha256dHash::hash(&buffer);
-        let encmsg = secp256k1::Message::from_slice(&hash[..])
+        let encmsg = Message::from_slice(&hash[..])
             .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
         let sig = secp_ctx.sign_ecdsa_recoverable(&encmsg, &self.get_node_secret());
         let (rid, sig) = sig.serialize_compact();
@@ -3388,7 +3387,7 @@ mod tests {
             .unwrap();
 
         let ca_hash = Sha256dHash::hash(&ann);
-        let encmsg = secp256k1::Message::from_slice(&ca_hash[..]).expect("encmsg");
+        let encmsg = Message::from_slice(&ca_hash[..]).expect("encmsg");
         let secp_ctx = Secp256k1::new();
         node.with_ready_channel(&channel_id, |chan| {
             let funding_pubkey = PublicKey::from_secret_key(&secp_ctx, &chan.keys.funding_key);
@@ -3599,7 +3598,7 @@ mod tests {
         let mut buffer = String::from("Lightning Signed Message:").into_bytes();
         buffer.extend(message);
         let hash = Sha256dHash::hash(&buffer);
-        let encmsg = secp256k1::Message::from_slice(&hash[..]).unwrap();
+        let encmsg = Message::from_slice(&hash[..]).unwrap();
         let sig = Signature::from_compact(&rsig.to_standard().serialize_compact()).unwrap();
         let pubkey = secp_ctx.recover_ecdsa(&encmsg, &rsig).unwrap();
         assert!(secp_ctx.verify_ecdsa(&encmsg, &sig, &pubkey).is_ok());
@@ -3674,7 +3673,7 @@ mod tests {
         );
     }
 
-    fn vecs_match<T: PartialEq + std::cmp::Ord>(mut a: Vec<T>, mut b: Vec<T>) -> bool {
+    fn vecs_match<T: PartialEq + Ord>(mut a: Vec<T>, mut b: Vec<T>) -> bool {
         a.sort();
         b.sort();
         let matching = a.iter().zip(b.iter()).filter(|&(a, b)| a == b).count();
