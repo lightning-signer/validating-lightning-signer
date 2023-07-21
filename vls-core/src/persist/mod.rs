@@ -459,7 +459,7 @@ impl ExternalPersistHelper {
     }
 
     /// Generate and store a new nonce
-    pub fn new_nonce(&mut self, entropy_source: &EntropySource) -> [u8; 32] {
+    pub fn new_nonce(&mut self, entropy_source: &dyn EntropySource) -> [u8; 32] {
         let nonce = entropy_source.get_secure_random_bytes();
         self.last_nonce = nonce;
         nonce

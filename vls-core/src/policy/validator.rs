@@ -40,7 +40,7 @@ pub trait Validator {
     /// the allowlist.
     fn validate_ready_channel(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         holder_shutdown_key_path: &[u32],
     ) -> Result<(), ValidationError>;
@@ -62,7 +62,7 @@ pub trait Validator {
     /// Returns the total "non-beneficial value" (i.e. fees) in satoshi
     fn validate_onchain_tx(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         tx: &Transaction,
         input_txs: &[&Transaction],
@@ -138,7 +138,7 @@ pub trait Validator {
     /// Phase 1 decoding and recomposition of mutual_close
     fn decode_and_validate_mutual_close_tx(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         state: &EnforcementState,
         tx: &Transaction,
@@ -148,7 +148,7 @@ pub trait Validator {
     /// Phase 2 Validatation of mutual_close
     fn validate_mutual_close_tx(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         state: &EnforcementState,
         to_holder_value_sat: u64,
@@ -161,7 +161,7 @@ pub trait Validator {
     /// Validation of delayed sweep transaction
     fn validate_delayed_sweep(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         cstate: &ChainState,
         tx: &Transaction,
@@ -174,7 +174,7 @@ pub trait Validator {
     /// commitment htlc outputs)
     fn validate_counterparty_htlc_sweep(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         cstate: &ChainState,
         tx: &Transaction,
@@ -187,7 +187,7 @@ pub trait Validator {
     /// Validation of justice sweep transaction
     fn validate_justice_sweep(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         cstate: &ChainState,
         tx: &Transaction,

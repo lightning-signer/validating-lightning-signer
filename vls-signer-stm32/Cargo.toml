@@ -2,7 +2,7 @@
 name = "vls-signer-stm32"
 version = "0.1.0"
 authors = ["Ken Sedgwick <ken@bonsai.com>", "Devrandom <c1.devrandom@niftybox.net>"]
-edition = "2018"
+edition = "2021"
 build = "build.rs"
 
 [dependencies]

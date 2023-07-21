@@ -336,7 +336,7 @@ impl SimpleValidator {
     // Common validation for validate_{delayed,counterparty_htlc,justice}_sweep
     fn validate_sweep(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         tx: &Transaction,
         _input: usize,
         _amount_sat: u64,
@@ -380,7 +380,7 @@ impl SimpleValidator {
 impl Validator for SimpleValidator {
     fn validate_ready_channel(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         holder_shutdown_key_path: &[u32],
     ) -> Result<(), ValidationError> {
@@ -452,7 +452,7 @@ impl Validator for SimpleValidator {
 
     fn validate_onchain_tx(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         tx: &Transaction,
         input_txs: &[&Transaction],
@@ -1106,7 +1106,7 @@ impl Validator for SimpleValidator {
 
     fn decode_and_validate_mutual_close_tx(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         estate: &EnforcementState,
         tx: &Transaction,
@@ -1291,7 +1291,7 @@ impl Validator for SimpleValidator {
 
     fn validate_mutual_close_tx(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         estate: &EnforcementState,
         to_holder_value_sat: u64,
@@ -1455,7 +1455,7 @@ impl Validator for SimpleValidator {
 
     fn validate_delayed_sweep(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         cstate: &ChainState,
         tx: &Transaction,
@@ -1497,7 +1497,7 @@ impl Validator for SimpleValidator {
 
     fn validate_counterparty_htlc_sweep(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         cstate: &ChainState,
         tx: &Transaction,
@@ -1591,7 +1591,7 @@ impl Validator for SimpleValidator {
 
     fn validate_justice_sweep(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         _setup: &ChannelSetup,
         cstate: &ChainState,
         tx: &Transaction,

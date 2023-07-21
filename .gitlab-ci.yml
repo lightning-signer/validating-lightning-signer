@@ -74,12 +74,12 @@ rust-latest-extras:
     # test LSS
     - (cd lightning-storage-server && cargo test)
 
-rust-1.60.0:
+rust-1.64.0:
   tags: [ saas-linux-large-amd64 ]
   stage: build
-  image: rust:1.60.0
+  image: rust:1.64.0
   cache:
-    key: vls-compile-1_60
+    key: vls-compile-1_64
     paths:
       - bin
       - .cache/cargo
@@ -89,12 +89,12 @@ rust-1.60.0:
     - rustup component add rustfmt
     - cargo test
 
-rust-1.60.0-lss:
+rust-1.64.0-lss:
   tags: [ saas-linux-large-amd64 ]
   stage: build
-  image: rust:1.60.0
+  image: rust:1.64.0
   cache:
-    key: vls-compile-lss-1_60
+    key: vls-compile-lss-1_64
     paths:
       - bin
       - .cache/cargo

@@ -2,8 +2,8 @@
 name = "bindgen-test"
 version = "0.1.0"
 authors = ["Devrandom <c1.devrandom@niftybox.net>"]
-edition = "2018"
-rust-version = "1.60.0"
+edition = "2021"
+rust-version = "1.63.0"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

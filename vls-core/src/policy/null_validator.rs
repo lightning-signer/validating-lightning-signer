@@ -49,7 +49,7 @@ pub struct NullValidator(Arc<dyn Validator>); // So we can DRY by borrowing its 
 impl Validator for NullValidator {
     fn validate_ready_channel(
         &self,
-        _wallet: &Wallet,
+        _wallet: &dyn Wallet,
         _setup: &ChannelSetup,
         _holder_shutdown_key_path: &[u32],
     ) -> Result<(), ValidationError> {
@@ -62,7 +62,7 @@ impl Validator for NullValidator {
 
     fn validate_onchain_tx(
         &self,
-        _wallet: &Wallet,
+        _wallet: &dyn Wallet,
         _channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         _tx: &Transaction,
         _input_txs: &[&Transaction],
@@ -155,7 +155,7 @@ impl Validator for NullValidator {
 
     fn decode_and_validate_mutual_close_tx(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         estate: &EnforcementState,
         tx: &Transaction,
@@ -167,7 +167,7 @@ impl Validator for NullValidator {
 
     fn validate_mutual_close_tx(
         &self,
-        _wallet: &Wallet,
+        _wallet: &dyn Wallet,
         _setup: &ChannelSetup,
         _estate: &EnforcementState,
         _to_holder_value_sat: u64,
@@ -181,7 +181,7 @@ impl Validator for NullValidator {
 
     fn validate_delayed_sweep(
         &self,
-        _wallet: &Wallet,
+        _wallet: &dyn Wallet,
         _setup: &ChannelSetup,
         _cstate: &ChainState,
         _tx: &Transaction,
@@ -194,7 +194,7 @@ impl Validator for NullValidator {
 
     fn validate_counterparty_htlc_sweep(
         &self,
-        _wallet: &Wallet,
+        _wallet: &dyn Wallet,
         _setup: &ChannelSetup,
         _cstate: &ChainState,
         _tx: &Transaction,
@@ -208,7 +208,7 @@ impl Validator for NullValidator {
 
     fn validate_justice_sweep(
         &self,
-        _wallet: &Wallet,
+        _wallet: &dyn Wallet,
         _setup: &ChannelSetup,
         _cstate: &ChainState,
         _tx: &Transaction,

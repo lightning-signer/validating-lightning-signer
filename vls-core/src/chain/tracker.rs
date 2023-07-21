@@ -595,7 +595,7 @@ struct ChainTrackerPushListener<'a, L: ChainListener>(&'a ChainTracker<L>, Block
 
 impl<'a, L: ChainListener> ChainTrackerPushListener<'a, L> {
     // broadcast push events to all listeners
-    fn do_push<F: FnMut(&mut PushListener)>(&mut self, mut f: F) {
+    fn do_push<F: FnMut(&mut dyn PushListener)>(&mut self, mut f: F) {
         for (listener, _) in self.0.listeners.values() {
             listener.on_push(&mut f)
         }

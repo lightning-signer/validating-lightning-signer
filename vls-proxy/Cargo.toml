@@ -3,11 +3,11 @@ name = "vls-proxy"
 license = "Apache-2.0"
 version = "0.9.1"
 authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
-edition = "2018"
+edition = "2021"
 description = "A library for implementing a Lightning signer, which externalizes and secures cryptographic operations."
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
-rust-version = "1.60.0"
+rust-version = "1.63.0"
 build = "build.rs"
 
 [features]
@@ -43,7 +43,7 @@ tokio = { version = "1.27", features = ["macros", "rt-multi-thread"], optional =
 tokio-stream = { version = "0.1", optional = true }
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 hyper = "0.14"
-tonic = { version = "0.8", optional = true }
+tonic = { version = "0.9", optional = true }
 prost = { version = "0.11", optional = true }
 # note that 3.2.4 increments nix dep in a non-semver way to 0.26
 ctrlc = { version = "3.2.4", features = ["termination"], optional = true }
@@ -58,7 +58,7 @@ hex = "0.4"
 backoff = { version = "0.4", features = ["tokio"], optional = true }
 
 [dependencies.txoo-bitcoind-client]
-version = "0.5.0"
+version = "0.6"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #branch = "main"
 #path = "../../txoo/bitcoind-client"
@@ -67,7 +67,7 @@ version = "0.5.0"
 tempfile = "3"
 
 [build-dependencies]
-tonic-build = "0.8"
+tonic-build = "0.9"
 
 [lib]
 name = "vls_proxy"

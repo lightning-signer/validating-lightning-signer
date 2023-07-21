@@ -3,11 +3,11 @@ name = "lightning-storage-server"
 license = "Apache-2.0"
 version = "0.3.0"
 authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
-edition = "2018"
+edition = "2021"
 description = "A library for implementing a Lightning signer, which externalizes and secures cryptographic operations."
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
-rust-version = "1.60.0"
+rust-version = "1.63.0"
 
 [lib]
 name = "lightning_storage_server"
@@ -25,7 +25,7 @@ sled = "0.34"
 serde = { version = "1.0", features = ["derive"] }
 serde_cbor = "0.11"
 tokio = { version = "1.27", features = ["macros", "rt-multi-thread"] }
-tonic = { version = "0.8", features = ["tls"] }
+tonic = { version = "0.9", features = ["tls"] }
 prost = "0.11"
 triggered = "0.1"
 ctrlc = "3"
@@ -47,7 +47,7 @@ deadpool-postgres = { version = "0.10", optional = true }
 itertools = "0.10"
 
 [build-dependencies]
-tonic-build = "0.8"
+tonic-build = "0.9"
 
 [dev-dependencies]
 tempfile = "3"
