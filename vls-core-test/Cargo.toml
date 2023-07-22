@@ -14,7 +14,7 @@ log = "0.4.14"
 
 [dev-dependencies]
 vls-core = { path = "../vls-core", features = ["test_utils"] }
-vls-persist = { path = "../vls-persist" }
+vls-persist = { path = "../vls-persist", features = ["kv-json"] }
 tempfile = "3.2"
 
 [dev-dependencies.criterion]
