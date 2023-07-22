@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 
 use vls_protocol_signer::vls_protocol::msgs::Message;
 
-const TRACKLEN: usize = 16;
+const TRACKLEN: usize = 15;
 
 pub struct Track {
     latest: u64,
@@ -109,7 +109,7 @@ impl Tracks {
         // Format the output strings
         let mut output: Vec<_> = top
             .iter()
-            .map(|item| format!("{:02} {: >len$}", item.0, item.1.dspstr, len = TRACKLEN))
+            .map(|item| format!("{:03} {: >len$}", item.0, item.1.dspstr, len = TRACKLEN))
             .collect();
 
         // Extend w/ blank strings
