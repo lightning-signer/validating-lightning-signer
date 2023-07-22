@@ -18,6 +18,7 @@ std = ["vls-core/std", "log/std"]
 no-std = ["vls-core/no-std"]
 test_utils = ["vls-core/test_utils"]
 kv-json = ["kv"]
+redb-kvv = ["redb"]
 memo = ["serde_json"]
 # this is a hack to disable a test that causes an illegal instruction under kcov
 kcov = []
@@ -30,6 +31,7 @@ hex = { version = "0.4", default-features = false }
 kv = { version = "0.23", features = ["json-value"], optional = true }
 log = { version = "0.4", default-features = false }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"], optional = true }
+redb = { version = "1.0", optional = true }
 
 [dev-dependencies]
 tempfile = "3.2"
@@ -51,3 +53,8 @@ required-features = ["kv-json"]
 name = "dump_sample_data"
 path = "src/dump_sample_data_main.rs"
 required-features = ["kv-json"]
+
+[[bin]]
+name = "migrate_to_redb"
+path = "src/migrate_to_redb_main.rs"
+required-features = ["redb-kvv", "kv-json"]

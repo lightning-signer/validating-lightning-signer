@@ -12,3 +12,5 @@ pub mod util;
 
 #[cfg(feature = "kv-json")]
 pub mod kv_json;
+#[cfg(feature = "memo")]
+pub mod kvv;

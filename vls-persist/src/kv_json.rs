@@ -27,6 +27,7 @@ impl<'a> Key<'a> for NodeChannelId {
 }
 
 /// A persister that uses the kv crate and JSON serialization for values.
+#[deprecated(note = "not durable, use RedbKVVStore instead")]
 pub struct KVJsonPersister<'a> {
     pub node_bucket: Bucket<'a, Vec<u8>, Json<NodeEntry>>,
     pub node_state_bucket: Bucket<'a, Vec<u8>, Json<NodeStateEntry>>,

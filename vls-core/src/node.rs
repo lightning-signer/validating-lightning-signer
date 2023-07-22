@@ -1345,6 +1345,27 @@ impl Node {
         *vfac = validator_factory;
     }
 
+    /// Persist everything.
+    /// This is normally not needed, as the node will persist itself,
+    /// but may be useful if switching to a new persister.
+    pub fn persist_all(&self) {
+        let persister = &self.persister;
+        persister.new_node(&self.get_id(), &self.node_config, &self.state.lock().unwrap()).unwrap();
+        for channel in self.channels.lock().unwrap().values() {
+            let channel = channel.lock().unwrap();
+            match &*channel {
+                ChannelSlot::Stub(_) => {}
+                ChannelSlot::Ready(chan) => {
+                    persister.update_channel(&self.get_id(), &chan).unwrap();
+                }
+            }
+        }
+        persister.update_tracker(&self.get_id(), &self.tracker.lock().unwrap()).unwrap();
+        let alset = self.allowlist.lock().unwrap();
+        let wlvec = (*alset).iter().map(|a| a.to_string(self.network())).collect();
+        self.persister.update_node_allowlist(&self.get_id(), wlvec).unwrap();
+    }
+
     /// Get the node ID, which is the same as the node public key
     pub fn get_id(&self) -> PublicKey {
         self.node_id
