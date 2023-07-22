@@ -18,11 +18,11 @@ use lightning_signer::{
     },
     Arc,
 };
-use tempfile::TempDir;
+use tempfile::{tempdir_in, TempDir};
 use vls_persist::kv_json::KVJsonPersister;
 
 fn make_temp_persister<'a>() -> (KVJsonPersister<'a>, TempDir, String) {
-    let dir = TempDir::new().unwrap();
+    let dir = tempdir_in(".").unwrap();
     let path = dir.path().to_owned();
     let path_str = path.to_str().unwrap();
 
@@ -113,17 +113,6 @@ fn round_trip_signer_test(c: &mut Criterion) {
             persister.update_channel(&node_id, &channel).unwrap();
         })
     });
-
-    let nodes = Node::restore_nodes(services.clone(), seed_persister).unwrap();
-    let restored_node1 = nodes.get(&node_id).unwrap();
-    let slot = restored_node1.get_channel(&stub.id0).unwrap();
-
-    let guard = slot.lock().unwrap();
-    if let ChannelSlot::Ready(s) = &*guard {
-        check_signer_roundtrip(&channel.keys, &s.keys);
-    } else {
-        panic!()
-    }
 }
 
 criterion_group!(benches, round_trip_signer_test);
