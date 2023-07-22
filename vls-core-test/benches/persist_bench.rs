@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use criterion::{criterion_group, criterion_main, Criterion};
 use lightning_signer::{
     bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey},
@@ -38,7 +40,7 @@ fn check_signer_roundtrip(existing_signer: &InMemorySigner, signer: &InMemorySig
     signer.write(&mut w).unwrap();
 }
 
-fn round_trip_signer_test(c: &mut Criterion) {
+fn persister_bench(c: &mut Criterion) {
     let secp_ctx = Secp256k1::new();
     let channel_id0 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
@@ -109,11 +111,18 @@ fn round_trip_signer_test(c: &mut Criterion) {
 
     c.bench_function("persister", |b| {
         b.iter(|| {
-            persister.update_tracker(&node_id, &node.get_tracker()).unwrap();
+            let mut tracker = node.get_tracker();
+            tracker.height += 1;
+            persister.update_tracker(&node_id, &tracker).unwrap();
             persister.update_channel(&node_id, &channel).unwrap();
         })
     });
 }
 
-criterion_group!(benches, round_trip_signer_test);
+criterion_group! {
+    name = benches;
+    config = Criterion::default().measurement_time(Duration::from_secs(10));
+    targets = persister_bench
+}
+
 criterion_main!(benches);
