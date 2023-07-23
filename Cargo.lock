@@ -2417,8 +2417,10 @@ dependencies = [
  "env_logger",
  "itertools",
  "log",
+ "tempfile",
  "test-log",
  "vls-core",
+ "vls-persist",
 ]
 
 [[package]]
