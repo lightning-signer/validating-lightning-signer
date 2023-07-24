@@ -104,7 +104,7 @@ fn make_onchain_policy(_network: Network, filter: PolicyFilter) -> OnchainPolicy
 impl Validator for OnchainValidator {
     fn validate_ready_channel(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         holder_shutdown_key_path: &[u32],
     ) -> Result<(), ValidationError> {
@@ -117,7 +117,7 @@ impl Validator for OnchainValidator {
 
     fn validate_onchain_tx(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         tx: &Transaction,
         input_txs: &[&Transaction],
@@ -230,7 +230,7 @@ impl Validator for OnchainValidator {
 
     fn decode_and_validate_mutual_close_tx(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         estate: &EnforcementState,
         tx: &Transaction,
@@ -242,7 +242,7 @@ impl Validator for OnchainValidator {
 
     fn validate_mutual_close_tx(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         state: &EnforcementState,
         to_holder_value_sat: u64,
@@ -265,7 +265,7 @@ impl Validator for OnchainValidator {
 
     fn validate_delayed_sweep(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         cstate: &ChainState,
         tx: &Transaction,
@@ -278,7 +278,7 @@ impl Validator for OnchainValidator {
 
     fn validate_counterparty_htlc_sweep(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         cstate: &ChainState,
         tx: &Transaction,
@@ -301,7 +301,7 @@ impl Validator for OnchainValidator {
 
     fn validate_justice_sweep(
         &self,
-        wallet: &Wallet,
+        wallet: &dyn Wallet,
         setup: &ChannelSetup,
         cstate: &ChainState,
         tx: &Transaction,

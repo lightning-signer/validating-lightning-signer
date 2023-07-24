@@ -179,13 +179,13 @@ impl MultiSigner {
         f: F,
     ) -> Result<T, Status>
     where
-        F: Fn(&mut ChannelBase) -> Result<T, Status>,
+        F: Fn(&mut dyn ChannelBase) -> Result<T, Status>,
     {
         let slot_arc = self.get_channel(&node_id, &channel_id)?;
         let mut slot = slot_arc.lock().unwrap();
         let base = match &mut *slot {
-            ChannelSlot::Stub(stub) => stub as &mut ChannelBase,
-            ChannelSlot::Ready(chan) => chan as &mut ChannelBase,
+            ChannelSlot::Stub(stub) => stub as &mut dyn ChannelBase,
+            ChannelSlot::Ready(chan) => chan as &mut dyn ChannelBase,
         };
         f(base)
     }

@@ -3,12 +3,12 @@ name = "vls-core"
 license = "Apache-2.0"
 version = "0.9.1"
 authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
-edition = "2018"
+edition = "2021"
 description = "A library for implementing a Lightning signer, which externalizes and secures cryptographic operations."
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 readme = "../README.md"
-rust-version = "1.45.2"
+rust-version = "1.63.0"
 
 [features]
 
@@ -67,7 +67,7 @@ log = "0.4.14"
 
 env_logger = { version = "0.9", optional = true }
 backtrace = { version = "0.3", optional = true }
-tonic = { version = "0.8", optional = true, default-features = false }
+tonic = { version = "0.9", optional = true, default-features = false }
 
 hashbrown = "0.8" # match hashbrown dependency version via lightning
 itertools = { version = "0.10", default-features = false }
@@ -78,14 +78,14 @@ version = "0.2.2"
 default-features = false
 
 [dependencies.txoo]
-version = "0.5.0"
+version = "0.6"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #branch = "main"
 #path = "../../txoo"
 default-features = false
 
 [dev-dependencies.txoo-bitcoind-client]
-version = "0.5.0"
+version = "0.6"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #branch = "main"
 #path = "../../txoo/bitcoind-client"

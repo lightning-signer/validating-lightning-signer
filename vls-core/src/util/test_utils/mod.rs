@@ -162,10 +162,10 @@ pub struct TestChainMonitor<'a> {
     pub chain_monitor: chainmonitor::ChainMonitor<
         LoopbackChannelSigner,
         &'a test_utils::TestChainSource,
-        &'a chaininterface::BroadcasterInterface,
+        &'a dyn chaininterface::BroadcasterInterface,
         &'a test_utils::TestFeeEstimator,
         Arc<test_utils::TestLogger>,
-        &'a chainmonitor::Persist<LoopbackChannelSigner>,
+        &'a dyn chainmonitor::Persist<LoopbackChannelSigner>,
     >,
     pub update_ret: Mutex<Option<chain::ChannelMonitorUpdateStatus>>,
     // If this is set to Some(), after the next return, we'll always return this until update_ret
@@ -175,10 +175,10 @@ pub struct TestChainMonitor<'a> {
 impl<'a> TestChainMonitor<'a> {
     pub fn new(
         chain_source: Option<&'a test_utils::TestChainSource>,
-        broadcaster: &'a chaininterface::BroadcasterInterface,
+        broadcaster: &'a dyn chaininterface::BroadcasterInterface,
         logger: Arc<test_utils::TestLogger>,
         fee_estimator: &'a test_utils::TestFeeEstimator,
-        persister: &'a chainmonitor::Persist<LoopbackChannelSigner>,
+        persister: &'a dyn chainmonitor::Persist<LoopbackChannelSigner>,
     ) -> Self {
         Self {
             added_monitors: Mutex::new(Vec::new()),

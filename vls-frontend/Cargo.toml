@@ -2,12 +2,12 @@
 name = "vls-frontend"
 version = "0.9.1"
 authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
-edition = "2018"
+edition = "2021"
 license = "Apache-2.0"
 description = "A library for implementing VLS frontend functions."
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
-rust-version = "1.60.0"
+rust-version = "1.63.0"
 
 [features]
 default = ["debug"]
@@ -28,7 +28,7 @@ vls-core = { path = "../vls-core", version = "0.9.1", features = ["txoo-source"]
 lightning-storage-server = { path = "../lightning-storage-server", version = "0.3.0", default-features = false }
 
 [dependencies.txoo-bitcoind-client]
-version = "0.5.0"
+version = "0.6"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #branch = "main"
 #path = "../../txoo/bitcoind-client"

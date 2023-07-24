@@ -2,7 +2,7 @@
 name = "vls-core-test"
 license = "Apache-2.0"
 version = "0.9.1"
-edition = "2018"
+edition = "2021"
 autotests = false
 
 [dependencies]
