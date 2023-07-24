@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use hex::FromHex;
 use lightning_signer::node::{Node, NodeConfig, NodeServices};
 use lightning_signer::persist::Persist;
@@ -10,6 +11,8 @@ use lightning_signer::util::test_utils::{
 use std::env::args;
 use std::sync::Arc;
 use vls_persist::kv_json::KVJsonPersister;
+
+// TODO update to redb
 
 pub fn init_node(
     node_config: NodeConfig,

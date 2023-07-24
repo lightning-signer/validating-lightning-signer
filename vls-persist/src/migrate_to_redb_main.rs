@@ -15,6 +15,7 @@ use lightning_signer::util::test_utils::{
 use lightning_signer::SendSync;
 use std::env::args;
 use std::sync::{Arc, Mutex};
+#[allow(deprecated)]
 use vls_persist::kv_json::KVJsonPersister;
 use vls_persist::kvv::redb::RedbKVVStore;
 
@@ -119,6 +120,7 @@ fn main() {
     }
     let from_path = args().nth(1).unwrap();
     let to_path = args().nth(2).unwrap();
+    #[allow(deprecated)]
     let old_persister = Box::new(KVJsonPersister::new(&from_path));
 
     let mut seed = [0; 32];

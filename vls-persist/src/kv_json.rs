@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use kv::{Bucket, Config, Json, Key, Raw, Store, TransactionError};
 use std::sync::Arc;
 
