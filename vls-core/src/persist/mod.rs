@@ -447,7 +447,7 @@ pub mod fs {
     }
 
     fn read_seed(path: PathBuf) -> Option<Vec<u8>> {
-        fs::read_to_string(path).ok().map(|s| Vec::from_hex(&s).expect("bad hex seed"))
+        fs::read_to_string(path).ok().map(|s| Vec::from_hex(s.trim()).expect("bad hex seed"))
     }
 }
 

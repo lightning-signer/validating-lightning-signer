@@ -9,11 +9,12 @@ use lightning_signer::persist::{ChainTrackerListenerEntry, Error, MemorySeedPers
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
 use lightning_signer::policy::validator::ValidatorFactory;
 use lightning_signer::util::clock::StandardClock;
-use lightning_signer::util::test_utils::{
-    make_genesis_starting_time_factory, TEST_NODE_CONFIG, TEST_SEED,
-};
+use lightning_signer::util::test_utils::{make_genesis_starting_time_factory, TEST_NODE_CONFIG};
 use lightning_signer::SendSync;
 use std::env::args;
+use std::fs;
+use std::path::PathBuf;
+use std::process::exit;
 use std::sync::{Arc, Mutex};
 #[allow(deprecated)]
 use vls_persist::kv_json::KVJsonPersister;
@@ -118,15 +119,21 @@ fn main() {
         println!("Usage: {} FROM TO", args().nth(0).unwrap());
         return;
     }
-    let from_path = args().nth(1).unwrap();
-    let to_path = args().nth(2).unwrap();
+    let from_path = PathBuf::from(args().nth(1).unwrap());
+    let from_path_seed = from_path.join("node.seed");
+    let to_path = PathBuf::from(args().nth(2).unwrap());
+    if to_path.exists() {
+        println!("{} already exists", to_path.to_str().unwrap());
+        exit(1);
+    }
+    let to_path_seed = to_path.join("node.seed");
+
     #[allow(deprecated)]
-    let old_persister = Box::new(KVJsonPersister::new(&from_path));
+    let old_persister = Box::new(KVJsonPersister::new(from_path.to_str().unwrap()));
 
-    let mut seed = [0; 32];
-    seed.copy_from_slice(Vec::from_hex(TEST_SEED[0]).unwrap().as_slice());
-
-    let seed_persister = Arc::new(MemorySeedPersister::new(seed.to_vec()));
+    let seed = Vec::from_hex(fs::read_to_string(&from_path_seed).expect("read seed").trim())
+        .expect("bad hex");
+    let seed_persister = Arc::new(MemorySeedPersister::new(seed));
     let persister = Arc::new(SettablePersister(Mutex::new(old_persister)));
     let node_services = NodeServices {
         validator_factory: Arc::new(SimpleValidatorFactory::new()),
@@ -139,6 +146,12 @@ fn main() {
     let node = nodes.values().next().unwrap();
     assert_eq!(node.channels().len(), 1);
     println!("node: {:?}", node.get_id());
+
+    // create the destination directory
+    fs::create_dir_all(&to_path).expect("create destination directory");
+    // copy the seed
+    fs::copy(&from_path_seed, to_path_seed).expect("copy seed");
+
     let new_persister = RedbKVVStore::new(&to_path);
     *persister.0.lock().unwrap() = Box::new(new_persister);
     node.persist_all();

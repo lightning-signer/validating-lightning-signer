@@ -6,6 +6,8 @@ use log::error;
 use redb::{Database, ReadableTable, TableDefinition};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
+use std::fs;
+use std::path::Path;
 
 const TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("kv");
 
@@ -31,8 +33,13 @@ pub struct RedbKVVStore {
 impl SendSync for RedbKVVStore {}
 
 impl RedbKVVStore {
-    pub fn new(path: &str) -> KVVPersister<Self> {
-        let mut db = Database::create(path).unwrap();
+    pub fn new<P: AsRef<Path>>(path: P) -> KVVPersister<Self> {
+        let path = path.as_ref();
+        if !path.exists() {
+            fs::create_dir(path).expect("failed to create directory");
+        }
+        assert!(path.is_dir(), "{} is not a directory", path.display());
+        let mut db = Database::create(path.join("redb")).unwrap();
         db.check_integrity().expect("database integrity check failed");
         let mut versions = BTreeMap::new();
         {
@@ -208,10 +215,10 @@ mod tests {
         // running inside kcov doesn't set CARGO_MANIFEST_DIR, so we have a fallback
         let fixture_path = if let Ok(module_path) = env::var("CARGO_MANIFEST_DIR") {
             println!("module_path: {}", module_path);
-            format!("{}/../data/samples/0_9_redb", module_path)
+            format!("{}/../data/samples/0_9_persist_redb", module_path)
         } else if let Ok(fixtures_path) = env::var("FIXTURES_DIR") {
             println!("fixtures_path: {}", fixtures_path);
-            format!("{}/samples/0_9_redb", fixtures_path)
+            format!("{}/samples/0_9_persist_redb", fixtures_path)
         } else {
             panic!("Missing CARGO_MANIFEST_DIR / FIXTURES_DIR");
         };
