@@ -74,12 +74,12 @@ rust-latest-extras:
     # test LSS
     - (cd lightning-storage-server && cargo test)
 
-rust-1.64.0:
+rust-1.66.0:
   tags: [ saas-linux-large-amd64 ]
   stage: build
-  image: rust:1.64.0
+  image: rust:1.66.0
   cache:
-    key: vls-compile-1_64
+    key: vls-compile-1_66
     paths:
       - bin
       - .cache/cargo
@@ -89,12 +89,12 @@ rust-1.64.0:
     - rustup component add rustfmt
     - cargo test
 
-rust-1.64.0-lss:
+rust-1.66.0-lss:
   tags: [ saas-linux-large-amd64 ]
   stage: build
-  image: rust:1.64.0
+  image: rust:1.66.0
   cache:
-    key: vls-compile-lss-1_64
+    key: vls-compile-lss-1_66
     paths:
       - bin
       - .cache/cargo
@@ -107,7 +107,7 @@ rust-1.64.0-lss:
 embedded:
   tags: [ saas-linux-medium-amd64 ]
   stage: build
-  image: devrandom01/rust-qemu:nightly-1-63-2022-05-16
+  image: devrandom01/rust-qemu:nightly-1-73-2023-07-23
   variables:
     RUSTFLAGS: "-C link-arg=-Tlink.x"
     CARGO_TARGET_THUMBV7M_NONE_EABI_RUNNER: "qemu-system-arm -cpu cortex-m3 -machine mps2-an385 -nographic -semihosting-config enable=on,target=native -kernel"
@@ -117,7 +117,7 @@ embedded:
 demo-signer:
   tags: [ saas-linux-large-amd64 ]
   stage: build
-  image: devrandom01/rust-qemu:nightly-1-63-2022-05-16
+  image: devrandom01/rust-qemu:nightly-1-73-2023-07-23
   script:
     - (cd vls-signer-stm32 && cargo build --features stm32f412 --release --bin demo_signer)
     - (cd wasm && wasm-pack test --firefox --headless && cargo test)
@@ -131,6 +131,7 @@ coverage:
     paths:
       - .cache/cargo
   script:
+    - rustup show
     - rustup component add rustfmt
     - cargo install cargo-kcov
     - apt-get update
