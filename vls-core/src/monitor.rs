@@ -715,6 +715,12 @@ impl ChainMonitorBase {
                 .unwrap_or(0),
         }
     }
+
+    /// Whether this channel can be forgotten
+    pub fn is_done(&self) -> bool {
+        let state = self.state.lock().expect("lock");
+        state.is_done()
+    }
 }
 
 /// Keep track of channel on-chain events.
@@ -1015,7 +1021,11 @@ mod tests {
     #[test]
     fn test_mutual_close() {
         let block_hash = BlockHash::all_zeros();
-        let (_node, _channel_id, monitor, funding_txid) = setup_funded_channel();
+        let (node, channel_id, monitor, funding_txid) = setup_funded_channel();
+
+        // channel should exist after a heartbeat
+        node.get_heartbeat();
+        assert!(node.get_channel(&channel_id).is_ok());
 
         let close_tx = make_tx(vec![TxIn {
             previous_output: OutPoint::new(funding_txid, 0),
@@ -1026,12 +1036,21 @@ mod tests {
         monitor.on_add_block(&[close_tx.clone()], &block_hash);
         assert_eq!(monitor.closing_depth(), 1);
         assert!(!monitor.is_done());
+
+        // channel should exist after a heartbeat
+        node.get_heartbeat();
+        assert!(node.get_channel(&channel_id).is_ok());
+
         for _ in 1..MIN_DEPTH - 1 {
             monitor.on_add_block(&[], &block_hash);
         }
         assert!(!monitor.is_done());
         monitor.on_add_block(&[], &block_hash);
         assert!(monitor.is_done());
+
+        // channel should be pruned after a heartbeat
+        node.get_heartbeat();
+        assert!(node.get_channel(&channel_id).is_err());
     }
 
     #[test]

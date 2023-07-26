@@ -111,6 +111,10 @@ impl NodeFront {
         proof
     }
 
+    fn do_beat(&self, _persister: Arc<dyn Persist>) -> SignedHeartbeat {
+        self.node.get_heartbeat()
+    }
+
     async fn with_persist_context<F>(
         external_persist: &ExternalPersistWithHelper,
         persister: Arc<dyn Persist>,
@@ -192,6 +196,16 @@ impl ChainTrack for NodeFront {
     }
 
     async fn beat(&self) -> SignedHeartbeat {
-        self.node.get_heartbeat()
+        let persister = self.node.get_persister();
+        let mut beat: Option<SignedHeartbeat> = None;
+        if let Some(external_persist) = &self.external_persist {
+            Self::with_persist_context(external_persist, persister, |persister| {
+                beat = Some(self.do_beat(persister));
+            })
+            .await
+        } else {
+            beat = Some(self.do_beat(persister));
+        }
+        beat.unwrap()
     }
 }
