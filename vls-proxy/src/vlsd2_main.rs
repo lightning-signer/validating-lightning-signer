@@ -58,7 +58,9 @@ pub fn main() {
         };
         let root_handler = make_handler(&datadir, &args);
         let node = root_handler.node().clone();
-        node.set_allowlist(&[address.to_string()]).expect("add destination to allowlist");
+        if address != "none" {
+            node.set_allowlist(&[address.to_string()]).expect("add destination to allowlist");
+        }
         let keys = DirectRecoveryKeys { node };
         if let Some(max_index) = args.recover_l1_range {
             recover_l1(network, recover_type, args.recover_rpc, &address, keys, max_index);
