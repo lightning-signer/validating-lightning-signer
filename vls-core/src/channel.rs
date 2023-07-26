@@ -2337,6 +2337,7 @@ impl Channel {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ChannelCommitmentPointProvider {
     chan: Arc<Mutex<ChannelSlot>>,
 }

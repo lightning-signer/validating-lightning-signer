@@ -1182,9 +1182,12 @@ mod tests {
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
         let channel = node.get_channel(&channel_id).unwrap();
         let cpp = Box::new(ChannelCommitmentPointProvider::new(channel.clone()));
-        let monitor = ChainMonitorBase::new(funding_outpoint, 0).as_monitor(cpp);
+        let monitor = node
+            .with_ready_channel(&channel_id, |chan| {
+                Ok(chan.monitor.clone().as_monitor(cpp.clone()))
+            })
+            .unwrap();
         let block_hash = BlockHash::all_zeros();
-        monitor.add_funding(&funding_tx, 0);
         monitor.on_add_block(&[], &block_hash);
         monitor.on_add_block(&[funding_tx.clone()], &block_hash);
         assert_eq!(monitor.funding_depth(), 1);
