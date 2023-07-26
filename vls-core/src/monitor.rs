@@ -693,7 +693,8 @@ impl ChainMonitorBase {
                 .map(|h| state.height + 1 - h)
                 .unwrap_or(0),
             closing_depth: state
-                .unilateral_closing_height
+                .mutual_closing_height
+                .or(state.unilateral_closing_height)
                 .map(|h| state.height + 1 - h)
                 .unwrap_or(0),
         }
