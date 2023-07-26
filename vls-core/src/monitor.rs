@@ -411,10 +411,14 @@ impl State {
         let closing_was_swept = self.is_closing_swept();
         let our_output_was_swept = self.is_our_output_swept();
 
-        debug!("detected add-changes at height {}: {:?}", self.height, decode_state.changes);
-
         let mut adds = Vec::new();
         let mut removes = Vec::new();
+
+        let changed = !decode_state.changes.is_empty();
+
+        if changed {
+            debug!("detected add-changes at height {}: {:?}", self.height, decode_state.changes);
+        }
 
         // apply changes
         for change in decode_state.changes.drain(..) {
@@ -438,6 +442,10 @@ impl State {
             info!("done at height {}", self.height);
         }
 
+        if changed {
+            info!("on_add_block_end state changed: {:#?}", self);
+        }
+
         (adds, removes)
     }
 
@@ -451,10 +459,14 @@ impl State {
         let closing_was_swept = self.is_closing_swept();
         let our_output_was_swept = self.is_our_output_swept();
 
-        debug!("detected remove-changes at height {}: {:?}", self.height, decode_state.changes);
-
         let mut adds = Vec::new();
         let mut removes = Vec::new();
+
+        let changed = !decode_state.changes.is_empty();
+
+        if changed {
+            debug!("detected remove-changes at height {}: {:?}", self.height, decode_state.changes);
+        }
 
         for change in decode_state.changes.drain(..) {
             self.apply_backward_change(&mut adds, &mut removes, change);
@@ -474,6 +486,10 @@ impl State {
         }
 
         self.height -= 1;
+
+        if changed {
+            info!("on_remove_block_end state changed: {:#?}", self);
+        }
 
         // note that the caller will remove the adds and add the removes
         (adds, removes)
