@@ -1130,12 +1130,16 @@ impl Node {
     /// Restore a node.
     pub fn new_from_persistence(
         node_config: NodeConfig,
+        expected_node_id: &PublicKey,
         seed: &[u8],
         allowlist: Vec<Allowable>,
         services: NodeServices,
         state: NodeState,
     ) -> Arc<Node> {
         let (keys_manager, node_id) = Self::make_keys_manager(node_config, seed, &services);
+        if node_id != *expected_node_id {
+            panic!("node_id mismatch: expected {} got {}", expected_node_id, node_id);
+        }
         let (tracker, listener_entries) = services
             .persister
             .get_tracker(node_id.clone(), services.validator_factory.clone())
@@ -1540,7 +1544,7 @@ impl Node {
             state.payments.insert(*h, RoutedPayment::new());
         }
 
-        let node = Node::new_from_persistence(config, seed, allowlist, services, state);
+        let node = Node::new_from_persistence(config, node_id, seed, allowlist, services, state);
         assert_eq!(&node.get_id(), node_id);
         info!("Restore node {} on {}", node_id, config.network);
         if let Some((height, _hash, filter_header, header)) = get_latest_checkpoint(network) {

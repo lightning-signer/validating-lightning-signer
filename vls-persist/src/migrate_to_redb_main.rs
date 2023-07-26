@@ -144,8 +144,7 @@ fn main() {
     let nodes = Node::restore_nodes(node_services, seed_persister).unwrap();
     assert_eq!(nodes.len(), 1);
     let node = nodes.values().next().unwrap();
-    assert_eq!(node.channels().len(), 1);
-    println!("node: {:?}", node.get_id());
+    println!("migrating node ID {}", node.get_id());
 
     // create the destination directory
     fs::create_dir_all(&to_path).expect("create destination directory");
@@ -155,4 +154,6 @@ fn main() {
     let new_persister = RedbKVVStore::new(&to_path);
     *persister.0.lock().unwrap() = Box::new(new_persister);
     node.persist_all();
+
+    println!("done");
 }
