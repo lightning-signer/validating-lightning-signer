@@ -47,7 +47,7 @@ static LOGGER: SimpleLogger =
     SimpleLogger { timer: RefCell::new(None), also: RefCell::new(vec![]) };
 
 pub fn init(progname: &str) -> Result<(), SetLoggerError> {
-    rtt_init_print!(NoBlockSkip);
+    rtt_init_print!(NoBlockTrim, 4096);
     rprintln!("{} starting", progname);
     log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))?;
     trace!("logger started");
