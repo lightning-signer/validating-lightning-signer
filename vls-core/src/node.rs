@@ -2547,9 +2547,13 @@ impl Node {
                         // converted to channels.  Stubs are left behind when a channel open fails
                         // before a funding tx and commitment can be established.  LDK removes these
                         // after a few minutes.
-                        if current_blockheight.saturating_sub(stub.blockheight)
-                            > CHANNEL_STUB_PRUNE_BLOCKS
-                        {
+                        let stub_prune_time = match self.network() {
+                            // In the regtest network (CI) flurries of blocks are created;
+                            // this is not realistic in the other networks.
+                            Network::Regtest => CHANNEL_STUB_PRUNE_BLOCKS + 100,
+                            _ => CHANNEL_STUB_PRUNE_BLOCKS,
+                        };
+                        if current_blockheight.saturating_sub(stub.blockheight) > stub_prune_time {
                             info!("pruning channel stub {}", &key);
                             Some(key.clone()) // clone the channel_id0 for removal
                         } else {
