@@ -25,6 +25,8 @@ pub mod test_logger;
 pub mod test_utils;
 #[cfg(test)]
 pub(crate) mod mocks;
+/// Streaming PSBT
+pub mod psbt;
 /// serde for foreign types
 #[allow(missing_docs)]
 pub mod ser_util;
