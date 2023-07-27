@@ -935,9 +935,27 @@ impl TestFundingTxContext {
         node_ctx: &TestNodeContext,
         tx: &Transaction,
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
+        let segwit_flags = tx.input.iter().map(|_| true).collect::<Vec<_>>();
         node_ctx.node.check_and_sign_onchain_tx(
             &tx,
-            &self.input_txs.iter().collect::<Vec<_>>(),
+            segwit_flags.as_slice(),
+            &self.ipaths,
+            &self.ivals,
+            &self.ispnds,
+            self.iuckeys.clone(),
+            &self.opaths,
+        )
+    }
+
+    pub fn sign_non_segwit_input(
+        &self,
+        node_ctx: &TestNodeContext,
+        tx: &Transaction,
+    ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
+        let segwit_flags = tx.input.iter().map(|_| false).collect::<Vec<_>>();
+        node_ctx.node.check_and_sign_onchain_tx(
+            &tx,
+            segwit_flags.as_slice(),
             &self.ipaths,
             &self.ivals,
             &self.ispnds,

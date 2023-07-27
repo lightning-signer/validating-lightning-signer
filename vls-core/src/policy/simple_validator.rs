@@ -455,7 +455,7 @@ impl Validator for SimpleValidator {
         wallet: &dyn Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         tx: &Transaction,
-        input_txs: &[&Transaction],
+        segwit_flags: &[bool],
         values_sat: &[u64],
         opaths: &[Vec<u32>],
         weight_lower_bound: usize,
@@ -476,7 +476,7 @@ impl Validator for SimpleValidator {
             );
         }
 
-        if channels.iter().any(|c| c.is_some()) && !is_tx_non_malleable(tx, input_txs) {
+        if channels.iter().any(|c| c.is_some()) && !is_tx_non_malleable(tx, segwit_flags) {
             policy_err!(
                 self,
                 "policy-onchain-funding-non-malleable",

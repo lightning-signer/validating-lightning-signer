@@ -45,7 +45,7 @@ pub trait RecoveryKeys {
     fn sign_onchain_tx(
         &self,
         tx: &Transaction,
-        input_txs: &[&Transaction],
+        segwit_flags: &[bool],
         ipaths: &Vec<Vec<u32>>,
         values_sat: &Vec<u64>,
         spendtypes: &Vec<SpendType>,

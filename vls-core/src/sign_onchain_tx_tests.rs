@@ -116,7 +116,7 @@ mod tests {
         let witvec = node
             .check_and_sign_onchain_tx(
                 &tx,
-                &vec![&previous_tx],
+                &vec![true],
                 &ipaths,
                 &values_sat,
                 &spendtypes,
@@ -210,7 +210,7 @@ mod tests {
         let witvec = node
             .check_and_sign_onchain_tx(
                 &tx,
-                &vec![&previous_tx],
+                &vec![true],
                 &ipaths,
                 &values_sat,
                 &spendtypes,
@@ -237,7 +237,7 @@ mod tests {
         let values = vec![(0, 100u64 + fee, SpendType::P2wpkh)];
         let chanamt = 100u64;
 
-        let (previous_tx, txid) = make_test_previous_tx(&secp_ctx, &node, &values);
+        let (_previous_tx, txid) = make_test_previous_tx(&secp_ctx, &node, &values);
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
@@ -254,7 +254,7 @@ mod tests {
         assert_failed_precondition_err!(
             node.check_and_sign_onchain_tx(
                 &tx,
-                &vec![&previous_tx],
+                &vec![true],
                 &ipaths,
                 &values_sat,
                 &spendtypes,
@@ -273,7 +273,7 @@ mod tests {
         let values = vec![(0, 300u64, SpendType::P2wpkh)];
         let chanamt = 200u64;
 
-        let (previous_tx, txid) = make_test_previous_tx(&secp_ctx, &node, &values);
+        let (_previous_tx, txid) = make_test_previous_tx(&secp_ctx, &node, &values);
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
@@ -301,7 +301,7 @@ mod tests {
         let witvec = node
             .check_and_sign_onchain_tx(
                 &tx,
-                &vec![&previous_tx],
+                &vec![true],
                 &ipaths,
                 &values_sat,
                 &spendtypes,
@@ -351,7 +351,7 @@ mod tests {
         let witvec = node
             .check_and_sign_onchain_tx(
                 &tx,
-                &vec![&previous_tx],
+                &vec![true],
                 &ipaths,
                 &values_sat,
                 &spendtypes,
@@ -398,7 +398,7 @@ mod tests {
         let witvec = node
             .check_and_sign_onchain_tx(
                 &tx,
-                &vec![&previous_tx],
+                &vec![true],
                 &ipaths,
                 &values_sat,
                 &spendtypes,
@@ -440,7 +440,7 @@ mod tests {
             make_test_previous_tx(&secp_ctx, &node, &values1),
             make_test_previous_tx(&secp_ctx, &node, &values2),
         ];
-        let (previous_txs, txids): (Vec<_>, Vec<_>) = previous.into_iter().unzip();
+        let (_previous_txs, txids): (Vec<_>, Vec<_>) = previous.into_iter().unzip();
 
         let inputs = vec![
             TxIn {
@@ -475,7 +475,7 @@ mod tests {
         let witvec = node
             .check_and_sign_onchain_tx(
                 &tx,
-                &previous_txs.iter().collect::<Vec<_>>(),
+                &vec![true],
                 &ipaths,
                 &values_sat,
                 &spendtypes,
@@ -713,7 +713,7 @@ mod tests {
         match stype {
             SpendType::P2shP2wpkh => {
                 assert_failed_precondition_err!(
-                    tx_ctx.sign(&node_ctx, &tx),
+                    tx_ctx.sign_non_segwit_input(&node_ctx, &tx),
                     "policy failure: validate_onchain_tx: funding tx has non-segwit-native input"
                 );
             }
@@ -808,7 +808,7 @@ mod tests {
         tx_ctx.input_txs.clear(); // Remove the input_txs
 
         assert_failed_precondition_err!(
-            tx_ctx.sign(&node_ctx, &tx),
+            tx_ctx.sign_non_segwit_input(&node_ctx, &tx),
             "policy failure: validate_onchain_tx: funding tx has non-segwit-native input"
         );
     }
@@ -849,7 +849,7 @@ mod tests {
             .expect("valid holder commitment");
 
         assert_failed_precondition_err!(
-            tx_ctx.sign(&node_ctx, &tx),
+            tx_ctx.sign_non_segwit_input(&node_ctx, &tx),
             "policy failure: validate_onchain_tx: funding tx has non-segwit-native input"
         );
     }

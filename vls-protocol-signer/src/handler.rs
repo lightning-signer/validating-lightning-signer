@@ -36,6 +36,7 @@ use lightning_signer::persist::Mutations;
 use lightning_signer::prelude::Mutex;
 use lightning_signer::signer::my_keys_manager::MyKeysManager;
 use lightning_signer::tx::tx::HTLCInfo2;
+use lightning_signer::util::psbt::StreamedPSBT;
 use lightning_signer::util::status;
 use lightning_signer::Arc;
 use lightning_signer::{function, trace_node_state};
@@ -443,10 +444,16 @@ impl Handler for RootHandler {
                 Ok(Box::new(msgs::GetChannelBasepointsReply { basepoints, funding }))
             }
             Message::SignWithdrawal(m) => {
-                let mut psbt =
-                    PartiallySignedTransaction::consensus_decode(&mut m.psbt.0.as_slice())
-                        .expect("psbt");
-                let mut tx = psbt.clone().extract_tx();
+                let streamed =
+                    StreamedPSBT::consensus_decode(&mut m.psbt.0.as_slice()).expect("psbt");
+
+                let mut psbt = streamed.psbt;
+
+                debug!("psbt {:#?}", psbt);
+
+                let opaths = extract_psbt_output_paths(&psbt);
+
+                let tx = &mut psbt.unsigned_tx;
                 let ipaths: Vec<_> = m.utxos.iter().map(|u| vec![u.keyindex]).collect();
                 let values_sat: Vec<_> = m.utxos.iter().map(|u| u.amount).collect();
                 let spendtypes: Vec<_> = m
@@ -491,8 +498,6 @@ impl Handler for RootHandler {
                     }
                 }
 
-                let opaths = extract_psbt_output_paths(&psbt);
-
                 // Populate script_sig for p2sh-p2wpkh signing
                 for (psbt_in, tx_in) in psbt.inputs.iter_mut().zip(tx.input.iter_mut()) {
                     if let Some(script) = psbt_in.redeem_script.as_ref() {
@@ -505,20 +510,12 @@ impl Handler for RootHandler {
                     }
                 }
 
-                // Collect input transactions for channel funding validation.  The
-                // input tx are matched by txid, order and gaps are not important.
-                let input_txs: Vec<&Transaction> = psbt
-                    .inputs
-                    .iter()
-                    .filter_map(|psbt_in| psbt_in.non_witness_utxo.as_ref())
-                    .collect();
-
-                dbgvals!(opaths, tx.txid(), tx, psbt, input_txs);
+                dbgvals!(opaths, tx.txid(), tx, streamed.segwit_flags);
 
                 let approved = self.approver.handle_proposed_onchain(
                     &self.node,
                     &tx,
-                    &input_txs,
+                    &streamed.segwit_flags,
                     &values_sat,
                     &spendtypes,
                     &uniclosekeys,

@@ -53,7 +53,7 @@ pub trait Validator {
     ///
     /// * `channels` the funded channel for each funding output, or
     ///   None for change outputs
-    /// * `input_txs` - previous tx for inputs when funding channel
+    /// * `segwit_flags` - previous tx for inputs when funding channel
     /// * `values_sat` - the amount in satoshi per input
     /// * `opaths` - derivation path per output.  Empty for non-wallet/non-xpub-whitelist
     ///   outputs.
@@ -65,7 +65,7 @@ pub trait Validator {
         wallet: &dyn Wallet,
         channels: Vec<Option<Arc<Mutex<ChannelSlot>>>>,
         tx: &Transaction,
-        input_txs: &[&Transaction],
+        segwit_flags: &[bool],
         values_sat: &[u64],
         opaths: &[Vec<u32>],
         weight_lower_bound: usize,
