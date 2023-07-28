@@ -1734,6 +1734,9 @@ impl Node {
         let pruned3 = state.prune_forwarded_payments();
         if pruned1 || pruned2 || pruned3 {
             trace_node_state!(state);
+            self.persister
+                .update_node(&self.get_id(), &state)
+                .unwrap_or_else(|err| panic!("pruned node state persist failed: {:?}", err));
         }
         drop(state); // minimize lock time
 
