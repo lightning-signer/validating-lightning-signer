@@ -395,7 +395,14 @@ impl Persist for ThreadMemoPersister {
         let mut res = Vec::new();
         self.with_state(|state| {
             for (key, (_version, value)) in state.get_prefix2(CHANNEL_PREFIX, node_id) {
-                let entry: ChannelEntry = from_slice(&value).unwrap();
+                let entry: ChannelEntry = from_slice(&value).unwrap_or_else(|err| {
+                    panic!(
+                        "trouble parsing channel {:?}, value is {:?}, err is {:?}",
+                        hex::encode(&key),
+                        hex::encode(&value),
+                        err
+                    )
+                });
                 let channel_id = ChannelId::new(&key);
                 res.push((channel_id, entry.into()));
             }
