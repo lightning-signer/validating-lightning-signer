@@ -395,6 +395,9 @@ impl Persist for ThreadMemoPersister {
         let mut res = Vec::new();
         self.with_state(|state| {
             for (key, (_version, value)) in state.get_prefix2(CHANNEL_PREFIX, node_id) {
+                if value.is_empty() {
+                    continue;
+                }
                 let entry: ChannelEntry = from_slice(&value).unwrap_or_else(|err| {
                     panic!(
                         "trouble parsing channel {:?}, value is {:?}, err is {:?}",
