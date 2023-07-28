@@ -13,7 +13,7 @@ use lightning_signer::node::{NodeConfig, NodeState};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
-use lightning_signer::persist::{Context, Error, Mutations, Persist};
+use lightning_signer::persist::{ChainTrackerListenerEntry, Context, Error, Mutations, Persist};
 use lightning_signer::policy::validator::{EnforcementState, ValidatorFactory};
 use lightning_signer::prelude::*;
 use lightning_signer::util::debug_utils::DebugBytes;
@@ -321,7 +321,7 @@ impl Persist for ThreadMemoPersister {
         Ok(())
     }
 
-    fn new_chain_tracker(
+    fn new_tracker(
         &self,
         node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,
@@ -349,7 +349,7 @@ impl Persist for ThreadMemoPersister {
         &self,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
-    ) -> Result<ChainTracker<ChainMonitor>, Error> {
+    ) -> Result<(ChainTracker<ChainMonitor>, Vec<ChainTrackerListenerEntry>), Error> {
         let key = &node_id.serialize();
         let value = self.with_state(|state| state.get(NODE_TRACKER_PREFIX, key)).unwrap();
         let model: ChainTrackerEntry = from_slice(&value).unwrap();
@@ -395,7 +395,17 @@ impl Persist for ThreadMemoPersister {
         let mut res = Vec::new();
         self.with_state(|state| {
             for (key, (_version, value)) in state.get_prefix2(CHANNEL_PREFIX, node_id) {
-                let entry: ChannelEntry = from_slice(&value).unwrap();
+                if value.is_empty() {
+                    continue;
+                }
+                let entry: ChannelEntry = from_slice(&value).unwrap_or_else(|err| {
+                    panic!(
+                        "trouble parsing channel {:?}, value is {:?}, err is {:?}",
+                        hex::encode(&key),
+                        hex::encode(&value),
+                        err
+                    )
+                });
                 let channel_id = ChannelId::new(&key);
                 res.push((channel_id, entry.into()));
             }

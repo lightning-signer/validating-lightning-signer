@@ -64,7 +64,7 @@ use crate::util::crypto_utils::{derive_public_key, payload_for_p2wpkh, payload_f
 use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
 use crate::wallet::Wallet;
-use crate::Arc;
+use crate::{Arc, CommitmentPointProvider};
 use key::{
     make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
 };
@@ -280,6 +280,97 @@ pub fn make_test_channel_setup() -> ChannelSetup {
         counterparty_selected_contest_delay: 7,
         counterparty_shutdown_script: None,
         commitment_type: CommitmentType::StaticRemoteKey,
+    }
+}
+
+pub fn make_test_channel_setup_with_points(
+    is_outbound: bool,
+    counterparty_points: ChannelPublicKeys,
+) -> ChannelSetup {
+    ChannelSetup {
+        is_outbound,
+        channel_value_sat: 3_000_000,
+        push_value_msat: 0,
+        funding_outpoint: bitcoin::OutPoint {
+            txid: Txid::from_slice(&[2u8; 32]).unwrap(),
+            vout: 0,
+        },
+        holder_selected_contest_delay: 6,
+        holder_shutdown_script: None,
+        counterparty_points,
+        counterparty_selected_contest_delay: 6,
+        counterparty_shutdown_script: None,
+        commitment_type: CommitmentType::StaticRemoteKey,
+    }
+}
+
+pub fn next_state(
+    channel: &mut Channel,
+    channel1: &mut Channel,
+    commit_num: u64,
+    to_holder: u64,
+    to_counterparty: u64,
+    offered: Vec<HTLCInfo2>,
+    received: Vec<HTLCInfo2>,
+) {
+    let per_commitment_point = channel.get_per_commitment_point(commit_num).unwrap();
+    let per_commitment_point1 = channel1.get_per_commitment_point(commit_num).unwrap();
+
+    let (sig, htlc_sigs) = channel
+        .sign_counterparty_commitment_tx_phase2(
+            &per_commitment_point1,
+            commit_num,
+            0,
+            to_holder,
+            to_counterparty,
+            received.clone(),
+            offered.clone(),
+        )
+        .unwrap();
+
+    let (sig1, htlc_sigs1) = channel1
+        .sign_counterparty_commitment_tx_phase2(
+            &per_commitment_point,
+            commit_num,
+            0,
+            to_counterparty,
+            to_holder,
+            offered.clone(),
+            received.clone(),
+        )
+        .unwrap();
+
+    channel
+        .validate_holder_commitment_tx_phase2(
+            commit_num,
+            0,
+            to_holder,
+            to_counterparty,
+            offered.clone(),
+            received.clone(),
+            &sig1,
+            &htlc_sigs1,
+        )
+        .unwrap();
+
+    channel1
+        .validate_holder_commitment_tx_phase2(
+            commit_num,
+            0,
+            to_counterparty,
+            to_holder,
+            received.clone(),
+            offered.clone(),
+            &sig,
+            &htlc_sigs,
+        )
+        .unwrap();
+
+    if commit_num > 0 {
+        let revoke = channel.get_per_commitment_secret(commit_num - 1).unwrap();
+        let revoke1 = channel1.get_per_commitment_secret(commit_num - 1).unwrap();
+        channel1.validate_counterparty_revocation(commit_num - 1, &revoke).unwrap();
+        channel.validate_counterparty_revocation(commit_num - 1, &revoke1).unwrap();
     }
 }
 
@@ -1899,7 +1990,7 @@ impl ChainListener for MockListener {
         (vec![], vec![])
     }
 
-    fn on_add_streamed_block(
+    fn on_add_streamed_block_end(
         &self,
         _block_hash: &BlockHash,
     ) -> (Vec<bitcoin::OutPoint>, Vec<bitcoin::OutPoint>) {
@@ -1915,7 +2006,7 @@ impl ChainListener for MockListener {
         self.on_add_block(txs, block_hash)
     }
 
-    fn on_remove_streamed_block(
+    fn on_remove_streamed_block_end(
         &self,
         _block_hash: &BlockHash,
     ) -> (Vec<bitcoin::OutPoint>, Vec<bitcoin::OutPoint>) {
@@ -1969,5 +2060,27 @@ impl MockListener {
     /// Create a new mock listener
     pub fn new(watch: bitcoin::OutPoint) -> Self {
         MockListener { watch, watch2: Mutex::new(None), watch_delta: Mutex::new((vec![], vec![])) }
+    }
+}
+
+pub struct DummyCommitmentPointProvider {}
+
+impl SendSync for DummyCommitmentPointProvider {}
+
+impl CommitmentPointProvider for DummyCommitmentPointProvider {
+    fn get_holder_commitment_point(&self, _commitment_number: u64) -> PublicKey {
+        todo!()
+    }
+
+    fn get_counterparty_commitment_point(&self, _commitment_number: u64) -> Option<PublicKey> {
+        todo!()
+    }
+
+    fn get_transaction_parameters(&self) -> ChannelTransactionParameters {
+        todo!()
+    }
+
+    fn clone_box(&self) -> Box<dyn CommitmentPointProvider> {
+        Box::new(DummyCommitmentPointProvider {})
     }
 }

@@ -7,7 +7,7 @@ use lightning_signer::node::{NodeConfig, NodeState};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
-use lightning_signer::persist::{Context, Error, Persist};
+use lightning_signer::persist::{ChainTrackerListenerEntry, Context, Error, Persist};
 use lightning_signer::policy::validator::ValidatorFactory;
 use lightning_signer::prelude::*;
 use lightning_signer::{Arc, SendSync};
@@ -90,15 +90,15 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
         self.backup.delete_channel(node_id, channel_id)
     }
 
-    fn new_chain_tracker(
+    fn new_tracker(
         &self,
         node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,
     ) -> Result<(), Error> {
         if self.main_is_ready() {
-            self.main.new_chain_tracker(node_id, tracker)?;
+            self.main.new_tracker(node_id, tracker)?;
         }
-        self.backup.new_chain_tracker(node_id, tracker)
+        self.backup.new_tracker(node_id, tracker)
     }
 
     fn update_tracker(
@@ -116,7 +116,7 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
         &self,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
-    ) -> Result<ChainTracker<ChainMonitor>, Error> {
+    ) -> Result<(ChainTracker<ChainMonitor>, Vec<ChainTrackerListenerEntry>), Error> {
         if self.main_is_ready() {
             self.main.get_tracker(node_id, validator_factory)
         } else {
@@ -262,7 +262,7 @@ mod tests {
             todo!()
         }
 
-        fn new_chain_tracker(
+        fn new_tracker(
             &self,
             node_id: &PublicKey,
             tracker: &ChainTracker<ChainMonitor>,
@@ -280,14 +280,14 @@ mod tests {
             node_id: &PublicKey,
             tracker: &ChainTracker<ChainMonitor>,
         ) -> Result<(), Error> {
-            self.new_chain_tracker(node_id, tracker)
+            self.new_tracker(node_id, tracker)
         }
 
         fn get_tracker(
             &self,
             node_id: PublicKey,
             validator_factory: Arc<dyn ValidatorFactory>,
-        ) -> Result<ChainTracker<ChainMonitor>, Error> {
+        ) -> Result<(ChainTracker<ChainMonitor>, Vec<ChainTrackerListenerEntry>), Error> {
             let state = self.state.lock().unwrap();
             let key = format!("node/tracker/{}", &node_id.serialize().to_hex());
             let value = state.get(&key).unwrap();
@@ -388,7 +388,7 @@ mod tests {
         let node_id = node.get_id();
 
         persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state()).unwrap();
-        persister.new_chain_tracker(&node_id, &node.get_tracker()).unwrap();
+        persister.new_tracker(&node_id, &node.get_tracker()).unwrap();
 
         let nodes1 = persister.get_nodes().unwrap();
         assert_eq!(nodes1.len(), 1);

@@ -308,7 +308,12 @@ impl<L: ChainListener> ChainTracker<L> {
         Ok(headers.0)
     }
 
-    // Notify listeners of a block add.
+    /// Restore a listener
+    pub fn restore_listener(&mut self, outpoint: L::Key, listener: L, slot: ListenSlot) {
+        self.listeners.insert(outpoint, (listener, slot));
+    }
+
+    // Notify listeners of a block remove.
     // If txs is None, this is a streamed block, and the transactions were already
     // provided as push events.
     fn notify_listeners_remove(&mut self, txs: Option<&[Transaction]>, block_hash: BlockHash) {
@@ -316,7 +321,7 @@ impl<L: ChainListener> ChainTracker<L> {
             let (adds, removes) = if let Some(txs) = txs {
                 listener.on_remove_block(txs, &block_hash)
             } else {
-                listener.on_remove_streamed_block(&block_hash)
+                listener.on_remove_streamed_block_end(&block_hash)
             };
 
             debug!("{}: REVERT adding {:?}, removing {:?}", short_function!(), adds, removes);
@@ -438,7 +443,7 @@ impl<L: ChainListener> ChainTracker<L> {
             let (adds, removes) = if let Some(txs) = txs {
                 listener.on_add_block(txs, &block_hash)
             } else {
-                listener.on_add_streamed_block(&block_hash)
+                listener.on_add_streamed_block_end(&block_hash)
             };
             debug!("{}: adding {:?}, removing {:?}", short_function!(), adds, removes);
 
@@ -656,7 +661,7 @@ pub trait ChainListener: SendSync {
     /// A block was added via streaming (see `on_block_chunk`).
     /// The listener returns outpoints to watch in the future, and outpoints to stop watching.
     /// The decoded block hash is also returned.
-    fn on_add_streamed_block(&self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>);
+    fn on_add_streamed_block_end(&self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>);
 
     /// A block was deleted via a compact proof.
     /// The listener returns the same thing as on_add_block, so that the changes can be reverted.
@@ -669,7 +674,10 @@ pub trait ChainListener: SendSync {
 
     /// A block was deleted via streaming (see `on_block_chunk`).
     /// The listener returns the same thing as on_add_block, so that the changes can be reverted.
-    fn on_remove_streamed_block(&self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>);
+    fn on_remove_streamed_block_end(
+        &self,
+        block_hash: &BlockHash,
+    ) -> (Vec<OutPoint>, Vec<OutPoint>);
 
     /// Get the block push decoder listener
     fn on_push<F>(&self, f: F)

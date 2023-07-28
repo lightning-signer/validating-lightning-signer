@@ -2,10 +2,18 @@ use crate::io_extras::sink;
 use crate::prelude::*;
 use bitcoin::consensus::Encodable;
 use bitcoin::secp256k1::ecdsa::Signature;
-use bitcoin::secp256k1::PublicKey;
+use bitcoin::secp256k1::{All, PublicKey, Secp256k1};
+use bitcoin::util::address::Payload;
+use bitcoin::PublicKey as BitcoinPublicKey;
 use bitcoin::{EcdsaSighashType, Script, Transaction, TxOut, VarInt};
-use lightning::ln::chan_utils::make_funding_redeemscript;
+use lightning::ln::chan_utils::{
+    get_commitment_transaction_number_obscure_factor, get_revokeable_redeemscript,
+    make_funding_redeemscript, ChannelTransactionParameters, TxCreationKeys,
+};
 
+use crate::tx::script::{
+    get_to_countersignatory_with_anchors_redeemscript, ANCHOR_OUTPUT_VALUE_SATOSHI,
+};
 use log::*;
 
 /// The maximum value of an input or output in milli satoshi
@@ -168,12 +176,236 @@ pub(crate) fn is_tx_non_malleable(tx: &Transaction, input_txs: &[&Transaction]) 
     true
 }
 
+/// Decode a commitment transaction and return the outputs that we need to watch.
+/// Our main output index and any HTLC output indexes are returned.
+///
+/// `cp_per_commitment_point` is filled in if known, otherwise None.  It might
+/// not be known if the signer is old, before we started collecting counterparty secrets.
+/// If it is None, then we won't be able to tell the difference between a counterparty
+/// to-self output and an HTLC output.
+pub fn decode_commitment_tx(
+    tx: &Transaction,
+    holder_per_commitment_point: &PublicKey,
+    cp_per_commitment_point: &Option<PublicKey>,
+    params: &ChannelTransactionParameters,
+    secp_ctx: &Secp256k1<All>,
+) -> (Option<u32>, Vec<u32>) {
+    let cp_params = params.counterparty_parameters.as_ref().unwrap();
+
+    let opt_anchors = params.opt_anchors.is_some();
+    let holder_pubkeys = &params.holder_pubkeys;
+    let cp_pubkeys = &cp_params.pubkeys;
+
+    let holder_non_delayed_script = if opt_anchors {
+        get_to_countersignatory_with_anchors_redeemscript(&holder_pubkeys.payment_point)
+            .to_v0_p2wsh()
+    } else {
+        Payload::p2wpkh(&BitcoinPublicKey::new(holder_pubkeys.payment_point))
+            .unwrap()
+            .script_pubkey()
+    };
+
+    // compute the transaction keys we would have used if this is a holder commitment
+    let holder_tx_keys = TxCreationKeys::derive_new(
+        secp_ctx,
+        &holder_per_commitment_point,
+        &holder_pubkeys.delayed_payment_basepoint,
+        &holder_pubkeys.htlc_basepoint,
+        &cp_pubkeys.revocation_basepoint,
+        &cp_pubkeys.htlc_basepoint,
+    );
+
+    let holder_delayed_redeem_script = get_revokeable_redeemscript(
+        &holder_tx_keys.revocation_key,
+        cp_params.selected_contest_delay,
+        &holder_tx_keys.broadcaster_delayed_payment_key,
+    );
+
+    let holder_delayed_script = holder_delayed_redeem_script.to_v0_p2wsh();
+
+    let cp_delayed_script = if let Some(cp_per_commitment_point) = cp_per_commitment_point {
+        // compute the transaction keys we would have used if this is a holder commitment
+        let cp_tx_keys = TxCreationKeys::derive_new(
+            secp_ctx,
+            &cp_per_commitment_point,
+            &cp_pubkeys.delayed_payment_basepoint,
+            &cp_pubkeys.htlc_basepoint,
+            &holder_pubkeys.revocation_basepoint,
+            &holder_pubkeys.htlc_basepoint,
+        );
+
+        let cp_delayed_redeem_script = get_revokeable_redeemscript(
+            &cp_tx_keys.revocation_key,
+            params.holder_selected_contest_delay,
+            &cp_tx_keys.broadcaster_delayed_payment_key,
+        );
+
+        Some(cp_delayed_redeem_script.to_v0_p2wsh())
+    } else {
+        None
+    };
+
+    let mut htlcs = Vec::new();
+    let mut main_output_index = None;
+
+    // find the output that pays to us, if any
+    for (idx, output) in tx.output.iter().enumerate() {
+        // we don't track anchors
+        if output.value == ANCHOR_OUTPUT_VALUE_SATOSHI {
+            continue;
+        }
+
+        if Some(&output.script_pubkey) == cp_delayed_script.as_ref() {
+            continue;
+        }
+
+        // look for our main output, either when broadcast by us or by our counterparty
+        if output.script_pubkey == holder_non_delayed_script
+            || output.script_pubkey == holder_delayed_script
+        {
+            main_output_index = Some(idx as u32);
+        } else if output.script_pubkey.is_v0_p2wsh() {
+            htlcs.push(idx as u32);
+        }
+    }
+
+    (main_output_index, htlcs)
+}
+
+/// Decode a commitment transaction and return the commitment number if it is a commitment tx
+pub fn decode_commitment_number(
+    tx: &Transaction,
+    params: &ChannelTransactionParameters,
+) -> Option<u64> {
+    let holder_pubkeys = &params.holder_pubkeys;
+    let cp_params = params.counterparty_parameters.as_ref().unwrap();
+    let cp_pubkeys = &cp_params.pubkeys;
+
+    let obscure_factor = get_commitment_transaction_number_obscure_factor(
+        &holder_pubkeys.payment_point,
+        &cp_pubkeys.payment_point,
+        params.is_outbound_from_holder,
+    );
+
+    // if the tx has more than one input, it's not a standard closing tx,
+    // so we bail
+    if tx.input.len() != 1 {
+        return None;
+    }
+
+    // check if the input sequence and locktime are set to standard commitment tx values
+    if (tx.input[0].sequence.0 >> 8 * 3) as u8 != 0x80 || (tx.lock_time.0 >> 8 * 3) as u8 != 0x20 {
+        return None;
+    }
+
+    // forward counting
+    let commitment_number = (((tx.input[0].sequence.0 as u64 & 0xffffff) << 3 * 8)
+        | (tx.lock_time.0 as u64 & 0xffffff))
+        ^ obscure_factor;
+    Some(commitment_number)
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::channel::ChannelBase;
+    use crate::util::test_utils::{
+        init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
+    };
     use bitcoin::hashes::hex::FromHex;
     use bitcoin::psbt::serialize::Deserialize;
+    use bitcoin::secp256k1::SecretKey;
     use bitcoin::Transaction;
     use lightning::ln::chan_utils::{htlc_success_tx_weight, htlc_timeout_tx_weight};
+
+    #[test]
+    fn test_parse_closing_tx_holder() {
+        let secp_ctx = Secp256k1::new();
+        let commitment_number = 0;
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[0], make_test_channel_setup());
+        let params = node
+            .with_ready_channel(&channel_id, |channel| Ok(channel.make_channel_parameters()))
+            .unwrap();
+
+        let (holder_commitment, per_commitment_point) = node
+            .with_ready_channel(&channel_id, |channel| {
+                let per_commitment_point =
+                    channel.get_per_commitment_point(commitment_number).unwrap();
+                let keys = channel.make_holder_tx_keys(&per_commitment_point).unwrap();
+                let per_commitment_point = channel.get_per_commitment_point(commitment_number)?;
+                Ok((
+                    channel.make_holder_commitment_tx(
+                        commitment_number,
+                        &keys,
+                        123,
+                        1000,
+                        100,
+                        Vec::new(),
+                    ),
+                    per_commitment_point,
+                ))
+            })
+            .unwrap();
+        let holder_tx = holder_commitment.trust().built_transaction().transaction.clone();
+        let parsed_commitment_number = decode_commitment_number(&holder_tx, &params).unwrap();
+        assert_eq!(parsed_commitment_number, commitment_number);
+        let (parsed_main, htlcs) =
+            decode_commitment_tx(&holder_tx, &per_commitment_point, &None, &params, &secp_ctx);
+        let our_main =
+            holder_tx.output.iter().position(|txout| txout.script_pubkey.is_v0_p2wsh()).unwrap();
+        assert_eq!(parsed_main, Some(our_main as u32));
+        assert!(htlcs.is_empty());
+    }
+
+    #[test]
+    fn test_parse_closing_tx_counterparty() {
+        let secp_ctx = Secp256k1::new();
+        let commitment_number = 0;
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[0], make_test_channel_setup());
+        let params = node
+            .with_ready_channel(&channel_id, |channel| Ok(channel.make_channel_parameters()))
+            .unwrap();
+
+        let cp_per_commitment_secret = SecretKey::from_slice(&[2; 32]).unwrap();
+        let cp_per_commitment_point =
+            PublicKey::from_secret_key(&secp_ctx, &cp_per_commitment_secret);
+        let (cp_commitment, holder_per_commitment_point) = node
+            .with_ready_channel(&channel_id, |channel| {
+                // this is not used in the test because we are parsing a counterparty commitment,
+                // but we need to set it to something different than the counterparty one
+                let holder_per_commitment_point =
+                    channel.get_per_commitment_point(commitment_number)?;
+                Ok((
+                    channel.make_counterparty_commitment_tx(
+                        &cp_per_commitment_point,
+                        commitment_number,
+                        123,
+                        1000,
+                        100,
+                        Vec::new(),
+                    ),
+                    holder_per_commitment_point,
+                ))
+            })
+            .unwrap();
+        let cp_tx = cp_commitment.trust().built_transaction().transaction.clone();
+        let parsed_commit_number = decode_commitment_number(&cp_tx, &params).unwrap();
+        assert_eq!(parsed_commit_number, commitment_number);
+        let (parsed_main, htlcs) = decode_commitment_tx(
+            &cp_tx,
+            &holder_per_commitment_point,
+            &Some(cp_per_commitment_point),
+            &params,
+            &secp_ctx,
+        );
+        let our_main =
+            cp_tx.output.iter().position(|txout| txout.script_pubkey.is_v0_p2wpkh()).unwrap();
+        assert_eq!(parsed_main, Some(our_main as u32));
+        println!("htlcs: {:?}", htlcs);
+        assert!(htlcs.is_empty());
+    }
 
     #[test]
     fn test_estimate_feerate() {

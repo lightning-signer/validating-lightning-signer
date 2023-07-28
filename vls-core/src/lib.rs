@@ -94,6 +94,9 @@ pub use alloc::rc::Rc;
 #[doc(hidden)]
 pub use alloc::sync::{Arc, Weak};
 
+use bitcoin::secp256k1::PublicKey;
+use lightning::ln::chan_utils::ChannelTransactionParameters;
+
 #[cfg(not(feature = "std"))]
 mod nostd;
 
@@ -125,9 +128,32 @@ pub mod prelude {
 #[doc(hidden)]
 pub use prelude::SendSync;
 
+use prelude::*;
+
 #[cfg(feature = "std")]
 mod sync {
     pub use ::std::sync::{Arc, Condvar, Mutex, MutexGuard, RwLock, RwLockReadGuard, Weak};
+}
+
+/// A trait for getting a commitment point for a given commitment number,
+/// if known.
+pub trait CommitmentPointProvider: SendSync {
+    /// Get the commitment point for a holder commitment transaction
+    fn get_holder_commitment_point(&self, commitment_number: u64) -> PublicKey;
+    /// Get the commitment point for a counterparty commitment transaction, if known.
+    /// It might not be known if we didn't reach that commitment number yet
+    /// or it's a revoked commitment transaction and we don't store revocation secrets.
+    fn get_counterparty_commitment_point(&self, commitment_number: u64) -> Option<PublicKey>;
+    /// Get channel transaction parameters, for decoding on-chain transactions
+    fn get_transaction_parameters(&self) -> ChannelTransactionParameters;
+    /// Clone
+    fn clone_box(&self) -> Box<dyn CommitmentPointProvider>;
+}
+
+impl Clone for Box<dyn CommitmentPointProvider> {
+    fn clone(&self) -> Self {
+        (**self).clone_box()
+    }
 }
 
 #[cfg(not(feature = "std"))]

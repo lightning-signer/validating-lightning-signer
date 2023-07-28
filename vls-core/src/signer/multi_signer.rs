@@ -127,7 +127,7 @@ impl MultiSigner {
         node.add_allowlist(&self.initial_allowlist).expect("valid initialallowlist");
         seed_persister.put(&node_id.serialize().to_hex(), seed);
         self.persister.new_node(&node_id, &node_config, &*node.get_state()).expect("new node");
-        self.persister.new_chain_tracker(&node_id, &node.get_tracker()).expect("new_chain_tracker");
+        self.persister.new_tracker(&node_id, &node.get_tracker()).expect("new_chain_tracker");
         nodes.insert(node_id, Arc::new(node));
         Ok(node_id)
     }

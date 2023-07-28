@@ -1,14 +1,15 @@
-use crate::chain::tracker::ChainTracker;
+use crate::chain::tracker::{ChainTracker, ListenSlot};
 use alloc::sync::Arc;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
 use bitcoin::secp256k1::PublicKey;
+use bitcoin::OutPoint;
 use core::fmt::Debug;
 use core::ops::Index;
 use lightning::chain::keysinterface::EntropySource;
 
 use crate::channel::{Channel, ChannelId, ChannelStub};
-use crate::monitor::ChainMonitor;
+use crate::monitor::{ChainMonitor, State as ChainMonitorState};
 use crate::node::{NodeConfig, NodeState};
 use crate::policy::validator::ValidatorFactory;
 use crate::prelude::*;
@@ -112,6 +113,9 @@ pub enum Error {
     Internal(String),
 }
 
+/// Used to keep track of the chain monitor listeners while restoring from persistence
+pub struct ChainTrackerListenerEntry(pub OutPoint, pub (ChainMonitorState, ListenSlot));
+
 /// Persister of nodes and channels
 ///
 /// A Node will call the relevant methods here as needed.
@@ -161,7 +165,7 @@ pub trait Persist: SendSync {
     fn delete_channel(&self, node_id: &PublicKey, channel: &ChannelId) -> Result<(), Error>;
 
     /// Create a new tracker
-    fn new_chain_tracker(
+    fn new_tracker(
         &self,
         node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,
@@ -179,7 +183,7 @@ pub trait Persist: SendSync {
         &self,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
-    ) -> Result<ChainTracker<ChainMonitor>, Error>;
+    ) -> Result<(ChainTracker<ChainMonitor>, Vec<ChainTrackerListenerEntry>), Error>;
 
     /// Will error if doesn't exist.
     ///
@@ -265,7 +269,7 @@ impl Persist for DummyPersister {
         Ok(())
     }
 
-    fn new_chain_tracker(
+    fn new_tracker(
         &self,
         node_id: &PublicKey,
         tracker: &ChainTracker<ChainMonitor>,
@@ -285,7 +289,7 @@ impl Persist for DummyPersister {
         &self,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
-    ) -> Result<ChainTracker<ChainMonitor>, Error> {
+    ) -> Result<(ChainTracker<ChainMonitor>, Vec<ChainTrackerListenerEntry>), Error> {
         Err(Error::Internal(format!("get_tracker unimplemented")))
     }
 
