@@ -1026,6 +1026,7 @@ mod tests {
         // channel should exist after a heartbeat
         node.get_heartbeat();
         assert!(node.get_channel(&channel_id).is_ok());
+        assert_eq!(node.get_tracker().listeners.len(), 1);
 
         let close_tx = make_tx(vec![TxIn {
             previous_output: OutPoint::new(funding_txid, 0),
@@ -1040,6 +1041,7 @@ mod tests {
         // channel should exist after a heartbeat
         node.get_heartbeat();
         assert!(node.get_channel(&channel_id).is_ok());
+        assert_eq!(node.get_tracker().listeners.len(), 1);
 
         for _ in 1..MIN_DEPTH - 1 {
             monitor.on_add_block(&[], &block_hash);
@@ -1051,6 +1053,7 @@ mod tests {
         // channel should be pruned after a heartbeat
         node.get_heartbeat();
         assert!(node.get_channel(&channel_id).is_err());
+        assert_eq!(node.get_tracker().listeners.len(), 0);
     }
 
     #[test]
