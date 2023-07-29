@@ -2,13 +2,19 @@
 
 use std::fs::File;
 use std::io;
+use std::num::NonZeroUsize;
 use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
+use std::time::SystemTime;
 
 use async_trait::async_trait;
+use lru::LruCache;
 use tokio::task::spawn_blocking;
 
+use bitcoin::hashes::sha256::Hash as Sha256Hash;
+use bitcoin::hashes::Hash;
 use bitcoin::Network;
 use log::*;
 use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, SetArg};
@@ -167,6 +173,13 @@ impl SerialSignerPort {
     }
 }
 
+const PREAPPROVE_CACHE_TTL: Duration = Duration::from_secs(60);
+
+struct PreapprovalCacheEntry {
+    tstamp: SystemTime,
+    reply_bytes: Vec<u8>,
+}
+
 /// Implement the hsmd UNIX fd protocol.
 /// This doesn't actually perform the signing - the hsmd packets are transported via serial to the
 /// real signer.
@@ -175,19 +188,22 @@ pub struct SignerLoop<C: 'static + Client> {
     log_prefix: String,
     serial: Arc<Mutex<SerialWrap>>,
     client_id: Option<ClientId>,
+    preapproval_cache: LruCache<Sha256Hash, PreapprovalCacheEntry>,
 }
 
 impl<C: 'static + Client> SignerLoop<C> {
     /// Create a loop for the root (lightningd) connection, but doesn't start it yet
     pub fn new(client: C, serial: Arc<Mutex<SerialWrap>>) -> Self {
         let log_prefix = format!("{}/{}", std::process::id(), client.id());
-        Self { client, log_prefix, serial, client_id: None }
+        let preapproval_cache = LruCache::new(NonZeroUsize::new(6).unwrap());
+        Self { client, log_prefix, serial, client_id: None, preapproval_cache }
     }
 
     // Create a loop for a non-root connection
     fn new_for_client(client: C, serial: Arc<Mutex<SerialWrap>>, client_id: ClientId) -> Self {
         let log_prefix = format!("{}/{}", std::process::id(), client.id());
-        Self { client, log_prefix, serial, client_id: Some(client_id) }
+        let preapproval_cache = LruCache::new(NonZeroUsize::new(6).unwrap());
+        Self { client, log_prefix, serial, client_id: Some(client_id), preapproval_cache }
     }
 
     /// Start the read loop
@@ -222,18 +238,57 @@ impl<C: 'static + Client> SignerLoop<C> {
                     let reply = msgs::MemleakReply { result: false };
                     self.client.write(reply)?;
                 }
-                _ => {
-                    // Write the reply to the node
-                    let result = self.handle_message(raw_msg);
-                    if let Err(ref err) = result {
-                        log_error!(err, self);
+                Message::PreapproveInvoice(_) | Message::PreapproveKeysend(_) => {
+                    let now = SystemTime::now();
+                    let req_hash = Sha256Hash::hash(&raw_msg);
+                    if let Some(entry) = self.preapproval_cache.get(&req_hash) {
+                        let age = now.duration_since(entry.tstamp).expect("age");
+                        if age < PREAPPROVE_CACHE_TTL {
+                            let reply = entry.reply_bytes.clone();
+                            log_reply!(reply, self);
+                            self.client.write_vec(reply)?;
+                            continue;
+                        }
                     }
-                    let reply = result?;
-                    log_reply!(reply, self);
-                    self.client.write_vec(reply)?;
+                    let reply_bytes = self.do_proxy_msg(raw_msg)?;
+                    let reply = msgs::from_vec(reply_bytes.clone()).expect("parse reply failed");
+                    // Did we just witness an approval?
+                    match reply {
+                        Message::PreapproveKeysendReply(pkr) =>
+                            if pkr.result == true {
+                                self.preapproval_cache.put(
+                                    req_hash,
+                                    PreapprovalCacheEntry { tstamp: now, reply_bytes },
+                                );
+                            },
+                        Message::PreapproveInvoiceReply(pir) =>
+                            if pir.result == true {
+                                self.preapproval_cache.put(
+                                    req_hash,
+                                    PreapprovalCacheEntry { tstamp: now, reply_bytes },
+                                );
+                            },
+                        _ => {} // allow future out-of-band reply types
+                    }
+                }
+                _ => {
+                    self.do_proxy_msg(raw_msg)?;
                 }
             }
         }
+    }
+
+    // Proxy the request to the signer, return the result to the node.
+    // Returns the last response for caching
+    fn do_proxy_msg(&mut self, raw_msg: Vec<u8>) -> Result<Vec<u8>> {
+        let result = self.handle_message(raw_msg);
+        if let Err(ref err) = result {
+            log_error!(err, self);
+        }
+        let reply = result?;
+        log_reply!(reply, self);
+        self.client.write_vec(reply.clone())?;
+        Ok(reply)
     }
 
     fn handle_message(&mut self, message: Vec<u8>) -> Result<Vec<u8>> {
