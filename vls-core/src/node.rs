@@ -2540,7 +2540,6 @@ impl Node {
                             info!("pruning channel {} because is_done", &key);
                             Some(key.clone()) // clone the channel_id0 for removal
                         } else {
-                            info!("not done");
                             None
                         }
                     }
