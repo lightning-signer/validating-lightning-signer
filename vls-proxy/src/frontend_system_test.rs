@@ -12,7 +12,6 @@ use clap::Parser;
 use core::result::Result as CoreResult;
 use lightning_signer::bitcoin::consensus::deserialize;
 use lightning_signer::bitcoin::hashes::hex::FromHex;
-use lightning_signer::bitcoin::hashes::Hash;
 use lightning_signer::bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey};
 use lightning_signer::bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey};
 use lightning_signer::bitcoin::{BlockHash, BlockHeader, KeyPair, Network};
@@ -37,7 +36,7 @@ use vls_protocol::msgs::{
     AddBlockReply, ForwardWatchesReply, GetHeartbeatReply, Message, NodeInfoReply, SerBolt,
     TipInfoReply,
 };
-use vls_protocol::serde_bolt::{to_vec, Octets, WireString};
+use vls_protocol::serde_bolt::{to_vec, Array, Octets, WireString};
 use vls_protocol_client::{ClientResult, SignerPort};
 use vls_proxy::config::{CLAP_NETWORK_URL_MAPPING, NETWORK_NAMES};
 use vls_proxy::portfront::SignerPortFront;
@@ -103,14 +102,11 @@ impl SignerPort for DummySignerPort {
             }
             Message::TipInfo(_) => {
                 let state = self.state.lock().unwrap();
-                let reply = TipInfoReply {
-                    height: state.height,
-                    block_hash: model::BlockHash(state.block_hash.as_hash().into_inner()),
-                };
+                let reply = TipInfoReply { height: state.height, block_hash: state.block_hash };
                 Ok(reply.as_vec())
             }
             Message::ForwardWatches(_) => {
-                let reply = ForwardWatchesReply { txids: vec![], outpoints: vec![] };
+                let reply = ForwardWatchesReply { txids: Array::new(), outpoints: Array::new() };
                 Ok(reply.as_vec())
             }
             Message::AddBlock(add) => {

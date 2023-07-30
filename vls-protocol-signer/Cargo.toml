@@ -10,7 +10,7 @@ repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 
 [features]
 default = ["std"]
-no-std = ["vls-core/no-std"]
+no-std = ["vls-protocol/no-std", "vls-core/no-std"]
 std = ["vls-protocol/std", "vls-core/std"]
 secp-lowmemory = ["vls-core/secp-lowmemory"]
 use_backtrace = ["vls-core/use_backtrace"]
@@ -22,9 +22,8 @@ debug = ["vls-core/debug", "log_pretty_print", "debug_node_state"]
 
 [dependencies]
 vls-core = { path = "../vls-core", version = "0.9.1", default-features = false }
-vls-protocol = { path = "../vls-protocol", version = "0.9.1" }
+vls-protocol = { path = "../vls-protocol", version = "0.9.1", default-features = false }
 log = { version = "0.4", default_features = false }
-serde = { version = "1.0", default_features = false }
 bit-vec = { version = "0.6", default_features = false }
 
 [dev-dependencies]

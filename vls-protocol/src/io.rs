@@ -1,4 +1,4 @@
-use serde_bolt::Read;
+use serde_bolt::io::Read;
 
 use crate::error::{Error, Result};
 

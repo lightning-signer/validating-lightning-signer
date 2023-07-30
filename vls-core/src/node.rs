@@ -22,6 +22,7 @@ use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::util::sighash::SighashCache;
 use bitcoin::{secp256k1, Address, PrivateKey, Transaction, TxOut};
 use bitcoin::{EcdsaSighashType, Network, OutPoint, Script};
+use bitcoin_consensus_derive::{Decodable, Encodable};
 use lightning::chain;
 use lightning::chain::keysinterface::{
     ChannelSigner, EntropySource, KeyMaterial, NodeSigner, Recipient, SignerProvider,
@@ -866,7 +867,7 @@ impl Allowable {
 ///
 /// This includes information that determines if we think our
 /// view of the blockchain is stale or not.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Encodable, Decodable)]
 pub struct Heartbeat {
     /// the block hash of the blockchain tip
     pub chain_tip: bitcoin::BlockHash,
@@ -886,7 +887,7 @@ impl Heartbeat {
 }
 
 /// A signed heartbeat message.
-#[derive(Serialize, Deserialize)]
+#[derive(Encodable, Decodable)]
 pub struct SignedHeartbeat {
     /// the schnorr signature of the heartbeat
     pub signature: Vec<u8>,

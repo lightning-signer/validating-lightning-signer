@@ -11,7 +11,6 @@ use core::str::FromStr;
 
 use bitcoin::blockdata::script;
 use bitcoin::consensus::{deserialize, serialize};
-use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::util::psbt::serialize::Deserialize;
 use bitcoin::{EcdsaSighashType, Network, Script};
@@ -46,13 +45,13 @@ use secp256k1::{ecdsa, PublicKey, Secp256k1};
 use lightning_signer::util::status::{Code, Status};
 use lightning_signer::wallet::Wallet;
 use vls_protocol::model::{
-    Basepoints, BitcoinSignature, BlockHash, DisclosedSecret, ExtKey, Htlc,
-    OutPoint as ModelOutPoint, PubKey, RecoverableSignature, Secret, Signature, TxId,
+    Basepoints, BitcoinSignature, DisclosedSecret, ExtKey, Htlc, PubKey, RecoverableSignature,
+    Secret, Signature,
 };
 use vls_protocol::msgs::{
     DeriveSecretReply, PreapproveInvoiceReply, PreapproveKeysendReply, SerBolt, SignBolt12Reply,
 };
-use vls_protocol::serde_bolt::{to_vec, LargeOctets, Octets, WireString};
+use vls_protocol::serde_bolt::{to_vec, Array, LargeOctets, Octets, WireString};
 use vls_protocol::{msgs, msgs::DeBolt, msgs::Message, Error as ProtocolError};
 
 use crate::approver::{Approve, NegativeApprover};
@@ -394,7 +393,8 @@ impl Handler for RootHandler {
                     hsm_capabilities: vec![
                         msgs::CheckPubKey::TYPE as u32,
                         msgs::SignAnyDelayedPaymentToUs::TYPE as u32,
-                    ],
+                    ]
+                    .into(),
                     node_id: PubKey(node_id),
                     bip32: ExtKey(bip32),
                     bolt12: PubKey(bolt12_pubkey),
@@ -406,8 +406,8 @@ impl Handler for RootHandler {
                 let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
                 let allowlist: Vec<_> = m
                     .dev_allowlist
-                    .into_iter()
-                    .map(|ws| String::from_utf8(ws.0).expect("utf8"))
+                    .iter()
+                    .map(|ws| String::from_utf8(ws.0.clone()).expect("utf8"))
                     .collect();
                 // FIXME disable in production
                 self.node.add_allowlist(&allowlist)?;
@@ -590,33 +590,21 @@ impl Handler for RootHandler {
                 let tracker = self.node.get_tracker();
                 Ok(Box::new(msgs::TipInfoReply {
                     height: tracker.height(),
-                    block_hash: BlockHash(tracker.tip().0.block_hash()[..].try_into().unwrap()),
+                    block_hash: tracker.tip().0.block_hash(),
                 }))
             }
             Message::ForwardWatches(_) => {
                 let (txids, outpoints) = self.node.get_tracker().get_all_forward_watches();
                 Ok(Box::new(msgs::ForwardWatchesReply {
-                    txids: txids.iter().map(|txid| TxId(txid[..].try_into().unwrap())).collect(),
-                    outpoints: outpoints
-                        .iter()
-                        .map(|op| ModelOutPoint {
-                            txid: TxId(op.txid[..].try_into().unwrap()),
-                            vout: op.vout,
-                        })
-                        .collect(),
+                    txids: txids.into(),
+                    outpoints: outpoints.into(),
                 }))
             }
             Message::ReverseWatches(_) => {
                 let (txids, outpoints) = self.node.get_tracker().get_all_reverse_watches();
                 Ok(Box::new(msgs::ReverseWatchesReply {
-                    txids: txids.iter().map(|txid| TxId(txid[..].try_into().unwrap())).collect(),
-                    outpoints: outpoints
-                        .iter()
-                        .map(|op| ModelOutPoint {
-                            txid: TxId(op.txid[..].try_into().unwrap()),
-                            vout: op.vout,
-                        })
-                        .collect(),
+                    txids: txids.into(),
+                    outpoints: outpoints.into(),
                 }))
             }
             Message::AddBlock(m) => {
@@ -668,8 +656,7 @@ impl Handler for RootHandler {
             }
             Message::BlockChunk(m) => {
                 let mut tracker = self.node.get_tracker();
-                let hash = bitcoin::BlockHash::from_slice(&m.hash.0).expect("hash");
-                tracker.block_chunk(hash, m.offset, &m.content.0).expect("block_chunk");
+                tracker.block_chunk(m.hash, m.offset, &m.content.0).expect("block_chunk");
                 Ok(Box::new(msgs::BlockChunkReply {}))
             }
             Message::GetHeartbeat(_m) => {
@@ -869,8 +856,8 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::GetPerCommitmentPoint2Reply { point: PubKey(point.serialize()) }))
             }
             Message::ReadyChannel(m) => {
-                let txid = bitcoin::Txid::from_slice(&m.funding_txid.0).expect("txid");
-                let funding_outpoint = OutPoint { txid, vout: m.funding_txout as u32 };
+                let funding_outpoint =
+                    OutPoint { txid: m.funding_txid, vout: m.funding_txout as u32 };
 
                 let holder_shutdown_script = if m.local_shutdown_script.is_empty() {
                     None
@@ -992,7 +979,9 @@ impl Handler for ChannelHandler {
                 })?;
                 Ok(Box::new(msgs::SignCommitmentTxWithHtlcsReply {
                     signature: to_bitcoin_sig(sig),
-                    htlc_signatures: htlc_sigs.into_iter().map(|s| to_bitcoin_sig(s)).collect(),
+                    htlc_signatures: Array(
+                        htlc_sigs.into_iter().map(|s| to_bitcoin_sig(s)).collect(),
+                    ),
                 }))
             }
             Message::SignDelayedPaymentToUs(m) => sign_delayed_payment_to_us(
@@ -1134,7 +1123,9 @@ impl Handler for ChannelHandler {
                 })?;
                 Ok(Box::new(msgs::SignCommitmentTxWithHtlcsReply {
                     signature: to_bitcoin_sig(sig),
-                    htlc_signatures: htlc_sigs.into_iter().map(|s| to_bitcoin_sig(s)).collect(),
+                    htlc_signatures: Array(
+                        htlc_sigs.into_iter().map(|s| to_bitcoin_sig(s)).collect(),
+                    ),
                 }))
             }
             Message::ValidateRevocation(m) => {

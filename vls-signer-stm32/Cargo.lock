@@ -117,6 +117,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoin-consensus-derive"
+version = "0.1.0-beta.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d52dd6e55203c963c35928c21eba078a67999d8f643d7a5a116c9bb5239128d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "bitcoin-push-decoder"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -655,29 +666,30 @@ checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
 name = "serde"
-version = "1.0.175"
+version = "1.0.178"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d25439cd7397d044e2748a6fe2432b5e85db703d6d097bd014b3c0ad1ebff0b"
+checksum = "60363bdd39a7be0266a520dab25fdc9241d2f987b08a01e01f0ec6d06a981348"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_bolt"
-version = "0.2.4"
+version = "0.3.0-beta.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd5fb14792b8d139f641e6d0e1a19eb0e3c47ec8629a2dc4e75fcbd7d77f46a8"
+checksum = "40488ccbd9b75ffd924d4a709110857830ee1c751ccf280704f2d99b71b004d4"
 dependencies = [
+ "bitcoin",
+ "bitcoin-consensus-derive",
+ "core2",
  "hex",
- "serde",
- "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.175"
+version = "1.0.178"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b23f7ade6f110613c0d63858ddb8b94c1041f550eab58a16b371bdf2c9c80ab4"
+checksum = "f28482318d6641454cb273da158647922d1be6b5a2fcc6165cd89ebdd7ed576b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -686,9 +698,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.103"
+version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d03b412469450d4404fe8499a268edd7f8b79fecb074b0d812ad64ca21f4031b"
+checksum = "076066c5f1078eac5b722a31827a8832fe108bed65dfa75e233c89f8206e976c"
 dependencies = [
  "itoa",
  "ryu",
@@ -897,6 +909,7 @@ version = "0.9.1"
 dependencies = [
  "anyhow",
  "bitcoin",
+ "bitcoin-consensus-derive",
  "bitcoin-push-decoder",
  "bolt-derive",
  "core2",
@@ -930,12 +943,11 @@ name = "vls-protocol"
 version = "0.9.1"
 dependencies = [
  "as-any",
+ "bitcoin-consensus-derive",
  "bolt-derive",
  "hex",
  "log",
- "serde",
  "serde_bolt",
- "serde_derive",
 ]
 
 [[package]]
@@ -944,7 +956,6 @@ version = "0.9.1"
 dependencies = [
  "bit-vec",
  "log",
- "serde",
  "vls-core",
  "vls-protocol",
 ]

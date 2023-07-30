@@ -1,22 +1,34 @@
+use alloc::string::String;
+use alloc::string::ToString;
+use bitcoin::consensus::encode::Error as BitcoinError;
 use core::fmt::{Debug, Display, Formatter};
-use serde_bolt::Error as BoltError;
+use serde_bolt::bitcoin;
 
 /// Error
 #[derive(Debug, Clone)]
 pub enum Error {
     UnexpectedType(u16),
     BadFraming,
-    BoltError(BoltError),
+    /// Bitcoin consensus decoding error
+    Bitcoin,
     /// Includes the message type for trailing bytes
     TrailingBytes(usize, u16),
     ShortRead,
     MessageTooLarge,
     Eof,
+    Io(String),
 }
 
-impl From<BoltError> for Error {
-    fn from(e: BoltError) -> Self {
-        Error::BoltError(e)
+// convert bitcoin consensus decode error to our error
+impl From<BitcoinError> for Error {
+    fn from(_: BitcoinError) -> Self {
+        Error::Bitcoin
+    }
+}
+
+impl From<serde_bolt::io::Error> for Error {
+    fn from(e: serde_bolt::io::Error) -> Self {
+        Error::Io(e.to_string())
     }
 }
 

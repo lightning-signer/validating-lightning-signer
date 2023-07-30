@@ -1,4 +1,4 @@
-use std::io::{IoSlice, IoSliceMut, Read as _, Write as _};
+use std::io::{IoSlice, IoSliceMut, Read, Result as SResult, Write};
 use std::os::unix::io::{FromRawFd, IntoRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::{fs, io};
@@ -6,24 +6,20 @@ use std::{fs, io};
 use log::{error, info, trace};
 use nix::cmsg_space;
 use nix::sys::socket::{recvmsg, sendmsg, ControlMessage, ControlMessageOwned, MsgFlags};
-use serde_bolt::{Error as SError, Read, Result as SResult, Write};
 
 use nix::libc;
 use nix::unistd::close;
-use vls_protocol::serde_bolt;
-use vls_protocol_signer::vls_protocol;
 
 const PARENT_FD: u16 = 3;
 
 pub struct UnixConnection {
     fd: RawFd,
     stream: UnixStream,
-    peek: Option<u8>,
 }
 
 impl UnixConnection {
     pub fn new(fd: RawFd) -> Self {
-        UnixConnection { fd, stream: unsafe { UnixStream::from_raw_fd(fd) }, peek: None }
+        UnixConnection { fd, stream: unsafe { UnixStream::from_raw_fd(fd) } }
     }
 
     pub(crate) fn id(&self) -> u64 {
@@ -74,17 +70,10 @@ impl UnixConnection {
 }
 
 impl Read for UnixConnection {
-    type Error = SError;
-
     fn read(&mut self, dest: &mut [u8]) -> SResult<usize> {
         let mut cursor = 0;
         if dest.is_empty() {
             return Ok(0);
-        }
-        if let Some(peek) = self.peek {
-            cursor += 1;
-            dest[0] = peek;
-            self.peek = None;
         }
         while cursor < dest.len() {
             let res: io::Result<usize> = self.stream.read(&mut dest[cursor..]);
@@ -96,40 +85,24 @@ impl Read for UnixConnection {
                     }
                     cursor = cursor + n;
                 }
-                Err(e) => {
-                    return Err(SError::Message(format!("{}", e)));
-                }
+                Err(e) => return Err(e),
             }
         }
         Ok(cursor)
     }
-
-    fn peek(&mut self) -> SResult<Option<u8>> {
-        if self.peek.is_some() {
-            return Ok(self.peek);
-        }
-        let mut buf = [0; 1];
-        let res: io::Result<usize> = self.stream.read(&mut buf);
-        return match res {
-            Ok(n) =>
-                if n == 0 {
-                    Ok(None)
-                } else {
-                    assert_eq!(n, 1);
-                    self.peek = Some(buf[0]);
-                    Ok(self.peek)
-                },
-            Err(e) => Err(SError::Message(format!("{}", e))),
-        };
-    }
 }
 
 impl Write for UnixConnection {
-    type Error = SError;
+    fn write(&mut self, buf: &[u8]) -> SResult<usize> {
+        self.stream.write(buf)
+    }
+
+    fn flush(&mut self) -> SResult<()> {
+        self.stream.flush()
+    }
 
     fn write_all(&mut self, buf: &[u8]) -> SResult<()> {
-        self.stream.write_all(buf).map_err(|e| SError::Message(format!("{}", e)))?;
-        Ok(())
+        self.stream.write_all(buf)
     }
 }
 

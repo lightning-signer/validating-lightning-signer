@@ -229,6 +229,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoin-consensus-derive"
+version = "0.1.0-beta.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d52dd6e55203c963c35928c21eba078a67999d8f643d7a5a116c9bb5239128d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "bitcoin-push-decoder"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1481,9 +1492,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.19.1"
+version = "0.19.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "554db24f0b3c180a9c0b1268f91287ab3f17c162e15b54caaae5a6b3773396b0"
+checksum = "076c73d0bc438f7a4ef6fdd0c3bb4732149136abd952b110ac93e4edb13a6ba5"
 dependencies = [
  "once_cell",
  "target-lexicon",
@@ -1813,13 +1824,14 @@ dependencies = [
 
 [[package]]
 name = "serde_bolt"
-version = "0.2.4"
+version = "0.3.0-beta.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd5fb14792b8d139f641e6d0e1a19eb0e3c47ec8629a2dc4e75fcbd7d77f46a8"
+checksum = "40488ccbd9b75ffd924d4a709110857830ee1c751ccf280704f2d99b71b004d4"
 dependencies = [
+ "bitcoin",
+ "bitcoin-consensus-derive",
+ "core2",
  "hex",
- "serde",
- "serde_derive",
 ]
 
 [[package]]
@@ -2004,9 +2016,9 @@ checksum = "2047c6ded9c721764247e62cd3b03c09ffc529b2ba5b10ec482ae507a4a70160"
 
 [[package]]
 name = "target-lexicon"
-version = "0.12.10"
+version = "0.12.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d2faeef5759ab89935255b1a4cd98e0baf99d1085e37d36599c625dac49ae8e"
+checksum = "9d0e916b1148c8e263850e1ebcbd046f333e0683c724876bb0da63ea4373dc8a"
 
 [[package]]
 name = "tempfile"
@@ -2416,6 +2428,7 @@ dependencies = [
  "anyhow",
  "backtrace",
  "bitcoin",
+ "bitcoin-consensus-derive",
  "bitcoin-push-decoder",
  "bolt-derive",
  "core2",
@@ -2490,13 +2503,12 @@ name = "vls-protocol"
 version = "0.9.1"
 dependencies = [
  "as-any",
+ "bitcoin-consensus-derive",
  "bolt-derive",
  "hex",
  "log",
  "regex",
- "serde",
  "serde_bolt",
- "serde_derive",
 ]
 
 [[package]]
@@ -2520,7 +2532,6 @@ dependencies = [
  "bit-vec",
  "env_logger",
  "log",
- "serde",
  "test-log",
  "vls-core",
  "vls-protocol",

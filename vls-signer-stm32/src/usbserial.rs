@@ -8,7 +8,8 @@ use cortex_m::interrupt::{free, CriticalSection, Mutex};
 use stm32f4xx_hal::otg_fs::{UsbBus, USB};
 use usb_device::{bus::UsbBusAllocator, device::UsbDevice, prelude::*};
 use usbd_serial::SerialPort;
-use vls_protocol_signer::vls_protocol::serde_bolt::{self, Read, Write};
+use vls_protocol_signer::vls_protocol;
+use vls_protocol::serde_bolt::io;
 
 use crate::timer::{self, TimerListener};
 #[allow(unused_imports)]
@@ -26,7 +27,6 @@ pub struct SerialDriverImpl {
 #[derive(Clone)]
 pub struct SerialDriver {
     inner: Arc<Mutex<RefCell<SerialDriverImpl>>>,
-    peek: Option<u8>,
 }
 
 const READ_BUFSZ: usize = 1024;
@@ -82,7 +82,6 @@ impl SerialDriver {
         let serial_driver_impl = SerialDriverImpl { serial, usb_dev, inbuf, outbuf };
         let serial_driver = SerialDriver {
             inner: Arc::new(Mutex::new(RefCell::new(serial_driver_impl))),
-            peek: None,
         };
 
         timer::add_listener(Box::new(serial_driver.clone()));
@@ -152,23 +151,13 @@ impl SerialDriverImpl {
     }
 }
 
-impl Read for SerialDriver {
-    type Error = serde_bolt::Error;
-
-    fn read(&mut self, mut buf: &mut [u8]) -> serde_bolt::Result<usize> {
+impl io::Read for SerialDriver {
+    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
         if buf.is_empty() {
             return Ok(0);
         }
 
         let mut nread = 0;
-
-        if let Some(p) = self.peek.take() {
-            buf[0] = p;
-            nread += 1;
-            let len = buf.len();
-            trace!("read {:x?}", &buf[0..1]);
-            buf = &mut buf[1..len];
-        }
 
         // Not well documented in serde_bolt, but we are expected to block
         // until we can read the whole buf or until we get to EOF.
@@ -184,23 +173,20 @@ impl Read for SerialDriver {
         }
         Ok(nread)
     }
-
-    fn peek(&mut self) -> serde_bolt::Result<Option<u8>> {
-        if self.peek.is_some() {
-            return Ok(self.peek);
-        }
-        let mut buf = [0; 1];
-        let n = self.do_read(&mut buf);
-        assert_eq!(n, 1);
-        self.peek = Some(buf[0]);
-        Ok(self.peek)
-    }
 }
 
-impl Write for SerialDriver {
-    type Error = serde_bolt::Error;
+impl io::Write for SerialDriver {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        trace!("write {:x?}", buf);
+        self.do_write(buf);
+        Ok(buf.len())
+    }
 
-    fn write_all(&mut self, buf: &[u8]) -> serde_bolt::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
         trace!("write {:x?}", buf);
         self.do_write(buf);
         Ok(())

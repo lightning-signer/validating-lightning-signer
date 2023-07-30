@@ -35,12 +35,12 @@ pub fn derive_ser_bolt(input: TokenStream) -> TokenStream {
         impl DeBolt for #ident {
             const TYPE: u16 = #message_id;
             fn from_vec(mut ser: Vec<u8>) -> Result<Self> {
-                let reader = &mut ser;
-                let message_type = read_u16(reader)?;
+                let mut rest = ser.split_off(2);
+                let message_type = u16::from_be_bytes(ser.try_into().expect("split off"));
                 if message_type != Self::TYPE {
                     return Err(Error::UnexpectedType(message_type));
                 }
-                from_vec_no_trailing(reader)
+                from_vec_no_trailing(&mut rest)
             }
         }
     };
