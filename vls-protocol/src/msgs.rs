@@ -4,6 +4,7 @@
 use alloc::vec::Vec;
 use as_any::AsAny;
 use bitcoin::consensus::{Decodable, Encodable};
+use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::{BlockHash, OutPoint, Txid};
 use core::fmt::Debug;
 use serde_bolt::bitcoin;
@@ -11,10 +12,11 @@ use serde_bolt::bitcoin;
 use crate::error::{Error, Result};
 use crate::io::{read_bytes, read_u16, read_u32, read_u64};
 use crate::model::*;
+use crate::psbt::StreamedPSBT;
 use bitcoin_consensus_derive::{Decodable, Encodable};
 use bolt_derive::{ReadMessage, SerBolt};
 use serde_bolt::{
-    from_vec as sb_from_vec, io::Read, io::Write, to_vec, Array, LargeOctets, Octets, WireString,
+    from_vec as sb_from_vec, io::Read, io::Write, to_vec, Array, LargeOctets, Octets, WireString, WithSize,
 };
 
 use log::error;
@@ -155,14 +157,14 @@ pub struct SignInvoiceReply {
 #[message_id(7)]
 pub struct SignWithdrawal {
     pub utxos: Array<Utxo>,
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<StreamedPSBT>,
 }
 
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(107)]
 pub struct SignWithdrawalReply {
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
 }
 
 ///
@@ -400,7 +402,7 @@ pub struct ReadyChannelReply {}
 #[message_id(35)]
 pub struct ValidateCommitmentTx {
     pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub htlcs: Array<Htlc>,
     pub commitment_number: u64,
     pub feerate: u32,
@@ -451,7 +453,7 @@ pub struct SignCommitmentTx {
     pub peer_id: PubKey,
     pub dbid: u64,
     pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub remote_funding_key: PubKey,
     pub commitment_number: u64,
 }
@@ -484,7 +486,7 @@ pub struct SignGossipMessageReply {
 #[message_id(19)]
 pub struct SignRemoteCommitmentTx {
     pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub remote_funding_key: PubKey,
     pub remote_per_commitment_point: PubKey,
     pub option_static_remotekey: bool,
@@ -539,7 +541,7 @@ pub struct SignCommitmentTxWithHtlcsReply {
 pub struct SignDelayedPaymentToUs {
     pub commitment_number: u64,
     pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
 }
 
@@ -550,7 +552,7 @@ pub struct SignDelayedPaymentToUs {
 pub struct SignAnyDelayedPaymentToUs {
     pub commitment_number: u64,
     pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
     pub input: u32,
     pub peer_id: PubKey,
@@ -564,7 +566,7 @@ pub struct SignAnyDelayedPaymentToUs {
 pub struct SignRemoteHtlcToUs {
     pub remote_per_commitment_point: PubKey,
     pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
     pub option_anchors: bool,
 }
@@ -576,7 +578,7 @@ pub struct SignRemoteHtlcToUs {
 pub struct SignAnyRemoteHtlcToUs {
     pub remote_per_commitment_point: PubKey,
     pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
     pub option_anchors: bool,
     pub input: u32,
@@ -590,7 +592,7 @@ pub struct SignAnyRemoteHtlcToUs {
 pub struct SignLocalHtlcTx {
     pub commitment_number: u64,
     pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
     pub option_anchors: bool,
 }
@@ -602,7 +604,7 @@ pub struct SignLocalHtlcTx {
 pub struct SignAnyLocalHtlcTx {
     pub commitment_number: u64,
     pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
     pub option_anchors: bool,
     pub input: u32,
@@ -616,7 +618,7 @@ pub struct SignAnyLocalHtlcTx {
 #[message_id(21)]
 pub struct SignMutualCloseTx {
     pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub remote_funding_key: PubKey,
 }
 
@@ -680,7 +682,7 @@ pub struct GetChannelBasepointsReply {
 #[message_id(20)]
 pub struct SignRemoteHtlcTx {
     pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
     pub remote_per_commitment_point: PubKey,
     pub option_anchors: bool,
@@ -692,7 +694,7 @@ pub struct SignRemoteHtlcTx {
 pub struct SignPenaltyToUs {
     pub revocation_secret: DisclosedSecret,
     pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
 }
 
@@ -702,7 +704,7 @@ pub struct SignPenaltyToUs {
 pub struct SignAnyPenaltyToUs {
     pub revocation_secret: DisclosedSecret,
     pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
     pub input: u32,
     pub peer_id: PubKey,

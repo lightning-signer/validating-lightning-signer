@@ -7,6 +7,8 @@ pub mod features;
 mod io;
 pub mod model;
 pub mod msgs;
+/// Streaming PSBT
+pub mod psbt;
 
 pub use error::{Error, Result};
 pub use serde_bolt;

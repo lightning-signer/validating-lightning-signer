@@ -37,7 +37,7 @@ use vls_protocol::msgs::{
     SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal, SignWithdrawalReply,
     ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply,
 };
-use vls_protocol::serde_bolt::{Array, LargeOctets, Octets, WireString};
+use vls_protocol::serde_bolt::{Array, Octets, WireString};
 use vls_protocol::{model, Error as ProtocolError};
 use vls_protocol_signer::util::commitment_type_to_channel_type;
 
@@ -47,7 +47,7 @@ use bitcoin::secp256k1::rand::rngs::OsRng;
 use bitcoin::secp256k1::rand::RngCore;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::util::psbt::PartiallySignedTransaction;
-use bitcoin::{consensus, EcdsaSighashType, Script, WPubkeyHash};
+use bitcoin::{EcdsaSighashType, Script, WPubkeyHash};
 use lightning::chain::keysinterface::{KeyMaterial, Recipient, SpendableOutputDescriptor};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::script::ShutdownScript;
@@ -63,6 +63,7 @@ use lightning_signer::channel::CommitmentType;
 use lightning_signer::lightning::chain::keysinterface::{EntropySource, SignerProvider};
 use lightning_signer::lightning::ln::msgs::UnsignedGossipMessage;
 pub use signer_port::SignerPort;
+use vls_protocol::psbt::StreamedPSBT;
 
 #[derive(Debug)]
 pub enum Error {
@@ -492,13 +493,15 @@ impl KeysManagerClient {
     ) -> Vec<Vec<Vec<u8>>> {
         let utxos = Array(descriptors.into_iter().map(|d| Self::descriptor_to_utxo(*d)).collect());
 
-        let psbt = PartiallySignedTransaction::from_unsigned_tx(tx.clone()).expect("create PSBT");
+        let psbt = StreamedPSBT::new(
+            PartiallySignedTransaction::from_unsigned_tx(tx.clone()).expect("create PSBT"),
+        )
+        .into();
 
-        let message = SignWithdrawal { utxos, psbt: LargeOctets(consensus::serialize(&psbt)) };
+        let message = SignWithdrawal { utxos, psbt };
         let result: SignWithdrawalReply = self.call(message).expect("sign failed");
-        let result_psbt: PartiallySignedTransaction =
-            consensus::deserialize(&result.psbt.0).expect("deserialize PSBT");
-        result_psbt.inputs.into_iter().map(|i| i.final_script_witness.unwrap().to_vec()).collect()
+        let psbt = result.psbt.0;
+        psbt.inputs.into_iter().map(|i| i.final_script_witness.unwrap().to_vec()).collect()
     }
 
     fn descriptor_to_utxo(d: &SpendableOutputDescriptor) -> Utxo {

@@ -1,11 +1,12 @@
-use crate::io::{Cursor, Read};
-use crate::prelude::*;
 use alloc::collections::{btree_map, BTreeMap};
+use alloc::vec::Vec;
 use bitcoin::consensus::encode::MAX_VEC_SIZE;
-use bitcoin::consensus::{encode, Decodable};
+use bitcoin::consensus::{encode, Decodable, Encodable};
 use bitcoin::psbt::{raw, Error, Input, Output, PartiallySignedTransaction};
 use bitcoin::util::bip32::{ChildNumber, DerivationPath, ExtendedPubKey, Fingerprint};
 use bitcoin::Transaction;
+use serde_bolt::bitcoin;
+use serde_bolt::io::{self, Cursor, Read, Write};
 
 /// Type: Unsigned Transaction PSBT_GLOBAL_UNSIGNED_TX = 0x00
 const PSBT_GLOBAL_UNSIGNED_TX: u8 = 0x00;
@@ -35,6 +36,7 @@ const PSBT_GLOBAL_PROPRIETARY: u8 = 0xFC;
 /// might malleate the funding transaction ID.
 /// - if we might statelessly sign different inputs at different times, and the attacker
 /// might lie about different input amounts at different times (this is fixed in taproot).
+#[derive(Debug)]
 pub struct StreamedPSBT {
     /// The PSBT
     pub psbt: PartiallySignedTransaction,
@@ -43,7 +45,12 @@ pub struct StreamedPSBT {
 }
 
 impl StreamedPSBT {
-    pub(crate) fn consensus_decode_global<R: Read + ?Sized>(
+    pub fn new(psbt: PartiallySignedTransaction) -> Self {
+        let segwit_flags = Vec::new();
+        Self { psbt, segwit_flags }
+    }
+
+    pub fn consensus_decode_global<R: Read + ?Sized>(
         r: &mut R,
     ) -> Result<PartiallySignedTransaction, encode::Error> {
         let mut r = r.take(MAX_VEC_SIZE as u64);
@@ -180,8 +187,8 @@ impl StreamedPSBT {
                 xpub: xpub_map,
                 proprietary,
                 unknown: unknowns,
-                inputs: vec![],
-                outputs: vec![],
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             };
             Ok(psbt)
         } else {
@@ -290,13 +297,20 @@ impl StreamedPSBT {
     }
 }
 
+impl Encodable for StreamedPSBT {
+    fn consensus_encode<W: Write + ?Sized>(&self, writer: &mut W) -> Result<usize, io::Error> {
+        self.psbt.consensus_encode(writer)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::util::psbt::StreamedPSBT;
+    use super::StreamedPSBT;
     use bitcoin::consensus::{deserialize, encode::serialize_hex};
     use bitcoin::hashes::hex::FromHex;
     use bitcoin::psbt::{Input, Output, PartiallySignedTransaction};
     use bitcoin::*;
+    use serde_bolt::bitcoin;
     use std::collections::BTreeMap;
 
     macro_rules! hex (($hex:expr) => (Vec::from_hex($hex).unwrap()));
