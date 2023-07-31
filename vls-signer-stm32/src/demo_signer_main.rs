@@ -227,9 +227,8 @@ fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHa
         const NUM_TRACKS: usize = 5;
         let top_tracks = tracks.add_message(reqhdr.dbid, numreq, &message, NUM_TRACKS);
 
-
         let mut message_d = format!("dbid: {:>3}, {:<24}", reqhdr.dbid, message.inner().name());
-        message_d.truncate(20);
+        message_d.truncate(35);
 
         let heap_free_kb = (HEAP_SIZE - heap_bytes_used()) / 1024;
         info!("starting {}, {}KB heap free", message_d.clone(), heap_free_kb);

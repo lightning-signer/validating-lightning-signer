@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 
 use vls_protocol_signer::vls_protocol::msgs::Message;
 
-const TRACKLEN: usize = 16;
+const TRACKLEN: usize = 15;
 
 pub struct Track {
     latest: u64,
@@ -109,7 +109,7 @@ impl Tracks {
         // Format the output strings
         let mut output: Vec<_> = top
             .iter()
-            .map(|item| format!("{:02} {: >len$}", item.0, item.1.dspstr, len = TRACKLEN))
+            .map(|item| format!("{:03} {: >len$}", item.0, item.1.dspstr, len = TRACKLEN))
             .collect();
 
         // Extend w/ blank strings
@@ -169,6 +169,7 @@ fn track_char(msg: &Message) -> char {
         Message::TipInfo(_m) => '<',
         Message::GetHeartbeat(_m) => 'B',
         Message::ForwardWatches(_m) => '[',
+        Message::BlockChunk(_m) => ':',
         Message::AddBlock(_m) => ']',
         Message::ReverseWatches(_m) => '{',
         Message::RemoveBlock(_m) => '}',
@@ -212,12 +213,12 @@ fn track_char(msg: &Message) -> char {
         | Message::TipInfoReply(_)
         | Message::ForwardWatchesReply(_)
         | Message::ReverseWatchesReply(_)
+        | Message::BlockChunkReply(_)
         | Message::AddBlockReply(_)
         | Message::RemoveBlockReply(_)
         | Message::GetHeartbeatReply(_)
         | Message::SignGossipMessage(_) => {
             panic!("{:?} invalid in this context", msg);
         }
-        _ => ' ',
     }
 }

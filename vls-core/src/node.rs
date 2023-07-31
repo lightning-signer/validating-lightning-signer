@@ -2541,7 +2541,6 @@ impl Node {
                         if chan.monitor.is_done() {
                             Some(key.clone()) // clone the channel_id0 for removal
                         } else {
-                            info!("not done");
                             None
                         }
                     }

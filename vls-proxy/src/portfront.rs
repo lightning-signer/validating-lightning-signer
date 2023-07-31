@@ -77,7 +77,7 @@ impl NodePortFront {
             .unwrap_or(false);
         let block_chunk_size = if test_streaming {
             // create more chunks for better system testing
-            23
+            1223
         } else {
             BLOCK_CHUNK_SIZE
         };
