@@ -1,8 +1,11 @@
+#![allow(deprecated)]
 use kv::Json;
 use lightning_signer::bitcoin::hashes::hex::ToHex;
 use std::env::args;
 use vls_persist::kv_json::KVJsonPersister;
 use vls_persist::model::NodeChannelId;
+
+// TODO update to redb
 
 macro_rules! dump_items {
     ($obj:expr, $bucket:ident) => {

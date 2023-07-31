@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use kv::Json;
 use std::time::Duration;
 
@@ -8,6 +9,8 @@ use lightning_signer::persist::Persist;
 use lightning_signer::util::test_utils::{self, hex_decode, TEST_CHANNEL_ID, TEST_NODE_CONFIG};
 use vls_persist::kv_json::KVJsonPersister;
 use vls_persist::model::{ChannelEntry, NodeChannelId, NodeEntry, NodeStateEntry};
+
+// TODO update to redb
 
 pub fn main() {
     let persister = KVJsonPersister::new("/tmp/signer.kv");

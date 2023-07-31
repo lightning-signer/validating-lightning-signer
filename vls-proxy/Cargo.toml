@@ -7,7 +7,7 @@ edition = "2021"
 description = "A library for implementing a Lightning signer, which externalizes and secures cryptographic operations."
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
-rust-version = "1.63.0"
+rust-version = "1.66.0"
 build = "build.rs"
 
 [features]
@@ -25,7 +25,7 @@ vls-protocol-signer = { path = "../vls-protocol-signer", version = "0.9.1" }
 vls-protocol-client = { path = "../vls-protocol-client", version = "0.9.1" }
 vls-protocol = { path = "../vls-protocol", version = "0.9.1" }
 vls-frontend = { path = "../vls-frontend", version = "0.9.1" }
-vls-persist = { path = "../vls-persist", version = "0.9.1", default_features = false, features = ["std", "memo", "kv-json"] }
+vls-persist = { path = "../vls-persist", version = "0.9.1", default_features = false, features = ["std", "memo", "kv-json", "redb-kvv"] }
 lightning-storage-server = { path = "../lightning-storage-server", version = "0.3.0", default-features = false }
 nix = "0.26"
 serde = "1.0"
