@@ -1740,10 +1740,10 @@ impl Node {
         }
         drop(state); // minimize lock time
 
-        let tracker = self.tracker.lock().unwrap();
+        let mut tracker = self.tracker.lock().unwrap();
 
         // pruned channels are persisted inside
-        self.prune_channels(tracker.height());
+        self.prune_channels(&mut tracker);
 
         let tip = tracker.tip();
         let current_timestamp = self.clock.now().as_secs() as u32;
@@ -2526,10 +2526,12 @@ impl Node {
         VelocityControl::new(velocity_control_spec)
     }
 
-    fn prune_channels(&self, current_blockheight: u32) {
+    fn prune_channels(&self, tracker: &mut ChainTracker<ChainMonitor>) {
         // Prune stubs/channels which are no longer needed in memory.
         let mut channels = self.channels.lock().unwrap();
+
         // unfortunately `btree_drain_filter` is unstable
+        // Gather a list of all channels to prune
         let keys_to_remove: Vec<_> = channels
             .iter()
             .filter_map(|(key, slot_arc)| {
@@ -2537,7 +2539,6 @@ impl Node {
                 match &*slot {
                     ChannelSlot::Ready(chan) => {
                         if chan.monitor.is_done() {
-                            info!("pruning channel {} because is_done", &key);
                             Some(key.clone()) // clone the channel_id0 for removal
                         } else {
                             info!("not done");
@@ -2556,8 +2557,7 @@ impl Node {
                             Network::Regtest => CHANNEL_STUB_PRUNE_BLOCKS + 100,
                             _ => CHANNEL_STUB_PRUNE_BLOCKS,
                         };
-                        if current_blockheight.saturating_sub(stub.blockheight) > stub_prune_time {
-                            info!("pruning channel stub {}", &key);
+                        if tracker.height().saturating_sub(stub.blockheight) > stub_prune_time {
                             Some(key.clone()) // clone the channel_id0 for removal
                         } else {
                             None
@@ -2566,11 +2566,29 @@ impl Node {
                 }
             })
             .collect();
-        for channel_id0 in keys_to_remove {
-            channels.remove(&channel_id0);
-            self.persister.delete_channel(&self.get_id(), &channel_id0).unwrap_or_else(|err| {
-                panic!("trouble deleting channel {}: {:?}", &channel_id0, err)
-            });
+
+        // Prune the channels
+        let mut tracker_modified = false;
+        for key in keys_to_remove {
+            let slot = channels.remove(&key).unwrap();
+            match &*slot.lock().unwrap() {
+                ChannelSlot::Ready(chan) => {
+                    info!("pruning channel {} because is_done", &key);
+                    tracker.remove_listener(&chan.monitor.funding_outpoint);
+                    tracker_modified = true;
+                }
+                ChannelSlot::Stub(_stub) => {
+                    info!("pruning channel stub {}", &key);
+                }
+            };
+            self.persister
+                .delete_channel(&self.get_id(), &key)
+                .unwrap_or_else(|err| panic!("trouble deleting channel {}: {:?}", &key, err));
+        }
+        if tracker_modified {
+            self.persister
+                .update_tracker(&self.get_id(), &tracker)
+                .unwrap_or_else(|err| panic!("trouble updating tracker: {:?}", err));
         }
     }
 }

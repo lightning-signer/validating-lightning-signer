@@ -469,6 +469,12 @@ impl<L: ChainListener> ChainTracker<L> {
         self.listeners.insert(listener.key().clone(), (listener, slot));
     }
 
+    /// Remove a listener
+    pub fn remove_listener(&mut self, key: &L::Key) {
+        debug!("{}: removing listener", short_function!());
+        self.listeners.remove(&key);
+    }
+
     /// Add more watches to a listener
     pub fn add_listener_watches(&mut self, key: &L::Key, watches: OrderedSet<OutPoint>) {
         let (_, slot) =
