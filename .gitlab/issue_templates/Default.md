@@ -1,3 +1,5 @@
+<!-- Please do not change the below as it helps us to classify new issues. You are welcome to choose additional labels as needed. -->
+/label ~Triage ~Bug
 ### Summary
 
 <!-- Summarize the bug encountered concisely. -->
@@ -35,6 +37,3 @@ make list-versions
 ### Possible fixes
 
 <!-- If you can, link to the line of code that might be responsible for the problem. -->
-
-<!-- Please do not change the below as it helps us to classify new issues. You are welcome to choose additional labels as needed. -->
-/label ~Triage ~Bug

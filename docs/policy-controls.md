@@ -2,16 +2,16 @@
 
 # Overview
 
-This document describes a set of policy controls that collectively
-ensure funds are not lost to theft.  The controls are separated into a
+This document describes a set of validation rules that collectively
+ensure funds are not lost to theft.  The rules are separated into a
 *mandatory* set, which ensures the integrity of the basic Lightning
-protocol and an *optional* set, which includes use-case specific
-controls.
+protocol and an *optional* set, which includes use-case specific validation
+rules.
 
-Some controls will change with the evolution of the Lightning protocol - e.g.
+Some validation rules will change with the evolution of the Lightning protocol - e.g.
 [dual funding](https://github.com/lightningnetwork/lightning-rfc/pull/524) and splicing.
 
-# Mandatory Policy Controls
+# Mandatory Validation Rules
 
 ## Opening a Channel
 * Delay - the local and remote imposed to_self_delay must be reasonable <br>
@@ -53,9 +53,9 @@ Some controls will change with the evolution of the Lightning protocol - e.g.
 
 ## Validating a Commitment Transaction
 
-Before we sign a counterparty commitment transaction or accept the signature on a holder commitment transaction, the following controls are checked.
+Before we sign a counterparty commitment transaction or accept the signature on a holder commitment transaction, the following rules are checked.
 
-Note that several controls may be checked in one comparison, in which case the prefix tag `policy-commitment` is used in the code.
+Note that several rules may be checked in one comparison, in which case the prefix tag `policy-commitment` is used in the code.
 
 * Input - the single input must spend the funding output <br>
   `policy-commitment-input-single`,
@@ -182,7 +182,7 @@ Note that several controls may be checked in one comparison, in which case the p
 
 ## Payments
 
-These policy controls are also enforced at commitment signing time, but are separated for clarity.
+These validation rules are also enforced at commitment signing time, but are separated for clarity.
 
 * A settled offered HTLC must have a known preimage.  <br>
   `policy-commitment-payment-settled-preimage` <br>
@@ -213,7 +213,7 @@ These policy controls are also enforced at commitment signing time, but are sepa
 ## Validating a Holder Commitment and Revoking Previous Commitment Transaction
 
 Before we revoke a commitment by releasing its revocation secret, the
-following controls are checked:
+following rules are checked:
 
 * New commitment - the remote must have signed the new commitment
   transaction <br>
@@ -230,7 +230,7 @@ following controls are checked:
 ## HTLC Transactions
 
 Before we sign an HTLCSuccess or HTLCTimeout transaction, the
-following controls are checked:
+following rules are checked:
 
 * Format - version, locktime and sequence must be as specified in BOLT 3 <br>
   `policy-htlc-version`,
@@ -256,7 +256,7 @@ following controls are checked:
 ## Mutual Closing Transaction
 
 Before we sign a cooperative closing transaction, the following
-controls are checked:
+rules are checked:
 
 * Destination - the destination must be allowlisted or in the layer-one
   wallet. If the destination is specified as an
@@ -279,7 +279,7 @@ controls are checked:
 ## Sweep Transactions
 
 Before we sign a delayed output, counterparty commitment HTLC output,
-or justice sweep transaction, the following controls are checked:
+or justice sweep transaction, the following rules are checked:
 
 * Format - version and sequence must be as specified in BOLT 3 <br>
   `policy-sweep-version`,
@@ -300,7 +300,7 @@ or justice sweep transaction, the following controls are checked:
 * Maximum size - the transaction must be under a certain size <br>
   `policy-onchain-max-size`
 
-# Optional Policy Controls
+# Optional Validation Rules
 ## Funding Transaction
 
 * Maximum - the amount funded in a channel must be under a certain amount <br>
@@ -318,7 +318,7 @@ or justice sweep transaction, the following controls are checked:
   `policy-velocity-transferred` <br>
   ACTION: implement
 
-# Use-case Specific Controls
+# Use-case Specific Validation Rules
 ## Merchant
 
 * No sends - balances must only increase until closing or loop-out <br>

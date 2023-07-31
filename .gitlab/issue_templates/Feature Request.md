@@ -1,3 +1,5 @@
+<!-- Please do not change the below as it helps us to classify new issues. You are welcome to choose additional labels as needed. -->
+/label ~Triage
 ## Problem Statement
 <!-- What is the issue being faced and needs addressing? !-->
 
@@ -27,6 +29,3 @@
 - [ ] High (This will bring a huge increase in performance/productivity/usability/legislative cover)
 - [ ] Medium (This will bring a good increase in performance/productivity/usability)
 - [ ] Low (anything else e.g., trivial, minor improvements)
-
-<!-- Please do not change the below as it helps us to classify new issues. You are welcome to choose additional labels as needed. -->
-/label ~Triage

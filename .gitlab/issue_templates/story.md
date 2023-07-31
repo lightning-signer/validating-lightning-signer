@@ -1,3 +1,5 @@
+<!-- Please do not change the below as it helps us to classify new issues. You are welcome to choose additional labels as needed. -->
+/label ~Triage
 ## User Story
 <!-- As a _____ (stakeholder/type of user), I want to _____ (goal/objective), so that ______ (benefit/result) !-->
 - Stakeholder:
@@ -12,6 +14,3 @@
 - [ ] High (This will bring a huge increase in performance/productivity/usability, or is a legislative requirement)
 - [ ] Medium (This will bring a good increase in performance/productivity/usability)
 - [ ] Low (anything else e.g., trivial, minor improvements)
-
-<!-- Please do not change the below as it helps us to classify new issues. You are welcome to choose additional labels as needed. -->
-/label ~Triage
