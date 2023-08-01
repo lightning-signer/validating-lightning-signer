@@ -681,9 +681,9 @@ dependencies = [
 
 [[package]]
 name = "serde_bolt"
-version = "0.3.0-beta.7"
+version = "0.3.0-beta.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f406b69cf728e78d75e2361e48fa4ccddb11523a1a9fd98db0d5a6deb1c5b7fc"
+checksum = "9e978c3b330747f57965315f22cdc6bd8e5054b7d576db8cc642941fb0eba9b8"
 dependencies = [
  "bitcoin",
  "bitcoin-consensus-derive",

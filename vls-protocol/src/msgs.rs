@@ -1,22 +1,22 @@
 #![allow(missing_docs)]
 #![allow(deprecated)]
 
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use as_any::AsAny;
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::{BlockHash, OutPoint, Txid};
 use core::fmt::Debug;
-use serde_bolt::bitcoin;
+use serde_bolt::{bitcoin, ReadBigEndian};
 
 use crate::error::{Error, Result};
-use crate::io::{read_bytes, read_u16, read_u32, read_u64};
 use crate::model::*;
 use crate::psbt::StreamedPSBT;
 use bitcoin_consensus_derive::{Decodable, Encodable};
 use bolt_derive::{ReadMessage, SerBolt};
 use serde_bolt::{
-    from_vec as sb_from_vec, io::Read, io::Write, to_vec, Array, LargeOctets, Octets, WireString, WithSize,
+    io, io::Read, io::Write, take::Take, to_vec, Array, LargeOctets, Octets, WireString, WithSize,
 };
 
 use log::error;
@@ -812,8 +812,6 @@ pub struct BlockChunkReply {}
 pub struct Unknown {
     /// Message type
     pub message_type: u16,
-    /// Unparsed data
-    pub data: Vec<u8>,
 }
 
 #[derive(SerBolt, Debug, Encodable, Decodable)]
@@ -917,21 +915,13 @@ pub enum Message {
     Unknown(Unknown),
 }
 
-fn from_vec_no_trailing<T: DeBolt>(s: &mut Vec<u8>) -> Result<T> {
-    let res: T = sb_from_vec(s)?;
-    if !s.is_empty() {
-        return Err(Error::TrailingBytes(s.len(), T::TYPE));
-    }
-    Ok(res)
-}
-
 /// Read a length framed BOLT message of any type:
 ///
 /// - u32 packet length
 /// - u16 packet type
 /// - data
 pub fn read<R: Read>(reader: &mut R) -> Result<Message> {
-    let len = read_u32(reader)?;
+    let len = reader.read_u32_be()?;
     from_reader(reader, len)
 }
 
@@ -941,7 +931,13 @@ pub fn read<R: Read>(reader: &mut R) -> Result<Message> {
 /// - u16 packet type
 /// - data
 pub fn read_message<R: Read, T: DeBolt>(reader: &mut R) -> Result<T> {
-    T::from_vec(read_raw(reader)?)
+    let len = reader.read_u32_be()?;
+    let mut take = Take::new(Box::new(reader), len as u64);
+    let res = T::consensus_decode(&mut take)?;
+    if !take.is_empty() {
+        return Err(Error::TrailingBytes(take.remaining() as usize, T::TYPE));
+    }
+    Ok(res)
 }
 
 /// Read a raw message from a length framed BOLT message:
@@ -950,7 +946,7 @@ pub fn read_message<R: Read, T: DeBolt>(reader: &mut R) -> Result<T> {
 /// - u16 packet type
 /// - data
 pub fn read_raw<R: Read>(reader: &mut R) -> Result<Vec<u8>> {
-    let len = read_u32(reader)?;
+    let len = reader.read_u32_be()?;
     let mut data = Vec::new();
     data.resize(len as usize, 0);
     let actual = reader.read(&mut data)?;
@@ -966,7 +962,7 @@ pub fn read_raw<R: Read>(reader: &mut R) -> Result<Vec<u8>> {
 /// - data
 pub fn from_vec(mut v: Vec<u8>) -> Result<Message> {
     let len = v.len();
-    let mut cursor = serde_bolt::io::Cursor::new(&mut v);
+    let mut cursor = io::Cursor::new(&mut v);
     from_reader(&mut cursor, len as u32)
 }
 
@@ -975,13 +971,6 @@ pub fn from_vec(mut v: Vec<u8>) -> Result<Message> {
 /// - u16 packet type
 /// - data
 pub fn from_reader<R: Read>(reader: &mut R, len: u32) -> Result<Message> {
-    let (mut data, message_type) = message_and_type_from_reader(reader, len)?;
-
-    Message::read_message(&mut data, message_type)
-}
-
-fn message_and_type_from_reader<R: Read>(reader: &mut R, len: u32) -> Result<(Vec<u8>, u16)> {
-    let mut data = Vec::new();
     if len < 2 {
         return Err(Error::ShortRead);
     }
@@ -989,13 +978,15 @@ fn message_and_type_from_reader<R: Read>(reader: &mut R, len: u32) -> Result<(Ve
         error!("message too large {}", len);
         return Err(Error::MessageTooLarge);
     }
-    data.resize(len as usize - 2, 0);
-    let message_type = read_u16(reader)?;
-    let len = reader.read(&mut data)?;
-    if len < data.len() {
-        return Err(Error::ShortRead);
+
+    let mut take = Take::new(Box::new(reader), len as u64);
+
+    let message_type = take.read_u16_be()?;
+    let message = Message::read_message(&mut take, message_type)?;
+    if !take.is_empty() {
+        return Err(Error::TrailingBytes(take.remaining() as usize, message_type));
     }
-    Ok((data, message_type))
+    Ok(message)
 }
 
 pub fn write<W: Write, T: DeBolt>(writer: &mut W, value: T) -> Result<()> {
@@ -1043,26 +1034,27 @@ pub fn write_serial_response_header<W: Write>(writer: &mut W, sequence: u16) -> 
 /// Read and return the serial request header
 /// Returns BadFraming if the magic is wrong.
 pub fn read_serial_request_header<R: Read>(reader: &mut R) -> Result<SerialRequestHeader> {
-    let magic = read_u16(reader)?;
+    let magic = reader.read_u16_be()?;
     if magic != 0xaa55 {
         error!("bad magic {:02x}", magic);
         return Err(Error::BadFraming);
     }
-    let sequence = read_u16(reader)?;
-    let peer_id = read_bytes(reader)?;
-    let dbid = read_u64(reader)?;
+    let sequence = reader.read_u16_be()?;
+    let mut peer_id = [0u8; 33];
+    reader.read_exact(&mut peer_id)?;
+    let dbid = reader.read_u64_be()?;
     Ok(SerialRequestHeader { sequence, peer_id, dbid })
 }
 
 /// Read the serial response header and match the expected sequence number
 /// Returns BadFraming if the magic or sequence are wrong.
 pub fn read_serial_response_header<R: Read>(reader: &mut R, expected_sequence: u16) -> Result<()> {
-    let magic = read_u16(reader)?;
+    let magic = reader.read_u16_be()?;
     if magic != 0x5aa5u16 {
         error!("bad magic {:02x}", magic);
         return Err(Error::BadFraming);
     }
-    let sequence = read_u16(reader)?;
+    let sequence = reader.read_u16_be()?;
     if sequence != expected_sequence {
         error!("sequence {} != expected {}", sequence, expected_sequence);
         return Err(Error::BadFraming);
@@ -1097,7 +1089,7 @@ mod tests {
     fn name_test() {
         assert_eq!(Message::NodeInfo(NodeInfo {}).inner().name(), "NodeInfo");
         assert_eq!(
-            Message::Unknown(Unknown { message_type: 0, data: vec![] }).inner().name(),
+            Message::Unknown(Unknown { message_type: 0 }).inner().name(),
             "UnknownPlaceholder"
         );
     }

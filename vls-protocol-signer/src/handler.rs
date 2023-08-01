@@ -42,7 +42,7 @@ use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
 use lightning_signer::util::status::{Code, Status};
 use lightning_signer::wallet::Wallet;
-use serde_bolt::{to_vec, Array, Octets, WireString, WithSize, LargeOctets};
+use serde_bolt::{to_vec, Array, LargeOctets, Octets, WireString, WithSize};
 use vls_protocol::model::{
     Basepoints, BitcoinSignature, DisclosedSecret, ExtKey, Htlc, PubKey, RecoverableSignature,
     Secret, Signature,

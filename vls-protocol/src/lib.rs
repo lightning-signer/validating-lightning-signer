@@ -4,7 +4,6 @@ extern crate alloc;
 
 mod error;
 pub mod features;
-mod io;
 pub mod model;
 pub mod msgs;
 /// Streaming PSBT

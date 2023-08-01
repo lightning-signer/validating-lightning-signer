@@ -9,7 +9,7 @@ homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 
 [dependencies]
-serde_bolt = { version = "0.3.0-beta.7", default-features = false }
+serde_bolt = { version = "0.3.0-beta.8", default-features = false }
 bolt-derive = { path = "../bolt-derive", version = "0.1.0" }
 bitcoin-consensus-derive = { version = "0.1.0-beta.1" }
 log = "0.4"
