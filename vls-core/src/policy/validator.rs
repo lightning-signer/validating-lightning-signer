@@ -53,7 +53,7 @@ pub trait Validator {
     ///
     /// * `channels` the funded channel for each funding output, or
     ///   None for change outputs
-    /// * `segwit_flags` - previous tx for inputs when funding channel
+    /// * `segwit_flags` - whether the corresponding input tx is segwit
     /// * `values_sat` - the amount in satoshi per input
     /// * `opaths` - derivation path per output.  Empty for non-wallet/non-xpub-whitelist
     ///   outputs.

@@ -505,7 +505,6 @@ impl Handler for RootHandler {
                         assert!(tx_in.script_sig.is_empty());
                         let script_sig =
                             script::Builder::new().push_slice(script.as_bytes()).into_script();
-                        tx_in.script_sig = script_sig.clone();
                         psbt_in.final_script_sig = Some(script_sig);
                     }
                 }
