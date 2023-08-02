@@ -42,7 +42,7 @@ use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
 use lightning_signer::util::status::{Code, Status};
 use lightning_signer::wallet::Wallet;
-use serde_bolt::{to_vec, Array, LargeOctets, Octets, WireString, WithSize};
+use serde_bolt::{to_vec, Array, Octets, WireString, WithSize};
 use vls_protocol::model::{
     Basepoints, BitcoinSignature, DisclosedSecret, ExtKey, Htlc, PubKey, RecoverableSignature,
     Secret, Signature,
@@ -558,8 +558,7 @@ impl Handler for RootHandler {
             Message::SignCommitmentTx(m) => {
                 // TODO why not channel handler??
                 let channel_id = Self::channel_id(&m.peer_id, m.dbid);
-                let mut tx_bytes = m.tx.0;
-                let tx: Transaction = deserialize(&mut tx_bytes).expect("tx");
+                let tx = m.tx.0;
 
                 // WORKAROUND - sometimes c-lightning calls handle_sign_commitment_tx
                 // with mutual close transactions.  We can tell the difference because
@@ -899,10 +898,9 @@ impl Handler for ChannelHandler {
             }
             Message::SignRemoteHtlcTx(m) => {
                 let psbt = m.psbt;
-                let mut tx_bytes = m.tx.0;
+                let tx = m.tx.0;
                 let remote_per_commitment_point =
                     PublicKey::from_slice(&m.remote_per_commitment_point.0).expect("pubkey");
-                let tx: Transaction = deserialize(&mut tx_bytes).expect("tx");
                 assert_eq!(psbt.outputs.len(), 1);
                 assert_eq!(psbt.inputs.len(), 1);
                 assert_eq!(tx.output.len(), 1);
@@ -930,8 +928,7 @@ impl Handler for ChannelHandler {
             Message::SignRemoteCommitmentTx(m) => {
                 let psbt = m.psbt;
                 let witscripts = extract_psbt_witscripts(&psbt);
-                let mut tx_bytes = m.tx.0;
-                let tx = deserialize(&mut tx_bytes).expect("tx");
+                let tx = m.tx;
                 let remote_per_commitment_point =
                     PublicKey::from_slice(&m.remote_per_commitment_point.0).expect("pubkey");
                 let commit_num = m.commitment_number;
@@ -1007,8 +1004,7 @@ impl Handler for ChannelHandler {
             ),
             Message::SignMutualCloseTx(m) => {
                 let psbt = m.psbt;
-                let mut tx_bytes = m.tx.0;
-                let tx = deserialize(&mut tx_bytes).expect("tx");
+                let tx = m.tx;
                 let opaths = extract_psbt_output_paths(&psbt);
                 let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
                     chan.sign_mutual_close_tx(&tx, &opaths)
@@ -1030,8 +1026,7 @@ impl Handler for ChannelHandler {
             Message::ValidateCommitmentTx(m) => {
                 let psbt = m.psbt;
                 let witscripts = extract_psbt_witscripts(&psbt);
-                let mut tx_bytes = m.tx.0.clone();
-                let tx = deserialize(&mut tx_bytes).expect("tx");
+                let tx = m.tx.0;
                 let commit_num = m.commitment_number;
                 let feerate_sat_per_kw = m.feerate;
                 let (received_htlcs, offered_htlcs) = extract_htlcs(&m.htlcs);
@@ -1174,14 +1169,12 @@ fn sign_delayed_payment_to_us(
     node: &Node,
     channel_id: &ChannelId,
     commitment_number: u64,
-    tx: &serde_bolt::LargeOctets,
+    tx: &Transaction,
     psbt: &PartiallySignedTransaction,
     wscript: &Octets,
     input: u32,
 ) -> Result<Box<dyn SerBolt>> {
     // FIXME CLN is sending an incorrect tx in the psbt, so use the outer one in the message instead
-    let mut tx_bytes = tx.0.as_slice();
-    let tx = deserialize(&mut tx_bytes).expect("tx");
     let commitment_number = commitment_number;
     let redeemscript = Script::from(wscript.0.clone());
     let input = input as usize;
@@ -1210,14 +1203,12 @@ fn sign_remote_htlc_to_us(
     node: &Node,
     channel_id: &ChannelId,
     remote_per_commitment_point: &PubKey,
-    tx: &LargeOctets,
+    tx: &Transaction,
     psbt: &PartiallySignedTransaction,
     wscript: &Octets,
     _option_anchors: bool,
     input: u32,
 ) -> Result<Box<dyn SerBolt>> {
-    let mut tx_bytes = tx.0.as_slice();
-    let tx = deserialize(&mut tx_bytes).expect("tx");
     let remote_per_commitment_point =
         PublicKey::from_slice(&remote_per_commitment_point.0).expect("pubkey");
     let redeemscript = Script::from(wscript.0.clone());
@@ -1247,14 +1238,12 @@ fn sign_local_htlc_tx(
     node: &Node,
     channel_id: &ChannelId,
     commitment_number: u64,
-    tx: &LargeOctets,
+    tx: &Transaction,
     psbt: &PartiallySignedTransaction,
     wscript: &Octets,
     _option_anchors: bool,
     input: u32,
 ) -> Result<Box<dyn SerBolt>> {
-    let mut tx_bytes = tx.0.as_slice();
-    let tx = deserialize(&mut tx_bytes).expect("tx");
     let commitment_number = commitment_number;
     let redeemscript = Script::from(wscript.0.clone());
     let input = input as usize;
@@ -1283,13 +1272,11 @@ fn sign_penalty_to_us(
     node: &Node,
     channel_id: &ChannelId,
     revocation_secret: &DisclosedSecret,
-    tx: &LargeOctets,
+    tx: &Transaction,
     psbt: &PartiallySignedTransaction,
     wscript: &Octets,
     input: u32,
 ) -> Result<Box<dyn SerBolt>> {
-    let mut tx_bytes = tx.0.as_slice();
-    let tx = deserialize(&mut tx_bytes).expect("tx");
     let revocation_secret = SecretKey::from_slice(&revocation_secret.0).expect("secret");
     let redeemscript = Script::from(wscript.0.clone());
     let input = input as usize;
