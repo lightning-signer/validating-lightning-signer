@@ -392,6 +392,10 @@ impl Handler for RootHandler {
                     hsm_capabilities: vec![
                         msgs::CheckPubKey::TYPE as u32,
                         msgs::SignAnyDelayedPaymentToUs::TYPE as u32,
+                        msgs::SignAnchorspend::TYPE as u32,
+                        msgs::SignHtlcTxMingle::TYPE as u32,
+                        // TODO advertise splicing when it is implemented
+                        // msgs::SignSpliceTx::TYPE as u32,
                     ]
                     .into(),
                     node_id: PubKey(node_id),
@@ -554,6 +558,15 @@ impl Handler for RootHandler {
                 sig_slice[0..64].copy_from_slice(&ser);
                 sig_slice[64] = rid.to_i32() as u8;
                 Ok(Box::new(msgs::SignInvoiceReply { signature: RecoverableSignature(sig_slice) }))
+            }
+            Message::SignAnchorspend(_m) => {
+                unimplemented!()
+            }
+            Message::SignHtlcTxMingle(_m) => {
+                unimplemented!()
+            }
+            Message::SignSpliceTx(_m) => {
+                unimplemented!()
             }
             Message::SignCommitmentTx(m) => {
                 // TODO why not channel handler??
