@@ -25,7 +25,7 @@ usbd-serial = "0.1.0"
 fugit = "0.3"
 vls-protocol-signer = { path = "../vls-protocol-signer", default-features = false, features = ["no-std", "secp-lowmemory", "tracker_size_workaround", "timeless_workaround"] }
 vls-persist = { path = "../vls-persist", default-features = false, features = ["no-std"] }
-vls-protocol = { path = "../vls-protocol" }
+vls-protocol = { path = "../vls-protocol", default-features = false, features = ["no-std"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 hex = { version = "0.4", default-features = false }
 

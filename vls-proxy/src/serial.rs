@@ -1,7 +1,7 @@
 #![macro_use]
 
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io;
 use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -17,9 +17,7 @@ use secp256k1::PublicKey;
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::secp256k1;
 use vls_protocol::model::DevSecret;
-use vls_protocol::{
-    msgs, msgs::Message, msgs::SerialRequestHeader, serde_bolt, serde_bolt::WireString, Error,
-};
+use vls_protocol::{msgs, msgs::Message, msgs::SerialRequestHeader, serde_bolt::WireString, Error};
 use vls_protocol_client::Error as ClientError;
 use vls_protocol_client::{ClientResult as Result, SignerPort};
 use vls_protocol_signer::vls_protocol;
@@ -29,7 +27,6 @@ use vls_proxy::{log_error, log_pretty, log_reply, log_request};
 
 pub struct SerialWrap {
     inner: File,
-    peek: Option<u8>,
     sequence: u16,
 }
 
@@ -39,61 +36,31 @@ impl SerialWrap {
         let mut termios = tcgetattr(fd).expect("tcgetattr");
         cfmakeraw(&mut termios);
         tcsetattr(fd, SetArg::TCSANOW, &termios).expect("tcsetattr");
-        Self { inner, peek: None, sequence: 0 }
+        Self { inner, sequence: 0 }
     }
 }
 
-impl serde_bolt::Read for SerialWrap {
-    type Error = serde_bolt::Error;
-
-    fn read(&mut self, mut buf: &mut [u8]) -> serde_bolt::Result<usize> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
-
-        let mut nread = 0;
-
-        if let Some(p) = self.peek.take() {
-            buf[0] = p;
-            nread += 1;
-            let len = buf.len();
-            buf = &mut buf[1..len];
-        }
-
-        // Not well documented in serde_bolt, but we are expected to block
-        // until we can read the whole buf or until we get to EOF.
-        while !buf.is_empty() {
-            let n = self.inner.read(buf).map_err(|e| serde_bolt::Error::Message(e.to_string()))?;
-            if n == 0 {
-                // we are at EOF
-                return if nread != 0 { Ok(nread) } else { Err(serde_bolt::Error::Eof) };
-            }
-            nread += n;
-            let len = buf.len();
-            buf = &mut buf[n..len];
-        }
-        Ok(nread)
+impl io::Read for SerialWrap {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(buf)
     }
 
-    fn peek(&mut self) -> serde_bolt::Result<Option<u8>> {
-        if self.peek.is_some() {
-            return Ok(self.peek);
-        }
-        let mut buf = [0; 1];
-        let n = self.inner.read(&mut buf).map_err(|e| serde_bolt::Error::Message(e.to_string()))?;
-        if n == 1 {
-            self.peek = Some(buf[0]);
-        }
-        Ok(self.peek)
+    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
+        self.inner.read_exact(buf)
     }
 }
 
-impl serde_bolt::Write for SerialWrap {
-    type Error = serde_bolt::Error;
+impl io::Write for SerialWrap {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.write(buf)
+    }
 
-    fn write_all(&mut self, buf: &[u8]) -> serde_bolt::Result<()> {
-        self.inner.write_all(&buf).map_err(|e| serde_bolt::Error::Message(e.to_string()))?;
-        Ok(())
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.inner.write_all(&buf)
     }
 }
 
@@ -111,7 +78,7 @@ pub fn connect(serial_port: String) -> anyhow::Result<SerialWrap> {
         derivation_style: 0,
         network_name: WireString(Network::Testnet.to_string().as_bytes().to_vec()),
         dev_seed: seed,
-        dev_allowlist: allowlist,
+        dev_allowlist: allowlist.into(),
     };
     let sequence = 0;
     let peer_id = [0; 33];

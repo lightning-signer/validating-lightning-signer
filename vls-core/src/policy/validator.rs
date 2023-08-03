@@ -51,6 +51,9 @@ pub trait Validator {
     /// Validate an onchain transaction (funding tx, simple sweeps).
     /// This transaction may fund multiple channels at the same time.
     ///
+    /// `segwit_flags` must be validated by the caller by checking
+    /// the input transactions.
+    ///
     /// * `channels` the funded channel for each funding output, or
     ///   None for change outputs
     /// * `segwit_flags` - whether the corresponding input tx is segwit

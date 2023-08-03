@@ -9,7 +9,7 @@ version = "0.1.0"
 default = ["device"]
 # note that the vls-core/secp-lowmemory feature reduces memory, but is not nearly as effective as the
 # static precomputation implementation below
-device = ["cortex-m", "cortex-m-rt", "cortex-m-semihosting", "alloc-cortex-m", "vls-core/no-std", "vls-core/secp-lowmemory"]
+device = ["cortex-m", "cortex-m-rt", "cortex-m-semihosting", "alloc-cortex-m", "vls-core/secp-lowmemory"]
 std = ["vls-core/std"]
 
 [dependencies]

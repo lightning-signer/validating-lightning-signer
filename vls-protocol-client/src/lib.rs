@@ -25,7 +25,7 @@ use lightning_signer::util::INITIAL_COMMITMENT_NUMBER;
 use log::{debug, error};
 
 use vls_protocol::model::{
-    Basepoints, BitcoinSignature, CloseInfo, DisclosedSecret, Htlc, PubKey, TxId, Utxo,
+    Basepoints, BitcoinSignature, CloseInfo, DisclosedSecret, Htlc, PubKey, Utxo,
 };
 use vls_protocol::msgs::{
     DeBolt, Ecdh, EcdhReply, GetChannelBasepoints, GetChannelBasepointsReply,
@@ -37,7 +37,7 @@ use vls_protocol::msgs::{
     SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal, SignWithdrawalReply,
     ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply,
 };
-use vls_protocol::serde_bolt::{LargeOctets, Octets, WireString};
+use vls_protocol::serde_bolt::{Array, ArrayBE, Octets, WireString};
 use vls_protocol::{model, Error as ProtocolError};
 use vls_protocol_signer::util::commitment_type_to_channel_type;
 
@@ -47,7 +47,7 @@ use bitcoin::secp256k1::rand::rngs::OsRng;
 use bitcoin::secp256k1::rand::RngCore;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::util::psbt::PartiallySignedTransaction;
-use bitcoin::{consensus, EcdsaSighashType, Script, WPubkeyHash};
+use bitcoin::{EcdsaSighashType, Script, WPubkeyHash};
 use lightning::chain::keysinterface::{KeyMaterial, Recipient, SpendableOutputDescriptor};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::script::ShutdownScript;
@@ -58,10 +58,12 @@ pub mod signer_port;
 
 pub use dyn_signer::{DynKeysInterface, DynSigner, InnerSign, SpendableKeysInterface};
 use lightning::util::ser::Readable;
+use lightning_signer::bitcoin::Txid;
 use lightning_signer::channel::CommitmentType;
 use lightning_signer::lightning::chain::keysinterface::{EntropySource, SignerProvider};
 use lightning_signer::lightning::ln::msgs::UnsignedGossipMessage;
 pub use signer_port::SignerPort;
+use vls_protocol::psbt::StreamedPSBT;
 
 #[derive(Debug)]
 pub enum Error {
@@ -132,7 +134,7 @@ pub fn node_call<T: SerBolt, R: DeBolt>(transport: &dyn Transport, message: T) -
     Ok(result)
 }
 
-fn to_htlcs(htlcs: &Vec<HTLCOutputInCommitment>, is_remote: bool) -> Vec<Htlc> {
+fn to_htlcs(htlcs: &Vec<HTLCOutputInCommitment>, is_remote: bool) -> Array<Htlc> {
     let htlcs = htlcs
         .iter()
         .map(|h| Htlc {
@@ -142,14 +144,14 @@ fn to_htlcs(htlcs: &Vec<HTLCOutputInCommitment>, is_remote: bool) -> Vec<Htlc> {
             ctlv_expiry: h.cltv_expiry,
         })
         .collect();
-    htlcs
+    Array(htlcs)
 }
 
-fn dest_wallet_path() -> Vec<u32> {
+fn dest_wallet_path() -> ArrayBE<u32> {
     let result = vec![1];
     // elsewhere we assume that the path has a single component
     assert_eq!(result.len(), 1);
-    result
+    result.into()
 }
 
 fn dbid_to_channel_id(dbid: u64) -> [u8; 32] {
@@ -374,11 +376,9 @@ impl ChannelSigner for SignerClient {
             to_remote_value_sat: tx.to_countersignatory_value_sat(),
             htlcs,
             signature: to_bitcoin_sig(&holder_tx.counterparty_sig),
-            htlc_signatures: holder_tx
-                .counterparty_htlc_sigs
-                .iter()
-                .map(|s| to_bitcoin_sig(s))
-                .collect(),
+            htlc_signatures: Array(
+                holder_tx.counterparty_htlc_sigs.iter().map(|s| to_bitcoin_sig(s)).collect(),
+            ),
         };
         let _: ValidateCommitmentTxReply = self.call(message).map_err(|_| ())?;
         Ok(())
@@ -414,7 +414,7 @@ impl ChannelSigner for SignerClient {
             is_outbound: p.is_outbound_from_holder,
             channel_value: self.channel_value,
             push_value: 0, // TODO
-            funding_txid: TxId(funding.txid.into_inner().as_slice().try_into().unwrap()),
+            funding_txid: funding.txid,
             funding_txout: funding.index,
             to_self_delay: p.holder_selected_contest_delay,
             local_shutdown_script: Octets::EMPTY, // TODO
@@ -454,7 +454,7 @@ impl KeysManagerClient {
             derivation_style: KeyDerivationStyle::Native as u8,
             dev_seed: None,
             network_name: WireString(network.into_bytes()),
-            dev_allowlist: vec![],
+            dev_allowlist: Array::new(),
         };
         let result: HsmdInit2Reply = node_call(&*transport, init_message).expect("HsmdInit");
         let xpub = ExtendedPubKey::decode(&result.bip32.0).expect("xpub");
@@ -491,15 +491,17 @@ impl KeysManagerClient {
         tx: &Transaction,
         descriptors: &[&SpendableOutputDescriptor],
     ) -> Vec<Vec<Vec<u8>>> {
-        let utxos = descriptors.into_iter().map(|d| Self::descriptor_to_utxo(*d)).collect();
+        let utxos = Array(descriptors.into_iter().map(|d| Self::descriptor_to_utxo(*d)).collect());
 
-        let psbt = PartiallySignedTransaction::from_unsigned_tx(tx.clone()).expect("create PSBT");
+        let psbt = StreamedPSBT::new(
+            PartiallySignedTransaction::from_unsigned_tx(tx.clone()).expect("create PSBT"),
+        )
+        .into();
 
-        let message = SignWithdrawal { utxos, psbt: LargeOctets(consensus::serialize(&psbt)) };
+        let message = SignWithdrawal { utxos, psbt };
         let result: SignWithdrawalReply = self.call(message).expect("sign failed");
-        let result_psbt: PartiallySignedTransaction =
-            consensus::deserialize(&result.psbt.0).expect("deserialize PSBT");
-        result_psbt.inputs.into_iter().map(|i| i.final_script_witness.unwrap().to_vec()).collect()
+        let psbt = result.psbt.0;
+        psbt.inputs.into_iter().map(|i| i.final_script_witness.unwrap().to_vec()).collect()
     }
 
     fn descriptor_to_utxo(d: &SpendableOutputDescriptor) -> Utxo {
@@ -534,7 +536,7 @@ impl KeysManagerClient {
         };
         let is_in_coinbase = false; // FIXME - set this for real
         Utxo {
-            txid: TxId([0; 32]),
+            txid: Txid::all_zeros(),
             outnum: 0,
             amount,
             keyindex,
@@ -675,8 +677,8 @@ impl SignerProvider for KeysManagerClient {
         let secp_ctx = Secp256k1::new();
         let wallet_path = dest_wallet_path();
         let mut key = self.xpub;
-        for i in wallet_path {
-            key = key.ckd_pub(&secp_ctx, ChildNumber::from_normal_idx(i).unwrap()).unwrap();
+        for i in wallet_path.iter() {
+            key = key.ckd_pub(&secp_ctx, ChildNumber::from_normal_idx(*i).unwrap()).unwrap();
         }
         let pubkey = key.public_key;
         Script::new_v0_p2wpkh(&WPubkeyHash::hash(&pubkey.serialize()))

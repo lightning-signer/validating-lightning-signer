@@ -229,6 +229,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoin-consensus-derive"
+version = "0.1.0-beta.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "579b36458c7af007dc5ff864b1c51e5d6cc474d686d8dd746d696e2e3db5ca7e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "bitcoin-push-decoder"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1813,13 +1824,14 @@ dependencies = [
 
 [[package]]
 name = "serde_bolt"
-version = "0.2.4"
+version = "0.3.0-beta.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd5fb14792b8d139f641e6d0e1a19eb0e3c47ec8629a2dc4e75fcbd7d77f46a8"
+checksum = "0b96f0200920c21f3484e2a39c8050cb9d4e2b23a12c318bb2a7cd52a1a69737"
 dependencies = [
+ "bitcoin",
+ "bitcoin-consensus-derive",
+ "core2",
  "hex",
- "serde",
- "serde_derive",
 ]
 
 [[package]]
@@ -2004,9 +2016,9 @@ checksum = "2047c6ded9c721764247e62cd3b03c09ffc529b2ba5b10ec482ae507a4a70160"
 
 [[package]]
 name = "target-lexicon"
-version = "0.12.10"
+version = "0.12.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d2faeef5759ab89935255b1a4cd98e0baf99d1085e37d36599c625dac49ae8e"
+checksum = "9d0e916b1148c8e263850e1ebcbd046f333e0683c724876bb0da63ea4373dc8a"
 
 [[package]]
 name = "tempfile"
@@ -2416,6 +2428,7 @@ dependencies = [
  "anyhow",
  "backtrace",
  "bitcoin",
+ "bitcoin-consensus-derive",
  "bitcoin-push-decoder",
  "bolt-derive",
  "core2",
@@ -2490,13 +2503,12 @@ name = "vls-protocol"
 version = "0.9.1"
 dependencies = [
  "as-any",
+ "bitcoin-consensus-derive",
  "bolt-derive",
  "hex",
  "log",
  "regex",
- "serde",
  "serde_bolt",
- "serde_derive",
 ]
 
 [[package]]
@@ -2520,7 +2532,6 @@ dependencies = [
  "bit-vec",
  "env_logger",
  "log",
- "serde",
  "test-log",
  "vls-core",
  "vls-protocol",

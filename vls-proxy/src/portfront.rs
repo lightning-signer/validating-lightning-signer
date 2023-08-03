@@ -1,14 +1,12 @@
 //! The SignerPortFront and NodePortFront provide a client RPC interface to the
 //! core MultiSigner and Node objects via a communications link.
 
-use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 
 use bitcoin::consensus::serialize;
-use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
@@ -16,13 +14,12 @@ use lightning_signer::bitcoin;
 
 use vls_frontend::{ChainTrack, ChainTrackDirectory};
 use vls_protocol::msgs::{self, Message, SerBolt};
-use vls_protocol::serde_bolt::{LargeOctets, Octets};
+use vls_protocol::serde_bolt::{self, LargeOctets, Octets};
 use vls_protocol_client::SignerPort;
 
 use lightning_signer::node::SignedHeartbeat;
 use lightning_signer::txoo::proof::TxoProof;
 use log::*;
-use vls_protocol::model;
 
 /// Implements ChainTrackDirectory using RPC to remote MultiSigner
 pub struct SignerPortFront {
@@ -124,8 +121,8 @@ impl NodePortFront {
             let bytes = serialize(&block);
             let mut offset = 0;
             for chunk in bytes.chunks(self.block_chunk_size) {
-                let hash = model::BlockHash(block_hash[..].try_into().unwrap());
-                let req = msgs::BlockChunk { hash, offset, content: Octets(chunk.to_vec()) };
+                let req =
+                    msgs::BlockChunk { hash: block_hash, offset, content: Octets(chunk.to_vec()) };
                 let reply_bytes =
                     self.signer_port.handle_message(req.as_vec()).await.expect("BlockChunk failed");
                 let result = msgs::from_vec(reply_bytes);
@@ -187,7 +184,7 @@ impl ChainTrack for NodePortFront {
         let req = msgs::TipInfo {};
         let reply = self.signer_port.handle_message(req.as_vec()).await.expect("TipInfo failed");
         if let Ok(Message::TipInfoReply(m)) = msgs::from_vec(reply) {
-            (m.height, BlockHash::from_slice(&m.block_hash.0).unwrap())
+            (m.height, m.block_hash)
         } else {
             panic!("unexpected TipInfoReply");
         }
@@ -198,21 +195,10 @@ impl ChainTrack for NodePortFront {
         let req = msgs::ForwardWatches {};
         let reply =
             self.signer_port.handle_message(req.as_vec()).await.expect("ForwardWatches failed");
-        if let Ok(Message::ForwardWatchesReply(m)) = msgs::from_vec(reply) {
-            (
-                m.txids.iter().map(|txid| Txid::from_slice(&txid.0).expect("bad txid")).collect(),
-                m.outpoints
-                    .iter()
-                    .map(|op| {
-                        OutPoint::new(
-                            Txid::from_slice(&op.txid.0).expect("bad outpoint txid"),
-                            op.vout,
-                        )
-                    })
-                    .collect(),
-            )
-        } else {
-            panic!("unexpected ForwardWatchesReply");
+        match msgs::from_vec(reply) {
+            Ok(Message::ForwardWatchesReply(m)) => (m.txids.0, m.outpoints.0),
+            Ok(m) => panic!("unexpected {:?}", m),
+            Err(e) => panic!("unexpected error {:?}", e),
         }
     }
 
@@ -221,21 +207,10 @@ impl ChainTrack for NodePortFront {
         let req = msgs::ReverseWatches {};
         let reply =
             self.signer_port.handle_message(req.as_vec()).await.expect("ReverseWatches failed");
-        if let Ok(Message::ReverseWatchesReply(m)) = msgs::from_vec(reply) {
-            (
-                m.txids.iter().map(|txid| Txid::from_slice(&txid.0).expect("bad txid")).collect(),
-                m.outpoints
-                    .iter()
-                    .map(|op| {
-                        OutPoint::new(
-                            Txid::from_slice(&op.txid.0).expect("bad outpoint txid"),
-                            op.vout,
-                        )
-                    })
-                    .collect(),
-            )
-        } else {
-            panic!("unexpected ReverseWatchesReply");
+        match msgs::from_vec(reply) {
+            Ok(Message::ReverseWatchesReply(m)) => (m.txids.0, m.outpoints.0),
+            Ok(m) => panic!("unexpected {:?}", m),
+            Err(e) => panic!("unexpected error {:?}", e),
         }
     }
 
@@ -278,7 +253,7 @@ impl ChainTrack for NodePortFront {
             self.signer_port.handle_message(req.as_vec()).await.expect("GetHeartbeat failed");
         if let Ok(Message::GetHeartbeatReply(m)) = msgs::from_vec(reply) {
             let mut ser_hb = m.heartbeat.0;
-            vls_protocol::serde_bolt::from_vec(&mut ser_hb).expect("bad heartbeat")
+            serde_bolt::from_vec(&mut ser_hb).expect("bad heartbeat")
         } else {
             panic!("unexpected GetHeartbeatReply");
         }

@@ -1,18 +1,24 @@
 #![allow(missing_docs)]
 #![allow(deprecated)]
 
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use as_any::AsAny;
+use bitcoin::consensus::{Decodable, Encodable};
+use bitcoin::psbt::PartiallySignedTransaction;
+use bitcoin::{BlockHash, OutPoint, Transaction, Txid};
 use core::fmt::Debug;
+use serde_bolt::{bitcoin, ReadBigEndian};
 
 use crate::error::{Error, Result};
-use crate::io::{read_bytes, read_u16, read_u32, read_u64};
 use crate::model::*;
+use crate::psbt::StreamedPSBT;
+use bitcoin_consensus_derive::{Decodable, Encodable};
 use bolt_derive::{ReadMessage, SerBolt};
-use serde::{de, ser};
-use serde_bolt::{from_vec as sb_from_vec, to_vec, WireString};
-use serde_bolt::{LargeOctets, Octets, Read, Write};
-use serde_derive::{Deserialize, Serialize};
+use serde_bolt::{
+    io, io::Read, io::Write, take::Take, to_vec, Array, ArrayBE, LargeOctets, Octets, WireString,
+    WithSize,
+};
 
 use log::error;
 
@@ -24,29 +30,29 @@ pub trait SerBolt: Debug + AsAny + Send {
     fn name(&self) -> &'static str;
 }
 
-pub trait DeBolt: Debug + Sized {
+pub trait DeBolt: Debug + Sized + Encodable + Decodable {
     const TYPE: u16;
     fn from_vec(ser: Vec<u8>) -> Result<Self>;
 }
 
 /// hsmd Init
 /// CLN only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(11)]
 pub struct HsmdInit {
     pub key_version: Bip32KeyVersion,
-    pub chain_params: BlockId,
+    pub chain_params: BlockHash,
     pub encryption_key: Option<DevSecret>,
     pub dev_privkey: Option<DevPrivKey>,
     pub dev_bip32_seed: Option<DevSecret>,
-    pub dev_channel_secrets: Option<Vec<DevSecret>>,
+    pub dev_channel_secrets: Option<Array<DevSecret>>,
     pub dev_channel_secrets_shaseed: Option<Sha256>,
     pub hsm_wire_min_version: u32,
     pub hsm_wire_max_version: u32,
 }
 
 // // Removed in CLN v23.05
-// #[derive(SerBolt, Debug, Serialize, Deserialize)]
+// #[derive(SerBolt, Debug, Encodable, Decodable)]
 // #[message_id(111)]
 // pub struct HsmdInitReplyV1 {
 //     pub node_id: PubKey,
@@ -56,7 +62,7 @@ pub struct HsmdInit {
 // }
 
 /// deprecated after CLN v23.05
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(113)]
 pub struct HsmdInitReplyV2 {
     pub node_id: PubKey,
@@ -67,14 +73,14 @@ pub struct HsmdInitReplyV2 {
 // There doesn't seem to be a HsmdInitReplyV3
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(114)]
 pub struct HsmdInitReplyV4 {
     /// This gets upgraded when the wire protocol changes in incompatible ways:
     pub hsm_version: u32,
     /// Capabilities, by convention are message numbers, indicating that the HSM
     /// supports you sending this message.
-    pub hsm_capabilities: Vec<u32>,
+    pub hsm_capabilities: ArrayBE<u32>,
     pub node_id: PubKey,
     pub bip32: ExtKey,
     pub bolt12: PubKey,
@@ -82,17 +88,17 @@ pub struct HsmdInitReplyV4 {
 
 /// Signer Init for LDK
 /// LDK only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1011)]
 pub struct HsmdInit2 {
     pub derivation_style: u8,
     pub network_name: WireString,
     pub dev_seed: Option<DevSecret>,
-    pub dev_allowlist: Vec<WireString>,
+    pub dev_allowlist: Array<WireString>,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1111)]
 pub struct HsmdInit2Reply {
     pub node_id: PubKey,
@@ -102,12 +108,12 @@ pub struct HsmdInit2Reply {
 
 /// Get node public keys.
 /// Used by the frontend
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1012)]
 pub struct NodeInfo {}
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1112)]
 pub struct NodeInfoReply {
     pub network_name: WireString,
@@ -117,7 +123,7 @@ pub struct NodeInfoReply {
 
 /// Connect a new client
 /// CLN only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(9)]
 pub struct ClientHsmFd {
     pub peer_id: PubKey,
@@ -126,14 +132,14 @@ pub struct ClientHsmFd {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(109)]
 pub struct ClientHsmFdReply {
     // TODO fd handling
 }
 
 /// Sign invoice
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(8)]
 pub struct SignInvoice {
     pub u5bytes: Octets,
@@ -141,36 +147,36 @@ pub struct SignInvoice {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(108)]
 pub struct SignInvoiceReply {
     pub signature: RecoverableSignature,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(7)]
 pub struct SignWithdrawal {
-    pub utxos: Vec<Utxo>,
-    pub psbt: LargeOctets,
+    pub utxos: Array<Utxo>,
+    pub psbt: WithSize<StreamedPSBT>,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(107)]
 pub struct SignWithdrawalReply {
-    pub psbt: LargeOctets,
+    pub psbt: WithSize<PartiallySignedTransaction>,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1)]
 pub struct Ecdh {
     pub point: PubKey,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(100)]
 pub struct EcdhReply {
     pub secret: Secret,
@@ -178,19 +184,19 @@ pub struct EcdhReply {
 
 /// Memleak
 /// CLN only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(33)]
 pub struct Memleak {}
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(133)]
 pub struct MemleakReply {
     pub result: bool,
 }
 
 /// CheckFutureSecret
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(22)]
 pub struct CheckFutureSecret {
     pub commitment_number: u64,
@@ -198,28 +204,28 @@ pub struct CheckFutureSecret {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(122)]
 pub struct CheckFutureSecretReply {
     pub result: bool,
 }
 
 /// SignMessage
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(23)]
 pub struct SignMessage {
     pub message: Octets,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(123)]
 pub struct SignMessageReply {
     pub signature: RecoverableSignature,
 }
 
 /// SignBolt12
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(25)]
 pub struct SignBolt12 {
     pub message_name: WireString,
@@ -229,28 +235,28 @@ pub struct SignBolt12 {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(125)]
 pub struct SignBolt12Reply {
     pub signature: Signature,
 }
 
 /// PreapproveInvoice {
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(38)]
 pub struct PreapproveInvoice {
     pub invstring: WireString,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(138)]
 pub struct PreapproveInvoiceReply {
     pub result: bool,
 }
 
 /// PreapproveKeysend {
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(39)]
 pub struct PreapproveKeysend {
     pub destination: PubKey,
@@ -259,28 +265,28 @@ pub struct PreapproveKeysend {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(139)]
 pub struct PreapproveKeysendReply {
     pub result: bool,
 }
 
 /// DeriveSecret
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(27)]
 pub struct DeriveSecret {
     pub info: Octets,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(127)]
 pub struct DeriveSecretReply {
     pub secret: Secret,
 }
 
 /// CheckPubKey
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(28)]
 pub struct CheckPubKey {
     pub index: u32,
@@ -288,35 +294,35 @@ pub struct CheckPubKey {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(128)]
 pub struct CheckPubKeyReply {
     pub ok: bool,
 }
 
 /// Sign channel update
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(3)]
 pub struct SignChannelUpdate {
     pub update: Octets,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(103)]
 pub struct SignChannelUpdateReply {
     pub update: Octets,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2)]
 pub struct SignChannelAnnouncement {
     pub announcement: Octets,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(102)]
 pub struct SignChannelAnnouncementReply {
     pub node_signature: Signature,
@@ -324,21 +330,21 @@ pub struct SignChannelAnnouncementReply {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(6)]
 pub struct SignNodeAnnouncement {
     pub announcement: Octets,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(106)]
 pub struct SignNodeAnnouncementReply {
     pub signature: Signature,
 }
 
 /// Get per-commitment point n and optionally revoke a point n-2 by releasing the secret
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(18)]
 pub struct GetPerCommitmentPoint {
     pub commitment_number: u64,
@@ -346,14 +352,14 @@ pub struct GetPerCommitmentPoint {
 
 /// Get per-commitment point
 /// LDK only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1018)]
 pub struct GetPerCommitmentPoint2 {
     pub commitment_number: u64,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(118)]
 pub struct GetPerCommitmentPointReply {
     pub point: PubKey,
@@ -361,20 +367,20 @@ pub struct GetPerCommitmentPointReply {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1118)]
 pub struct GetPerCommitmentPoint2Reply {
     pub point: PubKey,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(31)]
 pub struct ReadyChannel {
     pub is_outbound: bool,
     pub channel_value: u64,
     pub push_value: u64,
-    pub funding_txid: TxId,
+    pub funding_txid: Txid,
     pub funding_txout: u16,
     pub to_self_delay: u16,
     pub local_shutdown_script: Octets,
@@ -387,40 +393,40 @@ pub struct ReadyChannel {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(131)]
 pub struct ReadyChannelReply {}
 
 ///
 /// CLN only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(35)]
 pub struct ValidateCommitmentTx {
-    pub tx: LargeOctets,
-    pub psbt: LargeOctets,
-    pub htlcs: Vec<Htlc>,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PartiallySignedTransaction>,
+    pub htlcs: Array<Htlc>,
     pub commitment_number: u64,
     pub feerate: u32,
     pub signature: BitcoinSignature,
-    pub htlc_signatures: Vec<BitcoinSignature>,
+    pub htlc_signatures: Array<BitcoinSignature>,
 }
 
 ///
 /// LDK only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1035)]
 pub struct ValidateCommitmentTx2 {
     pub commitment_number: u64,
     pub feerate: u32,
     pub to_local_value_sat: u64,
     pub to_remote_value_sat: u64,
-    pub htlcs: Vec<Htlc>,
+    pub htlcs: Array<Htlc>,
     pub signature: BitcoinSignature,
-    pub htlc_signatures: Vec<BitcoinSignature>,
+    pub htlc_signatures: Array<BitcoinSignature>,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(135)]
 pub struct ValidateCommitmentTxReply {
     pub old_commitment_secret: Option<DisclosedSecret>,
@@ -428,7 +434,7 @@ pub struct ValidateCommitmentTxReply {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(36)]
 pub struct ValidateRevocation {
     pub commitment_number: u64,
@@ -436,40 +442,40 @@ pub struct ValidateRevocation {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(136)]
 pub struct ValidateRevocationReply {}
 
 ///
 /// CLN only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(5)]
 pub struct SignCommitmentTx {
     pub peer_id: PubKey,
     pub dbid: u64,
-    pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub remote_funding_key: PubKey,
     pub commitment_number: u64,
 }
 
 ///
 /// LDK only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1005)]
 pub struct SignLocalCommitmentTx2 {
     pub commitment_number: u64,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1006)]
 pub struct SignGossipMessage {
     pub message: Octets,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1106)]
 pub struct SignGossipMessageReply {
     pub signature: Signature,
@@ -477,22 +483,22 @@ pub struct SignGossipMessageReply {
 
 ///
 /// CLN only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(19)]
 pub struct SignRemoteCommitmentTx {
-    pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub remote_funding_key: PubKey,
     pub remote_per_commitment_point: PubKey,
     pub option_static_remotekey: bool,
     pub commitment_number: u64,
-    pub htlcs: Vec<Htlc>,
+    pub htlcs: Array<Htlc>,
     pub feerate: u32,
 }
 
 /// Ping request
 /// LDK only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1000)]
 pub struct Ping {
     pub id: u16,
@@ -501,7 +507,7 @@ pub struct Ping {
 
 /// Ping reply
 /// LDK only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1100)]
 pub struct Pong {
     pub id: u16,
@@ -510,7 +516,7 @@ pub struct Pong {
 
 ///
 /// LDK only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1019)]
 pub struct SignRemoteCommitmentTx2 {
     pub remote_per_commitment_point: PubKey,
@@ -518,36 +524,36 @@ pub struct SignRemoteCommitmentTx2 {
     pub feerate: u32,
     pub to_local_value_sat: u64,
     pub to_remote_value_sat: u64,
-    pub htlcs: Vec<Htlc>,
+    pub htlcs: Array<Htlc>,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1119)]
 pub struct SignCommitmentTxWithHtlcsReply {
     pub signature: BitcoinSignature,
-    pub htlc_signatures: Vec<BitcoinSignature>,
+    pub htlc_signatures: Array<BitcoinSignature>,
 }
 
 ///
 /// CLN only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(12)]
 pub struct SignDelayedPaymentToUs {
     pub commitment_number: u64,
-    pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
 }
 
 /// CLN only
 /// Same as [SignDelayedPaymentToUs] but called from lightningd
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(142)]
 pub struct SignAnyDelayedPaymentToUs {
     pub commitment_number: u64,
-    pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
     pub input: u32,
     pub peer_id: PubKey,
@@ -556,24 +562,24 @@ pub struct SignAnyDelayedPaymentToUs {
 
 ///
 /// CLN only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(13)]
 pub struct SignRemoteHtlcToUs {
     pub remote_per_commitment_point: PubKey,
-    pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
     pub option_anchors: bool,
 }
 
 /// CLN only
 /// Same as [SignRemoteHtlcToUs] but called from lightningd
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(143)]
 pub struct SignAnyRemoteHtlcToUs {
     pub remote_per_commitment_point: PubKey,
-    pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
     pub option_anchors: bool,
     pub input: u32,
@@ -582,24 +588,24 @@ pub struct SignAnyRemoteHtlcToUs {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(16)]
 pub struct SignLocalHtlcTx {
     pub commitment_number: u64,
-    pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
     pub option_anchors: bool,
 }
 
 /// CLN only
 /// Same as [SignLocalHtlcTx] but called from lightningd
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(146)]
 pub struct SignAnyLocalHtlcTx {
     pub commitment_number: u64,
-    pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
     pub option_anchors: bool,
     pub input: u32,
@@ -609,42 +615,42 @@ pub struct SignAnyLocalHtlcTx {
 
 ///
 /// CLN only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(21)]
 pub struct SignMutualCloseTx {
-    pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub remote_funding_key: PubKey,
 }
 
 ///
 /// LDK only
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1021)]
 pub struct SignMutualCloseTx2 {
     pub to_local_value_sat: u64,
     pub to_remote_value_sat: u64,
     pub local_script: Octets,
     pub remote_script: Octets,
-    pub local_wallet_path_hint: Vec<u32>,
+    pub local_wallet_path_hint: ArrayBE<u32>,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(105)]
 pub struct SignCommitmentTxReply {
     pub signature: BitcoinSignature,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(112)]
 pub struct SignTxReply {
     pub signature: BitcoinSignature,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(30)]
 pub struct NewChannel {
     pub node_id: PubKey,
@@ -652,12 +658,12 @@ pub struct NewChannel {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(130)]
 pub struct NewChannelReply {}
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(10)]
 pub struct GetChannelBasepoints {
     pub node_id: PubKey,
@@ -665,7 +671,7 @@ pub struct GetChannelBasepoints {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(110)]
 pub struct GetChannelBasepointsReply {
     pub basepoints: Basepoints,
@@ -673,33 +679,33 @@ pub struct GetChannelBasepointsReply {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(20)]
 pub struct SignRemoteHtlcTx {
-    pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
     pub remote_per_commitment_point: PubKey,
     pub option_anchors: bool,
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(14)]
 pub struct SignPenaltyToUs {
     pub revocation_secret: DisclosedSecret,
-    pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
 }
 
 /// Same as [SignPenaltyToUs] but called from lightningd
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(144)]
 pub struct SignAnyPenaltyToUs {
     pub revocation_secret: DisclosedSecret,
-    pub tx: LargeOctets,
-    pub psbt: LargeOctets,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PartiallySignedTransaction>,
     pub wscript: Octets,
     pub input: u32,
     pub peer_id: PubKey,
@@ -707,12 +713,12 @@ pub struct SignAnyPenaltyToUs {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2002)]
 pub struct TipInfo {}
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2102)]
 pub struct TipInfoReply {
     pub height: u32,
@@ -720,31 +726,31 @@ pub struct TipInfoReply {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2003)]
 pub struct ForwardWatches {}
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2103)]
 pub struct ForwardWatchesReply {
-    pub txids: Vec<TxId>,
-    pub outpoints: Vec<OutPoint>,
+    pub txids: Array<Txid>,
+    pub outpoints: Array<OutPoint>,
 }
 
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2004)]
 pub struct ReverseWatches {}
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2104)]
 pub struct ReverseWatchesReply {
-    pub txids: Vec<TxId>,
-    pub outpoints: Vec<OutPoint>,
+    pub txids: Array<Txid>,
+    pub outpoints: Array<OutPoint>,
 }
 
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2005)]
 pub struct AddBlock {
     /// Bitcoin consensus encoded
@@ -754,11 +760,11 @@ pub struct AddBlock {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2105)]
 pub struct AddBlockReply {}
 
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2006)]
 pub struct RemoveBlock {
     /// Bitcoin consensus encoded TXOO TxoProof
@@ -767,17 +773,17 @@ pub struct RemoveBlock {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2106)]
 pub struct RemoveBlockReply {}
 
 /// Get a serialized signed heartbeat
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2008)]
 pub struct GetHeartbeat {}
 
 /// A serialized signed heartbeat
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2108)]
 pub struct GetHeartbeatReply {
     pub heartbeat: Octets,
@@ -789,7 +795,7 @@ pub struct GetHeartbeatReply {
 /// if there is a communication error.
 /// The stream of messages is always followed by an `AddBlock` with
 /// a proof type `ExternalBlock`.
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2009)]
 pub struct BlockChunk {
     pub hash: BlockHash,
@@ -798,27 +804,25 @@ pub struct BlockChunk {
 }
 
 ///
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2109)]
 pub struct BlockChunkReply {}
 
 /// An unknown message
-#[derive(Debug, Serialize)]
+#[derive(Debug, Decodable)]
 pub struct Unknown {
     /// Message type
     pub message_type: u16,
-    /// Unparsed data
-    pub data: Vec<u8>,
 }
 
-#[derive(SerBolt, Debug, Serialize, Deserialize)]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(65535)]
 pub struct UnknownPlaceholder {}
 
 pub const UNKNOWN_PLACEHOLDER: UnknownPlaceholder = UnknownPlaceholder {};
 
 /// An enum representing all messages we can read and write
-#[derive(ReadMessage, Debug, Serialize)]
+#[derive(ReadMessage, Debug)]
 pub enum Message {
     Ping(Ping),
     Pong(Pong),
@@ -912,24 +916,13 @@ pub enum Message {
     Unknown(Unknown),
 }
 
-fn from_vec_no_trailing<T: DeBolt>(s: &mut Vec<u8>) -> Result<T>
-where
-    T: de::DeserializeOwned,
-{
-    let res: T = sb_from_vec(s)?;
-    if !s.is_empty() {
-        return Err(Error::TrailingBytes(s.len(), T::TYPE));
-    }
-    Ok(res)
-}
-
 /// Read a length framed BOLT message of any type:
 ///
 /// - u32 packet length
 /// - u16 packet type
 /// - data
 pub fn read<R: Read>(reader: &mut R) -> Result<Message> {
-    let len = read_u32(reader)?;
+    let len = reader.read_u32_be()?;
     from_reader(reader, len)
 }
 
@@ -939,7 +932,13 @@ pub fn read<R: Read>(reader: &mut R) -> Result<Message> {
 /// - u16 packet type
 /// - data
 pub fn read_message<R: Read, T: DeBolt>(reader: &mut R) -> Result<T> {
-    T::from_vec(read_raw(reader)?)
+    let len = reader.read_u32_be()?;
+    let mut take = Take::new(Box::new(reader), len as u64);
+    let res = T::consensus_decode(&mut take)?;
+    if !take.is_empty() {
+        return Err(Error::TrailingBytes(take.remaining() as usize, T::TYPE));
+    }
+    Ok(res)
 }
 
 /// Read a raw message from a length framed BOLT message:
@@ -948,7 +947,7 @@ pub fn read_message<R: Read, T: DeBolt>(reader: &mut R) -> Result<T> {
 /// - u16 packet type
 /// - data
 pub fn read_raw<R: Read>(reader: &mut R) -> Result<Vec<u8>> {
-    let len = read_u32(reader)?;
+    let len = reader.read_u32_be()?;
     let mut data = Vec::new();
     data.resize(len as usize, 0);
     let actual = reader.read(&mut data)?;
@@ -964,7 +963,8 @@ pub fn read_raw<R: Read>(reader: &mut R) -> Result<Vec<u8>> {
 /// - data
 pub fn from_vec(mut v: Vec<u8>) -> Result<Message> {
     let len = v.len();
-    from_reader(&mut v, len as u32)
+    let mut cursor = io::Cursor::new(&mut v);
+    from_reader(&mut cursor, len as u32)
 }
 
 /// Read a BOLT message from a reader:
@@ -972,13 +972,6 @@ pub fn from_vec(mut v: Vec<u8>) -> Result<Message> {
 /// - u16 packet type
 /// - data
 pub fn from_reader<R: Read>(reader: &mut R, len: u32) -> Result<Message> {
-    let (mut data, message_type) = message_and_type_from_reader(reader, len)?;
-
-    Message::read_message(&mut data, message_type)
-}
-
-fn message_and_type_from_reader<R: Read>(reader: &mut R, len: u32) -> Result<(Vec<u8>, u16)> {
-    let mut data = Vec::new();
     if len < 2 {
         return Err(Error::ShortRead);
     }
@@ -986,16 +979,18 @@ fn message_and_type_from_reader<R: Read>(reader: &mut R, len: u32) -> Result<(Ve
         error!("message too large {}", len);
         return Err(Error::MessageTooLarge);
     }
-    data.resize(len as usize - 2, 0);
-    let message_type = read_u16(reader)?;
-    let len = reader.read(&mut data)?;
-    if len < data.len() {
-        return Err(Error::ShortRead);
+
+    let mut take = Take::new(Box::new(reader), len as u64);
+
+    let message_type = take.read_u16_be()?;
+    let message = Message::read_message(&mut take, message_type)?;
+    if !take.is_empty() {
+        return Err(Error::TrailingBytes(take.remaining() as usize, message_type));
     }
-    Ok((data, message_type))
+    Ok(message)
 }
 
-pub fn write<W: Write, T: ser::Serialize + DeBolt>(writer: &mut W, value: T) -> Result<()> {
+pub fn write<W: Write, T: DeBolt>(writer: &mut W, value: T) -> Result<()> {
     let message_type = T::TYPE;
     let mut buf = message_type.to_be_bytes().to_vec();
     let mut val_buf = to_vec(&value)?;
@@ -1040,26 +1035,27 @@ pub fn write_serial_response_header<W: Write>(writer: &mut W, sequence: u16) -> 
 /// Read and return the serial request header
 /// Returns BadFraming if the magic is wrong.
 pub fn read_serial_request_header<R: Read>(reader: &mut R) -> Result<SerialRequestHeader> {
-    let magic = read_u16(reader)?;
+    let magic = reader.read_u16_be()?;
     if magic != 0xaa55 {
         error!("bad magic {:02x}", magic);
         return Err(Error::BadFraming);
     }
-    let sequence = read_u16(reader)?;
-    let peer_id = read_bytes(reader)?;
-    let dbid = read_u64(reader)?;
+    let sequence = reader.read_u16_be()?;
+    let mut peer_id = [0u8; 33];
+    reader.read_exact(&mut peer_id)?;
+    let dbid = reader.read_u64_be()?;
     Ok(SerialRequestHeader { sequence, peer_id, dbid })
 }
 
 /// Read the serial response header and match the expected sequence number
 /// Returns BadFraming if the magic or sequence are wrong.
 pub fn read_serial_response_header<R: Read>(reader: &mut R, expected_sequence: u16) -> Result<()> {
-    let magic = read_u16(reader)?;
+    let magic = reader.read_u16_be()?;
     if magic != 0x5aa5u16 {
         error!("bad magic {:02x}", magic);
         return Err(Error::BadFraming);
     }
-    let sequence = read_u16(reader)?;
+    let sequence = reader.read_u16_be()?;
     if sequence != expected_sequence {
         error!("sequence {} != expected {}", sequence, expected_sequence);
         return Err(Error::BadFraming);
@@ -1094,7 +1090,7 @@ mod tests {
     fn name_test() {
         assert_eq!(Message::NodeInfo(NodeInfo {}).inner().name(), "NodeInfo");
         assert_eq!(
-            Message::Unknown(Unknown { message_type: 0, data: vec![] }).inner().name(),
+            Message::Unknown(Unknown { message_type: 0 }).inner().name(),
             "UnknownPlaceholder"
         );
     }

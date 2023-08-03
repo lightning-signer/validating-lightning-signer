@@ -35,12 +35,16 @@ pub fn derive_ser_bolt(input: TokenStream) -> TokenStream {
         impl DeBolt for #ident {
             const TYPE: u16 = #message_id;
             fn from_vec(mut ser: Vec<u8>) -> Result<Self> {
-                let reader = &mut ser;
-                let message_type = read_u16(reader)?;
+                let mut cursor = serde_bolt::io::Cursor::new(&ser);
+                let message_type = cursor.read_u16_be()?;
                 if message_type != Self::TYPE {
                     return Err(Error::UnexpectedType(message_type));
                 }
-                from_vec_no_trailing(reader)
+                let res = Decodable::consensus_decode(&mut cursor)?;
+                if cursor.position() as usize != ser.len() {
+                    return Err(Error::TrailingBytes(cursor.position() as usize - ser.len(), Self::TYPE));
+                }
+                Ok(res)
             }
         }
     };
@@ -82,10 +86,10 @@ pub fn derive_read_message(input: TokenStream) -> TokenStream {
 
     let output = quote! {
         impl #ident {
-            fn read_message(mut data: &mut Vec<u8>, message_type: u16) -> Result<Message> {
+            fn read_message<R: Read + ?Sized>(mut reader: &mut R, message_type: u16) -> Result<Message> {
                 let message = match message_type {
-                    #(#vs::TYPE => Message::#ts(from_vec_no_trailing(&mut data)?)),*,
-                    _ => Message::Unknown(Unknown { message_type, data: data.clone() }),
+                    #(#vs::TYPE => Message::#ts(Decodable::consensus_decode(reader)?)),*,
+                    _ => Message::Unknown(Unknown { message_type }),
                 };
                 Ok(message)
             }

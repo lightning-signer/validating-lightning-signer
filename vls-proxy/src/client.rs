@@ -1,17 +1,18 @@
 use std::os::unix::io::RawFd;
 
+use bitcoin::consensus::Encodable;
+use lightning_signer::bitcoin;
 use nix::sys::socket::{socketpair, AddressFamily, SockFlag, SockType};
-use serde::Serialize;
 
+use vls_protocol::serde_bolt::io::Read;
+use vls_protocol::Error;
 use vls_protocol::{msgs, Result};
 use vls_protocol_signer::vls_protocol;
-use vls_protocol_signer::vls_protocol::serde_bolt::Read;
-use vls_protocol_signer::vls_protocol::Error;
 
 use crate::connection::UnixConnection;
 
 pub trait Client: Send {
-    fn write<M: msgs::DeBolt + Serialize>(&mut self, msg: M) -> Result<()>;
+    fn write<M: msgs::DeBolt + Encodable>(&mut self, msg: M) -> Result<()>;
     fn write_vec(&mut self, v: Vec<u8>) -> Result<()>;
     fn read(&mut self) -> Result<msgs::Message>;
     fn read_raw(&mut self) -> Result<Vec<u8>>;
@@ -35,7 +36,7 @@ impl UnixClient {
 }
 
 impl Client for UnixClient {
-    fn write<M: msgs::DeBolt + Serialize>(&mut self, msg: M) -> Result<()> {
+    fn write<M: msgs::DeBolt + Encodable>(&mut self, msg: M) -> Result<()> {
         msgs::write(&mut self.conn, msg)?;
         Ok(())
     }
