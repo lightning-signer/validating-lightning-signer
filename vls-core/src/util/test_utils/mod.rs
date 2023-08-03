@@ -300,7 +300,7 @@ pub fn make_test_channel_setup_with_points(
         counterparty_points,
         counterparty_selected_contest_delay: 6,
         counterparty_shutdown_script: None,
-        commitment_type: CommitmentType::StaticRemoteKey,
+        commitment_type: CommitmentType::AnchorsZeroFeeHtlc,
     }
 }
 
