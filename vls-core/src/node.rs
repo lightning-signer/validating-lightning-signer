@@ -1788,14 +1788,14 @@ impl Node {
     pub(crate) fn check_and_sign_onchain_tx(
         &self,
         tx: &Transaction,
-        input_txs: &[&Transaction],
+        segwit_flags: &[bool],
         ipaths: &[Vec<u32>],
         values_sat: &[u64],
         spendtypes: &[SpendType],
         uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
         opaths: &[Vec<u32>],
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
-        self.check_onchain_tx(tx, input_txs, values_sat, spendtypes, &uniclosekeys, opaths)?;
+        self.check_onchain_tx(tx, segwit_flags, values_sat, spendtypes, &uniclosekeys, opaths)?;
         self.unchecked_sign_onchain_tx(tx, ipaths, values_sat, spendtypes, uniclosekeys)
     }
 
@@ -1962,7 +1962,7 @@ impl Node {
     pub fn check_onchain_tx(
         &self,
         tx: &Transaction,
-        input_txs: &[&Transaction],
+        segwit_flags: &[bool],
         values_sat: &[u64],
         spendtypes: &[SpendType],
         uniclosekeys: &[Option<(SecretKey, Vec<Vec<u8>>)>],
@@ -2007,7 +2007,7 @@ impl Node {
             self,
             channels,
             tx,
-            input_txs,
+            segwit_flags,
             values_sat,
             opaths,
             weight_lower_bound,

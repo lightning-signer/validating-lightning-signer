@@ -40,14 +40,21 @@ impl RecoveryKeys for DirectRecoveryKeys {
     fn sign_onchain_tx(
         &self,
         tx: &Transaction,
-        input_txs: &[&Transaction],
+        segwit_flags: &[bool],
         ipaths: &Vec<Vec<u32>>,
         values_sat: &Vec<u64>,
         spendtypes: &Vec<SpendType>,
         uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
         opaths: &Vec<Vec<u32>>,
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
-        self.node.check_onchain_tx(tx, input_txs, values_sat, spendtypes, &uniclosekeys, opaths)?;
+        self.node.check_onchain_tx(
+            tx,
+            segwit_flags,
+            values_sat,
+            spendtypes,
+            &uniclosekeys,
+            opaths,
+        )?;
         self.node.unchecked_sign_onchain_tx(tx, ipaths, values_sat, spendtypes, uniclosekeys)
     }
 
