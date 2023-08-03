@@ -67,6 +67,10 @@ path = "src/demo_signer_main.rs"
 name = "test"
 path = "src/test_main.rs"
 
+[[bin]]
+name = "bench"
+path = "src/bench_crypto.rs"
+
 [profile.dev]
 opt-level = "z"
 debug = 2
