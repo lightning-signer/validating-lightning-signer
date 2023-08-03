@@ -19,7 +19,7 @@ use bitcoin::util::psbt::serialize::Deserialize;
 use bitcoin::util::psbt::PartiallySignedTransaction;
 use bitcoin::util::taproot::TapLeafHash;
 use bitcoin::{Address, EcdsaSighashType, Network, Script};
-use bitcoin::{OutPoint, Transaction, TxOut, Witness, XOnlyPublicKey};
+use bitcoin::{OutPoint, Transaction, Witness, XOnlyPublicKey};
 use lightning_signer::bitcoin;
 use lightning_signer::channel::{
     ChannelBalance, ChannelBase, ChannelId, ChannelSetup, TypedSignature,
@@ -41,16 +41,18 @@ use lightning_signer::{function, trace_node_state};
 use log::*;
 use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
+use lightning_signer::util::crypto_utils::signature_to_bitcoin_vec;
 use lightning_signer::util::status::{Code, Status};
 use lightning_signer::wallet::Wallet;
 use serde_bolt::{to_vec, Array, Octets, WireString, WithSize};
 use vls_protocol::model::{
     Basepoints, BitcoinSignature, DisclosedSecret, ExtKey, Htlc, PubKey, RecoverableSignature,
-    Secret, Signature,
+    Secret, Signature, Utxo,
 };
 use vls_protocol::msgs::{
     DeriveSecretReply, PreapproveInvoiceReply, PreapproveKeysendReply, SerBolt, SignBolt12Reply,
 };
+use vls_protocol::psbt::StreamedPSBT;
 use vls_protocol::serde_bolt;
 use vls_protocol::{msgs, msgs::DeBolt, msgs::Message, Error as ProtocolError};
 
@@ -313,6 +315,89 @@ impl RootHandler {
     pub fn get_chain_height(&self) -> u32 {
         self.node.get_chain_height()
     }
+
+    // sign any inputs that are ours, modifying the PSBT in place
+    fn sign_withdrawal(&self, streamed: &mut StreamedPSBT, utxos: Array<Utxo>) -> Result<()> {
+        let psbt = &mut streamed.psbt;
+        let opaths = extract_psbt_output_paths(&psbt);
+
+        let tx = &mut psbt.unsigned_tx;
+
+        let prev_outs = psbt
+            .inputs
+            .iter()
+            .map(|i| {
+                i.witness_utxo.as_ref().expect("psbt input witness UTXOs must be populated").clone()
+            })
+            .collect::<Vec<_>>();
+
+        let secp_ctx = Secp256k1::new();
+        let mut uniclosekeys = Vec::new();
+        let mut ipaths = Vec::new();
+        for input in tx.input.iter() {
+            if let Some(utxo) = utxos.iter().find(|u| {
+                u.txid == input.previous_output.txid && u.outnum == input.previous_output.vout
+            }) {
+                ipaths.push(vec![utxo.keyindex]);
+                if let Some(ci) = utxo.close_info.as_ref() {
+                    let channel_id = Self::channel_id(&ci.peer_id, ci.channel_id);
+                    let per_commitment_point = ci
+                        .commitment_point
+                        .as_ref()
+                        .map(|p| PublicKey::from_slice(&p.0).expect("TODO"));
+
+                    let ck = self.node.with_ready_channel(&channel_id, |chan| {
+                        let revocation_pubkey = per_commitment_point.as_ref().map(|p| {
+                            let revocation_basepoint =
+                                chan.keys.counterparty_pubkeys().revocation_basepoint;
+                            derive_public_revocation_key(&secp_ctx, p, &revocation_basepoint)
+                        });
+                        chan.get_unilateral_close_key(&per_commitment_point, &revocation_pubkey)
+                    })?;
+                    uniclosekeys.push(Some(ck));
+                } else {
+                    uniclosekeys.push(None)
+                }
+            } else {
+                ipaths.push(vec![]);
+                uniclosekeys.push(None);
+            }
+        }
+
+        // Populate script_sig for p2sh-p2wpkh signing
+        for (psbt_in, tx_in) in psbt.inputs.iter_mut().zip(tx.input.iter_mut()) {
+            if let Some(script) = psbt_in.redeem_script.as_ref() {
+                assert!(psbt_in.final_script_sig.is_none());
+                assert!(tx_in.script_sig.is_empty());
+                let script_sig = script::Builder::new().push_slice(script.as_bytes()).into_script();
+                psbt_in.final_script_sig = Some(script_sig);
+            }
+        }
+
+        dbgvals!(ipaths, opaths, tx.txid(), tx, streamed.segwit_flags);
+
+        let approved = self.approver.handle_proposed_onchain(
+            &self.node,
+            &tx,
+            &streamed.segwit_flags,
+            &prev_outs,
+            &uniclosekeys,
+            &opaths,
+        )?;
+
+        if !approved {
+            return Err(Status::failed_precondition("unapproved destination"))?;
+        }
+
+        let witvec = self.node.unchecked_sign_onchain_tx(&tx, &ipaths, &prev_outs, uniclosekeys)?;
+
+        for (i, stack) in witvec.into_iter().enumerate() {
+            if !stack.is_empty() {
+                psbt.inputs[i].final_script_witness = Some(Witness::from_vec(stack));
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Handler for RootHandler {
@@ -448,84 +533,14 @@ impl Handler for RootHandler {
                 Ok(Box::new(msgs::GetChannelBasepointsReply { basepoints, funding }))
             }
             Message::SignWithdrawal(m) => {
-                let streamed = m.psbt.0;
+                let mut streamed = m.psbt.0;
+                let utxos = m.utxos;
 
-                debug!("psbt {:#?}", streamed);
+                debug!("SignWithdrawal psbt {:#?}", streamed);
 
-                let mut psbt = streamed.psbt;
+                self.sign_withdrawal(&mut streamed, utxos)?;
 
-                let opaths = extract_psbt_output_paths(&psbt);
-
-                let tx = &mut psbt.unsigned_tx;
-                let ipaths: Vec<_> = m.utxos.iter().map(|u| vec![u.keyindex]).collect();
-                let prev_outs = m
-                    .utxos
-                    .iter()
-                    .map(|u| TxOut {
-                        value: u.amount,
-                        script_pubkey: Script::from(u.script.0.clone()),
-                    })
-                    .collect::<Vec<_>>();
-                let mut uniclosekeys = Vec::new();
-                let secp_ctx = Secp256k1::new();
-                for utxo in m.utxos.iter() {
-                    if let Some(ci) = utxo.close_info.as_ref() {
-                        let channel_id = Self::channel_id(&ci.peer_id, ci.channel_id);
-                        let per_commitment_point = ci
-                            .commitment_point
-                            .as_ref()
-                            .map(|p| PublicKey::from_slice(&p.0).expect("TODO"));
-
-                        let ck = self.node.with_ready_channel(&channel_id, |chan| {
-                            let revocation_pubkey = per_commitment_point.as_ref().map(|p| {
-                                let revocation_basepoint =
-                                    chan.keys.counterparty_pubkeys().revocation_basepoint;
-                                derive_public_revocation_key(&secp_ctx, p, &revocation_basepoint)
-                            });
-                            chan.get_unilateral_close_key(&per_commitment_point, &revocation_pubkey)
-                        })?;
-                        uniclosekeys.push(Some(ck));
-                    } else {
-                        uniclosekeys.push(None)
-                    }
-                }
-
-                // Populate script_sig for p2sh-p2wpkh signing
-                for (psbt_in, tx_in) in psbt.inputs.iter_mut().zip(tx.input.iter_mut()) {
-                    if let Some(script) = psbt_in.redeem_script.as_ref() {
-                        assert!(psbt_in.final_script_sig.is_none());
-                        assert!(tx_in.script_sig.is_empty());
-                        let script_sig =
-                            script::Builder::new().push_slice(script.as_bytes()).into_script();
-                        psbt_in.final_script_sig = Some(script_sig);
-                    }
-                }
-
-                dbgvals!(opaths, tx.txid(), tx, streamed.segwit_flags);
-
-                let approved = self.approver.handle_proposed_onchain(
-                    &self.node,
-                    &tx,
-                    &streamed.segwit_flags,
-                    &prev_outs,
-                    &uniclosekeys,
-                    &opaths,
-                )?;
-
-                if !approved {
-                    return Err(Status::failed_precondition("unapproved destination"))?;
-                }
-
-                let witvec =
-                    self.node.unchecked_sign_onchain_tx(&tx, &ipaths, &prev_outs, uniclosekeys)?;
-
-                for (i, stack) in witvec.into_iter().enumerate() {
-                    if !stack.is_empty() {
-                        psbt.inputs[i].final_script_witness = Some(Witness::from_vec(stack));
-                    }
-                }
-
-                Ok(Box::new(msgs::SignWithdrawalReply { psbt: WithSize(psbt) }))
+                Ok(Box::new(msgs::SignWithdrawalReply { psbt: WithSize(streamed.psbt) }))
             }
             Message::SignInvoice(m) => {
                 let hrp = String::from_utf8(m.hrp.to_vec()).expect("hrp");
@@ -542,9 +557,6 @@ impl Handler for RootHandler {
                 sig_slice[0..64].copy_from_slice(&ser);
                 sig_slice[64] = rid.to_i32() as u8;
                 Ok(Box::new(msgs::SignInvoiceReply { signature: RecoverableSignature(sig_slice) }))
-            }
-            Message::SignAnchorspend(_m) => {
-                unimplemented!()
             }
             Message::SignHtlcTxMingle(_m) => {
                 unimplemented!()
@@ -734,6 +746,38 @@ impl Handler for RootHandler {
                 m.option_anchors,
                 m.input,
             ),
+            Message::SignAnchorspend(m) => {
+                let mut streamed = m.psbt.0;
+                let utxos = m.utxos;
+
+                debug!("SignAnchorspend psbt {:#?}", streamed);
+
+                let channel_id = Self::channel_id(&m.peer_id, m.dbid);
+                self.sign_withdrawal(&mut streamed, utxos)?;
+                let anchor_redeemscript = self.node.with_ready_channel(&channel_id, |channel| {
+                    Ok(channel.get_anchor_redeemscript())
+                })?;
+                let anchor_scriptpubkey = anchor_redeemscript.to_v0_p2wsh();
+
+                let mut psbt = streamed.psbt;
+                let anchor_index = psbt
+                    .inputs
+                    .iter()
+                    .position(|input| {
+                        input
+                            .witness_utxo
+                            .as_ref()
+                            .map(|txout| txout.script_pubkey == anchor_scriptpubkey)
+                            .unwrap_or(false)
+                    })
+                    .ok_or_else(|| Status::invalid_argument("anchor not found in psbt"))?;
+                let sig = self.node.with_ready_channel(&channel_id, |channel| {
+                    Ok(channel.sign_holder_anchor_input(&psbt.unsigned_tx, anchor_index)?)
+                })?;
+                let witness = vec![signature_to_bitcoin_vec(sig), anchor_redeemscript.to_bytes()];
+                psbt.inputs[anchor_index].final_script_witness = Some(Witness::from_vec(witness));
+                Ok(Box::new(msgs::SignAnchorspendReply { psbt: WithSize(psbt) }))
+            }
             m => unimplemented!("loop {}: unimplemented message {:?}", self.id, m),
         }
     }
@@ -1017,10 +1061,9 @@ impl Handler for ChannelHandler {
             ),
             Message::SignMutualCloseTx(m) => {
                 let psbt = m.psbt;
-                println!("XXX psbt: {:#?}", psbt);
                 let tx = m.tx;
                 let opaths = extract_psbt_output_paths(&psbt);
-                info!(
+                debug!(
                     "mutual close derivation paths {:?} addresses {:?}",
                     opaths,
                     tx.output
