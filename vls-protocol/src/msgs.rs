@@ -16,7 +16,8 @@ use crate::psbt::StreamedPSBT;
 use bitcoin_consensus_derive::{Decodable, Encodable};
 use bolt_derive::{ReadMessage, SerBolt};
 use serde_bolt::{
-    io, io::Read, io::Write, take::Take, to_vec, Array, LargeOctets, Octets, WireString, WithSize,
+    io, io::Read, io::Write, take::Take, to_vec, Array, ArrayBE, LargeOctets, Octets, WireString,
+    WithSize,
 };
 
 use log::error;
@@ -79,7 +80,7 @@ pub struct HsmdInitReplyV4 {
     pub hsm_version: u32,
     /// Capabilities, by convention are message numbers, indicating that the HSM
     /// supports you sending this message.
-    pub hsm_capabilities: Array<u32>,
+    pub hsm_capabilities: ArrayBE<u32>,
     pub node_id: PubKey,
     pub bip32: ExtKey,
     pub bolt12: PubKey,
@@ -631,7 +632,7 @@ pub struct SignMutualCloseTx2 {
     pub to_remote_value_sat: u64,
     pub local_script: Octets,
     pub remote_script: Octets,
-    pub local_wallet_path_hint: Array<u32>,
+    pub local_wallet_path_hint: ArrayBE<u32>,
 }
 
 ///

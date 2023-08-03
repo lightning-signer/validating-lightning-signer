@@ -37,7 +37,7 @@ use vls_protocol::msgs::{
     SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal, SignWithdrawalReply,
     ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply,
 };
-use vls_protocol::serde_bolt::{Array, Octets, WireString};
+use vls_protocol::serde_bolt::{Array, ArrayBE, Octets, WireString};
 use vls_protocol::{model, Error as ProtocolError};
 use vls_protocol_signer::util::commitment_type_to_channel_type;
 
@@ -147,7 +147,7 @@ fn to_htlcs(htlcs: &Vec<HTLCOutputInCommitment>, is_remote: bool) -> Array<Htlc>
     Array(htlcs)
 }
 
-fn dest_wallet_path() -> Array<u32> {
+fn dest_wallet_path() -> ArrayBE<u32> {
     let result = vec![1];
     // elsewhere we assume that the path has a single component
     assert_eq!(result.len(), 1);

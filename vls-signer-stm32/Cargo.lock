@@ -118,9 +118,9 @@ dependencies = [
 
 [[package]]
 name = "bitcoin-consensus-derive"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d52dd6e55203c963c35928c21eba078a67999d8f643d7a5a116c9bb5239128d"
+checksum = "579b36458c7af007dc5ff864b1c51e5d6cc474d686d8dd746d696e2e3db5ca7e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -681,9 +681,9 @@ dependencies = [
 
 [[package]]
 name = "serde_bolt"
-version = "0.3.0-beta.8"
+version = "0.3.0-beta.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e978c3b330747f57965315f22cdc6bd8e5054b7d576db8cc642941fb0eba9b8"
+checksum = "0b96f0200920c21f3484e2a39c8050cb9d4e2b23a12c318bb2a7cd52a1a69737"
 dependencies = [
  "bitcoin",
  "bitcoin-consensus-derive",
