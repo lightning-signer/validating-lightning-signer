@@ -8,8 +8,8 @@ use cortex_m::interrupt::{free, CriticalSection, Mutex};
 use stm32f4xx_hal::otg_fs::{UsbBus, USB};
 use usb_device::{bus::UsbBusAllocator, device::UsbDevice, prelude::*};
 use usbd_serial::SerialPort;
-use vls_protocol_signer::vls_protocol;
 use vls_protocol::serde_bolt::io;
+use vls_protocol_signer::vls_protocol;
 
 use crate::timer::{self, TimerListener};
 #[allow(unused_imports)]
@@ -59,6 +59,7 @@ impl SerialDriver {
         let outbuf = OutputBuffer { data: VecDeque::new() };
 
         // This works at most once for now
+        info!("serial: allocate usb driver memory");
         unsafe {
             if USB_BUS.is_none() {
                 // Allocate memory for the USB driver that lasts to the end of the program ('static)
@@ -67,8 +68,10 @@ impl SerialDriver {
             }
         };
 
+        info!("serial: new serial port");
         let serial = unsafe { SerialPort::new(USB_BUS.as_ref().unwrap()) };
 
+        info!("serial: usb device builder");
         let usb_dev = unsafe {
             UsbDeviceBuilder::new(USB_BUS.as_ref().unwrap(), UsbVidPid(0x16c0, 0x27dd))
                 .manufacturer("VLS")
@@ -77,13 +80,16 @@ impl SerialDriver {
                 .device_class(usbd_serial::USB_CLASS_CDC)
                 .build()
         };
-
         trace!("state {:?}", usb_dev.state());
-        let serial_driver_impl = SerialDriverImpl { serial, usb_dev, inbuf, outbuf };
-        let serial_driver = SerialDriver {
-            inner: Arc::new(Mutex::new(RefCell::new(serial_driver_impl))),
-        };
 
+        info!("serial: create serial driver impl");
+        let serial_driver_impl = SerialDriverImpl { serial, usb_dev, inbuf, outbuf };
+
+        info!("serial: create serial driver");
+        let serial_driver =
+            SerialDriver { inner: Arc::new(Mutex::new(RefCell::new(serial_driver_impl))) };
+
+        info!("serial: adding listener");
         timer::add_listener(Box::new(serial_driver.clone()));
         serial_driver
     }
