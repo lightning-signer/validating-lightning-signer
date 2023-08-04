@@ -2220,9 +2220,12 @@ impl Node {
             .map_err(|()| internal_error("failed to sign invoice"))
     }
 
-    /// Sign a Lightning message
-    pub fn sign_message(&self, message: &[u8]) -> Result<Vec<u8>, Status> {
-        let mut buffer = String::from("Lightning Signed Message:").into_bytes();
+    /// Sign a message, with the specified tag. Notice that you most likely are looking for
+    /// `sign_message` which adds the lightning message tag, so the signature cannot be reused for
+    /// unintended use-cases. The `tag` specifies the domain in which the signature should be
+    /// usable. It is up to the caller to ensure that tags are prefix-free.
+    pub fn sign_tagged_message(&self, tag: &[u8], message: &[u8]) -> Result<Vec<u8>, Status> {
+        let mut buffer = tag.to_vec().clone();
         buffer.extend(message);
         let secp_ctx = Secp256k1::signing_only();
         let hash = Sha256dHash::hash(&buffer);
@@ -2233,6 +2236,12 @@ impl Node {
         let mut res = sig.to_vec();
         res.push(rid.to_i32() as u8);
         Ok(res)
+    }
+
+    /// Sign a Lightning message
+    pub fn sign_message(&self, message: &[u8]) -> Result<Vec<u8>, Status> {
+        let tag: Vec<u8> = "Lightning Signed Message:".into();
+        self.sign_tagged_message(&tag, message)
     }
 
     /// Get the channels this node knows about.
