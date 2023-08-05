@@ -2681,6 +2681,8 @@ pub enum SpendType {
     P2shP2wpkh = 4,
     /// Pay to witness script hash
     P2wsh = 5,
+    /// Pay to taproot script
+    P2tr = 6,
 }
 
 impl TryFrom<i32> for SpendType {
@@ -2693,9 +2695,29 @@ impl TryFrom<i32> for SpendType {
             x if x == SpendType::P2wpkh as i32 => SpendType::P2wpkh,
             x if x == SpendType::P2shP2wpkh as i32 => SpendType::P2shP2wpkh,
             x if x == SpendType::P2wsh as i32 => SpendType::P2wsh,
+            x if x == SpendType::P2tr as i32 => SpendType::P2tr,
             _ => return Err(()),
         };
         Ok(res)
+    }
+}
+
+impl SpendType {
+    /// Return the SpendType of a script pubkey
+    pub fn from_script_pubkey(script: &Script) -> Self {
+        if script.is_p2pkh() {
+            SpendType::P2pkh
+        } else if script.is_p2sh() {
+            SpendType::P2shP2wpkh
+        } else if script.is_v0_p2wpkh() {
+            SpendType::P2wpkh
+        } else if script.is_v0_p2wsh() {
+            SpendType::P2wsh
+        } else if script.is_v1_p2tr() {
+            SpendType::P2tr
+        } else {
+            SpendType::Invalid
+        }
     }
 }
 
