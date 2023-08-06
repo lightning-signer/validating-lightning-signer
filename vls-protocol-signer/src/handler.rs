@@ -461,20 +461,7 @@ impl Handler for RootHandler {
                 let spendtypes: Vec<_> = m
                     .utxos
                     .iter()
-                    .map(|u|
-                        // TODO this is kinda overloading the SignWithdrawal message
-                        // (CLN uses a separate message to sign delayed output to us)
-                        if u.is_p2sh {
-                            SpendType::P2shP2wpkh
-                        } else if let Some(ci) = u.close_info.as_ref() {
-                            if ci.commitment_point.is_some() {
-                                SpendType::P2wsh
-                            } else {
-                                SpendType::P2wpkh
-                            }
-                        } else {
-                            SpendType::P2wpkh
-                        })
+                    .map(|u| SpendType::from_script_pubkey(&Script::from(u.script.clone())))
                     .collect();
                 let mut uniclosekeys = Vec::new();
                 let secp_ctx = Secp256k1::new();
