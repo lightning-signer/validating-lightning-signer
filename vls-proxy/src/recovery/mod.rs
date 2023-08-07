@@ -10,8 +10,8 @@ use bitcoind_client::esplora_client::EsploraClient;
 use bitcoind_client::{explorer_from_url, BlockExplorerType, Explorer};
 use lightning::chain::keysinterface::DelayedPaymentOutputDescriptor;
 use lightning::chain::transaction::OutPoint;
-use lightning_signer::bitcoin::{PackedLockTime, Sequence, Txid};
-use lightning_signer::node::{Allowable, SpendType, ToStringForNetwork};
+use lightning_signer::bitcoin::{PackedLockTime, Sequence, TxOut, Txid};
+use lightning_signer::node::{Allowable, ToStringForNetwork};
 use lightning_signer::util::status::Status;
 use lightning_signer::{bitcoin, lightning};
 use log::*;
@@ -47,12 +47,12 @@ pub trait RecoveryKeys {
         tx: &Transaction,
         segwit_flags: &[bool],
         ipaths: &Vec<Vec<u32>>,
-        values_sat: &Vec<u64>,
-        spendtypes: &Vec<SpendType>,
+        prev_outs: &Vec<TxOut>,
         uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
         opaths: &Vec<Vec<u32>>,
     ) -> Result<Vec<Vec<Vec<u8>>>, Status>;
     fn wallet_address_native(&self, index: u32) -> Result<Address, Status>;
+    fn wallet_address_taproot(&self, index: u32) -> Result<Address, Status>;
 }
 
 /// Provide enough signer functionality to force-close a channel
@@ -87,12 +87,24 @@ pub async fn recover_l1<R: RecoveryKeys>(
     let mut utxos = Vec::new();
     for index in 0..max_index {
         let address = keys.wallet_address_native(index).expect("address");
+        let script_pubkey = address.script_pubkey();
         utxos.append(
             &mut get_utxos(&esplora, address)
                 .await
                 .expect("get utxos")
                 .into_iter()
-                .map(|u| (index, u))
+                .map(|u| (index, u, script_pubkey.clone()))
+                .collect::<Vec<_>>(),
+        );
+
+        let taproot_address = keys.wallet_address_taproot(index).expect("address");
+        let taproot_script_pubkey = taproot_address.script_pubkey();
+        utxos.append(
+            &mut get_utxos(&esplora, taproot_address)
+                .await
+                .expect("get utxos")
+                .into_iter()
+                .map(|u| (index, u, taproot_script_pubkey.clone()))
                 .collect::<Vec<_>>(),
         );
     }
@@ -124,24 +136,24 @@ pub async fn recover_l1<R: RecoveryKeys>(
 fn make_l1_sweep<R: RecoveryKeys>(
     keys: &R,
     destination_address: &Address,
-    chunk: &[(u32, UtxoResponse)],
+    chunk: &[(u32, UtxoResponse, Script)],
     feerate_per_kw: u64,
 ) -> Option<Transaction> {
-    let value = chunk.iter().map(|(_, u)| u.value).sum::<u64>();
+    let value = chunk.iter().map(|(_, u, _)| u.value).sum::<u64>();
 
     let mut tx = Transaction {
         version: 2,
         lock_time: PackedLockTime::ZERO,
         input: chunk
             .iter()
-            .map(|(_, u)| bitcoin::TxIn {
+            .map(|(_, u, _)| bitcoin::TxIn {
                 previous_output: bitcoin::OutPoint { txid: u.txid, vout: u.vout },
                 sequence: Sequence::ZERO,
                 witness: Witness::default(),
                 script_sig: Script::new(),
             })
             .collect(),
-        output: vec![bitcoin::TxOut { value, script_pubkey: destination_address.script_pubkey() }],
+        output: vec![TxOut { value, script_pubkey: destination_address.script_pubkey() }],
     };
     let total_fee = feerate_per_kw * tx.weight() as u64 / 1000;
     if total_fee > value - 1000 {
@@ -151,14 +163,16 @@ fn make_l1_sweep<R: RecoveryKeys>(
     tx.output[0].value -= total_fee;
     info!("sending tx {} - {}", tx.txid().to_hex(), tx.serialize().to_hex());
 
-    let ipaths = chunk.iter().map(|(i, _)| vec![*i]).collect::<Vec<_>>();
-    let values = chunk.iter().map(|(_, u)| u.value).collect::<Vec<_>>();
-    let spendtypes = chunk.iter().map(|_| SpendType::P2wpkh).collect::<Vec<_>>();
+    let ipaths = chunk.iter().map(|(i, _, _)| vec![*i]).collect::<Vec<_>>();
+    let prev_outs = chunk
+        .iter()
+        .map(|(_, u, script_pubkey)| TxOut { value: u.value, script_pubkey: script_pubkey.clone() })
+        .collect::<Vec<_>>();
     let unicosekeys = chunk.iter().map(|_| None).collect::<Vec<_>>();
 
     // sign transaction
     let witnesses = keys
-        .sign_onchain_tx(&tx, &vec![], &ipaths, &values, &spendtypes, unicosekeys, &vec![vec![]])
+        .sign_onchain_tx(&tx, &vec![], &ipaths, &prev_outs, unicosekeys, &vec![vec![]])
         .expect("sign tx");
 
     for (i, witness) in witnesses.into_iter().enumerate() {
@@ -309,21 +323,12 @@ fn spend_delayed_outputs<R: RecoveryKeys>(
     let mut tx =
         create_spending_transaction(descriptors, output_script, feerate_sat_per_1000_weight)
             .expect("create_spending_transaction");
-    let spendtypes = descriptors.iter().map(|_| SpendType::P2wsh).collect();
-    let values_sat = descriptors.iter().map(|d| d.output.value).collect();
+    let values_sat = descriptors.iter().map(|d| d.output.clone()).collect();
     let ipaths = descriptors.iter().map(|_| vec![]).collect();
     let uniclosekeys = descriptors.iter().map(|_| Some(unilateral_close_key.clone())).collect();
     let input_txs = vec![]; // only need input txs for funding tx
     let witnesses = keys
-        .sign_onchain_tx(
-            &tx,
-            &input_txs,
-            &ipaths,
-            &values_sat,
-            &spendtypes,
-            uniclosekeys,
-            &vec![opath],
-        )
+        .sign_onchain_tx(&tx, &input_txs, &ipaths, &values_sat, uniclosekeys, &vec![opath])
         .expect("sign");
     assert_eq!(witnesses.len(), tx.input.len());
     for (idx, w) in witnesses.into_iter().enumerate() {
@@ -336,7 +341,7 @@ fn spend_delayed_outputs<R: RecoveryKeys>(
 mod tests {
     use super::*;
     use crate::recovery::direct::DirectRecoveryKeys;
-    use lightning_signer::bitcoin::secp256k1::Secp256k1;
+    use lightning_signer::node::SpendType;
     use lightning_signer::util::test_utils::key::make_test_pubkey;
     use lightning_signer::util::test_utils::{
         init_node, make_test_previous_tx, TEST_NODE_CONFIG, TEST_SEED,
@@ -366,13 +371,18 @@ mod tests {
 
         node.add_allowlist(&[address.to_string()]).expect("add_allowlist");
 
-        let secp = Secp256k1::signing_only();
         let values = vec![(123, 12345u64, SpendType::P2wpkh)];
         let (input_tx, input_txid) = make_test_previous_tx(&node, &values);
         let utxo = UtxoResponse { txid: input_txid, vout: 0, value: 12345 };
 
         let keys = DirectRecoveryKeys { node };
-        let tx = make_l1_sweep(&keys, &address, &[(123, utxo)], 1000).expect("make_l1_sweep");
+        let tx = make_l1_sweep(
+            &keys,
+            &address,
+            &[(123, utxo, input_tx.output[0].script_pubkey.clone())],
+            1000,
+        )
+        .expect("make_l1_sweep");
         tx.verify(|txo| {
             if txo.txid == input_txid && txo.vout == 0 {
                 Some(input_tx.output[0].clone())
@@ -384,7 +394,13 @@ mod tests {
 
         // won't verify if we change the input amount
         let utxo = UtxoResponse { txid: input_txid, vout: 0, value: 12346 };
-        let tx = make_l1_sweep(&keys, &address, &[(123, utxo)], 1000).expect("make_l1_sweep");
+        let tx = make_l1_sweep(
+            &keys,
+            &address,
+            &[(123, utxo, input_tx.output[0].script_pubkey.clone())],
+            1000,
+        )
+        .expect("make_l1_sweep");
         tx.verify(|txo| {
             if txo.txid == input_txid && txo.vout == 0 {
                 Some(input_tx.output[0].clone())

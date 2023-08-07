@@ -21,7 +21,7 @@ use lightning_signer::lightning;
 use lightning_signer::lightning_invoice::{
     Currency, InvoiceBuilder, RawDataPart, RawHrp, RawInvoice,
 };
-use lightning_signer::node::{Node, NodeConfig, NodeServices, SpendType};
+use lightning_signer::node::{Node, NodeConfig, NodeServices};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
 use lightning_signer::prelude::SendSync;
@@ -255,10 +255,17 @@ pub fn test_lightning_signer(postscript: fn()) {
 
 fn sign_funding(node: &Arc<Node>) {
     let ipaths = vec![vec![0u32], vec![1u32]];
-    let ival0 = 100u64;
-    let ival1 = 300u64;
+    let prev_outs = vec![
+        TxOut {
+            value: 100,
+            script_pubkey: node.get_native_address(&ipaths[0]).unwrap().script_pubkey(),
+        },
+        TxOut {
+            value: 300,
+            script_pubkey: node.get_native_address(&ipaths[1]).unwrap().script_pubkey(),
+        },
+    ];
     let chanamt = 300u64;
-    let values_sat = vec![ival0, ival1];
 
     let input1 = TxIn {
         previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 },
@@ -274,16 +281,15 @@ fn sign_funding(node: &Arc<Node>) {
         witness: Witness::default(),
     };
     let (opath, tx) = make_test_funding_tx(&node, vec![input1, input2], chanamt);
-    let spendtypes = vec![SpendType::P2wpkh, SpendType::P2wpkh];
     let uniclosekeys = vec![None, None];
 
     let input_txs = vec![]; // No policy-onchain-funding-non-malleable because no channel ...
 
-    node.check_onchain_tx(&tx, &input_txs, &values_sat, &spendtypes, &uniclosekeys, &vec![opath])
+    node.check_onchain_tx(&tx, &input_txs, &prev_outs, &uniclosekeys, &vec![opath])
         .expect("good sigs");
 
     let witvec = node
-        .unchecked_sign_onchain_tx(&tx, &ipaths, &values_sat, &spendtypes, uniclosekeys)
+        .unchecked_sign_onchain_tx(&tx, &ipaths, &prev_outs, uniclosekeys)
         .expect("good sigs");
     assert_eq!(witvec.len(), 2);
 }

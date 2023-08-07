@@ -16,6 +16,7 @@ use vls_protocol_signer::lightning_signer::{
     self,
     bitcoin::hashes::hex::ToHex,
     bitcoin::secp256k1::PublicKey,
+    bitcoin::TxOut,
     invoice::{Invoice, InvoiceAttributes},
     lightning::ln::PaymentHash,
     prelude::SendSync,
@@ -88,7 +89,7 @@ impl Approve for ScreenApprover {
     fn approve_onchain(
         &self,
         _tx: &Transaction,
-        _values_sat: &[u64],
+        _values_sat: &[TxOut],
         _unknown_indices: &[usize],
     ) -> bool {
         false

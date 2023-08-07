@@ -1,12 +1,13 @@
-use lightning_signer::bitcoin::secp256k1::{PublicKey, SecretKey};
-use lightning_signer::bitcoin::Transaction;
+use bitcoin::secp256k1::{PublicKey, SecretKey};
+use bitcoin::{Transaction, TxOut};
+use lightning_signer::bitcoin;
 use lightning_signer::prelude::*;
 use lightning_signer::Arc;
 use log::*;
 
 use lightning_signer::invoice::{Invoice, InvoiceAttributes};
 use lightning_signer::lightning::ln::PaymentHash;
-use lightning_signer::node::{Node, SpendType};
+use lightning_signer::node::Node;
 use lightning_signer::policy::error::ValidationErrorKind;
 use lightning_signer::prelude::{Mutex, SendSync};
 use lightning_signer::util::clock::Clock;
@@ -43,12 +44,12 @@ pub trait Approve: SendSync {
 
     /// Approve an onchain payment to an unknown destination
     /// * `tx` - the transaction to be sent
-    /// * `values_sat` - the values of the inputs in satoshis
+    /// * `prev_outs` - the previous outputs used as inputs for this tx
     /// * `unknown_indices` is the list of tx output indices that are unknown.
     fn approve_onchain(
         &self,
         tx: &Transaction,
-        values_sat: &[u64],
+        prev_outs: &[TxOut],
         unknown_indices: &[usize],
     ) -> bool;
 
@@ -140,24 +141,17 @@ pub trait Approve: SendSync {
         node: &Arc<Node>,
         tx: &Transaction,
         segwit_flags: &[bool],
-        values_sat: &[u64],
-        spendtypes: &[SpendType],
+        prev_outs: &[TxOut],
         uniclosekeys: &[Option<(SecretKey, Vec<Vec<u8>>)>],
         opaths: &[Vec<u32>],
     ) -> Result<bool, Status> {
-        let check_result = node.check_onchain_tx(
-            &tx,
-            segwit_flags,
-            &values_sat,
-            &spendtypes,
-            &uniclosekeys,
-            &opaths,
-        );
+        let check_result =
+            node.check_onchain_tx(&tx, segwit_flags, &prev_outs, &uniclosekeys, &opaths);
         match check_result {
             Ok(()) => {}
             Err(ve) => match ve.kind {
                 ValidationErrorKind::UnknownDestinations(_, ref indices) => {
-                    if self.approve_onchain(&tx, &values_sat, indices) {
+                    if self.approve_onchain(&tx, &prev_outs, indices) {
                         info!("approved onchain tx with unknown outputs");
                     } else {
                         info!("rejected onchain tx with unknown outputs");
@@ -194,7 +188,7 @@ impl Approve for PositiveApprover {
     fn approve_onchain(
         &self,
         _tx: &Transaction,
-        _values_sat: &[u64],
+        _prev_outs: &[TxOut],
         _unknown_indices: &[usize],
     ) -> bool {
         true
@@ -228,12 +222,12 @@ impl Approve for WarningPositiveApprover {
     fn approve_onchain(
         &self,
         tx: &Transaction,
-        values_sat: &[u64],
+        prev_outs: &[TxOut],
         unknown_indices: &[usize],
     ) -> bool {
         warn!(
             "AUTOAPPROVED ONCHAIN tx {:?} with values_sat {:?} and unknown_indices {:?}",
-            tx, values_sat, unknown_indices
+            tx, prev_outs, unknown_indices
         );
         true
     }
@@ -257,7 +251,7 @@ impl Approve for NegativeApprover {
     fn approve_onchain(
         &self,
         _tx: &Transaction,
-        _values_sat: &[u64],
+        _prev_outs: &[TxOut],
         _unknown_indices: &[usize],
     ) -> bool {
         false
@@ -362,10 +356,10 @@ impl<A: Approve> Approve for VelocityApprover<A> {
     fn approve_onchain(
         &self,
         tx: &Transaction,
-        values_sat: &[u64],
+        prev_outs: &[TxOut],
         unknown_indices: &[usize],
     ) -> bool {
-        self.delegate.approve_onchain(tx, values_sat, unknown_indices)
+        self.delegate.approve_onchain(tx, prev_outs, unknown_indices)
     }
 }
 
@@ -441,7 +435,7 @@ impl<A: Approve> Approve for MemoApprover<A> {
     fn approve_onchain(
         &self,
         tx: &Transaction,
-        values_sat: &[u64],
+        prev_outs: &[TxOut],
         unknown_indices: &[usize],
     ) -> bool {
         let mut approvals = self.approvals.lock().unwrap();
@@ -454,7 +448,7 @@ impl<A: Approve> Approve for MemoApprover<A> {
                 _ => {}
             }
         }
-        return self.delegate.approve_onchain(tx, values_sat, unknown_indices);
+        return self.delegate.approve_onchain(tx, prev_outs, unknown_indices);
     }
 }
 

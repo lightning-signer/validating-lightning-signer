@@ -2,10 +2,14 @@ use crate::prelude::*;
 use bitcoin::hashes::hash160::Hash as BitcoinHash160;
 use bitcoin::hashes::sha256::Hash as BitcoinSha256;
 use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
-use bitcoin::secp256k1;
-use bitcoin::secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey};
+use bitcoin::secp256k1::constants::SCHNORR_SIGNATURE_SIZE;
+use bitcoin::secp256k1::{
+    self, ecdsa::Signature, schnorr, Message, PublicKey, Secp256k1, SecretKey,
+};
 use bitcoin::util::address::{Payload, WitnessVersion};
-use bitcoin::{EcdsaSighashType, Script};
+use bitcoin::util::taproot::{TapSighashHash, TapTweakHash};
+use bitcoin::{EcdsaSighashType, Script, XOnlyPublicKey};
+use bitcoin::{PrivateKey, Sighash};
 
 fn hkdf_extract_expand(salt: &[u8], secret: &[u8], info: &[u8], output: &mut [u8]) {
     let mut hmac = HmacEngine::<BitcoinSha256>::new(salt);
@@ -82,19 +86,27 @@ pub fn signature_to_bitcoin_vec(sig: Signature) -> Vec<u8> {
     sigvec
 }
 
+/// Convert a [Signature] to Bitcoin signature bytes, with SIGHASH_ALL
+pub fn schnorr_signature_to_bitcoin_vec(sig: schnorr::Signature) -> Vec<u8> {
+    // taproot sighash type defaults to ALL
+    let mut sigvec = Vec::with_capacity(SCHNORR_SIGNATURE_SIZE);
+    sigvec.extend_from_slice(&sig[..]);
+    sigvec
+}
+
 /// Convert a Bitcoin signature bytes, with the specified EcdsaSighashType, to [Signature]
 pub fn bitcoin_vec_to_signature(
     sigvec: &[u8],
     sighash_type: EcdsaSighashType,
-) -> Result<Signature, bitcoin::secp256k1::Error> {
+) -> Result<Signature, secp256k1::Error> {
     let len = sigvec.len();
     if len == 0 {
-        return Err(bitcoin::secp256k1::Error::InvalidSignature);
+        return Err(secp256k1::Error::InvalidSignature);
     }
     let mut sv = sigvec.to_vec();
-    let mode = sv.pop().ok_or_else(|| bitcoin::secp256k1::Error::InvalidSignature)?;
+    let mode = sv.pop().ok_or_else(|| secp256k1::Error::InvalidSignature)?;
     if mode != sighash_type as u8 {
-        return Err(bitcoin::secp256k1::Error::InvalidSignature);
+        return Err(secp256k1::Error::InvalidSignature);
     }
     Ok(Signature::from_der(&sv[..])?)
 }
@@ -126,6 +138,30 @@ pub fn sighash_from_heartbeat(ser_heartbeat: &[u8]) -> Message {
     sha.input(ser_heartbeat);
     let hash = BitcoinSha256::from_engine(sha);
     Message::from_slice(&hash).unwrap()
+}
+
+pub(crate) fn ecdsa_sign(
+    secp_ctx: &Secp256k1<secp256k1::All>,
+    privkey: &PrivateKey,
+    sighash: &Sighash,
+) -> Signature {
+    let message = Message::from_slice(&sighash).unwrap();
+    secp_ctx.sign_ecdsa(&message, &privkey.inner)
+}
+
+pub(crate) fn taproot_sign(
+    secp_ctx: &Secp256k1<secp256k1::All>,
+    privkey: &PrivateKey,
+    sighash: TapSighashHash,
+    aux_rand: &[u8; 32],
+) -> schnorr::Signature {
+    let message = Message::from(sighash);
+    let keypair = secp256k1::KeyPair::from_secret_key(secp_ctx, &privkey.inner);
+    let (internal_key, _parity) = XOnlyPublicKey::from_keypair(&keypair);
+    let tweak = TapTweakHash::from_key_and_tweak(internal_key, None);
+    let tweaked_keypair = keypair.add_xonly_tweak(secp_ctx, &tweak.to_scalar()).unwrap();
+
+    secp_ctx.sign_schnorr_with_aux_rand(&message, &tweaked_keypair, aux_rand)
 }
 
 #[cfg(test)]

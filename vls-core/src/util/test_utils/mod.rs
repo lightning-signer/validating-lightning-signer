@@ -654,7 +654,7 @@ pub struct TestChannelContext {
 pub struct TestFundingTxContext {
     pub inputs: Vec<TxIn>,
     pub ipaths: Vec<Vec<u32>>,
-    pub ivals: Vec<u64>,
+    pub prev_outs: Vec<TxOut>,
     pub ispnds: Vec<SpendType>,
     pub iuckeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
     pub outputs: Vec<TxOut>,
@@ -808,7 +808,7 @@ impl TestFundingTxContext {
         TestFundingTxContext {
             inputs: vec![],
             ipaths: vec![],
-            ivals: vec![],
+            prev_outs: vec![],
             ispnds: vec![],
             iuckeys: vec![],
             outputs: vec![],
@@ -828,7 +828,7 @@ impl TestFundingTxContext {
             make_test_funding_wallet_input(&node_ctx.node, spendtype, wallet_ndx, value_sat);
         self.inputs.push(txin);
         self.ipaths.push(vec![wallet_ndx]);
-        self.ivals.push(value_sat);
+        self.prev_outs.push(input_tx.output[0].clone());
         self.ispnds.push(spendtype);
         self.iuckeys.push(None);
         self.input_txs.push(input_tx);
@@ -918,8 +918,7 @@ impl TestFundingTxContext {
             &tx,
             segwit_flags.as_slice(),
             &self.ipaths,
-            &self.ivals,
-            &self.ispnds,
+            &self.prev_outs,
             self.iuckeys.clone(),
             &self.opaths,
         )
@@ -935,8 +934,7 @@ impl TestFundingTxContext {
             &tx,
             segwit_flags.as_slice(),
             &self.ipaths,
-            &self.ivals,
-            &self.ispnds,
+            &self.prev_outs,
             self.iuckeys.clone(),
             &self.opaths,
         )

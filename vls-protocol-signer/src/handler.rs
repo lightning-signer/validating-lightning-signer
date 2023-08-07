@@ -9,17 +9,17 @@ use alloc::vec::Vec;
 use core::convert::TryInto;
 use core::str::FromStr;
 
+use bitcoin::bech32::u5;
 use bitcoin::blockdata::script;
 use bitcoin::consensus::deserialize;
+use bitcoin::secp256k1;
 use bitcoin::secp256k1::SecretKey;
+use bitcoin::util::bip32::{ChildNumber, KeySource};
 use bitcoin::util::psbt::serialize::Deserialize;
-use bitcoin::{EcdsaSighashType, Network, Script};
+use bitcoin::util::psbt::PartiallySignedTransaction;
+use bitcoin::{Address, EcdsaSighashType, Network, Script};
+use bitcoin::{OutPoint, Transaction, TxOut, Witness};
 use lightning_signer::bitcoin;
-use lightning_signer::bitcoin::bech32::u5;
-use lightning_signer::bitcoin::secp256k1;
-use lightning_signer::bitcoin::util::bip32::{ChildNumber, KeySource};
-use lightning_signer::bitcoin::util::psbt::PartiallySignedTransaction;
-use lightning_signer::bitcoin::{OutPoint, Transaction, Witness};
 use lightning_signer::channel::{
     ChannelBalance, ChannelBase, ChannelId, ChannelSetup, TypedSignature,
 };
@@ -29,7 +29,7 @@ use lightning_signer::lightning::ln::chan_utils::{
     derive_public_revocation_key, ChannelPublicKeys,
 };
 use lightning_signer::lightning::ln::PaymentHash;
-use lightning_signer::node::{Node, NodeConfig, NodeMonitor, NodeServices, SpendType};
+use lightning_signer::node::{Node, NodeConfig, NodeMonitor, NodeServices};
 use lightning_signer::persist::Mutations;
 use lightning_signer::prelude::Mutex;
 use lightning_signer::signer::my_keys_manager::MyKeysManager;
@@ -457,12 +457,14 @@ impl Handler for RootHandler {
 
                 let tx = &mut psbt.unsigned_tx;
                 let ipaths: Vec<_> = m.utxos.iter().map(|u| vec![u.keyindex]).collect();
-                let values_sat: Vec<_> = m.utxos.iter().map(|u| u.amount).collect();
-                let spendtypes: Vec<_> = m
+                let prev_outs = m
                     .utxos
                     .iter()
-                    .map(|u| SpendType::from_script_pubkey(&Script::from(u.script.clone())))
-                    .collect();
+                    .map(|u| TxOut {
+                        value: u.amount,
+                        script_pubkey: Script::from(u.script.0.clone()),
+                    })
+                    .collect::<Vec<_>>();
                 let mut uniclosekeys = Vec::new();
                 let secp_ctx = Secp256k1::new();
                 for utxo in m.utxos.iter() {
@@ -504,8 +506,7 @@ impl Handler for RootHandler {
                     &self.node,
                     &tx,
                     &streamed.segwit_flags,
-                    &values_sat,
-                    &spendtypes,
+                    &prev_outs,
                     &uniclosekeys,
                     &opaths,
                 )?;
@@ -514,13 +515,8 @@ impl Handler for RootHandler {
                     return Err(Status::failed_precondition("unapproved destination"))?;
                 }
 
-                let witvec = self.node.unchecked_sign_onchain_tx(
-                    &tx,
-                    &ipaths,
-                    &values_sat,
-                    &spendtypes,
-                    uniclosekeys,
-                )?;
+                let witvec =
+                    self.node.unchecked_sign_onchain_tx(&tx, &ipaths, &prev_outs, uniclosekeys)?;
 
                 for (i, stack) in witvec.into_iter().enumerate() {
                     if !stack.is_empty() {
@@ -1006,6 +1002,14 @@ impl Handler for ChannelHandler {
                 let psbt = m.psbt;
                 let tx = m.tx;
                 let opaths = extract_psbt_output_paths(&psbt);
+                info!(
+                    "mutual close derivation paths {:?} addresses {:?}",
+                    opaths,
+                    tx.output
+                        .iter()
+                        .map(|o| Address::from_script(&o.script_pubkey, self.node.network()))
+                        .collect::<Vec<_>>()
+                );
                 let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
                     chan.sign_mutual_close_tx(&tx, &opaths)
                 })?;
