@@ -17,11 +17,10 @@ sudo dnf install screen -y
 
 ```
 # IMPORTANT - run this in the vls-signer-stm32 subdirectory, where this README is.
-rustup override set nightly
-
+# rustup override set nightly
 # This regression still exists in 1.70, need to debug, in the meantime ...
 # Had a regression w/ 1.68.0-nightly (61a415be5 2023-01-12) had to revert:
-rustup override set nightly-2022-08-16-x86_64-unknown-linux-gnu
+rustup override set nightly-2022-11-15
 
 rustup target add thumbv7em-none-eabihf
 
