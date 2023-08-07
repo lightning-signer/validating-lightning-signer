@@ -1007,9 +1007,14 @@ impl Wallet for Node {
         // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
         let native_addr = Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed");
         let wrapped_addr = Address::p2shwpkh(&pubkey, self.network()).expect("p2shwpkh failed");
+        let untweaked_pubkey = UntweakedPublicKey::from(pubkey.inner);
+
+        // FIXME it is not recommended to use the same xpub for both schnorr and ECDSA
+        let taproot_addr = Address::p2tr(&self.secp_ctx, untweaked_pubkey, None, self.network());
 
         Ok(*script_pubkey == native_addr.script_pubkey()
-            || *script_pubkey == wrapped_addr.script_pubkey())
+            || *script_pubkey == wrapped_addr.script_pubkey()
+            || *script_pubkey == taproot_addr.script_pubkey())
     }
 
     fn get_native_address(&self, child_path: &[u32]) -> Result<Address, Status> {
@@ -1019,6 +1024,16 @@ impl Wallet for Node {
 
         let pubkey = self.get_wallet_pubkey(child_path)?;
         Ok(Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed"))
+    }
+
+    fn get_taproot_address(&self, child_path: &[u32]) -> Result<Address, Status> {
+        if child_path.len() == 0 {
+            return Err(invalid_argument("empty child path"));
+        }
+
+        let pubkey = self.get_wallet_pubkey(child_path)?;
+        let untweaked_pubkey = UntweakedPublicKey::from(pubkey.inner);
+        Ok(Address::p2tr(&self.secp_ctx, untweaked_pubkey, None, self.network()))
     }
 
     fn get_wrapped_address(&self, child_path: &[u32]) -> Result<Address, Status> {
@@ -1050,13 +1065,24 @@ impl Wallet for Node {
                 let pubkey = bitcoin::PublicKey::new(
                     xp.derive_pub(&Secp256k1::new(), &child_path).unwrap().public_key,
                 );
+
                 // this is infallible because the pubkey is compressed
                 if *script_pubkey
                     == Address::p2wpkh(&pubkey, self.network()).unwrap().script_pubkey()
                 {
                     return true;
                 }
+
                 if *script_pubkey == Address::p2pkh(&pubkey, self.network()).script_pubkey() {
+                    return true;
+                }
+
+                // FIXME it is not recommended to use the same xpub for both schnorr and ECDSA
+                let untweaked_pubkey = UntweakedPublicKey::from(pubkey.inner);
+                if *script_pubkey
+                    == Address::p2tr(&self.secp_ctx, untweaked_pubkey, None, self.network())
+                        .script_pubkey()
+                {
                     return true;
                 }
             }
