@@ -15,9 +15,10 @@ use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
+use bitcoin::schnorr::UntweakedPublicKey;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
-use bitcoin::secp256k1::{schnorr, All, Message, PublicKey, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{schnorr, Message, PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::util::sighash::SighashCache;
 use bitcoin::{secp256k1, Address, PrivateKey, Transaction, TxOut};
@@ -913,7 +914,7 @@ impl SignedHeartbeat {
     }
 
     /// Verify the heartbeat signature
-    pub fn verify(&self, pubkey: &PublicKey, secp: &Secp256k1<All>) -> bool {
+    pub fn verify(&self, pubkey: &PublicKey, secp: &Secp256k1<secp256k1::All>) -> bool {
         let signature = schnorr::Signature::from_slice(&self.signature).unwrap();
         let xpubkey = bitcoin::XOnlyPublicKey::from(pubkey.clone());
         secp.verify_schnorr(&signature, &self.sighash(), &xpubkey).is_ok()
@@ -967,6 +968,7 @@ impl SignedHeartbeat {
 /// }
 /// ```
 pub struct Node {
+    secp_ctx: Secp256k1<secp256k1::All>,
     pub(crate) node_config: NodeConfig,
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<OrderedMap<ChannelId, Arc<Mutex<ChannelSlot>>>>,
@@ -1000,8 +1002,7 @@ impl Wallet for Node {
             return Ok(false);
         }
 
-        let secp_ctx = Secp256k1::signing_only();
-        let pubkey = self.get_wallet_pubkey(&secp_ctx, child_path)?;
+        let pubkey = self.get_wallet_pubkey(child_path)?;
 
         // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
         let native_addr = Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed");
@@ -1016,8 +1017,7 @@ impl Wallet for Node {
             return Err(invalid_argument("empty child path"));
         }
 
-        let secp_ctx = Secp256k1::signing_only();
-        let pubkey = self.get_wallet_pubkey(&secp_ctx, child_path)?;
+        let pubkey = self.get_wallet_pubkey(child_path)?;
         Ok(Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed"))
     }
 
@@ -1026,8 +1026,7 @@ impl Wallet for Node {
             return Err(invalid_argument("empty child path"));
         }
 
-        let secp_ctx = Secp256k1::signing_only();
-        let pubkey = self.get_wallet_pubkey(&secp_ctx, child_path)?;
+        let pubkey = self.get_wallet_pubkey(child_path)?;
         Ok(Address::p2shwpkh(&pubkey, self.network()).expect("p2shwpkh failed"))
     }
 
@@ -1250,6 +1249,7 @@ impl Node {
         node_id: PublicKey,
         tracker: ChainTracker<ChainMonitor>,
     ) -> Node {
+        let secp_ctx = Secp256k1::new();
         let log_prefix = &node_id.to_hex()[0..4];
 
         let persister = services.persister;
@@ -1266,6 +1266,7 @@ impl Node {
         ));
 
         Node {
+            secp_ctx,
             keys_manager,
             node_config,
             channels: Mutex::new(OrderedMap::new()),
@@ -1859,7 +1860,7 @@ impl Node {
                     Some((key, stack)) => (PrivateKey::new(key.clone(), Network::Testnet), stack),
                     // Derive the HD key.
                     None => {
-                        let key = self.get_wallet_privkey(&secp_ctx, &ipaths[idx])?;
+                        let key = self.get_wallet_privkey(&ipaths[idx])?;
                         let redeemscript =
                             PublicKey::from_secret_key(&secp_ctx, &key.inner).serialize().to_vec();
                         (key, vec![redeemscript])
@@ -2064,11 +2065,7 @@ impl Node {
         channel_transaction_parameters
     }
 
-    pub(crate) fn get_wallet_privkey(
-        &self,
-        secp_ctx: &Secp256k1<secp256k1::SignOnly>,
-        child_path: &[u32],
-    ) -> Result<PrivateKey, Status> {
+    pub(crate) fn get_wallet_privkey(&self, child_path: &[u32]) -> Result<PrivateKey, Status> {
         if child_path.len() != self.node_config.key_derivation_style.get_key_path_len() {
             return Err(invalid_argument(format!(
                 "get_wallet_key: bad child_path len : {}",
@@ -2081,7 +2078,7 @@ impl Node {
         // Derive the rest of the child_path.
         for elem in child_path {
             xkey = xkey
-                .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(*elem).unwrap())
+                .ckd_priv(&self.secp_ctx, ChildNumber::from_normal_idx(*elem).unwrap())
                 .map_err(|err| internal_error(format!("derive child_path failed: {}", err)))?;
         }
         Ok(PrivateKey::new(xkey.private_key, self.network()))
@@ -2089,10 +2086,9 @@ impl Node {
 
     pub(crate) fn get_wallet_pubkey(
         &self,
-        secp_ctx: &Secp256k1<secp256k1::SignOnly>,
         child_path: &[u32],
     ) -> Result<bitcoin::PublicKey, Status> {
-        Ok(self.get_wallet_privkey(secp_ctx, child_path)?.public_key(secp_ctx))
+        Ok(self.get_wallet_privkey(child_path)?.public_key(&self.secp_ctx))
     }
 
     /// Check the submitted wallet pubkey
@@ -2101,8 +2097,7 @@ impl Node {
         child_path: &[u32],
         pubkey: bitcoin::PublicKey,
     ) -> Result<bool, Status> {
-        let secp_ctx = Secp256k1::signing_only();
-        Ok(self.get_wallet_pubkey(&secp_ctx, child_path)? == pubkey)
+        Ok(self.get_wallet_pubkey(&child_path)? == pubkey)
     }
 
     /// Get shutdown_pubkey to use as PublicKey at channel closure
@@ -2258,14 +2253,13 @@ impl Node {
         outputs: Vec<TxOut>,
         change_destination_script: Script,
         feerate_sat_per_1000_weight: u32,
-        secp_ctx: &Secp256k1<All>,
     ) -> Result<Transaction, ()> {
         self.keys_manager.spend_spendable_outputs(
             descriptors,
             outputs,
             change_destination_script,
             feerate_sat_per_1000_weight,
-            secp_ctx,
+            &self.secp_ctx,
         )
     }
 

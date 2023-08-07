@@ -368,7 +368,7 @@ mod tests {
 
         let secp = Secp256k1::signing_only();
         let values = vec![(123, 12345u64, SpendType::P2wpkh)];
-        let (input_tx, input_txid) = make_test_previous_tx(&secp, &node, &values);
+        let (input_tx, input_txid) = make_test_previous_tx(&node, &values);
         let utxo = UtxoResponse { txid: input_txid, vout: 0, value: 12345 };
 
         let keys = DirectRecoveryKeys { node };

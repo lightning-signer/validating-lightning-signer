@@ -509,14 +509,9 @@ pub fn init_channel(setup: ChannelSetup, node: Arc<Node>) -> ChannelId {
     channel_id
 }
 
-pub fn make_test_funding_wallet_addr(
-    secp_ctx: &Secp256k1<secp256k1::SignOnly>,
-    node: &Node,
-    i: u32,
-    stype: SpendType,
-) -> Address {
+pub fn make_test_funding_wallet_addr(node: &Node, i: u32, stype: SpendType) -> Address {
     let child_path = vec![i];
-    let pubkey = node.get_wallet_pubkey(&secp_ctx, &child_path).unwrap();
+    let pubkey = node.get_wallet_pubkey(&child_path).unwrap();
     match stype {
         SpendType::P2pkh => Address::p2pkh(&pubkey, node.network()),
         SpendType::P2wpkh => Address::p2wpkh(&pubkey, node.network()).unwrap(),
@@ -527,7 +522,6 @@ pub fn make_test_funding_wallet_addr(
 
 // Construct the previous tx so the funding input can pass validation (#224)
 pub fn make_test_previous_tx(
-    secp_ctx: &Secp256k1<secp256k1::SignOnly>,
     node: &Node,
     values: &Vec<(u32, u64, SpendType)>,
 ) -> (Transaction, Txid) {
@@ -544,7 +538,7 @@ pub fn make_test_previous_tx(
             .iter()
             .map(|(wallet_ndx, val, stype)| TxOut {
                 value: *val,
-                script_pubkey: make_test_funding_wallet_addr(&secp_ctx, &node, *wallet_ndx, *stype)
+                script_pubkey: make_test_funding_wallet_addr(&node, *wallet_ndx, *stype)
                     .script_pubkey(),
             })
             .collect(),
@@ -554,15 +548,13 @@ pub fn make_test_previous_tx(
 }
 
 pub fn make_test_funding_wallet_input(
-    secp_ctx: &Secp256k1<secp256k1::SignOnly>,
     node: &Node,
     stype: SpendType,
     wallet_ndx: u32,
     value: u64,
 ) -> (Transaction, TxIn) {
     // Have to build the predecessor tx so it's txid is valid ...
-    let (previous_tx, txid) =
-        make_test_previous_tx(secp_ctx, node, &vec![(wallet_ndx, value, stype)]);
+    let (previous_tx, txid) = make_test_previous_tx(node, &vec![(wallet_ndx, value, stype)]);
     (
         previous_tx,
         TxIn {
@@ -574,15 +566,9 @@ pub fn make_test_funding_wallet_input(
     )
 }
 
-pub fn make_test_funding_wallet_output(
-    secp_ctx: &Secp256k1<secp256k1::SignOnly>,
-    node: &Node,
-    i: u32,
-    value: u64,
-    stype: SpendType,
-) -> TxOut {
+pub fn make_test_funding_wallet_output(node: &Node, i: u32, value: u64, stype: SpendType) -> TxOut {
     let child_path = vec![i];
-    let pubkey = node.get_wallet_pubkey(&secp_ctx, &child_path).unwrap();
+    let pubkey = node.get_wallet_pubkey(&child_path).unwrap();
 
     // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
     let addr = match stype {
@@ -621,7 +607,7 @@ pub fn make_test_wallet_dest(
     stype: SpendType,
 ) -> (Script, Vec<u32>) {
     let child_path = vec![wallet_index];
-    let pubkey = node_ctx.node.get_wallet_pubkey(&node_ctx.secp_ctx, &child_path).unwrap();
+    let pubkey = node_ctx.node.get_wallet_pubkey(&child_path).unwrap();
 
     let script_pubkey = match stype {
         SpendType::P2wpkh => Address::p2wpkh(&pubkey, node_ctx.node.network()),
@@ -838,13 +824,8 @@ impl TestFundingTxContext {
         wallet_ndx: u32,
         value_sat: u64,
     ) {
-        let (input_tx, txin) = make_test_funding_wallet_input(
-            &node_ctx.secp_ctx,
-            &node_ctx.node,
-            spendtype,
-            wallet_ndx,
-            value_sat,
-        );
+        let (input_tx, txin) =
+            make_test_funding_wallet_input(&node_ctx.node, spendtype, wallet_ndx, value_sat);
         self.inputs.push(txin);
         self.ipaths.push(vec![wallet_ndx]);
         self.ivals.push(value_sat);
@@ -861,7 +842,6 @@ impl TestFundingTxContext {
         value_sat: u64,
     ) {
         self.outputs.push(make_test_funding_wallet_output(
-            &node_ctx.secp_ctx,
             &node_ctx.node,
             wallet_ndx,
             value_sat,
@@ -895,7 +875,6 @@ impl TestFundingTxContext {
         value_sat: u64,
     ) {
         self.outputs.push(make_test_funding_wallet_output(
-            &node_ctx.secp_ctx,
             &node_ctx.node,
             unknown_ndx + 10_000, // lazy, it's really in the wallet
             value_sat,
@@ -913,7 +892,6 @@ impl TestFundingTxContext {
     ) {
         let wallet_ndx = unknown_ndx + 10_000; // lazy, it's really in the wallet
         self.outputs.push(make_test_funding_wallet_output(
-            &node_ctx.secp_ctx,
             &node_ctx.node,
             wallet_ndx,
             value_sat,
@@ -921,7 +899,7 @@ impl TestFundingTxContext {
         ));
         self.opaths.push(vec![]); // don't consider wallet
         let child_path = vec![wallet_ndx];
-        let pubkey = node_ctx.node.get_wallet_pubkey(&node_ctx.secp_ctx, &child_path).unwrap();
+        let pubkey = node_ctx.node.get_wallet_pubkey(&child_path).unwrap();
         let addr = Address::p2wpkh(&pubkey, node_ctx.node.network()).unwrap();
         node_ctx.node.add_allowlist(&vec![addr.to_string()]).expect("add_allowlist");
     }
@@ -1333,29 +1311,21 @@ pub fn make_test_funding_tx_with_change(
     (opath, tx)
 }
 
-pub fn make_test_funding_tx(
-    secp_ctx: &Secp256k1<secp256k1::SignOnly>,
-    node: &Node,
-    inputs: Vec<TxIn>,
-    value: u64,
-) -> (Vec<u32>, Transaction) {
+pub fn make_test_funding_tx(node: &Node, inputs: Vec<TxIn>, value: u64) -> (Vec<u32>, Transaction) {
     let opath = vec![0];
     let change_addr =
-        Address::p2wpkh(&node.get_wallet_pubkey(&secp_ctx, &opath).unwrap(), Network::Testnet)
-            .unwrap();
+        Address::p2wpkh(&node.get_wallet_pubkey(&opath).unwrap(), Network::Testnet).unwrap();
     make_test_funding_tx_with_change(inputs, value, opath, &change_addr)
 }
 
 pub fn make_test_funding_tx_with_p2shwpkh_change(
-    secp_ctx: &Secp256k1<secp256k1::SignOnly>,
     node: &Node,
     inputs: Vec<TxIn>,
     value: u64,
 ) -> (Vec<u32>, Transaction) {
     let opath = vec![0];
     let change_addr =
-        Address::p2shwpkh(&node.get_wallet_pubkey(&secp_ctx, &opath).unwrap(), Network::Testnet)
-            .unwrap();
+        Address::p2shwpkh(&node.get_wallet_pubkey(&opath).unwrap(), Network::Testnet).unwrap();
     make_test_funding_tx_with_change(inputs, value, opath, &change_addr)
 }
 

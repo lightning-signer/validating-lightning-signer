@@ -3,8 +3,6 @@ mod tests {
     use std::mem;
 
     use bitcoin::hashes::hex::FromHex;
-    use bitcoin::secp256k1;
-    use bitcoin::secp256k1::Secp256k1;
     use bitcoin::{self, Address, Network, OutPoint, Script, Transaction, TxOut};
     use lightning::ln::chan_utils::{
         make_funding_redeemscript, ChannelPublicKeys, ClosingTransaction,
@@ -28,20 +26,9 @@ mod tests {
     fn setup_mutual_close_tx(
         outbound: bool,
     ) -> Result<
-        (
-            Secp256k1<secp256k1::SignOnly>,
-            ChannelSetup,
-            Arc<Node>,
-            ChannelId,
-            u64,
-            u64,
-            u64,
-            Vec<u32>,
-            ChannelPublicKeys,
-        ),
+        (ChannelSetup, Arc<Node>, ChannelId, u64, u64, u64, Vec<u32>, ChannelPublicKeys),
         Status,
     > {
-        let secp_ctx = Secp256k1::signing_only();
         let mut setup = make_test_channel_setup();
         setup.is_outbound = outbound;
         let (node, channel_id) =
@@ -104,7 +91,6 @@ mod tests {
         .expect("state setup");
 
         Ok((
-            secp_ctx,
             setup,
             node,
             channel_id,
@@ -133,7 +119,6 @@ mod tests {
         ChannelStateValidator: Fn(&Channel),
     {
         let (
-            secp_ctx,
             setup,
             node,
             channel_id,
@@ -153,7 +138,7 @@ mod tests {
             let mut holder_value_sat = to_holder_value_sat;
             let mut counterparty_value_sat = to_counterparty_value_sat;
             let mut holder_shutdown_script = Address::p2wpkh(
-                &node.get_wallet_pubkey(&secp_ctx, &holder_wallet_path_hint).unwrap(),
+                &node.get_wallet_pubkey(&holder_wallet_path_hint).unwrap(),
                 Network::Testnet,
             )
             .expect("Address")
@@ -252,7 +237,6 @@ mod tests {
         ChannelStateValidator: Fn(&Channel),
     {
         let (
-            secp_ctx,
             setup,
             node,
             channel_id,
@@ -274,12 +258,10 @@ mod tests {
             let mut wallet_path = init_holder_wallet_path_hint.clone();
             let mut holder_value_sat = to_holder_value_sat;
             let mut counterparty_value_sat = to_counterparty_value_sat;
-            let mut holder_shutdown_script = Address::p2wpkh(
-                &node.get_wallet_pubkey(&secp_ctx, &wallet_path).unwrap(),
-                Network::Testnet,
-            )
-            .expect("Address")
-            .script_pubkey();
+            let mut holder_shutdown_script =
+                Address::p2wpkh(&node.get_wallet_pubkey(&wallet_path).unwrap(), Network::Testnet)
+                    .expect("Address")
+                    .script_pubkey();
             let mut counterparty_shutdown_script =
                 Script::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
                     .expect("script_pubkey");

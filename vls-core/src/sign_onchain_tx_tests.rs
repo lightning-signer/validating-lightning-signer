@@ -88,12 +88,11 @@ mod tests {
 
     #[test]
     fn sign_funding_tx_p2wpkh_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::signing_only();
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let values = vec![(0, 100u64, SpendType::P2wpkh), (1, 300u64, SpendType::P2wpkh)];
         let chanamt = 300u64;
 
-        let (previous_tx, txid) = make_test_previous_tx(&secp_ctx, &node, &values);
+        let (previous_tx, txid) = make_test_previous_tx(&node, &values);
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
@@ -108,7 +107,7 @@ mod tests {
             sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
-        let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1, input2], chanamt);
+        let (opath, mut tx) = make_test_funding_tx(&node, vec![input1, input2], chanamt);
         let (wallet_ndx, values_sat, spendtypes): (Vec<_>, Vec<_>, Vec<_>) = multiunzip(values);
         let ipaths: Vec<Vec<u32>> = wallet_ndx.into_iter().map(|n| vec![n]).collect();
         let uniclosekeys = vec![None, None];
@@ -138,12 +137,11 @@ mod tests {
 
     #[test]
     fn sign_funding_tx_empty_previous_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::signing_only();
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let values = vec![(0, 100u64, SpendType::P2wpkh), (1, 300u64, SpendType::P2wpkh)];
         let chanamt = 300u64;
 
-        let (previous_tx, txid) = make_test_previous_tx(&secp_ctx, &node, &values);
+        let (previous_tx, txid) = make_test_previous_tx(&node, &values);
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
@@ -158,7 +156,7 @@ mod tests {
             sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
-        let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1, input2], chanamt);
+        let (opath, mut tx) = make_test_funding_tx(&node, vec![input1, input2], chanamt);
         let (wallet_ndx, values_sat, spendtypes): (Vec<_>, Vec<_>, Vec<_>) = multiunzip(values);
         let ipaths: Vec<Vec<u32>> = wallet_ndx.into_iter().map(|n| vec![n]).collect();
         let uniclosekeys = vec![None, None];
@@ -188,12 +186,11 @@ mod tests {
 
     #[test]
     fn sign_funding_tx_p2wpkh_test1() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::signing_only();
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let values = vec![(0, 200u64, SpendType::P2wpkh)];
         let chanamt = 100u64;
 
-        let (previous_tx, txid) = make_test_previous_tx(&secp_ctx, &node, &values);
+        let (previous_tx, txid) = make_test_previous_tx(&node, &values);
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
@@ -202,7 +199,7 @@ mod tests {
             witness: Witness::default(),
         };
 
-        let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1], chanamt);
+        let (opath, mut tx) = make_test_funding_tx(&node, vec![input1], chanamt);
         let (wallet_ndx, values_sat, spendtypes): (Vec<_>, Vec<_>, Vec<_>) = multiunzip(values);
         let ipaths: Vec<Vec<u32>> = wallet_ndx.into_iter().map(|n| vec![n]).collect();
         let uniclosekeys = vec![None];
@@ -231,13 +228,12 @@ mod tests {
     // policy-onchain-fee-range
     #[test]
     fn sign_funding_tx_fee_too_high() {
-        let secp_ctx = Secp256k1::signing_only();
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let fee = 281_000u64;
         let values = vec![(0, 100u64 + fee, SpendType::P2wpkh)];
         let chanamt = 100u64;
 
-        let (_previous_tx, txid) = make_test_previous_tx(&secp_ctx, &node, &values);
+        let (_previous_tx, txid) = make_test_previous_tx(&node, &values);
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
@@ -246,7 +242,7 @@ mod tests {
             witness: Witness::default(),
         };
 
-        let (opath, tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1], chanamt);
+        let (opath, tx) = make_test_funding_tx(&node, vec![input1], chanamt);
         let (wallet_ndx, values_sat, spendtypes): (Vec<_>, Vec<_>, Vec<_>) = multiunzip(values);
         let ipaths: Vec<Vec<u32>> = wallet_ndx.into_iter().map(|n| vec![n]).collect();
         let uniclosekeys = vec![None];
@@ -273,7 +269,7 @@ mod tests {
         let values = vec![(0, 300u64, SpendType::P2wpkh)];
         let chanamt = 200u64;
 
-        let (_previous_tx, txid) = make_test_previous_tx(&secp_ctx, &node, &values);
+        let (_previous_tx, txid) = make_test_previous_tx(&node, &values);
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
@@ -282,7 +278,7 @@ mod tests {
             witness: Witness::default(),
         };
 
-        let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1], chanamt);
+        let (opath, mut tx) = make_test_funding_tx(&node, vec![input1], chanamt);
         let (wallet_ndx, values_sat, spendtypes): (Vec<_>, Vec<_>, Vec<_>) = multiunzip(values);
         let ipaths: Vec<Vec<u32>> = wallet_ndx.into_iter().map(|n| vec![n]).collect();
 
@@ -328,11 +324,10 @@ mod tests {
 
     #[test]
     fn sign_funding_tx_p2pkh_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::signing_only();
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let values = vec![(0, 200u64, SpendType::P2pkh)];
 
-        let (previous_tx, txid) = make_test_previous_tx(&secp_ctx, &node, &values);
+        let (previous_tx, txid) = make_test_previous_tx(&node, &values);
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
@@ -341,7 +336,7 @@ mod tests {
             witness: Witness::default(),
         };
 
-        let (opath, mut tx) = make_test_funding_tx(&secp_ctx, &node, vec![input1], 100);
+        let (opath, mut tx) = make_test_funding_tx(&node, vec![input1], 100);
         let (wallet_ndx, values_sat, spendtypes): (Vec<_>, Vec<_>, Vec<_>) = multiunzip(values);
         let ipaths: Vec<Vec<u32>> = wallet_ndx.into_iter().map(|n| vec![n]).collect();
 
@@ -373,12 +368,11 @@ mod tests {
 
     #[test]
     fn sign_funding_tx_p2sh_p2wpkh_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::signing_only();
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let values = vec![(0, 200u64, SpendType::P2shP2wpkh)];
         let chanamt = 100u64;
 
-        let (previous_tx, txid) = make_test_previous_tx(&secp_ctx, &node, &values);
+        let (previous_tx, txid) = make_test_previous_tx(&node, &values);
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
@@ -388,7 +382,7 @@ mod tests {
         };
 
         let (opath, mut tx) =
-            make_test_funding_tx_with_p2shwpkh_change(&secp_ctx, &node, vec![input1], chanamt);
+            make_test_funding_tx_with_p2shwpkh_change(&node, vec![input1], chanamt);
         let (wallet_ndx, values_sat, spendtypes): (Vec<_>, Vec<_>, Vec<_>) = multiunzip(values);
         let ipaths: Vec<Vec<u32>> = wallet_ndx.into_iter().map(|n| vec![n]).collect();
 
@@ -408,7 +402,7 @@ mod tests {
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
-        let pubkey = &node.get_wallet_pubkey(&secp_ctx, &ipaths[0]).unwrap();
+        let pubkey = &node.get_wallet_pubkey(&ipaths[0]).unwrap();
         let keyhash = Hash160::hash(&pubkey.serialize()[..]);
         tx.input[0].script_sig = Builder::new()
             .push_slice(
@@ -428,7 +422,6 @@ mod tests {
 
     #[test]
     fn sign_funding_tx_psbt_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::signing_only();
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
 
         let values0 = vec![(0, 100u64, SpendType::P2wpkh)];
@@ -436,9 +429,9 @@ mod tests {
         let values2 = vec![(2, 102u64, SpendType::P2wpkh)];
 
         let previous = vec![
-            make_test_previous_tx(&secp_ctx, &node, &values0),
-            make_test_previous_tx(&secp_ctx, &node, &values1),
-            make_test_previous_tx(&secp_ctx, &node, &values2),
+            make_test_previous_tx(&node, &values0),
+            make_test_previous_tx(&node, &values1),
+            make_test_previous_tx(&node, &values2),
         ];
         let (_previous_txs, txids): (Vec<_>, Vec<_>) = previous.into_iter().unzip();
 
@@ -463,7 +456,7 @@ mod tests {
             },
         ];
 
-        let (opath, tx) = make_test_funding_tx(&secp_ctx, &node, inputs, 100);
+        let (opath, tx) = make_test_funding_tx(&node, inputs, 100);
         let uniclosekeys = vec![None, None, None];
 
         let ipaths = vec![vec![values0[0].0], vec![values1[0].0], vec![values2[0].0]];
