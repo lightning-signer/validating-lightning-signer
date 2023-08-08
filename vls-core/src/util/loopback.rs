@@ -57,14 +57,12 @@ impl LoopbackSignerKeysInterface {
         outputs: Vec<TxOut>,
         change_destination_script: Script,
         feerate_sat_per_1000_weight: u32,
-        secp_ctx: &Secp256k1<All>,
     ) -> Result<Transaction, ()> {
         self.get_node().spend_spendable_outputs(
             descriptors,
             outputs,
             change_destination_script,
             feerate_sat_per_1000_weight,
-            secp_ctx,
         )
     }
 
@@ -541,9 +539,8 @@ impl SignerProvider for LoopbackSignerKeysInterface {
     type Signer = LoopbackChannelSigner;
 
     fn get_destination_script(&self) -> Script {
-        let secp_ctx = Secp256k1::signing_only();
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
-        let pubkey = self.get_node().get_wallet_pubkey(&secp_ctx, &wallet_path).expect("pubkey");
+        let pubkey = self.get_node().get_wallet_pubkey(&wallet_path).expect("pubkey");
         Script::new_v0_p2wpkh(&WPubkeyHash::hash(&pubkey.serialize()))
     }
 

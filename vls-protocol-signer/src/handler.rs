@@ -9,17 +9,18 @@ use alloc::vec::Vec;
 use core::convert::TryInto;
 use core::str::FromStr;
 
+use bitcoin::bech32::u5;
 use bitcoin::blockdata::script;
 use bitcoin::consensus::deserialize;
+use bitcoin::secp256k1;
 use bitcoin::secp256k1::SecretKey;
+use bitcoin::util::bip32::{DerivationPath, KeySource};
 use bitcoin::util::psbt::serialize::Deserialize;
-use bitcoin::{EcdsaSighashType, Network, Script};
+use bitcoin::util::psbt::PartiallySignedTransaction;
+use bitcoin::util::taproot::TapLeafHash;
+use bitcoin::{Address, EcdsaSighashType, Network, Script};
+use bitcoin::{OutPoint, Transaction, TxOut, Witness, XOnlyPublicKey};
 use lightning_signer::bitcoin;
-use lightning_signer::bitcoin::bech32::u5;
-use lightning_signer::bitcoin::secp256k1;
-use lightning_signer::bitcoin::util::bip32::{ChildNumber, KeySource};
-use lightning_signer::bitcoin::util::psbt::PartiallySignedTransaction;
-use lightning_signer::bitcoin::{OutPoint, Transaction, Witness};
 use lightning_signer::channel::{
     ChannelBalance, ChannelBase, ChannelId, ChannelSetup, TypedSignature,
 };
@@ -29,7 +30,7 @@ use lightning_signer::lightning::ln::chan_utils::{
     derive_public_revocation_key, ChannelPublicKeys,
 };
 use lightning_signer::lightning::ln::PaymentHash;
-use lightning_signer::node::{Node, NodeConfig, NodeMonitor, NodeServices, SpendType};
+use lightning_signer::node::{Node, NodeConfig, NodeMonitor, NodeServices};
 use lightning_signer::persist::Mutations;
 use lightning_signer::prelude::Mutex;
 use lightning_signer::signer::my_keys_manager::MyKeysManager;
@@ -457,25 +458,14 @@ impl Handler for RootHandler {
 
                 let tx = &mut psbt.unsigned_tx;
                 let ipaths: Vec<_> = m.utxos.iter().map(|u| vec![u.keyindex]).collect();
-                let values_sat: Vec<_> = m.utxos.iter().map(|u| u.amount).collect();
-                let spendtypes: Vec<_> = m
+                let prev_outs = m
                     .utxos
                     .iter()
-                    .map(|u|
-                        // TODO this is kinda overloading the SignWithdrawal message
-                        // (CLN uses a separate message to sign delayed output to us)
-                        if u.is_p2sh {
-                            SpendType::P2shP2wpkh
-                        } else if let Some(ci) = u.close_info.as_ref() {
-                            if ci.commitment_point.is_some() {
-                                SpendType::P2wsh
-                            } else {
-                                SpendType::P2wpkh
-                            }
-                        } else {
-                            SpendType::P2wpkh
-                        })
-                    .collect();
+                    .map(|u| TxOut {
+                        value: u.amount,
+                        script_pubkey: Script::from(u.script.0.clone()),
+                    })
+                    .collect::<Vec<_>>();
                 let mut uniclosekeys = Vec::new();
                 let secp_ctx = Secp256k1::new();
                 for utxo in m.utxos.iter() {
@@ -517,8 +507,7 @@ impl Handler for RootHandler {
                     &self.node,
                     &tx,
                     &streamed.segwit_flags,
-                    &values_sat,
-                    &spendtypes,
+                    &prev_outs,
                     &uniclosekeys,
                     &opaths,
                 )?;
@@ -527,13 +516,8 @@ impl Handler for RootHandler {
                     return Err(Status::failed_precondition("unapproved destination"))?;
                 }
 
-                let witvec = self.node.unchecked_sign_onchain_tx(
-                    &tx,
-                    &ipaths,
-                    &values_sat,
-                    &spendtypes,
-                    uniclosekeys,
-                )?;
+                let witvec =
+                    self.node.unchecked_sign_onchain_tx(&tx, &ipaths, &prev_outs, uniclosekeys)?;
 
                 for (i, stack) in witvec.into_iter().enumerate() {
                     if !stack.is_empty() {
@@ -779,20 +763,36 @@ impl Handler for RootHandler {
     }
 }
 
-fn extract_output_path(x: &BTreeMap<PublicKey, KeySource>) -> Vec<u32> {
-    if x.is_empty() {
-        return Vec::new();
-    }
-    if x.len() > 1 {
-        panic!("len > 1");
-    }
-    let (_fingerprint, path) = x.iter().next().unwrap().1;
-    let segments: Vec<ChildNumber> = path.clone().into();
-    segments.into_iter().map(|c| u32::from(c)).collect()
+fn extract_output_path(
+    bip32_derivation: &BTreeMap<PublicKey, KeySource>,
+    tap_key_origins: &BTreeMap<XOnlyPublicKey, (Vec<TapLeafHash>, KeySource)>,
+) -> Vec<u32> {
+    let path = if !bip32_derivation.is_empty() {
+        if bip32_derivation.len() > 1 {
+            unimplemented!("len > 1");
+        }
+        let (_fingerprint, path) = bip32_derivation.iter().next().unwrap().1;
+        path.clone()
+    } else if !tap_key_origins.is_empty() {
+        if tap_key_origins.len() > 1 {
+            unimplemented!("len > 1");
+        }
+        let (_xpub, (hashes, source)) = tap_key_origins.iter().next().unwrap();
+        if !hashes.is_empty() {
+            unimplemented!("hashes not empty");
+        }
+        source.1.clone()
+    } else {
+        DerivationPath::from(vec![])
+    };
+    path.into_iter().map(|i| i.clone().into()).collect()
 }
 
 fn extract_psbt_output_paths(psbt: &PartiallySignedTransaction) -> Vec<Vec<u32>> {
-    psbt.outputs.iter().map(|o| extract_output_path(&o.bip32_derivation)).collect::<Vec<Vec<u32>>>()
+    psbt.outputs
+        .iter()
+        .map(|o| extract_output_path(&o.bip32_derivation, &o.tap_key_origins))
+        .collect::<Vec<Vec<u32>>>()
 }
 
 /// Protocol handler
@@ -1017,8 +1017,17 @@ impl Handler for ChannelHandler {
             ),
             Message::SignMutualCloseTx(m) => {
                 let psbt = m.psbt;
+                println!("XXX psbt: {:#?}", psbt);
                 let tx = m.tx;
                 let opaths = extract_psbt_output_paths(&psbt);
+                info!(
+                    "mutual close derivation paths {:?} addresses {:?}",
+                    opaths,
+                    tx.output
+                        .iter()
+                        .map(|o| Address::from_script(&o.script_pubkey, self.node.network()))
+                        .collect::<Vec<_>>()
+                );
                 let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
                     chan.sign_mutual_close_tx(&tx, &opaths)
                 })?;

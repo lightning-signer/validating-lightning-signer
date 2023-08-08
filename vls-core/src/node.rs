@@ -15,12 +15,15 @@ use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
+use bitcoin::psbt::Prevouts;
+use bitcoin::schnorr::UntweakedPublicKey;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
-use bitcoin::secp256k1::{schnorr, All, Message, PublicKey, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{schnorr, Message, PublicKey, Secp256k1, SecretKey};
+use bitcoin::util::address::Payload;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::util::sighash::SighashCache;
-use bitcoin::{secp256k1, Address, PrivateKey, Transaction, TxOut};
+use bitcoin::{secp256k1, Address, PrivateKey, SchnorrSighashType, Transaction, TxOut};
 use bitcoin::{EcdsaSighashType, Network, OutPoint, Script};
 use bitcoin_consensus_derive::{Decodable, Encodable};
 use lightning::chain;
@@ -68,7 +71,10 @@ use crate::sync::{Arc, Weak};
 use crate::tx::tx::PreimageMap;
 use crate::txoo::get_latest_checkpoint;
 use crate::util::clock::Clock;
-use crate::util::crypto_utils::{sighash_from_heartbeat, signature_to_bitcoin_vec};
+use crate::util::crypto_utils::{
+    ecdsa_sign, schnorr_signature_to_bitcoin_vec, sighash_from_heartbeat, signature_to_bitcoin_vec,
+    taproot_sign,
+};
 use crate::util::debug_utils::{
     DebugBytes, DebugMapPaymentState, DebugMapPaymentSummary, DebugMapRoutedPayment,
 };
@@ -913,7 +919,7 @@ impl SignedHeartbeat {
     }
 
     /// Verify the heartbeat signature
-    pub fn verify(&self, pubkey: &PublicKey, secp: &Secp256k1<All>) -> bool {
+    pub fn verify(&self, pubkey: &PublicKey, secp: &Secp256k1<secp256k1::All>) -> bool {
         let signature = schnorr::Signature::from_slice(&self.signature).unwrap();
         let xpubkey = bitcoin::XOnlyPublicKey::from(pubkey.clone());
         secp.verify_schnorr(&signature, &self.sighash(), &xpubkey).is_ok()
@@ -967,6 +973,7 @@ impl SignedHeartbeat {
 /// }
 /// ```
 pub struct Node {
+    secp_ctx: Secp256k1<secp256k1::All>,
     pub(crate) node_config: NodeConfig,
     pub(crate) keys_manager: MyKeysManager,
     channels: Mutex<OrderedMap<ChannelId, Arc<Mutex<ChannelSlot>>>>,
@@ -1000,15 +1007,19 @@ impl Wallet for Node {
             return Ok(false);
         }
 
-        let secp_ctx = Secp256k1::signing_only();
-        let pubkey = self.get_wallet_pubkey(&secp_ctx, child_path)?;
+        let pubkey = self.get_wallet_pubkey(child_path)?;
 
         // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
         let native_addr = Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed");
         let wrapped_addr = Address::p2shwpkh(&pubkey, self.network()).expect("p2shwpkh failed");
+        let untweaked_pubkey = UntweakedPublicKey::from(pubkey.inner);
+
+        // FIXME it is not recommended to use the same xpub for both schnorr and ECDSA
+        let taproot_addr = Address::p2tr(&self.secp_ctx, untweaked_pubkey, None, self.network());
 
         Ok(*script_pubkey == native_addr.script_pubkey()
-            || *script_pubkey == wrapped_addr.script_pubkey())
+            || *script_pubkey == wrapped_addr.script_pubkey()
+            || *script_pubkey == taproot_addr.script_pubkey())
     }
 
     fn get_native_address(&self, child_path: &[u32]) -> Result<Address, Status> {
@@ -1016,9 +1027,18 @@ impl Wallet for Node {
             return Err(invalid_argument("empty child path"));
         }
 
-        let secp_ctx = Secp256k1::signing_only();
-        let pubkey = self.get_wallet_pubkey(&secp_ctx, child_path)?;
+        let pubkey = self.get_wallet_pubkey(child_path)?;
         Ok(Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed"))
+    }
+
+    fn get_taproot_address(&self, child_path: &[u32]) -> Result<Address, Status> {
+        if child_path.len() == 0 {
+            return Err(invalid_argument("empty child path"));
+        }
+
+        let pubkey = self.get_wallet_pubkey(child_path)?;
+        let untweaked_pubkey = UntweakedPublicKey::from(pubkey.inner);
+        Ok(Address::p2tr(&self.secp_ctx, untweaked_pubkey, None, self.network()))
     }
 
     fn get_wrapped_address(&self, child_path: &[u32]) -> Result<Address, Status> {
@@ -1026,8 +1046,7 @@ impl Wallet for Node {
             return Err(invalid_argument("empty child path"));
         }
 
-        let secp_ctx = Secp256k1::signing_only();
-        let pubkey = self.get_wallet_pubkey(&secp_ctx, child_path)?;
+        let pubkey = self.get_wallet_pubkey(child_path)?;
         Ok(Address::p2shwpkh(&pubkey, self.network()).expect("p2shwpkh failed"))
     }
 
@@ -1051,13 +1070,24 @@ impl Wallet for Node {
                 let pubkey = bitcoin::PublicKey::new(
                     xp.derive_pub(&Secp256k1::new(), &child_path).unwrap().public_key,
                 );
+
                 // this is infallible because the pubkey is compressed
                 if *script_pubkey
                     == Address::p2wpkh(&pubkey, self.network()).unwrap().script_pubkey()
                 {
                     return true;
                 }
+
                 if *script_pubkey == Address::p2pkh(&pubkey, self.network()).script_pubkey() {
+                    return true;
+                }
+
+                // FIXME it is not recommended to use the same xpub for both schnorr and ECDSA
+                let untweaked_pubkey = UntweakedPublicKey::from(pubkey.inner);
+                if *script_pubkey
+                    == Address::p2tr(&self.secp_ctx, untweaked_pubkey, None, self.network())
+                        .script_pubkey()
+                {
                     return true;
                 }
             }
@@ -1250,6 +1280,7 @@ impl Node {
         node_id: PublicKey,
         tracker: ChainTracker<ChainMonitor>,
     ) -> Node {
+        let secp_ctx = Secp256k1::new();
         let log_prefix = &node_id.to_hex()[0..4];
 
         let persister = services.persister;
@@ -1266,6 +1297,7 @@ impl Node {
         ));
 
         Node {
+            secp_ctx,
             keys_manager,
             node_config,
             channels: Mutex::new(OrderedMap::new()),
@@ -1791,13 +1823,12 @@ impl Node {
         tx: &Transaction,
         segwit_flags: &[bool],
         ipaths: &[Vec<u32>],
-        values_sat: &[u64],
-        spendtypes: &[SpendType],
+        prev_outs: &[TxOut],
         uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
         opaths: &[Vec<u32>],
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
-        self.check_onchain_tx(tx, segwit_flags, values_sat, spendtypes, &uniclosekeys, opaths)?;
-        self.unchecked_sign_onchain_tx(tx, ipaths, values_sat, spendtypes, uniclosekeys)
+        self.check_onchain_tx(tx, segwit_flags, prev_outs, &uniclosekeys, opaths)?;
+        self.unchecked_sign_onchain_tx(tx, ipaths, prev_outs, uniclosekeys)
     }
 
     /// Sign an onchain transaction (funding tx or simple sweeps).
@@ -1812,9 +1843,7 @@ impl Node {
     /// as [SpendType::Invalid] are not signed and get an empty witness stack.
     ///
     /// * `ipaths` - derivation path for the wallet key per input
-    /// * `values_sat` - the amount in satoshi per input
-    /// * `spendtypes` - spend type per input, or `Invalid` if this input is
-    ///   to be signed by someone else.
+    /// * `prev_outs` - the previous outputs used as inputs for this tx
     /// * `uniclosekeys` - an optional unilateral close key to use instead of the
     ///   wallet key.  Takes precedence over the `ipaths` entry.  This is used when
     ///   we are sweeping a unilateral close and funding a channel in a single tx.
@@ -1824,12 +1853,10 @@ impl Node {
         &self,
         tx: &Transaction,
         ipaths: &[Vec<u32>],
-        values_sat: &[u64],
-        spendtypes: &[SpendType],
+        prev_outs: &[TxOut],
         uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
         let channels_lock = self.channels.lock().unwrap();
-        let secp_ctx = Secp256k1::signing_only();
 
         // Funding transactions cannot be associated with just a single channel;
         // a single transaction may fund multiple channels
@@ -1846,34 +1873,54 @@ impl Node {
 
         let mut witvec: Vec<Vec<Vec<u8>>> = Vec::new();
         for (idx, uck) in uniclosekeys.into_iter().enumerate() {
-            if spendtypes[idx] == SpendType::Invalid {
+            let spend_type = SpendType::from_script_pubkey(&prev_outs[idx].script_pubkey);
+            // if we don't recognize the script, or we are not told what the derivation path is, don't try to sign
+            if spend_type == SpendType::Invalid || ipaths[idx].is_empty() {
                 // If we are signing a PSBT some of the inputs may be
                 // marked as SpendType::Invalid (we skip these), push
                 // an empty witness element instead.
                 witvec.push(vec![]);
             } else {
-                let value_sat = values_sat[idx];
+                let value_sat = prev_outs[idx].value;
                 let (privkey, mut witness) = match uck {
                     // There was a unilateral_close_key.
                     // TODO we don't care about the network here
                     Some((key, stack)) => (PrivateKey::new(key.clone(), Network::Testnet), stack),
                     // Derive the HD key.
                     None => {
-                        let key = self.get_wallet_privkey(&secp_ctx, &ipaths[idx])?;
-                        let redeemscript =
-                            PublicKey::from_secret_key(&secp_ctx, &key.inner).serialize().to_vec();
+                        let key = self.get_wallet_privkey(&ipaths[idx])?;
+                        let redeemscript = PublicKey::from_secret_key(&self.secp_ctx, &key.inner)
+                            .serialize()
+                            .to_vec();
                         (key, vec![redeemscript])
                     }
                 };
-                let pubkey = privkey.public_key(&secp_ctx);
+                let pubkey = privkey.public_key(&self.secp_ctx);
                 let script_code = Address::p2pkh(&pubkey, privkey.network).script_pubkey();
-                let sighash = match spendtypes[idx] {
+                // the unwraps below are infallible, because sighash is always 32 bytes
+                let sigvec = match spend_type {
                     SpendType::P2pkh => {
+                        let expected_scriptpubkey = Payload::p2pkh(&pubkey).script_pubkey();
+                        assert_eq!(
+                            prev_outs[idx].script_pubkey, expected_scriptpubkey,
+                            "scriptpubkey mismatch on index {}",
+                            idx
+                        );
                         // legacy address
                         let sighash = tx.signature_hash(0, &script_code, 0x01);
-                        Ok(sighash)
+                        signature_to_bitcoin_vec(ecdsa_sign(&self.secp_ctx, &privkey, &sighash))
                     }
                     SpendType::P2wpkh | SpendType::P2shP2wpkh => {
+                        let expected_scriptpubkey = if spend_type == SpendType::P2wpkh {
+                            Payload::p2wpkh(&pubkey).unwrap().script_pubkey()
+                        } else {
+                            Payload::p2shwpkh(&pubkey).unwrap().script_pubkey()
+                        };
+                        assert_eq!(
+                            prev_outs[idx].script_pubkey, expected_scriptpubkey,
+                            "scriptpubkey mismatch on index {}",
+                            idx
+                        );
                         // segwit native and wrapped
                         let sighash = SighashCache::new(tx)
                             .segwit_signature_hash(
@@ -1883,9 +1930,10 @@ impl Node {
                                 EcdsaSighashType::All,
                             )
                             .unwrap();
-                        Ok(sighash)
+                        signature_to_bitcoin_vec(ecdsa_sign(&self.secp_ctx, &privkey, &sighash))
                     }
                     SpendType::P2wsh => {
+                        // TODO failfast here if the scriptpubkey doesn't match
                         let sighash = SighashCache::new(tx)
                             .segwit_signature_hash(
                                 idx,
@@ -1894,15 +1942,41 @@ impl Node {
                                 EcdsaSighashType::All,
                             )
                             .unwrap();
-                        Ok(sighash)
+                        signature_to_bitcoin_vec(ecdsa_sign(&self.secp_ctx, &privkey, &sighash))
                     }
-                    st => Err(invalid_argument(format!("unsupported spend_type={:?}", st))),
-                }?;
-                let message = Message::from_slice(&sighash).map_err(|err| {
-                    internal_error(format!("sighash {:?} failed: {}", spendtypes[idx], err))
-                })?;
-                let sig = secp_ctx.sign_ecdsa(&message, &privkey.inner);
-                let sigvec = signature_to_bitcoin_vec(sig);
+                    SpendType::P2tr => {
+                        // TODO failfast here if the scriptpubkey doesn't match
+                        let wallet_addr = self.get_taproot_address(&ipaths[idx])?;
+                        let out_addr =
+                            Address::from_script(&prev_outs[idx].script_pubkey, self.network());
+                        trace!(
+                            "signing p2tr, idx {}, ipath {:?} out addr {:?}, wallet addr {} prev outs {:?}",
+                            idx, ipaths[idx], out_addr, wallet_addr, prev_outs
+                        );
+                        let prevouts = Prevouts::All(&prev_outs);
+                        let sighash = SighashCache::new(tx)
+                            .taproot_signature_hash(
+                                idx,
+                                &prevouts,
+                                None,
+                                None,
+                                SchnorrSighashType::Default,
+                            )
+                            .unwrap();
+                        let aux_rand = self.keys_manager.get_secure_random_bytes();
+                        schnorr_signature_to_bitcoin_vec(taproot_sign(
+                            &self.secp_ctx,
+                            &privkey,
+                            sighash,
+                            &aux_rand,
+                        ))
+                    }
+                    st => return Err(invalid_argument(format!("unsupported spend_type={:?}", st))),
+                };
+                // if taproot, clear out the witness, since taproot doesn't use a redeemscript for key path
+                if spend_type == SpendType::P2tr {
+                    witness.clear();
+                }
                 witness.insert(0, sigvec);
 
                 witvec.push(witness);
@@ -1950,9 +2024,7 @@ impl Node {
     /// The transaction may fund multiple channels at once.
     ///
     /// * `input_txs` - previous tx for inputs when funding channel
-    /// * `values_sat` - the amount in satoshi per input
-    /// * `spendtypes` - spend type per input, or `Invalid` if this input is
-    ///   to be signed by someone else.
+    /// * `prev_outs` - the previous outputs used as inputs for this tx
     /// * `uniclosekeys` - an optional unilateral close key to use instead of the
     ///   wallet key.  Takes precedence over the `ipaths` entry.  This is used when
     ///   we are sweeping a unilateral close and funding a channel in a single tx.
@@ -1964,8 +2036,7 @@ impl Node {
         &self,
         tx: &Transaction,
         segwit_flags: &[bool],
-        values_sat: &[u64],
-        spendtypes: &[SpendType],
+        prev_outs: &[TxOut],
         uniclosekeys: &[Option<(SecretKey, Vec<Vec<u8>>)>],
         opaths: &[Vec<u32>],
     ) -> Result<(), ValidationError> {
@@ -1990,7 +2061,8 @@ impl Node {
         // TODO(dual-funding) - This estimate does not include witnesses for inputs we don't sign.
         let mut weight_lower_bound = tx.weight();
         for (idx, uck) in uniclosekeys.iter().enumerate() {
-            if spendtypes[idx] == SpendType::Invalid {
+            let spend_type = SpendType::from_script_pubkey(&prev_outs[idx].script_pubkey);
+            if spend_type == SpendType::Invalid {
                 weight_lower_bound += 0;
             } else {
                 let wit_len = match uck {
@@ -2004,12 +2076,13 @@ impl Node {
         }
         debug!("weight_lower_bound: {}", weight_lower_bound);
 
+        let values_sat = prev_outs.iter().map(|o| o.value).collect::<Vec<_>>();
         let non_beneficial_sat = validator.validate_onchain_tx(
             self,
             channels,
             tx,
             segwit_flags,
-            values_sat,
+            &values_sat,
             opaths,
             weight_lower_bound,
         )?;
@@ -2064,11 +2137,7 @@ impl Node {
         channel_transaction_parameters
     }
 
-    pub(crate) fn get_wallet_privkey(
-        &self,
-        secp_ctx: &Secp256k1<secp256k1::SignOnly>,
-        child_path: &[u32],
-    ) -> Result<PrivateKey, Status> {
+    pub(crate) fn get_wallet_privkey(&self, child_path: &[u32]) -> Result<PrivateKey, Status> {
         if child_path.len() != self.node_config.key_derivation_style.get_key_path_len() {
             return Err(invalid_argument(format!(
                 "get_wallet_key: bad child_path len : {}",
@@ -2081,7 +2150,7 @@ impl Node {
         // Derive the rest of the child_path.
         for elem in child_path {
             xkey = xkey
-                .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(*elem).unwrap())
+                .ckd_priv(&self.secp_ctx, ChildNumber::from_normal_idx(*elem).unwrap())
                 .map_err(|err| internal_error(format!("derive child_path failed: {}", err)))?;
         }
         Ok(PrivateKey::new(xkey.private_key, self.network()))
@@ -2089,10 +2158,9 @@ impl Node {
 
     pub(crate) fn get_wallet_pubkey(
         &self,
-        secp_ctx: &Secp256k1<secp256k1::SignOnly>,
         child_path: &[u32],
     ) -> Result<bitcoin::PublicKey, Status> {
-        Ok(self.get_wallet_privkey(secp_ctx, child_path)?.public_key(secp_ctx))
+        Ok(self.get_wallet_privkey(child_path)?.public_key(&self.secp_ctx))
     }
 
     /// Check the submitted wallet pubkey
@@ -2101,8 +2169,7 @@ impl Node {
         child_path: &[u32],
         pubkey: bitcoin::PublicKey,
     ) -> Result<bool, Status> {
-        let secp_ctx = Secp256k1::signing_only();
-        Ok(self.get_wallet_pubkey(&secp_ctx, child_path)? == pubkey)
+        Ok(self.get_wallet_pubkey(&child_path)? == pubkey)
     }
 
     /// Get shutdown_pubkey to use as PublicKey at channel closure
@@ -2258,14 +2325,13 @@ impl Node {
         outputs: Vec<TxOut>,
         change_destination_script: Script,
         feerate_sat_per_1000_weight: u32,
-        secp_ctx: &Secp256k1<All>,
     ) -> Result<Transaction, ()> {
         self.keys_manager.spend_spendable_outputs(
             descriptors,
             outputs,
             change_destination_script,
             feerate_sat_per_1000_weight,
-            secp_ctx,
+            &self.secp_ctx,
         )
     }
 
@@ -2681,6 +2747,8 @@ pub enum SpendType {
     P2shP2wpkh = 4,
     /// Pay to witness script hash
     P2wsh = 5,
+    /// Pay to taproot script
+    P2tr = 6,
 }
 
 impl TryFrom<i32> for SpendType {
@@ -2693,9 +2761,29 @@ impl TryFrom<i32> for SpendType {
             x if x == SpendType::P2wpkh as i32 => SpendType::P2wpkh,
             x if x == SpendType::P2shP2wpkh as i32 => SpendType::P2shP2wpkh,
             x if x == SpendType::P2wsh as i32 => SpendType::P2wsh,
+            x if x == SpendType::P2tr as i32 => SpendType::P2tr,
             _ => return Err(()),
         };
         Ok(res)
+    }
+}
+
+impl SpendType {
+    /// Return the SpendType of a script pubkey
+    pub fn from_script_pubkey(script: &Script) -> Self {
+        if script.is_p2pkh() {
+            SpendType::P2pkh
+        } else if script.is_p2sh() {
+            SpendType::P2shP2wpkh
+        } else if script.is_v0_p2wpkh() {
+            SpendType::P2wpkh
+        } else if script.is_v0_p2wsh() {
+            SpendType::P2wsh
+        } else if script.is_v1_p2tr() {
+            SpendType::P2tr
+        } else {
+            SpendType::Invalid
+        }
     }
 }
 

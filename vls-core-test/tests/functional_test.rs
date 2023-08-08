@@ -698,7 +698,6 @@ macro_rules! check_spendable_outputs {
             .get_and_clear_pending_events();
         let mut txn = Vec::new();
         let mut all_outputs = Vec::new();
-        let secp_ctx = Secp256k1::new();
         for event in events.drain(..) {
             match event {
                 Event::SpendableOutputs { mut outputs } => {
@@ -712,7 +711,6 @@ macro_rules! check_spendable_outputs {
                                         .push_opcode(opcodes::all::OP_RETURN)
                                         .into_script(),
                                     253,
-                                    &secp_ctx,
                                 )
                                 .unwrap(),
                         );
@@ -730,7 +728,6 @@ macro_rules! check_spendable_outputs {
                     .push_opcode(opcodes::all::OP_RETURN)
                     .into_script(),
                 253,
-                &secp_ctx,
             ) {
                 txn.push(tx);
             }
