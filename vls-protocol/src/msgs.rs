@@ -300,6 +300,23 @@ pub struct CheckPubKeyReply {
     pub ok: bool,
 }
 
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(147)]
+pub struct SignAnchorspend {
+    pub peer_id: PubKey,
+    pub dbid: u64,
+    pub utxos: Array<Utxo>,
+    pub psbt: WithSize<StreamedPSBT>,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(148)]
+pub struct SignAnchorspendReply {
+    pub psbt: WithSize<PartiallySignedTransaction>,
+}
+
 /// Sign channel update
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(3)]
@@ -613,6 +630,23 @@ pub struct SignAnyLocalHtlcTx {
     pub dbid: u64,
 }
 
+/// CLN only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(149)]
+pub struct SignHtlcTxMingle {
+    pub peer_id: PubKey,
+    pub dbid: u64,
+    pub utxos: Array<Utxo>,
+    pub psbt: WithSize<StreamedPSBT>,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(150)]
+pub struct SignHtlcTxMingleReply {
+    pub psbt: WithSize<PartiallySignedTransaction>,
+}
+
 ///
 /// CLN only
 #[derive(SerBolt, Debug, Encodable, Decodable)]
@@ -633,6 +667,17 @@ pub struct SignMutualCloseTx2 {
     pub local_script: Octets,
     pub remote_script: Octets,
     pub local_wallet_path_hint: ArrayBE<u32>,
+}
+
+///
+/// CLN only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(29)]
+pub struct SignSpliceTx {
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PartiallySignedTransaction>,
+    pub remote_funding_key: PubKey,
+    pub input_index: u32,
 }
 
 ///
@@ -897,6 +942,11 @@ pub enum Message {
     SignRemoteHtlcTx(SignRemoteHtlcTx),
     SignPenaltyToUs(SignPenaltyToUs),
     SignAnyPenaltyToUs(SignAnyPenaltyToUs),
+    SignSpliceTx(SignSpliceTx),
+    SignAnchorspend(SignAnchorspend),
+    SignAnchorspendReply(SignAnchorspendReply),
+    SignHtlcTxMingle(SignHtlcTxMingle),
+    SignHtlcTxMingleReply(SignHtlcTxMingleReply),
     TipInfo(TipInfo),
     TipInfoReply(TipInfoReply),
     ForwardWatches(ForwardWatches),

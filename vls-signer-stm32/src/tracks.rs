@@ -165,6 +165,10 @@ fn track_char(msg: &Message) -> char {
         Message::SignAnyRemoteHtlcToUs(_m) => 'H',
         Message::SignPenaltyToUs(_m) => '^',
         Message::SignAnyPenaltyToUs(_m) => '^',
+        Message::SignAnchorspend(_m) => '&',
+        Message::SignHtlcTxMingle(_m) => 'g',
+
+        Message::SignSpliceTx(_m) => '|',
 
         Message::TipInfo(_m) => '<',
         Message::GetHeartbeat(_m) => 'B',
@@ -208,6 +212,8 @@ fn track_char(msg: &Message) -> char {
         | Message::SignCommitmentTxWithHtlcsReply(_)
         | Message::SignCommitmentTxReply(_)
         | Message::SignTxReply(_)
+        | Message::SignAnchorspendReply(_)
+        | Message::SignHtlcTxMingleReply(_)
         | Message::NewChannelReply(_)
         | Message::GetChannelBasepointsReply(_)
         | Message::TipInfoReply(_)
