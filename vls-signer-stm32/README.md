@@ -93,7 +93,7 @@ Wait for the demo_signer to finish loading and start executing, it will display
 4. In a second terminal shell, change directories to the top-level
    `vls-hsmd` directory and execute the desired test:
 ```
-make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_plugin.py::test_forward_event_notification VLS_SERIAL_SELECT=2
+make test-one VLS_MODE=cln:serial TEST=tests/test_plugin.py::test_forward_event_notification VLS_SERIAL_SELECT=2
 ```
 
 #### Rerunning the current image
@@ -107,37 +107,37 @@ probe-run --chip STM32F413ZHTx target/thumbv7em-none-eabihf/release/demo_signer 
 
 3 channels, nice routing:
 ```
-make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_pay_retry VLS_SERIAL_SELECT=2
+make test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_pay_retry VLS_SERIAL_SELECT=2
 ```
 
 3 channels, ok routing:
 ```
-make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_forward VLS_SERIAL_SELECT=2
+make test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_forward VLS_SERIAL_SELECT=2
 ```
 
 4 channels, nice closing:
 ```
-make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_closing.py::test_closing_different_fees
+make test-one VLS_MODE=cln:serial TEST=tests/test_closing.py::test_closing_different_fees
 ```
 
 1 channel, nice invoice, receive:
 ```
-make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_closing.py::test_closing_different_fees VLS_SERIAL_SELECT=2
+make test-one VLS_MODE=cln:serial TEST=tests/test_closing.py::test_closing_different_fees VLS_SERIAL_SELECT=2
 ```
 
 Example of invoice approval:
 ```
-make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_pay_retry VLS_SERIAL_SELECT=1
+make test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_pay_retry VLS_SERIAL_SELECT=1
 ```
 
 Example of sending keysends:
 ```
-make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_keysend VLS_SERIAL_SELECT=1
+make test-one VLS_MODE=cln:serial TEST=tests/test_pay.py::test_keysend VLS_SERIAL_SELECT=1
 ```
 
 This generally runs the signer out of memory (100 concurrent channels), useful for tuning:
 ```
-make config-experimental test-one VLS_MODE=cln:serial TEST=tests/test_connection.py::test_funding_cancel_race VLS_SERIAL_SELECT=1
+make test-one VLS_MODE=cln:serial TEST=tests/test_connection.py::test_funding_cancel_race VLS_SERIAL_SELECT=1
 ```
 
 #### Reference
