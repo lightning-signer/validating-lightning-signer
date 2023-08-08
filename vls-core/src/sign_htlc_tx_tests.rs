@@ -2,7 +2,7 @@
 mod tests {
     use bitcoin::hashes::hex::ToHex;
     use bitcoin::hashes::Hash;
-    use bitcoin::{self, Transaction};
+    use bitcoin::{self, EcdsaSighashType, Transaction};
     use bitcoin::{PackedLockTime, Sequence};
     use lightning::ln::chan_utils::{
         build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
@@ -359,7 +359,20 @@ mod tests {
 
         let htlc_pubkey = get_channel_htlc_pubkey(&node, &channel_id, &per_commitment_point);
 
-        check_signature(&htlc_tx, 0, typedsig, &htlc_pubkey, htlc_amount_sat, &htlc_redeemscript);
+        let sighash_type = if commitment_type == CommitmentType::StaticRemoteKey {
+            EcdsaSighashType::All
+        } else {
+            EcdsaSighashType::SinglePlusAnyoneCanPay
+        };
+        check_signature_with_sighash_type(
+            &htlc_tx,
+            0,
+            typedsig,
+            &htlc_pubkey,
+            htlc_amount_sat,
+            &htlc_redeemscript,
+            sighash_type,
+        );
 
         Ok(())
     }
