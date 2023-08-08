@@ -419,11 +419,15 @@ pub fn make_devices<'a>() -> DeviceContext {
     };
 
     // Create a free timer from TIM5
+    info!("setup timer");
     let mut timer1 = FTimerUs::<_>::new(p.TIM5, &clocks).counter();
     // wraps around every 1000 seconds
     timer1.start(1000.secs()).expect("start TIM5");
     // Create a periodic interrupt from TIM2
     let timer2 = make_timer(&clocks, p.TIM2);
+
+    // Setup serial driver
+    info!("setup serial driver");
     let serial = SerialDriver::new(USB {
         usb_global: p.OTG_FS_GLOBAL,
         usb_device: p.OTG_FS_DEVICE,
@@ -474,6 +478,7 @@ pub fn make_devices<'a>() -> DeviceContext {
     #[cfg(feature = "stm32f413")]
     long_hard_reset(&mut lcd_reset, &mut delay).expect("long hard reset");
 
+    info!("setup display");
     let disp =
         Display { inner: make_display(p.FSMC, lcd_pins, lcd_reset, &mut delay, backlight_control) };
 
@@ -509,6 +514,7 @@ pub fn make_devices<'a>() -> DeviceContext {
     #[cfg(feature = "stm32f413")]
     let ts_int = gpioc.pc1.into_pull_down_input();
 
+    info!("setup touchscreen");
     let touchscreen = TouchDriver { inner: make_touchscreen(&mut i2c, 0x38, ts_int, &mut delay) };
 
     let button = gpioa.pa0.into_pull_down_input();
