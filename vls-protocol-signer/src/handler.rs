@@ -374,7 +374,7 @@ impl RootHandler {
             }
         }
 
-        dbgvals!(ipaths, opaths, tx.txid(), tx, streamed.segwit_flags);
+        dbgvals!(ipaths, opaths, tx.txid(), tx, streamed.segwit_flags, uniclosekeys);
 
         let approved = self.approver.handle_proposed_onchain(
             &self.node,
@@ -558,8 +558,17 @@ impl Handler for RootHandler {
                 sig_slice[64] = rid.to_i32() as u8;
                 Ok(Box::new(msgs::SignInvoiceReply { signature: RecoverableSignature(sig_slice) }))
             }
-            Message::SignHtlcTxMingle(_m) => {
-                unimplemented!()
+            Message::SignHtlcTxMingle(m) => {
+                // this is just an alias for SignWithdrawal (?!), and doesn't actually sign the HTLC tx -
+                // those are signed by calls such as `SignAnyLocalHtlcTx`
+                let mut streamed = m.psbt.0;
+                let utxos = m.utxos;
+
+                debug!("SignHtlcTxMingle psbt {:#?}", streamed);
+
+                self.sign_withdrawal(&mut streamed, utxos)?;
+
+                Ok(Box::new(msgs::SignHtlcTxMingleReply { psbt: WithSize(streamed.psbt) }))
             }
             Message::SignSpliceTx(_m) => {
                 unimplemented!()
