@@ -2800,7 +2800,7 @@ mod tests {
     use bitcoin::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::util::sighash::SighashCache;
-    use bitcoin::{secp256k1, BlockHash};
+    use bitcoin::{secp256k1, BlockHash, PackedLockTime, Sequence, TxIn, Witness};
     use bitcoin::{Address, EcdsaSighashType, OutPoint};
     use lightning::ln::chan_utils::derive_private_key;
     use lightning::ln::{chan_utils, PaymentSecret};
@@ -2811,6 +2811,7 @@ mod tests {
     use crate::channel::ChannelBase;
     use crate::policy::filter::{FilterRule, PolicyFilter};
     use crate::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
+    use crate::tx::tx::ANCHOR_SAT;
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::invoice::make_test_bolt12_invoice;
     use crate::util::test_utils::*;
@@ -3668,6 +3669,67 @@ mod tests {
             ssvec,
             hex_decode("48db1582f4b42a0068b5727fd37090a65fbf1f9bd842f4393afc2e794719ae47").unwrap()
         );
+    }
+
+    #[test]
+    fn spend_anchor_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let node1 = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
+        let (channel_id, _) = node.new_channel(None, &node).unwrap();
+        let (channel_id1, _) = node1.new_channel(None, &node1).unwrap();
+        let points =
+            node.get_channel(&channel_id).unwrap().lock().unwrap().get_channel_basepoints();
+        let points1 =
+            node1.get_channel(&channel_id1).unwrap().lock().unwrap().get_channel_basepoints();
+        let holder_shutdown_key_path = Vec::new();
+
+        // note that these channels are clones of the ones in the node, so the ones in the nodes
+        // will not be updated in this test
+        let mut channel = node
+            .ready_channel(
+                channel_id.clone(),
+                None,
+                make_test_channel_setup_with_points(true, points1),
+                &holder_shutdown_key_path,
+            )
+            .expect("ready_channel");
+        let mut channel1 = node1
+            .ready_channel(
+                channel_id1.clone(),
+                None,
+                make_test_channel_setup_with_points(false, points),
+                &holder_shutdown_key_path,
+            )
+            .expect("ready_channel 1");
+        let commit_num = 0;
+        next_state(&mut channel, &mut channel1, commit_num, 2_999_000, 0, vec![], vec![]);
+
+        let txs = channel.sign_holder_commitment_tx_for_recovery().unwrap();
+        let holder_tx = txs.0;
+        // find anchor output by value
+        let idx =
+            holder_tx.output.iter().position(|o| o.value == ANCHOR_SAT).expect("anchor output");
+        // spend the anchor
+        let mut spend_tx = Transaction {
+            version: 2,
+            lock_time: PackedLockTime(0),
+            input: vec![TxIn {
+                previous_output: OutPoint { txid: holder_tx.txid(), vout: idx as u32 },
+                sequence: Sequence::MAX,
+                witness: Witness::new(),
+                script_sig: Script::new(),
+            }],
+            output: vec![TxOut { value: 330, script_pubkey: Script::new() }],
+        };
+        // sign the spend
+        let sig = channel.sign_holder_anchor_input(&spend_tx, idx).unwrap();
+        let anchor_redeemscript = channel.get_anchor_redeemscript();
+        let witness = vec![signature_to_bitcoin_vec(sig), anchor_redeemscript.to_bytes()];
+        spend_tx.input[0].witness = Witness::from_vec(witness);
+        // verify the transaction
+        spend_tx
+            .verify(|point| Some(holder_tx.output[point.vout as usize].clone()))
+            .expect("verify");
     }
 
     #[test]

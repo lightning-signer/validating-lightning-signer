@@ -29,6 +29,7 @@ use crate::node::{Node, RoutedPayment};
 use crate::policy::error::policy_error;
 use crate::policy::validator::{ChainState, CommitmentSignatures, EnforcementState, Validator};
 use crate::prelude::*;
+use crate::tx::script::ANCHOR_OUTPUT_VALUE_SATOSHI;
 use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
 use crate::util::crypto_utils::derive_public_key;
 use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugVecVecU8};
@@ -1579,6 +1580,39 @@ impl Channel {
         )?;
         Ok(())
     }
+
+    /// Sign a transaction that spends the anchor output
+    pub fn sign_holder_anchor_input(
+        &self,
+        anchor_tx: &Transaction,
+        input: usize,
+    ) -> Result<Signature, Status> {
+        let witness_script = self.get_anchor_redeemscript();
+
+        // TODO use self.keys.sign_holder_anchor_input once we upgrade to LDK 0.0.116
+        let sighash = Message::from_slice(
+            &SighashCache::new(&*anchor_tx)
+                .segwit_signature_hash(
+                    input,
+                    &witness_script,
+                    ANCHOR_OUTPUT_VALUE_SATOSHI,
+                    EcdsaSighashType::All,
+                )
+                .unwrap()[..],
+        )
+        .map_err(|ve| internal_error(format!("sighash failed: {}", ve)))?;
+
+        Ok(self.secp_ctx.sign_ecdsa_with_noncedata(
+            &sighash,
+            &self.keys.funding_key,
+            &self.keys.get_secure_random_bytes(),
+        ))
+    }
+
+    /// Get the anchor redeemscript
+    pub fn get_anchor_redeemscript(&self) -> Script {
+        chan_utils::get_anchor_redeemscript(&self.keys.pubkeys().funding_pubkey)
+    }
 }
 
 /// Balances associated with a channel
@@ -2391,15 +2425,16 @@ impl CommitmentPointProvider for ChannelCommitmentPointProvider {
 
 #[cfg(test)]
 mod tests {
-    use crate::channel::ChannelBase;
-    use crate::util::test_utils::{
-        init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
-    };
     use bitcoin::hashes::hex::ToHex;
     use bitcoin::psbt::serialize::Serialize;
     use bitcoin::secp256k1::{self, Secp256k1, SecretKey};
     use lightning::ln::chan_utils::HTLCOutputInCommitment;
     use lightning::ln::PaymentHash;
+
+    use crate::channel::ChannelBase;
+    use crate::util::test_utils::{
+        init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
+    };
 
     #[test]
     fn test_dummy_sig() {
