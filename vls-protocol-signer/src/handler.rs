@@ -14,11 +14,12 @@ use bitcoin::blockdata::script;
 use bitcoin::consensus::deserialize;
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::SecretKey;
-use bitcoin::util::bip32::{ChildNumber, KeySource};
+use bitcoin::util::bip32::{DerivationPath, KeySource};
 use bitcoin::util::psbt::serialize::Deserialize;
 use bitcoin::util::psbt::PartiallySignedTransaction;
+use bitcoin::util::taproot::TapLeafHash;
 use bitcoin::{Address, EcdsaSighashType, Network, Script};
-use bitcoin::{OutPoint, Transaction, TxOut, Witness};
+use bitcoin::{OutPoint, Transaction, TxOut, Witness, XOnlyPublicKey};
 use lightning_signer::bitcoin;
 use lightning_signer::channel::{
     ChannelBalance, ChannelBase, ChannelId, ChannelSetup, TypedSignature,
@@ -762,20 +763,36 @@ impl Handler for RootHandler {
     }
 }
 
-fn extract_output_path(x: &BTreeMap<PublicKey, KeySource>) -> Vec<u32> {
-    if x.is_empty() {
-        return Vec::new();
-    }
-    if x.len() > 1 {
-        panic!("len > 1");
-    }
-    let (_fingerprint, path) = x.iter().next().unwrap().1;
-    let segments: Vec<ChildNumber> = path.clone().into();
-    segments.into_iter().map(|c| u32::from(c)).collect()
+fn extract_output_path(
+    bip32_derivation: &BTreeMap<PublicKey, KeySource>,
+    tap_key_origins: &BTreeMap<XOnlyPublicKey, (Vec<TapLeafHash>, KeySource)>,
+) -> Vec<u32> {
+    let path = if !bip32_derivation.is_empty() {
+        if bip32_derivation.len() > 1 {
+            unimplemented!("len > 1");
+        }
+        let (_fingerprint, path) = bip32_derivation.iter().next().unwrap().1;
+        path.clone()
+    } else if !tap_key_origins.is_empty() {
+        if tap_key_origins.len() > 1 {
+            unimplemented!("len > 1");
+        }
+        let (_xpub, (hashes, source)) = tap_key_origins.iter().next().unwrap();
+        if !hashes.is_empty() {
+            unimplemented!("hashes not empty");
+        }
+        source.1.clone()
+    } else {
+        DerivationPath::from(vec![])
+    };
+    path.into_iter().map(|i| i.clone().into()).collect()
 }
 
 fn extract_psbt_output_paths(psbt: &PartiallySignedTransaction) -> Vec<Vec<u32>> {
-    psbt.outputs.iter().map(|o| extract_output_path(&o.bip32_derivation)).collect::<Vec<Vec<u32>>>()
+    psbt.outputs
+        .iter()
+        .map(|o| extract_output_path(&o.bip32_derivation, &o.tap_key_origins))
+        .collect::<Vec<Vec<u32>>>()
 }
 
 /// Protocol handler
@@ -1000,6 +1017,7 @@ impl Handler for ChannelHandler {
             ),
             Message::SignMutualCloseTx(m) => {
                 let psbt = m.psbt;
+                println!("XXX psbt: {:#?}", psbt);
                 let tx = m.tx;
                 let opaths = extract_psbt_output_paths(&psbt);
                 info!(
