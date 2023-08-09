@@ -1007,10 +1007,7 @@ pub fn read_raw<R: Read>(reader: &mut R) -> Result<Vec<u8>> {
     let len = reader.read_u32_be()?;
     let mut data = Vec::new();
     data.resize(len as usize, 0);
-    let actual = reader.read(&mut data)?;
-    if actual < data.len() {
-        return Err(Error::ShortRead);
-    }
+    reader.read_exact(&mut data)?;
     Ok(data)
 }
 
