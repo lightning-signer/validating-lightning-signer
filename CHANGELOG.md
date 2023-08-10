@@ -4,7 +4,58 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [0.9.1-rc.2] - 2023-06-15: "Beta 1.1"
+## [0.10.0-rc.1] - 2023-06-15: "Beta 2"
+
+The main focus of this release is low-resource environments and CLN 23.08 support.
+
+### Added
+
+- introduce Redb database support and deprecate sled based storage
+- core: Add KEYSEND_PRUNE_TIME to facilitate more expedient pruning of keysends ([#235])
+- core: Added Persist::delete_channel to address ([#315])
+- frontend block streaming for bounded memory consumption
+- core: Can now sign P2TR outpoints
+- core: Prune stubs from Failed channel opens after 6 blocks ([#315])
+- monitor closing of channels
+- spending anchors
+- counterparty revocation secrets storage
+- Added a `sign_tagged_message` method for raw signatures
+- basic crypto benchmarks
+- bench: individual operation for latency measure
+- howto: Added Fedora specific dependencies and setup instructions
+- stm32: Added BlockChunk display and tuned block chunk size
+
+### Changed
+
+- MSRV is now 1.63.0
+- memory efficient protocol handling
+- no-std support for ThreadMemoPersister
+- reduce memory requirement for SignWithdrawal PSBT handling
+- stm32: Change the default memory configuration to the STM32F413 ([#300])
+- stm32: Display heap remaining instead of heap used.
+- stm32: Oversized RTT (ST-LINK) messages are now trimmed instead of being dropped entirely
+- stm32: Set HEAP_SIZE to 224KB ([#300])
+- stm32: Stack size was changed to 32KB
+
+### Fixed
+
+- core: Associated tracker listeners are now removed when channel is pruned.
+- core: Channels are pruned after they are marked is_done
+- core: Prune RoutedPayment records when forwarding done ([235])
+- incorrect signature on anchor holder HTLC 2nd level txs
+- serialization fixes related to serial port configurations
+- stm32: Disabled link-time-optimization because it was truncating stack backtraces when heap exhausted. ([#352])
+- stm32: Fixed problem with large FATFS writes ([#187], [#280])
+- stm32: Reduced heap usage when logging message names
+- vls-frontend: authenticate ChainFollower to bitcoind
+
+### Workaround
+
+- feature flag to decrease chaintracker MAX_REORG_SIZE to 16 for low-resource environments
+- stm32: Use block header tstamps until proper clock is implemented ([#206], [#235], [#339])
+
+
+## [0.9.1] - 2023-06-15: "Beta 1.1"
 
 ### Added
 
