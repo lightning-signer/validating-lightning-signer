@@ -983,7 +983,14 @@ pub fn read<R: Read>(reader: &mut R) -> Result<Message> {
 /// - data
 pub fn read_message<R: Read, T: DeBolt>(reader: &mut R) -> Result<T> {
     let len = reader.read_u32_be()?;
+    check_message_length(len)?;
+
     let mut take = Take::new(Box::new(reader), len as u64);
+    let message_type = take.read_u16_be()?;
+    if message_type != T::TYPE {
+        return Err(Error::UnexpectedType(message_type));
+    }
+
     let res = T::consensus_decode(&mut take)?;
     if !take.is_empty() {
         return Err(Error::TrailingBytes(take.remaining() as usize, T::TYPE));
@@ -1000,10 +1007,7 @@ pub fn read_raw<R: Read>(reader: &mut R) -> Result<Vec<u8>> {
     let len = reader.read_u32_be()?;
     let mut data = Vec::new();
     data.resize(len as usize, 0);
-    let actual = reader.read(&mut data)?;
-    if actual < data.len() {
-        return Err(Error::ShortRead);
-    }
+    reader.read_exact(&mut data)?;
     Ok(data)
 }
 
@@ -1022,14 +1026,7 @@ pub fn from_vec(mut v: Vec<u8>) -> Result<Message> {
 /// - u16 packet type
 /// - data
 pub fn from_reader<R: Read>(reader: &mut R, len: u32) -> Result<Message> {
-    if len < 2 {
-        return Err(Error::ShortRead);
-    }
-    if len > MAX_MESSAGE_SIZE {
-        error!("message too large {}", len);
-        return Err(Error::MessageTooLarge);
-    }
-
+    check_message_length(len)?;
     let mut take = Take::new(Box::new(reader), len as u64);
 
     let message_type = take.read_u16_be()?;
@@ -1038,6 +1035,17 @@ pub fn from_reader<R: Read>(reader: &mut R, len: u32) -> Result<Message> {
         return Err(Error::TrailingBytes(take.remaining() as usize, message_type));
     }
     Ok(message)
+}
+
+fn check_message_length(len: u32) -> Result<()> {
+    if len < 2 {
+        return Err(Error::ShortRead);
+    }
+    if len > MAX_MESSAGE_SIZE {
+        error!("message too large {}", len);
+        return Err(Error::MessageTooLarge);
+    }
+    Ok(())
 }
 
 pub fn write<W: Write, T: DeBolt>(writer: &mut W, value: T) -> Result<()> {

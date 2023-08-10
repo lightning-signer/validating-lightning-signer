@@ -51,7 +51,10 @@ features = ["fsmc_lcd", "fsmc", "sdio", "sdio-host", "otg-fs", "usb_fs"]
 stm32f412 = ["stm32f4xx-hal/stm32f412"]
 stm32f413 = ["stm32f4xx-hal/stm32f413"]
 trace = []
-debug = ["vls-protocol-signer/debug"]
+debug = ["vls-protocol-signer/debug", "log/max_level_debug"]
+info = ["log/max_level_info"]
+# block if probe log is full, so we don't lose messages when debugging with RTT
+rtt_block = []
 # dangerous, only for testing
 log-secrets = ["vls-protocol/log-secrets"]
 

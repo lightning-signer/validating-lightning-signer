@@ -1,8 +1,6 @@
 use alloc::boxed::Box;
-use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::cell::RefCell;
-use core::cmp::min;
 use core::ops::Deref;
 use cortex_m::interrupt::{free, CriticalSection, Mutex};
 use stm32f4xx_hal::otg_fs::{UsbBus, USB};
@@ -20,8 +18,8 @@ static mut USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None;
 pub struct SerialDriverImpl {
     serial: SerialPort<'static, UsbBus<USB>>,
     usb_dev: UsbDevice<'static, UsbBus<USB>>,
-    inbuf: InputBuffer,
-    outbuf: OutputBuffer,
+    poll_count: u64,
+    trace_count: u64,
 }
 
 #[derive(Clone)]
@@ -29,35 +27,8 @@ pub struct SerialDriver {
     inner: Arc<Mutex<RefCell<SerialDriverImpl>>>,
 }
 
-const READ_BUFSZ: usize = 1024;
-
-struct InputBuffer {
-    data: [u8; READ_BUFSZ],
-    size: usize,
-}
-
-impl InputBuffer {
-    pub fn read(&mut self, dest: &mut [u8]) -> usize {
-        let sz = min(self.size, dest.len());
-        if sz == 0 {
-            return sz;
-        }
-        dest[0..sz].copy_from_slice(&self.data[0..sz]);
-        self.data.copy_within(sz..self.size, 0);
-        self.size -= sz;
-        sz
-    }
-}
-
-struct OutputBuffer {
-    data: VecDeque<u8>,
-}
-
 impl SerialDriver {
     pub(crate) fn new(usb: USB) -> Self {
-        let inbuf = InputBuffer { data: [0; READ_BUFSZ], size: 0 };
-        let outbuf = OutputBuffer { data: VecDeque::new() };
-
         // This works at most once for now
         info!("serial: allocate usb driver memory");
         unsafe {
@@ -83,7 +54,7 @@ impl SerialDriver {
         trace!("state {:?}", usb_dev.state());
 
         info!("serial: create serial driver impl");
-        let serial_driver_impl = SerialDriverImpl { serial, usb_dev, inbuf, outbuf };
+        let serial_driver_impl = SerialDriverImpl { serial, usb_dev, poll_count: 0, trace_count: 0 };
 
         info!("serial: create serial driver");
         let serial_driver =
@@ -102,7 +73,7 @@ impl SerialDriver {
         })
     }
 
-    pub fn do_write(&self, data: &[u8]) {
+    pub fn do_write(&self, data: &[u8]) -> usize {
         free(|cs| {
             let mut inner = self.inner.deref().borrow(cs).borrow_mut();
             inner.write(data)
@@ -113,88 +84,100 @@ impl SerialDriver {
 impl TimerListener for SerialDriver {
     fn on_tick(&self, cs: &CriticalSection) {
         let mut serial = self.inner.deref().borrow(cs).borrow_mut();
-        serial.append_inbuf();
-        serial.drain_outbuf();
+        serial.poll_count = serial.poll_count.wrapping_add(1);
+        serial.poll();
     }
 }
 
 impl SerialDriverImpl {
     pub fn read(&mut self, dest: &mut [u8]) -> usize {
-        self.append_inbuf();
-        self.inbuf.read(dest)
-    }
-
-    pub fn write(&mut self, outgoing: &[u8]) {
-        self.outbuf.data.extend(outgoing);
-        self.drain_outbuf();
-    }
-
-    fn append_inbuf(&mut self) {
-        let size = self.inbuf.size;
-        if size < self.inbuf.data.len() {
-            if self.usb_dev.poll(&mut [&mut self.serial]) {
-                trace!("state {:?}", self.usb_dev.state());
-                match self.serial.read(&mut self.inbuf.data[size..]) {
-                    Ok(count) => self.inbuf.size += count,
-                    Err(UsbError::WouldBlock) => {}
-                    Err(err) => error!("append_inbuf: serial.read error: {:?}", err),
+        match self.serial.read(dest) {
+            Ok(count) => {
+                count
+            }
+            Err(UsbError::WouldBlock) => {
+                self.poll();
+                if log::log_enabled!(log::Level::Trace) {
+                    self.trace_count = self.trace_count.wrapping_add(1);
+                    if self.trace_count % 100000 == 0 {
+                        trace!("SERIAL read wait, poll_count {}", self.poll_count);
+                    }
                 }
+                0
+            }
+            Err(err) => {
+                error!("serial.read error: {:?}", err);
+                0
             }
         }
     }
 
-    fn drain_outbuf(&mut self) {
-        let ovd = &mut self.outbuf.data;
-        if !ovd.is_empty() {
-            match self.serial.write(ovd.make_contiguous()) {
-                Ok(count) => {
-                    ovd.drain(0..count);
+    pub fn write(&mut self, outgoing: &[u8]) -> usize {
+        match self.serial.write(outgoing) {
+            Ok(count) => {
+                count
+            }
+            Err(UsbError::WouldBlock) => {
+                self.poll();
+                if log::log_enabled!(log::Level::Trace) {
+                    self.trace_count = self.trace_count.wrapping_add(1);
+                    if self.trace_count % 100000 == 0 {
+                        trace!("SERIAL write wait, poll_count {}", self.poll_count);
+                    }
                 }
-                Err(UsbError::WouldBlock) => {}
-                Err(err) => error!("drain_outbuf: serial.write error: {:?}", err),
+                0
+            }
+            Err(err) => {
+                error!("serial.write error: {:?}", err);
+                0
             }
         }
+    }
+
+    fn poll(&mut self) -> bool {
+        self.usb_dev.poll(&mut [&mut self.serial])
     }
 }
 
 impl io::Read for SerialDriver {
-    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if buf.is_empty() {
             return Ok(0);
         }
 
-        let mut nread = 0;
-
-        // Not well documented in serde_bolt, but we are expected to block
-        // until we can read the whole buf or until we get to EOF.
-        while !buf.is_empty() {
+        // We must not return Ok(0), because that signals EOF to the caller.
+        // Block until at least 1 byte is available.
+        // If the caller wants to block until the buffer is full, they can call read_exact().
+        loop {
             let n = self.do_read(buf);
-            if n == 0 {
-                // TODO delay
-                continue;
+            if n > 0 {
+                trace!("SERIAL read {}", hex::encode(&buf[0..n]));
+                return Ok(n)
             }
-            nread += n;
-            let len = buf.len();
-            buf = &mut buf[n..len];
         }
-        Ok(nread)
     }
 }
 
 impl io::Write for SerialDriver {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        trace!("write {:x?}", buf);
-        self.do_write(buf);
-        Ok(buf.len())
+        loop {
+            let c = self.do_write(buf);
+            if c > 0 {
+                trace!("SERIAL write {}", hex::encode(&buf[0..c]));
+                return Ok(c)
+            }
+        }
     }
 
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 
-    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        trace!("write {:x?}", buf);
-        self.do_write(buf);
+    fn write_all(&mut self, mut buf: &[u8]) -> io::Result<()> {
+        while !buf.is_empty() {
+            let c = self.do_write(buf);
+            buf = &buf[c..];
+        }
         Ok(())
     }
 }

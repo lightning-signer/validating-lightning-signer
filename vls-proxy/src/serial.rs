@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use tokio::task::spawn_blocking;
 
 use bitcoin::Network;
-use log::{debug, error, info};
+use log::*;
 use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, SetArg};
 use secp256k1::PublicKey;
 
@@ -42,17 +42,27 @@ impl SerialWrap {
 
 impl io::Read for SerialWrap {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.inner.read(buf)
+        let r = self.inner.read(buf);
+        if let Ok(n) = r {
+            trace!("SERIAL read {} bytes {}", n, hex::encode(&buf[..n]));
+        }
+        r
     }
 
     fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        self.inner.read_exact(buf)
+        self.inner.read_exact(buf)?;
+        trace!("SERIAL read_exact {} bytes {}", buf.len(), hex::encode(buf));
+        Ok(())
     }
 }
 
 impl io::Write for SerialWrap {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.inner.write(buf)
+        let r = self.inner.write(buf);
+        if let Ok(n) = r {
+            trace!("SERIAL write {} bytes {}", n, hex::encode(&buf[..n]));
+        }
+        r
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -60,6 +70,7 @@ impl io::Write for SerialWrap {
     }
 
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        trace!("SERIAL write_all {} bytes {}", buf.len(), hex::encode(buf));
         self.inner.write_all(&buf)
     }
 }
@@ -238,6 +249,7 @@ impl<C: 'static + Client> SignerLoop<C> {
         msgs::read_serial_response_header(serial, serial.sequence)?;
         serial.sequence = serial.sequence.wrapping_add(1);
         let reply = msgs::read_raw(serial)?;
+        info!("handle_message {}: got reply {}", self.log_prefix, hex::encode(&reply));
         Ok(reply)
     }
 }

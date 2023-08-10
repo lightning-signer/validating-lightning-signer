@@ -42,7 +42,8 @@ fn run_test(serial_port: String) -> anyhow::Result<()> {
             &mut serial,
             &SerialRequestHeader { sequence, peer_id, dbid },
         )?;
-        let ping = msgs::Ping { id, message: WireString("ping".as_bytes().to_vec()) };
+        let message = WireString([0x44; 3000].to_vec());
+        let ping = msgs::Ping { id, message };
         msgs::write(&mut serial, ping)?;
         msgs::read_serial_response_header(&mut serial, sequence)?;
         sequence = sequence.wrapping_add(1);
