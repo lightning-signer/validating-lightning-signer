@@ -8,7 +8,7 @@ Might need to increase open file limit if running all tests:
 
     ulimit -n 10000
 
-Run both standard and experimental-features tests:
+Run tests:
 
     make -k test-all VLS_MODE=cln:socket
 
@@ -22,12 +22,10 @@ Run tests w/ VLS in permissive mode:
 
 Summarize results:
 
-    scripts/summary standard.log
-    scripts/summary experimental.log
+    scripts/summary all.log
 
 Run a single test:
 
-    make config-experimental
     make test-one TEST=tests/test_pay.py::test_pay
     make test-one TEST=tests/test_pay.py::test_pay VLS_MODE=cln:inplace
     make test-one TEST=tests/test_pay.py::test_pay VLS_MODE=cln:socket

@@ -118,14 +118,14 @@ One-time setup stuff:
 
 Initial Build of CLN and VLS:
 ```
-cd ~/lightning-signer/vls-hsmd && make build-standard
+cd ~/lightning-signer/vls-hsmd && make build
 cd ~/lightning-signer/vls-hsmd/lightning && poetry run make
 ```
 
 Check if an integration test works:
 ```
 cd ~/lightning-signer/vls-hsmd && \
-  make config-standard test-one TEST=tests/test_pay.py::test_pay
+  make test-one TEST=tests/test_pay.py::test_pay
 ```
 
 ### Install CLN+VLS Service Components

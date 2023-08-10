@@ -51,7 +51,7 @@ make setup
 
 Build:
 ```
-cd ~/lightning-signer/vls-hsmd && make build-standard
+cd ~/lightning-signer/vls-hsmd && make build
 cd ~/lightning-signer/vls-hsmd/lightning && poetry run make
 ```
 
