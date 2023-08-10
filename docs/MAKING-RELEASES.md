@@ -88,3 +88,10 @@ Cargo publishing should be done in this order with matching versions:
 - `cargo publish -p vls-protocol-client`
 - `cargo publish -p vls-frontend`
 - `cargo publish -p vls-proxy`
+
+You may also be interested in:
+
+- `cargo install cargo-publish-workspace-v2`
+- `cargo publish-workspace --target-version 0.10.0-rc.1 --crate-prefix vls --exclude vls-core-test --token XXX`
+
+where XXX is the token from `~/.cargo/credentials`.
