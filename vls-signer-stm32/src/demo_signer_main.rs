@@ -34,7 +34,8 @@ use vls_protocol::serde_bolt::WireString;
 use vls_protocol_signer::approver::{Approve, WarningPositiveApprover};
 use vls_protocol_signer::handler::{Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::lightning_signer;
-use vls_protocol_signer::lightning_signer::bitcoin::Network;
+use bitcoin::Network;
+use vls_protocol_signer::lightning_signer::bitcoin;
 use vls_protocol_signer::vls_protocol;
 
 mod approver;
