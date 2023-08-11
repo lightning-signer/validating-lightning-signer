@@ -54,7 +54,8 @@ impl SerialDriver {
         trace!("state {:?}", usb_dev.state());
 
         info!("serial: create serial driver impl");
-        let serial_driver_impl = SerialDriverImpl { serial, usb_dev, poll_count: 0, trace_count: 0 };
+        let serial_driver_impl =
+            SerialDriverImpl { serial, usb_dev, poll_count: 0, trace_count: 0 };
 
         info!("serial: create serial driver");
         let serial_driver =
@@ -92,9 +93,7 @@ impl TimerListener for SerialDriver {
 impl SerialDriverImpl {
     pub fn read(&mut self, dest: &mut [u8]) -> usize {
         match self.serial.read(dest) {
-            Ok(count) => {
-                count
-            }
+            Ok(count) => count,
             Err(UsbError::WouldBlock) => {
                 self.poll();
                 if log::log_enabled!(log::Level::Trace) {
@@ -114,9 +113,7 @@ impl SerialDriverImpl {
 
     pub fn write(&mut self, outgoing: &[u8]) -> usize {
         match self.serial.write(outgoing) {
-            Ok(count) => {
-                count
-            }
+            Ok(count) => count,
             Err(UsbError::WouldBlock) => {
                 self.poll();
                 if log::log_enabled!(log::Level::Trace) {
@@ -152,7 +149,7 @@ impl io::Read for SerialDriver {
             let n = self.do_read(buf);
             if n > 0 {
                 trace!("SERIAL read {}", hex::encode(&buf[0..n]));
-                return Ok(n)
+                return Ok(n);
             }
         }
     }
@@ -164,7 +161,7 @@ impl io::Write for SerialDriver {
             let c = self.do_write(buf);
             if c > 0 {
                 trace!("SERIAL write {}", hex::encode(&buf[0..c]));
-                return Ok(c)
+                return Ok(c);
             }
         }
     }

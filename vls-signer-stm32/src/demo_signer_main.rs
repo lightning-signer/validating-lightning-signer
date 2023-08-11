@@ -18,6 +18,7 @@ use cortex_m_rt::entry;
 #[allow(unused_imports)]
 use log::*;
 
+use bitcoin::Network;
 use device::{heap_bytes_used, DeviceContext, HEAP_SIZE};
 use lightning_signer::node::NodeServices;
 use lightning_signer::persist::{DummyPersister, Persist};
@@ -34,7 +35,6 @@ use vls_protocol::serde_bolt::WireString;
 use vls_protocol_signer::approver::{Approve, WarningPositiveApprover};
 use vls_protocol_signer::handler::{Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::lightning_signer;
-use bitcoin::Network;
 use vls_protocol_signer::lightning_signer::bitcoin;
 use vls_protocol_signer::vls_protocol;
 
