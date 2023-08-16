@@ -11,13 +11,13 @@ rust-version = "1.66.0"
 build = "build.rs"
 
 [features]
-
 default = ["grpc", "main", "debug"]
 grpc = ["tokio", "tokio-stream", "tonic", "prost", "async-stream", "url", "backoff"]
 main = ["clap", "toml", "ctrlc", "fern"]
 log_pretty_print = []
 debug = ["vls-core/debug", "vls-protocol-signer/debug", "log_pretty_print"]
 system-test = ["serde_json", "tempfile"]
+heapmon_requests = []
 
 [dependencies]
 vls-core = { path = "../vls-core", version = "0.10.0-rc.1", features = ["use_backtrace"] }
