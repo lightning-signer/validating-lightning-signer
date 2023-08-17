@@ -186,6 +186,9 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
         let mut res = Vec::new();
         for kvv in self.get_prefix(&prefix)? {
             let (key, (_r, value)) = kvv.into_inner();
+            if value.is_empty() {
+                continue; // ignore tombstones
+            }
             let suffix = extract_key_suffix(&prefix, &key);
             let channel_id = ChannelId::new(&suffix);
             let entry: ChannelEntry = from_slice(&value).unwrap();
