@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [0.10.0-rc.1] - 2023-06-15: "Beta 2"
+## [0.10.0] - 2023-06-15: "Beta 2"
 
 The main focus of this release is low-resource environments and CLN 23.08 support.
 
@@ -12,6 +12,7 @@ The main focus of this release is low-resource environments and CLN 23.08 suppor
 
 - introduce Redb database support and deprecate sled based storage
 - core: Add KEYSEND_PRUNE_TIME to facilitate more expedient pruning of keysends ([#235])
+- proxy: Cache approved keysend and invoice requests for 60 seconds.
 - core: Added Persist::delete_channel to address ([#315])
 - frontend block streaming for bounded memory consumption
 - core: Can now sign P2TR outpoints
@@ -48,6 +49,7 @@ The main focus of this release is low-resource environments and CLN 23.08 suppor
 - stm32: Fixed problem with large FATFS writes ([#187], [#280])
 - stm32: Reduced heap usage when logging message names
 - vls-frontend: authenticate ChainFollower to bitcoind
+- persist: Fixed startup crash on channel tombstone in kvv ([#371])
 
 ### Workaround
 
