@@ -1,5 +1,3 @@
-#![allow(deprecated)]
-use kv::Json;
 use std::time::Duration;
 
 use lightning_signer::channel::ChannelId;
@@ -7,13 +5,12 @@ use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::{PaymentState, PaymentType};
 use lightning_signer::persist::Persist;
 use lightning_signer::util::test_utils::{self, hex_decode, TEST_CHANNEL_ID, TEST_NODE_CONFIG};
-use vls_persist::kv_json::KVJsonPersister;
-use vls_persist::model::{ChannelEntry, NodeChannelId, NodeEntry, NodeStateEntry};
-
-// TODO update to redb
+use vls_persist::kvv::redb::RedbKVVStore;
+use vls_persist::kvv::KVVStore;
 
 pub fn main() {
-    let persister = KVJsonPersister::new("/tmp/signer.kv");
+    let tempdir = tempfile::tempdir().unwrap();
+    let persister = RedbKVVStore::new(&tempdir);
     persister.clear_database().unwrap();
     let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
     let channel_id1 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
@@ -43,31 +40,8 @@ pub fn main() {
         println!("{} {:?}", id, entry);
     }
     persister.update_channel(&node_id, &channel).unwrap();
-    for (id, entry) in persister.get_node_channels(&node_id).unwrap() {
-        println!("{} {:?}", id, entry);
-    }
 
-    println!("Nodes:");
-    for item in persister.node_bucket.iter() {
-        let item = item.expect("item");
-        let entry_json: Json<NodeEntry> = item.value().unwrap();
-        let id: Vec<u8> = item.key().unwrap();
-        println!("{}: {}", hex::encode(id), entry_json);
-    }
-
-    println!("Node states:");
-    for item in persister.node_state_bucket.iter() {
-        let item = item.expect("item");
-        let entry_json: Json<NodeStateEntry> = item.value().unwrap();
-        let id: Vec<u8> = item.key().unwrap();
-        println!("{}: {}", hex::encode(id), entry_json);
-    }
-
-    println!("Channels:");
-    for item in persister.channel_bucket.iter() {
-        let item = item.expect("item");
-        let entry_json: Json<ChannelEntry> = item.value().unwrap();
-        let id: NodeChannelId = item.key().unwrap();
-        println!("{}: {}", id, entry_json);
+    for item in persister.0.get_prefix("").unwrap() {
+        println!("{:?}", item);
     }
 }

@@ -557,7 +557,7 @@ impl SignerProvider for LoopbackSignerKeysInterface {
     ) -> [u8; 32] {
         let node = self.signer.get_node(&self.node_id).unwrap();
         let (channel_id, _) = node.new_channel(None, &node).unwrap();
-        channel_id.as_slice().clone().try_into().expect("channel_id is 32 bytes")
+        channel_id.as_slice().try_into().expect("channel_id is 32 bytes")
     }
 
     fn derive_channel_signer(

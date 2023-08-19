@@ -1075,19 +1075,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kv"
-version = "0.23.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c0449305e0cc137fedee5f062dc90d8e455390c94de514ae2207289d6c45560"
-dependencies = [
- "serde",
- "serde_json",
- "sled",
- "thiserror",
- "toml",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2517,7 +2504,6 @@ version = "0.10.0"
 dependencies = [
  "env_logger",
  "hex",
- "kv",
  "log",
  "redb",
  "serde",

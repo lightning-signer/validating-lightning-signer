@@ -16,8 +16,7 @@ path = "src/lib.rs"
 default = ["std", "memo", "test_utils"]
 std = ["vls-core/std", "log/std"]
 no-std = ["vls-core/no-std"]
-test_utils = ["vls-core/test_utils"]
-kv-json = ["kv"]
+test_utils = ["vls-core/test_utils", "tempfile"]
 redb-kvv = ["redb"]
 memo = ["serde_json"]
 # this is a hack to disable a test that causes an illegal instruction under kcov
@@ -28,10 +27,10 @@ vls-core = { path = "../vls-core", version = "0.10.0", default-features = false 
 serde = { version = "1.0", features = ["derive", "alloc"], default-features = false }
 serde_with = { version = "2.0", default-features = false, features = ["hex", "macros"] }
 hex = { version = "0.4", default-features = false }
-kv = { version = "0.23", features = ["json-value"], optional = true }
 log = { version = "0.4", default-features = false }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"], optional = true }
 redb = { version = "1.0", optional = true }
+tempfile = { version = "3.2", optional = true }
 
 [dev-dependencies]
 tempfile = "3.2"
@@ -42,19 +41,14 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 [[bin]]
 name = "persist_test"
 path = "src/persist_test_main.rs"
-required-features = ["kv-json", "test_utils"]
+required-features = ["redb-kvv", "test_utils"]
 
 [[bin]]
 name = "gen_sample_data"
 path = "src/gen_sample_data_main.rs"
-required-features = ["kv-json"]
+required-features = ["redb-kvv"]
 
 [[bin]]
 name = "dump_sample_data"
 path = "src/dump_sample_data_main.rs"
-required-features = ["kv-json"]
-
-[[bin]]
-name = "migrate_to_redb"
-path = "src/migrate_to_redb_main.rs"
-required-features = ["redb-kvv", "kv-json"]
+required-features = ["redb-kvv"]

@@ -212,13 +212,24 @@ mod tests {
 
     #[test]
     fn restore_0_9_test() {
+        // this data wasn't actually created with redb on 0.9
+        // it was created with sled/kvv-json and then migrated to redb
+        do_restore_test("0_9_persist_redb")
+    }
+
+    #[test]
+    fn restore_0_10_test() {
+        do_restore_test("0_10_persist_redb")
+    }
+
+    fn do_restore_test(name: &str) {
         // running inside kcov doesn't set CARGO_MANIFEST_DIR, so we have a fallback
         let fixture_path = if let Ok(module_path) = env::var("CARGO_MANIFEST_DIR") {
             println!("module_path: {}", module_path);
-            format!("{}/../data/samples/0_9_persist_redb", module_path)
+            format!("{}/../data/samples/{}", module_path, name)
         } else if let Ok(fixtures_path) = env::var("FIXTURES_DIR") {
             println!("fixtures_path: {}", fixtures_path);
-            format!("{}/samples/0_9_persist_redb", fixtures_path)
+            format!("{}/samples/{}", fixtures_path, name)
         } else {
             panic!("Missing CARGO_MANIFEST_DIR / FIXTURES_DIR");
         };

@@ -10,7 +10,5 @@ pub mod model;
 pub mod thread_memo_persister;
 pub mod util;
 
-#[cfg(feature = "kv-json")]
-pub mod kv_json;
 #[cfg(feature = "memo")]
 pub mod kvv;
