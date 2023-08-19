@@ -207,8 +207,8 @@ mod tests {
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
     use lightning_signer::util::clock::StandardClock;
     use lightning_signer::util::test_utils::*;
-    use std::env;
     use std::path::Path;
+    use std::{env, fs};
 
     #[test]
     fn restore_0_9_test() {
@@ -225,7 +225,20 @@ mod tests {
         if !Path::new(&fixture_path).exists() {
             panic!("Fixture path does not exist: {}", fixture_path);
         }
-        let persister = RedbKVVStore::new(&fixture_path);
+
+        // copy to a temporary directory, because redb modifies the files and we don't want to
+        // clutter the development tree with these changes
+        let tempdir = tempfile::tempdir().unwrap();
+
+        // copy all files from fixture_path to tempdir
+        for entry in fs::read_dir(fixture_path).unwrap() {
+            let path = entry.unwrap().path();
+            let filename = path.file_name().unwrap();
+            let dest = tempdir.path().join(filename);
+            fs::copy(path, dest).unwrap();
+        }
+
+        let persister = RedbKVVStore::new(&tempdir);
         let mut seed = [0; 32];
         seed.copy_from_slice(Vec::from_hex(TEST_SEED[0]).unwrap().as_slice());
 
