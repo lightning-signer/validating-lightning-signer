@@ -1,6 +1,8 @@
 #[cfg(feature = "redb-kvv")]
 pub mod redb;
 
+use alloc::format;
+
 use crate::model::*;
 use core::ops::Deref;
 use lightning_signer::bitcoin::secp256k1::PublicKey;
