@@ -10,7 +10,8 @@ use lightning_signer::util::test_utils::{
 };
 use std::env::args;
 use std::sync::Arc;
-use vls_persist::kv_json::KVJsonPersister;
+use vls_persist::kvv::redb::RedbKVVStore;
+use vls_persist::kvv::KVVPersister;
 
 // TODO update to redb
 
@@ -18,11 +19,11 @@ pub fn init_node(
     node_config: NodeConfig,
     seedstr: &str,
     path: &str,
-) -> (Arc<Node>, Arc<KVJsonPersister<'static>>) {
+) -> (Arc<Node>, Arc<KVVPersister<RedbKVVStore>>) {
     let mut seed = [0; 32];
     seed.copy_from_slice(Vec::from_hex(seedstr).unwrap().as_slice());
 
-    let persister = Arc::new(KVJsonPersister::new(path));
+    let persister = Arc::new(RedbKVVStore::new(path));
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
     let starting_time_factory = make_genesis_starting_time_factory(node_config.network);
     let clock = Arc::new(StandardClock());

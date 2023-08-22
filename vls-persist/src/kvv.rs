@@ -2,6 +2,7 @@
 pub mod redb;
 
 use crate::model::*;
+use core::fmt::Debug;
 use core::ops::Deref;
 use lightning_signer::bitcoin::secp256k1::PublicKey;
 use lightning_signer::chain::tracker::ChainTracker;
@@ -26,6 +27,12 @@ const SEPARATOR: &str = "/";
 
 /// key-version-value
 pub struct KVV(pub String, pub (u64, Vec<u8>));
+
+impl Debug for KVV {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("KVV").field(&self.0).field(&self.1 .0).field(&self.1 .1).finish()
+    }
+}
 
 impl KVV {
     /// convert to the inner tuple

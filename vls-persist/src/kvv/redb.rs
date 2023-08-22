@@ -207,25 +207,49 @@ mod tests {
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
     use lightning_signer::util::clock::StandardClock;
     use lightning_signer::util::test_utils::*;
-    use std::env;
     use std::path::Path;
+    use std::{env, fs};
 
     #[test]
     fn restore_0_9_test() {
+        // this data wasn't actually created with redb on 0.9
+        // it was created with sled/kvv-json and then migrated to redb
+        do_restore_test("0_9_persist_redb")
+    }
+
+    #[test]
+    fn restore_0_10_test() {
+        do_restore_test("0_10_persist_redb")
+    }
+
+    fn do_restore_test(name: &str) {
         // running inside kcov doesn't set CARGO_MANIFEST_DIR, so we have a fallback
         let fixture_path = if let Ok(module_path) = env::var("CARGO_MANIFEST_DIR") {
             println!("module_path: {}", module_path);
-            format!("{}/../data/samples/0_9_persist_redb", module_path)
+            format!("{}/../data/samples/{}", module_path, name)
         } else if let Ok(fixtures_path) = env::var("FIXTURES_DIR") {
             println!("fixtures_path: {}", fixtures_path);
-            format!("{}/samples/0_9_persist_redb", fixtures_path)
+            format!("{}/samples/{}", fixtures_path, name)
         } else {
             panic!("Missing CARGO_MANIFEST_DIR / FIXTURES_DIR");
         };
         if !Path::new(&fixture_path).exists() {
             panic!("Fixture path does not exist: {}", fixture_path);
         }
-        let persister = RedbKVVStore::new(&fixture_path);
+
+        // copy to a temporary directory, because redb modifies the files and we don't want to
+        // clutter the development tree with these changes
+        let tempdir = tempfile::tempdir().unwrap();
+
+        // copy all files from fixture_path to tempdir
+        for entry in fs::read_dir(fixture_path).unwrap() {
+            let path = entry.unwrap().path();
+            let filename = path.file_name().unwrap();
+            let dest = tempdir.path().join(filename);
+            fs::copy(path, dest).unwrap();
+        }
+
+        let persister = RedbKVVStore::new(&tempdir);
         let mut seed = [0; 32];
         seed.copy_from_slice(Vec::from_hex(TEST_SEED[0]).unwrap().as_slice());
 
