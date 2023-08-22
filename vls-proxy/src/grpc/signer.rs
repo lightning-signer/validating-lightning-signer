@@ -36,6 +36,14 @@ use vls_protocol_signer::handler::{Error, Handler, RootHandler, RootHandlerBuild
 use vls_protocol_signer::vls_protocol::model::PubKey;
 use vls_protocol_signer::vls_protocol::msgs;
 
+#[cfg(feature = "heapmon_requests")]
+use heapmon::{self, HeapMon, SummaryOrder};
+#[cfg(feature = "heapmon_requests")]
+use std::alloc::System;
+#[cfg(feature = "heapmon_requests")]
+#[global_allocator]
+pub static HEAPMON: HeapMon<System> = HeapMon::system();
+
 /// Signer binary entry point for local integration test
 #[tokio::main(worker_threads = 2)]
 pub async fn start_signer_localhost(port: u16) {
@@ -124,11 +132,47 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
 
     let mut request_stream = client.signer_stream(response_stream).await.unwrap().into_inner();
 
+    #[cfg(feature = "heapmon_requests")]
+    let peak_thresh = {
+        use std::env;
+        let peak_thresh = env::var("VLS_HEAPMON_PEAK_THRESH")
+            .map(|s| s.parse().expect("VLS_HEAPMON_PEAK_THRESH parse"))
+            .unwrap_or(50 * 1024);
+        info!("using VLS_HEAPMON_PEAK_THRESH={}", peak_thresh);
+        HEAPMON.filter("KVJsonPersister");
+        HEAPMON.filter("sled::pagecache");
+        HEAPMON.filter("backtrace::symbolize");
+        HEAPMON.filter("redb::");
+        peak_thresh
+    };
+
     while let Some(item) = request_stream.next().await {
         match item {
             Ok(request) => {
                 let request_id = request.request_id;
+
+                #[cfg(feature = "heapmon_requests")]
+                let heapmon_label = {
+                    // Enable peakhold for every message
+                    let heapmon_label =
+                        msgs::from_vec(request.clone().message).expect("msg").inner().name();
+                    HEAPMON.reset();
+                    HEAPMON.peakhold();
+                    heapmon_label
+                };
+
                 let response = handle(request, &root_handler);
+
+                #[cfg(feature = "heapmon_requests")]
+                {
+                    // But only dump big heap excursions
+                    let (_heapsz, peaksz) = HEAPMON.disable();
+                    if peaksz > peak_thresh {
+                        // The filters are applied here and the threshold check re-applied
+                        HEAPMON.dump(SummaryOrder::MemoryUsed, peak_thresh, heapmon_label);
+                    }
+                }
+
                 match response {
                     Ok(response) => {
                         let res = sender.send(response).await;
@@ -226,6 +270,7 @@ fn get_or_generate_seed(
 
 fn handle(request: SignerRequest, root_handler: &RootHandler) -> StdResult<SignerResponse, Error> {
     let msg = msgs::from_vec(request.message)?;
+
     info!(
         "signer got request {} dbid {} - {:?}",
         request.request_id,
@@ -251,6 +296,7 @@ fn handle(request: SignerRequest, root_handler: &RootHandler) -> StdResult<Signe
     info!("signer sending reply {} - {:?}", request.request_id, reply);
     // TODO handle memorized mutations
     let (res, _muts) = reply;
+
     Ok(SignerResponse {
         request_id: request.request_id,
         message: res.as_vec(),
