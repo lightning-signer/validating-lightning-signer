@@ -1,6 +1,8 @@
 #[cfg(feature = "redb-kvv")]
 pub mod redb;
 
+use alloc::format;
+
 use crate::model::*;
 use core::fmt::Debug;
 use core::ops::Deref;

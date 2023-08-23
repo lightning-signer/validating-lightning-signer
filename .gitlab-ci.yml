@@ -52,7 +52,7 @@ rust-latest:
     - rustup component add rustfmt
     - cargo test
     # ensure vls-persist builds with no-std
-    - cargo build -p vls-persist --no-default-features --features no-std
+    - cargo build -p vls-persist --no-default-features --features no-std,memo
     # system test
     - bin/bitcoind --regtest --daemon --rpcuser=user --rpcpassword=pass
     - sleep 5
