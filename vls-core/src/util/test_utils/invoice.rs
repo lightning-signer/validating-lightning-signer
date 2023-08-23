@@ -8,11 +8,11 @@ use bitcoin::secp256k1::KeyPair;
 use bitcoin::secp256k1::{schnorr, Message, PublicKey, Secp256k1, SecretKey};
 use lightning::blinded_path::BlindedPath;
 
-use lightning::chain::keysinterface::EntropySource;
 use lightning::ln::features::BlindedHopFeatures;
 use lightning::ln::PaymentHash;
 use lightning::offers::invoice::BlindedPayInfo;
 use lightning::offers::offer::OfferBuilder;
+use lightning::sign::EntropySource;
 
 use crate::invoice::Invoice;
 
@@ -65,7 +65,7 @@ fn privkey(byte: u8) -> SecretKey {
     SecretKey::from_slice(&[byte; 32]).unwrap()
 }
 
-fn payment_paths() -> Vec<(BlindedPath, BlindedPayInfo)> {
+fn payment_paths() -> Vec<(BlindedPayInfo, BlindedPath)> {
     let secp_ctx = Secp256k1::new();
     let entropy_source = TestEntropySource {};
 
@@ -95,7 +95,7 @@ fn payment_paths() -> Vec<(BlindedPath, BlindedPayInfo)> {
         },
     ];
 
-    paths.into_iter().zip(payinfo.into_iter()).collect()
+    payinfo.into_iter().zip(paths.into_iter()).collect()
 }
 
 // Make a BOLT-12 invoice via Offer -> InvoiceRequest -> Invoice

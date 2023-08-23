@@ -105,7 +105,7 @@ test-log = "0.2.8"
 #rev = "a7600dcd584db0c46fdcd99d71d5b271f3052892"
 #branch = "main"
 #path = "../../rust-lightning/lightning"
-version = "0.0.115"
+version = "0.0.116"
 default-features = false
 features = ["grind_signatures", "unsafe_revoked_tx_signing"]
 
@@ -114,7 +114,7 @@ features = ["grind_signatures", "unsafe_revoked_tx_signing"]
 #rev = "a7600dcd584db0c46fdcd99d71d5b271f3052892"
 #branch = "main"
 #path = "../../rust-lightning/lightning"
-version = "0.0.115"
+version = "0.0.116"
 default-features = false
 features = ["grind_signatures", "_test_utils", "unsafe_revoked_tx_signing"]
 
@@ -123,7 +123,7 @@ features = ["grind_signatures", "_test_utils", "unsafe_revoked_tx_signing"]
 #rev = "a7600dcd584db0c46fdcd99d71d5b271f3052892"
 #branch = "main"
 #path = "../../rust-lightning/lightning-invoice"
-version = "0.23.0"
+version = "0.24.0"
 default-features = false
 
 [dependencies.bitcoin]

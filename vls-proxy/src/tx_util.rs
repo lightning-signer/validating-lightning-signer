@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use lightning_signer::bitcoin::{PackedLockTime, Script, Sequence, Transaction, TxIn, Witness};
-use lightning_signer::lightning::chain::keysinterface::DelayedPaymentOutputDescriptor;
+use lightning_signer::lightning::sign::DelayedPaymentOutputDescriptor;
 use lightning_signer::util::transaction_utils;
 use lightning_signer::util::transaction_utils::MAX_VALUE_MSAT;
 use std::collections::HashSet;

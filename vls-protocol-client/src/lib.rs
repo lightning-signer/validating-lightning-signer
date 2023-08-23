@@ -3,22 +3,37 @@ use std::convert::{TryFrom, TryInto};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use bitcoin::bech32::u5;
 use bitcoin::hashes::Hash;
+use bitcoin::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
+use bitcoin::secp256k1::rand::rngs::OsRng;
+use bitcoin::secp256k1::rand::RngCore;
 use bitcoin::secp256k1::{
     ecdh::SharedSecret, ecdsa::Signature, All, PublicKey, Scalar, Secp256k1, SecretKey,
 };
+use bitcoin::util::bip32::ChildNumber;
+use bitcoin::util::bip32::ExtendedPubKey;
+use bitcoin::util::psbt::PartiallySignedTransaction;
 use bitcoin::Transaction;
-use lightning::chain::keysinterface::{
-    ChannelSigner, EcdsaChannelSigner, NodeSigner, WriteableEcdsaChannelSigner,
-};
+use bitcoin::Txid;
+use bitcoin::{EcdsaSighashType, Script, WPubkeyHash};
+use lightning::events::bump_transaction::HTLCDescriptor;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction,
 };
+use lightning::ln::msgs::DecodeError;
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
+use lightning::ln::msgs::UnsignedGossipMessage;
+use lightning::ln::script::ShutdownScript;
 use lightning::ln::PaymentPreimage;
+use lightning::sign::{ChannelSigner, EcdsaChannelSigner, NodeSigner, WriteableEcdsaChannelSigner};
+use lightning::sign::{EntropySource, SignerProvider};
+use lightning::sign::{KeyMaterial, Recipient, SpendableOutputDescriptor};
+use lightning::util::ser::Readable;
+use lightning::util::ser::{Writeable, Writer};
 use lightning_signer::bitcoin;
-use lightning_signer::bitcoin::util::bip32::ChildNumber;
+use lightning_signer::channel::CommitmentType;
 use lightning_signer::lightning;
 use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::util::INITIAL_COMMITMENT_NUMBER;
@@ -41,27 +56,10 @@ use vls_protocol::serde_bolt::{Array, ArrayBE, Octets, WireString};
 use vls_protocol::{model, Error as ProtocolError};
 use vls_protocol_signer::util::commitment_type_to_channel_type;
 
-use bitcoin::bech32::u5;
-use bitcoin::secp256k1::ecdsa::{self, RecoverableSignature, RecoveryId};
-use bitcoin::secp256k1::rand::rngs::OsRng;
-use bitcoin::secp256k1::rand::RngCore;
-use bitcoin::util::bip32::ExtendedPubKey;
-use bitcoin::util::psbt::PartiallySignedTransaction;
-use bitcoin::{EcdsaSighashType, Script, WPubkeyHash};
-use lightning::chain::keysinterface::{KeyMaterial, Recipient, SpendableOutputDescriptor};
-use lightning::ln::msgs::DecodeError;
-use lightning::ln::script::ShutdownScript;
-use lightning::util::ser::{Writeable, Writer};
-
 mod dyn_signer;
 pub mod signer_port;
 
 pub use dyn_signer::{DynKeysInterface, DynSigner, InnerSign, SpendableKeysInterface};
-use lightning::util::ser::Readable;
-use lightning_signer::bitcoin::Txid;
-use lightning_signer::channel::CommitmentType;
-use lightning_signer::lightning::chain::keysinterface::{EntropySource, SignerProvider};
-use lightning_signer::lightning::ln::msgs::UnsignedGossipMessage;
 pub use signer_port::SignerPort;
 use vls_protocol::psbt::StreamedPSBT;
 
@@ -103,7 +101,7 @@ fn to_pubkey(pubkey: PublicKey) -> PubKey {
     PubKey(pubkey.serialize())
 }
 
-fn to_bitcoin_sig(sig: &ecdsa::Signature) -> BitcoinSignature {
+fn to_bitcoin_sig(sig: &Signature) -> BitcoinSignature {
     BitcoinSignature {
         signature: model::Signature(sig.serialize_compact()),
         sighash: EcdsaSighashType::All as u8,
@@ -290,6 +288,16 @@ impl EcdsaChannelSigner for SignerClient {
         todo!()
     }
 
+    fn sign_holder_htlc_transaction(
+        &self,
+        _htlc_tx: &Transaction,
+        _input: usize,
+        _htlc_descriptor: &HTLCDescriptor,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<Signature, ()> {
+        todo!("sign_holder_htlc_transaction - #381")
+    }
+
     #[allow(unused)]
     fn sign_counterparty_htlc_transaction(
         &self,
@@ -399,12 +407,11 @@ impl ChannelSigner for SignerClient {
             .as_ref()
             .expect("counterparty params should exist at this point");
 
-        let commitment_type = if p.opt_anchors.is_some() {
-            if p.opt_non_zero_fee_anchors.is_some() {
-                CommitmentType::Anchors
-            } else {
-                CommitmentType::AnchorsZeroFeeHtlc
-            }
+        let features = &p.channel_type_features;
+        let commitment_type = if features.supports_anchors_zero_fee_htlc_tx() {
+            CommitmentType::AnchorsZeroFeeHtlc
+        } else if features.supports_anchors_nonzero_fee_htlc_tx() {
+            CommitmentType::Anchors
         } else {
             CommitmentType::StaticRemoteKey
         };
@@ -673,7 +680,7 @@ impl SignerProvider for KeysManagerClient {
         })
     }
 
-    fn get_destination_script(&self) -> Script {
+    fn get_destination_script(&self) -> Result<Script, ()> {
         let secp_ctx = Secp256k1::new();
         let wallet_path = dest_wallet_path();
         let mut key = self.xpub;
@@ -681,11 +688,11 @@ impl SignerProvider for KeysManagerClient {
             key = key.ckd_pub(&secp_ctx, ChildNumber::from_normal_idx(*i).unwrap()).unwrap();
         }
         let pubkey = key.public_key;
-        Script::new_v0_p2wpkh(&WPubkeyHash::hash(&pubkey.serialize()))
+        Ok(Script::new_v0_p2wpkh(&WPubkeyHash::hash(&pubkey.serialize())))
     }
 
-    fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {
-        ShutdownScript::try_from(self.get_destination_script()).expect("script")
+    fn get_shutdown_scriptpubkey(&self) -> Result<ShutdownScript, ()> {
+        Ok(ShutdownScript::try_from(self.get_destination_script()?).expect("script"))
     }
 }
 

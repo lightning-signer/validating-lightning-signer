@@ -20,7 +20,8 @@ use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::PublicKey;
 use chain::transaction::OutPoint;
 use lightning::chain;
-use lightning::chain::{Confirm, Listen, chaininterface, keysinterface::EntropySource};
+use lightning::chain::{Confirm, Listen, chaininterface};
+use lightning::sign::EntropySource;
 use lightning::ln;
 use lightning::ln::channelmanager::{RecipientOnionFields, ChainParameters, MIN_FINAL_CLTV_EXPIRY_DELTA, PaymentId};
 use lightning::chain::BestBlock;
@@ -860,7 +861,7 @@ macro_rules! get_route {
 		lightning::routing::router::find_route(
 			&$send_node.node.get_our_node_id(), &params, &$send_node.network_graph,
 			Some(&$send_node.node.list_usable_channels().iter().collect::<Vec<_>>()),
-			Arc::clone(&$send_node.logger), &scorer, &random_seed_bytes
+			Arc::clone(&$send_node.logger), &scorer, &(), &random_seed_bytes
 		)
 	}}
 }
@@ -1228,8 +1229,10 @@ pub struct TestBroadcaster {
     pub txn_broadcasted: Mutex<Vec<Transaction>>,
 }
 impl chaininterface::BroadcasterInterface for TestBroadcaster {
-    fn broadcast_transaction(&self, tx: &Transaction) {
-        self.txn_broadcasted.lock().unwrap().push(tx.clone());
+    fn broadcast_transactions(&self, txs: &[&Transaction]) {
+        for tx in txs {
+            self.txn_broadcasted.lock().unwrap().push((*tx).clone());
+        }
     }
 }
 
@@ -1273,12 +1276,13 @@ use lightning::routing::router::{Router, InFlightHtlcs, find_route, ScorerAccoun
 impl Router for TestRouter {
 	fn find_route(
 		&self, payer: &PublicKey, params: &RouteParameters, first_hops: Option<&[&channelmanager::ChannelDetails]>,
-		inflight_htlcs: &InFlightHtlcs
+		inflight_htlcs: InFlightHtlcs
 	) -> Result<Route, msgs::LightningError> {
 		let logger = test_utils::TestLogger::new();
 		find_route(
 			payer, params, &self.network_graph, first_hops, Arc::new(logger),
-			&ScorerAccountingForInFlightHtlcs::new(test_utils::TestScorer::new(), &inflight_htlcs),
+			&ScorerAccountingForInFlightHtlcs::new(&mut test_utils::TestScorer::new(), &inflight_htlcs),
+            &(),
 			&[42; 32]
 		)
 	}
@@ -1318,7 +1322,7 @@ pub fn create_node_chanmgrs<'a, 'b>(
                                        &cfgs[i].keys_manager,
                                        &cfgs[i].keys_manager,
                                        config,
-                                       params);
+                                       params, 123);
         chanmgrs.push(node);
     }
 
@@ -1369,7 +1373,7 @@ pub fn create_network<'a, 'b: 'a, 'c: 'b>(
 
     for i in 0..node_count {
         for j in (i+1)..node_count {
-            let init = msgs::Init { features: channelmanager::provided_init_features(&UserConfig::default()), remote_network_address: None };
+            let init = msgs::Init { features: channelmanager::provided_init_features(&UserConfig::default()), networks: None, remote_network_address: None };
             nodes[i].node.peer_connected(&nodes[j].node.get_our_node_id(), &init, false).unwrap();
             nodes[j].node.peer_connected(&nodes[i].node.get_our_node_id(), &init, true).unwrap();
         }

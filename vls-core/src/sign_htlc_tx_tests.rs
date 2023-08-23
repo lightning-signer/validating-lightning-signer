@@ -62,13 +62,12 @@ mod tests {
             build_feerate,
             to_self_delay,
             &htlc,
-            setup.is_anchors(),
-            !setup.is_zero_fee_htlc(),
+            &setup.features(),
             &txkeys.broadcaster_delayed_payment_key,
             &txkeys.revocation_key,
         );
 
-        let htlc_redeemscript = get_htlc_redeemscript(&htlc, setup.is_anchors(), &txkeys);
+        let htlc_redeemscript = get_htlc_redeemscript(&htlc, &setup.features(), &txkeys);
 
         let output_witscript = get_revokeable_redeemscript(
             &txkeys.revocation_key,
@@ -182,8 +181,7 @@ mod tests {
                     build_feerate,
                     to_self_delay,
                     &htlc,
-                    channel_parameters.opt_anchors.is_some(),
-                    !setup.is_zero_fee_htlc(),
+                    &setup.features(),
                     &keys.broadcaster_delayed_payment_key,
                     &keys.revocation_key,
                 );
@@ -197,8 +195,7 @@ mod tests {
                     tx: &mut htlc_tx,
                 });
 
-                let htlc_redeemscript =
-                    get_htlc_redeemscript(&htlc, channel_parameters.opt_anchors.is_some(), &keys);
+                let htlc_redeemscript = get_htlc_redeemscript(&htlc, &setup.features(), &keys);
 
                 let output_witscript = get_revokeable_redeemscript(
                     &keys.revocation_key,
@@ -305,8 +302,7 @@ mod tests {
                     build_feerate,
                     to_self_delay,
                     &htlc,
-                    channel_parameters.opt_anchors.is_some(),
-                    !setup.is_zero_fee_htlc(),
+                    &setup.features(),
                     &keys.broadcaster_delayed_payment_key,
                     &keys.revocation_key,
                 );
@@ -314,14 +310,9 @@ mod tests {
                 let mut cstate = make_test_chain_state();
 
                 // Mutate the transaction.
-                txmut(&mut TxMutationState {
-                    is_offered: is_offered,
-                    cstate: &mut cstate,
-                    tx: &mut htlc_tx,
-                });
+                txmut(&mut TxMutationState { is_offered, cstate: &mut cstate, tx: &mut htlc_tx });
 
-                let htlc_redeemscript =
-                    get_htlc_redeemscript(&htlc, channel_parameters.opt_anchors.is_some(), &keys);
+                let htlc_redeemscript = get_htlc_redeemscript(&htlc, &setup.features(), &keys);
 
                 let output_witscript = get_revokeable_redeemscript(
                     &keys.revocation_key,

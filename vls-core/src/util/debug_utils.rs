@@ -4,12 +4,12 @@ use bitcoin::hashes::hex;
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::util::address::Payload;
 use bitcoin::{Address, Network, Script};
-use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{
     BuiltCommitmentTransaction, ChannelPublicKeys, CommitmentTransaction, HTLCOutputInCommitment,
     TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
+use lightning::sign::InMemorySigner;
 
 /// Debug printer for ChannelPublicKeys which doesn't have one.
 pub struct DebugChannelPublicKeys<'a>(pub &'a ChannelPublicKeys);
@@ -159,7 +159,6 @@ impl<'a> core::fmt::Debug for DebugCommitmentTransaction<'a> {
             .field("to_countersignatory_value_sat", &self.0.to_countersignatory_value_sat())
             .field("feerate_per_kw", &self.0.feerate_per_kw())
             .field("htlcs", &DebugVecHTLCOutputInCommitment(&self.0.htlcs()))
-            .field("opt_anchors", &self.0.trust().opt_anchors())
             .field("keys", &DebugTxCreationKeys(&self.0.trust().keys()))
             .field("built", &DebugBuiltCommitmentTransaction(&self.0.trust().built_transaction()))
             .finish()

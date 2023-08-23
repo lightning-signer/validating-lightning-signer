@@ -13,7 +13,7 @@ impl FromStr for Invoice {
         match maybe_bolt12 {
             Ok(bolt12) => Ok(Invoice::Bolt12(bolt12.0)),
             Err(bolt12err) => {
-                let bolt11_raw = invstr.parse::<bolt11::SignedRawInvoice>().map_err(|e| {
+                let bolt11_raw = invstr.parse::<bolt11::SignedRawBolt11Invoice>().map_err(|e| {
                     Status::invalid_argument(format!(
                         "invoice not bolt12: {:?} and not bolt11: {:?}",
                         bolt12err, e
@@ -26,11 +26,11 @@ impl FromStr for Invoice {
 }
 
 // This is BOLT-11 only
-impl TryFrom<bolt11::SignedRawInvoice> for Invoice {
+impl TryFrom<bolt11::SignedRawBolt11Invoice> for Invoice {
     type Error = Status;
-    fn try_from(bolt11_raw: bolt11::SignedRawInvoice) -> Result<Self, Self::Error> {
+    fn try_from(bolt11_raw: bolt11::SignedRawBolt11Invoice) -> Result<Self, Self::Error> {
         // This performs all semantic checks and signature check
-        let bolt11 = bolt11::Invoice::from_signed(bolt11_raw)
+        let bolt11 = bolt11::Bolt11Invoice::from_signed(bolt11_raw)
             .map_err(|e| invalid_argument(e.to_string()))?;
         Ok(Invoice::Bolt11(bolt11))
     }
@@ -41,13 +41,12 @@ impl TryFrom<bolt11::SignedRawInvoice> for Invoice {
 
 use bitcoin::bech32;
 use bitcoin::bech32::FromBase32;
+use lightning::offers::parse::Bolt12ParseError;
 
-use crate::lightning::offers::parse::ParseError;
-
-struct WrappedBolt12Invoice(bolt12::Invoice);
+struct WrappedBolt12Invoice(bolt12::Bolt12Invoice);
 
 impl FromStr for WrappedBolt12Invoice {
-    type Err = ParseError;
+    type Err = Bolt12ParseError;
 
     fn from_str(s: &str) -> Result<WrappedBolt12Invoice, <WrappedBolt12Invoice as FromStr>::Err> {
         const BECH32_HRP: &'static str = "lni";
@@ -58,7 +57,7 @@ impl FromStr for WrappedBolt12Invoice {
                 for chunk in s.split('+') {
                     let chunk = chunk.trim_start();
                     if chunk.is_empty() || chunk.contains(char::is_whitespace) {
-                        return Err(ParseError::InvalidContinuation);
+                        return Err(Bolt12ParseError::InvalidContinuation);
                     }
                 }
 
@@ -71,11 +70,11 @@ impl FromStr for WrappedBolt12Invoice {
         let (hrp, data) = bech32::decode_without_checksum(encoded.as_ref())?;
 
         if hrp != BECH32_HRP {
-            return Err(ParseError::InvalidBech32Hrp);
+            return Err(Bolt12ParseError::InvalidBech32Hrp);
         }
 
         let data = Vec::<u8>::from_base32(&data)?;
-        Ok(WrappedBolt12Invoice(bolt12::Invoice::try_from(data)?))
+        Ok(WrappedBolt12Invoice(bolt12::Bolt12Invoice::try_from(data)?))
     }
 }
 
