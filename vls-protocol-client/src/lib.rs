@@ -14,9 +14,8 @@ use bitcoin::secp256k1::{
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::util::psbt::PartiallySignedTransaction;
-use bitcoin::Transaction;
-use bitcoin::Txid;
 use bitcoin::{EcdsaSighashType, Script, WPubkeyHash};
+use bitcoin::{Transaction, TxOut};
 use lightning::events::bump_transaction::HTLCDescriptor;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
@@ -498,26 +497,39 @@ impl KeysManagerClient {
         tx: &Transaction,
         descriptors: &[&SpendableOutputDescriptor],
     ) -> Vec<Vec<Vec<u8>>> {
+        assert_eq!(tx.input.len(), descriptors.len());
+
+        let mut psbt =
+            PartiallySignedTransaction::from_unsigned_tx(tx.clone()).expect("create PSBT");
+        for i in 0..psbt.inputs.len() {
+            psbt.inputs[i].witness_utxo = Self::descriptor_to_txout(descriptors[i]);
+        }
+
+        let streamed_psbt = StreamedPSBT::new(psbt).into();
         let utxos = Array(descriptors.into_iter().map(|d| Self::descriptor_to_utxo(*d)).collect());
 
-        let psbt = StreamedPSBT::new(
-            PartiallySignedTransaction::from_unsigned_tx(tx.clone()).expect("create PSBT"),
-        )
-        .into();
-
-        let message = SignWithdrawal { utxos, psbt };
+        let message = SignWithdrawal { utxos, psbt: streamed_psbt };
         let result: SignWithdrawalReply = self.call(message).expect("sign failed");
         let psbt = result.psbt.0;
         psbt.inputs.into_iter().map(|i| i.final_script_witness.unwrap().to_vec()).collect()
     }
 
+    fn descriptor_to_txout(d: &SpendableOutputDescriptor) -> Option<TxOut> {
+        match d {
+            SpendableOutputDescriptor::StaticOutput { output, .. } => Some(output.clone()),
+            SpendableOutputDescriptor::DelayedPaymentOutput(o) => Some(o.output.clone()),
+            SpendableOutputDescriptor::StaticPaymentOutput(o) => Some(o.output.clone()),
+        }
+    }
+
     fn descriptor_to_utxo(d: &SpendableOutputDescriptor) -> Utxo {
-        let (amount, keyindex, close_info) = match d {
+        let (outpoint, amount, keyindex, close_info) = match d {
             // Mutual close - we are spending a non-delayed output to us on the shutdown key
-            SpendableOutputDescriptor::StaticOutput { output, .. } =>
-                (output.value, dest_wallet_path()[0], None), // FIXME this makes some assumptions
+            SpendableOutputDescriptor::StaticOutput { output, outpoint } =>
+                (outpoint.clone(), output.value, dest_wallet_path()[0], None), // FIXME this makes some assumptions
             // We force-closed - we are spending a delayed output to us
             SpendableOutputDescriptor::DelayedPaymentOutput(o) => (
+                o.outpoint,
                 o.output.value,
                 0,
                 Some(CloseInfo {
@@ -530,6 +542,7 @@ impl KeysManagerClient {
             ),
             // Remote force-closed - we are spending an non-delayed output to us
             SpendableOutputDescriptor::StaticPaymentOutput(o) => (
+                o.outpoint,
                 o.output.value,
                 0,
                 Some(CloseInfo {
@@ -543,8 +556,8 @@ impl KeysManagerClient {
         };
         let is_in_coinbase = false; // FIXME - set this for real
         Utxo {
-            txid: Txid::all_zeros(),
-            outnum: 0,
+            txid: outpoint.txid,
+            outnum: outpoint.index as u32,
             amount,
             keyindex,
             is_p2sh: false,
