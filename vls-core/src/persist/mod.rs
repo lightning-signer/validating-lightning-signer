@@ -6,7 +6,7 @@ use bitcoin::secp256k1::PublicKey;
 use bitcoin::OutPoint;
 use core::fmt::Debug;
 use core::ops::Index;
-use lightning::chain::keysinterface::EntropySource;
+use lightning::sign::EntropySource;
 
 use crate::channel::{Channel, ChannelId, ChannelStub};
 use crate::monitor::{ChainMonitor, State as ChainMonitorState};

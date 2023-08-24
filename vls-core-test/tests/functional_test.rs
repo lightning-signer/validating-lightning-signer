@@ -24,7 +24,7 @@ use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::bip32::ChildNumber;
 use bitcoin::{Block, BlockHeader, Network, OutPoint, Script, Transaction, TxMerkleNode};
 use bitcoin::hashes::Hash;
-use lightning::chain::{chaininterface, keysinterface};
+use lightning::chain::chaininterface;
 use lightning::ln::channelmanager;
 use lightning::ln::features::InitFeatures;
 use lightning::ln::functional_test_utils::create_node_cfgs;
@@ -300,6 +300,7 @@ fn _alt_config() -> UserConfig {
             announced_channel: true,
             commit_upfront_shutdown_pubkey: false,
             their_channel_reserve_proportional_millionths: 0,
+            negotiate_anchors_zero_fee_htlc_tx: false,
             our_max_accepted_htlcs: 50,
         },
         channel_handshake_limits: Default::default(),
@@ -308,6 +309,7 @@ fn _alt_config() -> UserConfig {
         accept_inbound_channels: true,
         manually_accept_inbound_channels: false,
         accept_intercept_htlcs: false,
+        accept_mpp_keysend: false,
     };
     cfg1.channel_handshake_limits
         .force_announced_channel_preference = false;

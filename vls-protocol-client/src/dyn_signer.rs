@@ -6,10 +6,7 @@ use delegate::delegate;
 use bitcoin::bech32::u5;
 use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::{secp256k1, Script, Transaction, TxOut};
-use lightning::chain::keysinterface::ChannelSigner;
-use lightning::chain::keysinterface::EcdsaChannelSigner;
-use lightning::chain::keysinterface::InMemorySigner;
-use lightning::chain::keysinterface::{KeyMaterial, NodeSigner, Recipient};
+use lightning::events::bump_transaction::HTLCDescriptor;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction,
@@ -17,13 +14,18 @@ use lightning::ln::chan_utils::{
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
 use lightning::ln::PaymentPreimage;
+use lightning::sign::ChannelSigner;
+use lightning::sign::EcdsaChannelSigner;
+use lightning::sign::InMemorySigner;
+use lightning::sign::{
+    KeyMaterial, NodeSigner, Recipient, SignerProvider, SpendableOutputDescriptor,
+    WriteableEcdsaChannelSigner,
+};
 use lightning::util::ser::Readable;
 use lightning::util::ser::{Writeable, Writer};
 use lightning_signer::bitcoin;
+use lightning_signer::bitcoin::secp256k1::All;
 use lightning_signer::lightning;
-use lightning_signer::lightning::chain::keysinterface::{
-    SignerProvider, SpendableOutputDescriptor, WriteableEcdsaChannelSigner,
-};
 use secp256k1::ecdsa::RecoverableSignature;
 use secp256k1::{ecdh::SharedSecret, ecdsa::Signature, PublicKey, Scalar, Secp256k1, SecretKey};
 
@@ -132,6 +134,8 @@ impl EcdsaChannelSigner for DynSigner {
             fn sign_holder_anchor_input(
                 &self, anchor_tx: &Transaction, input: usize, secp_ctx: &Secp256k1<secp256k1::All>,
             ) -> Result<Signature, ()>;
+
+            fn sign_holder_htlc_transaction(&self, htlc_tx: &Transaction, input: usize, htlc_descriptor: &HTLCDescriptor, secp_ctx: &Secp256k1<All>) -> Result<Signature, ()>;
         }
     }
 }
@@ -233,9 +237,9 @@ impl SignerProvider for DynKeysInterface {
 
     delegate! {
         to self.inner {
-            fn get_destination_script(&self) -> Script;
+            fn get_destination_script(&self) -> Result<Script, ()>;
 
-            fn get_shutdown_scriptpubkey(&self) -> ShutdownScript;
+            fn get_shutdown_scriptpubkey(&self) -> Result<ShutdownScript, ()>;
 
             fn generate_channel_keys_id(&self, _inbound: bool, _channel_value_satoshis: u64, _user_channel_id: u128) -> [u8; 32];
 

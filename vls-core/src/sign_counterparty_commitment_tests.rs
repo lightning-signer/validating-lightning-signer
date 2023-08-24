@@ -7,12 +7,12 @@ mod tests {
     use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::Network;
     use bitcoin::{PackedLockTime, Sequence};
-    use lightning::chain::keysinterface::ChannelSigner;
     use lightning::ln::chan_utils::{
         make_funding_redeemscript, BuiltCommitmentTransaction,
         DirectedChannelTransactionParameters, TxCreationKeys,
     };
     use lightning::ln::PaymentHash;
+    use lightning::sign::ChannelSigner;
     use std::sync::Arc;
     use test_log::test;
 

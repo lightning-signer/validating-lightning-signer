@@ -244,8 +244,7 @@ mod tests {
                             build_feerate,
                             chan_ctx.setup.counterparty_selected_contest_delay,
                             &htlc,
-                            chan_ctx.setup.is_anchors(),
-                            !chan_ctx.setup.is_zero_fee_htlc(),
+                            &chan_ctx.setup.features(),
                             &txkeys.broadcaster_delayed_payment_key,
                             &txkeys.revocation_key,
                         )
@@ -254,7 +253,7 @@ mod tests {
 
                 let htlc_redeemscripts = htlcs
                     .iter()
-                    .map(|htlc| get_htlc_redeemscript(&htlc, chan_ctx.setup.is_anchors(), &txkeys))
+                    .map(|htlc| get_htlc_redeemscript(&htlc, &chan_ctx.setup.features(), &txkeys))
                     .collect::<Vec<Script>>();
 
                 assert_eq!(chan.enforcement_state.channel_closed, true);

@@ -12,8 +12,8 @@ use bitcoin::{
     BlockHash, BlockHeader, EcdsaSighashType, FilterHeader, Network, OutPoint, Script, Sighash,
     Transaction,
 };
-use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
+use lightning::sign::InMemorySigner;
 use std::sync::{Arc, Mutex};
 use txoo::proof::TxoProof;
 

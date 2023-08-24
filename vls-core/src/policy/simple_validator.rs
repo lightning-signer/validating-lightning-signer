@@ -2,12 +2,12 @@ use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::sighash::SighashCache;
 use bitcoin::{self, EcdsaSighashType, Network, Script, Sighash, Transaction};
-use lightning::chain::keysinterface::{ChannelSigner, InMemorySigner};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, htlc_success_tx_weight, htlc_timeout_tx_weight,
     make_funding_redeemscript, ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
+use lightning::sign::{ChannelSigner, InMemorySigner};
 use log::*;
 
 use super::error::{
@@ -973,13 +973,14 @@ impl Validator for SimpleValidator {
         let commitment_txid = tx.input[0].previous_output.txid;
         let total_fee = htlc_amount_sat - tx.output[0].value;
 
+        let features = setup.features();
         let build_feerate = if setup.is_zero_fee_htlc() {
             0
         } else {
             let weight = if offered {
-                htlc_timeout_tx_weight(setup.is_anchors())
+                htlc_timeout_tx_weight(&features)
             } else {
-                htlc_success_tx_weight(setup.is_anchors())
+                htlc_success_tx_weight(&features)
             };
             estimate_feerate_per_kw(total_fee, weight)
         };
@@ -998,8 +999,7 @@ impl Validator for SimpleValidator {
             build_feerate,
             to_self_delay,
             &htlc,
-            setup.is_anchors(),
-            !setup.is_zero_fee_htlc(),
+            &setup.features(),
             &txkeys.broadcaster_delayed_payment_key,
             &txkeys.revocation_key,
         );
@@ -1719,7 +1719,7 @@ impl SimpleValidator {
             MIN_CHAN_DUST_LIMIT_SATOSHIS
         } else {
             MIN_DUST_LIMIT_SATOSHIS
-                + (info.feerate_per_kw as u64 * htlc_timeout_tx_weight(setup.is_anchors()) / 1000)
+                + (info.feerate_per_kw as u64 * htlc_timeout_tx_weight(&setup.features()) / 1000)
         };
         for htlc in &info.offered_htlcs {
             // TODO - this check should be converted into two checks, one the first time
@@ -1747,7 +1747,7 @@ impl SimpleValidator {
             MIN_CHAN_DUST_LIMIT_SATOSHIS
         } else {
             MIN_DUST_LIMIT_SATOSHIS
-                + (info.feerate_per_kw as u64 * htlc_success_tx_weight(setup.is_anchors()) / 1000)
+                + (info.feerate_per_kw as u64 * htlc_success_tx_weight(&setup.features()) / 1000)
         };
         for htlc in &info.received_htlcs {
             // TODO - this check should be converted into two checks, one the first time

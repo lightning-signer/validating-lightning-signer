@@ -9,9 +9,6 @@ use bitcoin::secp256k1::{self, ecdsa::Signature, All, Message, PublicKey, Secp25
 use bitcoin::util::sighash::SighashCache;
 use bitcoin::{EcdsaSighashType, Network, OutPoint, Script, Transaction};
 use lightning::chain;
-use lightning::chain::keysinterface::{
-    ChannelSigner, EcdsaChannelSigner, EntropySource, InMemorySigner, SignerProvider,
-};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, derive_private_key, derive_public_revocation_key,
     get_htlc_redeemscript, make_funding_redeemscript, ChannelPublicKeys,
@@ -19,7 +16,11 @@ use lightning::ln::chan_utils::{
     CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
     TxCreationKeys,
 };
+use lightning::ln::features::ChannelTypeFeatures;
 use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage};
+use lightning::sign::{
+    ChannelSigner, EcdsaChannelSigner, EntropySource, InMemorySigner, SignerProvider,
+};
 use log::*;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -184,6 +185,20 @@ impl ChannelSetup {
     /// True if this channel uses zero fee htlc with anchors
     pub fn is_zero_fee_htlc(&self) -> bool {
         self.commitment_type == CommitmentType::AnchorsZeroFeeHtlc
+    }
+
+    /// Convert the channel type to a ChannelTypeFeatures
+    pub fn features(&self) -> ChannelTypeFeatures {
+        let mut features = ChannelTypeFeatures::empty();
+        features.set_static_remote_key_required();
+        if self.is_anchors() {
+            if self.is_zero_fee_htlc() {
+                features.set_anchors_zero_fee_htlc_tx_optional();
+            } else {
+                features.set_anchors_nonzero_fee_htlc_tx_optional();
+            }
+        }
+        features
     }
 }
 
@@ -694,7 +709,6 @@ impl Channel {
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             to_counterparty_value_sat,
             to_holder_value_sat,
-            self.setup.is_anchors(),
             self.keys.counterparty_pubkeys().funding_pubkey,
             self.keys.pubkeys().funding_pubkey,
             keys,
@@ -778,10 +792,12 @@ impl Channel {
 
         let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
 
+        let features = self.setup.features();
+
         for ndx in 0..recomposed_tx.htlcs().len() {
             let htlc = &recomposed_tx.htlcs()[ndx];
 
-            let htlc_redeemscript = get_htlc_redeemscript(htlc, self.setup.is_anchors(), &txkeys);
+            let htlc_redeemscript = get_htlc_redeemscript(htlc, &features, &txkeys);
 
             // policy-onchain-format-standard
             let recomposed_htlc_tx = build_htlc_transaction(
@@ -789,8 +805,7 @@ impl Channel {
                 build_feerate,
                 to_self_delay,
                 htlc,
-                self.setup.is_anchors(),
-                !self.setup.is_zero_fee_htlc(),
+                &self.setup.features(),
                 &txkeys.broadcaster_delayed_payment_key,
                 &txkeys.revocation_key,
             );
@@ -1196,7 +1211,6 @@ impl Channel {
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             to_holder_value_sat,
             to_counterparty_value_sat,
-            self.setup.is_anchors(),
             self.keys.pubkeys().funding_pubkey,
             self.keys.counterparty_pubkeys().funding_pubkey,
             keys.clone(),
@@ -1243,7 +1257,6 @@ impl Channel {
             txid: self.setup.funding_outpoint.txid,
             index: self.setup.funding_outpoint.vout as u16,
         };
-        let opt_non_zero_fee_anchors = if self.setup.is_zero_fee_htlc() { Some(()) } else { None };
         let channel_parameters = ChannelTransactionParameters {
             holder_pubkeys: self.get_channel_basepoints(),
             holder_selected_contest_delay: self.setup.holder_selected_contest_delay,
@@ -1253,8 +1266,7 @@ impl Channel {
                 selected_contest_delay: self.setup.counterparty_selected_contest_delay,
             }),
             funding_outpoint: Some(funding_outpoint),
-            opt_anchors: if self.setup.is_anchors() { Some(()) } else { None },
-            opt_non_zero_fee_anchors,
+            channel_type_features: self.setup.features(),
         };
         channel_parameters
     }
@@ -1262,10 +1274,9 @@ impl Channel {
     /// Get the shutdown script where our funds will go when we mutual-close
     // FIXME - this method is deprecated
     pub fn get_ldk_shutdown_script(&self) -> Script {
-        self.setup
-            .holder_shutdown_script
-            .clone()
-            .unwrap_or_else(|| self.get_node().keys_manager.get_shutdown_scriptpubkey().into())
+        self.setup.holder_shutdown_script.clone().unwrap_or_else(|| {
+            self.get_node().keys_manager.get_shutdown_scriptpubkey().unwrap().into()
+        })
     }
 
     fn get_node(&self) -> Arc<Node> {
@@ -1535,6 +1546,8 @@ impl Channel {
         let counterparty_htlc_key =
             derive_private_key(&self.secp_ctx, &per_commitment_point, &counterparty_htlc_key);
 
+        let features = self.setup.features();
+
         let mut htlc_sigs = Vec::with_capacity(tx.htlcs().len());
         for htlc in tx.htlcs() {
             let htlc_tx = build_htlc_transaction(
@@ -1542,12 +1555,11 @@ impl Channel {
                 feerate,
                 self.setup.counterparty_selected_contest_delay,
                 htlc,
-                self.setup.is_anchors(),
-                !self.setup.is_zero_fee_htlc(),
+                &features,
                 &txkeys.broadcaster_delayed_payment_key,
                 &txkeys.revocation_key,
             );
-            let htlc_redeemscript = get_htlc_redeemscript(&htlc, self.setup.is_anchors(), &txkeys);
+            let htlc_redeemscript = get_htlc_redeemscript(&htlc, &features, &txkeys);
             let sig_hash_type = if self.setup.is_anchors() {
                 EcdsaSighashType::SinglePlusAnyoneCanPay
             } else {

@@ -19,12 +19,12 @@ use bitcoin::{
     secp256k1, EcdsaSighashType, PackedLockTime, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 use bitcoin::{Network, Script};
-use lightning::chain::keysinterface::{
+use lightning::ln::msgs::{DecodeError, UnsignedGossipMessage};
+use lightning::ln::script::ShutdownScript;
+use lightning::sign::{
     DelayedPaymentOutputDescriptor, EntropySource, InMemorySigner, KeyMaterial, NodeSigner,
     Recipient, SignerProvider, SpendableOutputDescriptor, StaticPaymentOutputDescriptor,
 };
-use lightning::ln::msgs::{DecodeError, UnsignedGossipMessage};
-use lightning::ln::script::ShutdownScript;
 use lightning::util::ser::Writeable;
 
 use super::derive::{self, KeyDerivationStyle};
@@ -547,14 +547,14 @@ impl EntropySource for MyKeysManager {
 impl SignerProvider for MyKeysManager {
     type Signer = InMemorySigner;
 
-    fn get_destination_script(&self) -> Script {
+    fn get_destination_script(&self) -> Result<Script, ()> {
         // The destination script is chosen by the local node (must be
         // in wallet or allowlisted).
         unimplemented!()
     }
 
-    fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {
-        ShutdownScript::new_p2wpkh(&WPubkeyHash::hash(&self.ldk_shutdown_pubkey.serialize()))
+    fn get_shutdown_scriptpubkey(&self) -> Result<ShutdownScript, ()> {
+        Ok(ShutdownScript::new_p2wpkh(&WPubkeyHash::hash(&self.ldk_shutdown_pubkey.serialize())))
     }
 
     fn generate_channel_keys_id(
@@ -646,7 +646,7 @@ mod tests {
     use crate::util::test_utils::{
         hex_decode, hex_encode, FixedStartingTimeFactory, TEST_CHANNEL_ID,
     };
-    use lightning::chain::keysinterface::{ChannelSigner, KeysManager};
+    use lightning::sign::{ChannelSigner, KeysManager};
     use test_log::test;
 
     #[test]

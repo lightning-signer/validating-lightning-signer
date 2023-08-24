@@ -32,9 +32,9 @@ pub trait InvoiceAttributes {
 #[derive(Clone, Debug)]
 pub enum Invoice {
     /// A BOLT11 Invoice and its raw invoice hash
-    Bolt11(bolt11::Invoice),
+    Bolt11(bolt11::Bolt11Invoice),
     /// A BOLT12 Invoice
-    Bolt12(bolt12::Invoice),
+    Bolt12(bolt12::Bolt12Invoice),
 }
 
 impl InvoiceAttributes for Invoice {
@@ -62,8 +62,8 @@ impl InvoiceAttributes for Invoice {
     fn description(&self) -> String {
         match self {
             Invoice::Bolt11(bolt11) => match bolt11.description() {
-                bolt11::InvoiceDescription::Direct(d) => d.to_string(),
-                bolt11::InvoiceDescription::Hash(h) => format!("hash: {:?}", h),
+                bolt11::Bolt11InvoiceDescription::Direct(d) => d.to_string(),
+                bolt11::Bolt11InvoiceDescription::Hash(h) => format!("hash: {:?}", h),
             },
             Invoice::Bolt12(bolt12) => bolt12.description().0.to_string(),
         }

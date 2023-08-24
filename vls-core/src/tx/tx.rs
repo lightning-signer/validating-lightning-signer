@@ -11,8 +11,8 @@ use bitcoin::blockdata::opcodes::all::{
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::util::address::Payload;
 use bitcoin::{Script, TxOut};
-use lightning::chain::keysinterface::{ChannelSigner, InMemorySigner};
 use lightning::ln::PaymentHash;
+use lightning::sign::{ChannelSigner, InMemorySigner};
 
 use crate::channel::ChannelSetup;
 use crate::policy::error::{

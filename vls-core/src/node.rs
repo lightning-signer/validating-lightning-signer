@@ -27,20 +27,20 @@ use bitcoin::{secp256k1, Address, PrivateKey, SchnorrSighashType, Transaction, T
 use bitcoin::{EcdsaSighashType, Network, OutPoint, Script};
 use bitcoin_consensus_derive::{Decodable, Encodable};
 use lightning::chain;
-use lightning::chain::keysinterface::{
-    ChannelSigner, EntropySource, KeyMaterial, NodeSigner, Recipient, SignerProvider,
-    SpendableOutputDescriptor,
-};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
 };
 use lightning::ln::msgs::UnsignedGossipMessage;
 use lightning::ln::script::ShutdownScript;
 use lightning::ln::{PaymentHash, PaymentPreimage};
+use lightning::sign::{
+    ChannelSigner, EntropySource, KeyMaterial, NodeSigner, Recipient, SignerProvider,
+    SpendableOutputDescriptor,
+};
 use lightning::util::invoice::construct_invoice_preimage;
 use lightning::util::logger::Logger;
 use lightning::util::ser::Writeable;
-use lightning_invoice::{RawDataPart, RawHrp, RawInvoice, SignedRawInvoice};
+use lightning_invoice::{RawBolt11Invoice, RawDataPart, RawHrp, SignedRawBolt11Invoice};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -2120,7 +2120,6 @@ impl Node {
             txid: setup.funding_outpoint.txid,
             index: setup.funding_outpoint.vout as u16,
         });
-        let opt_non_zero_fee_anchors = if setup.is_zero_fee_htlc() { Some(()) } else { None };
 
         let channel_transaction_parameters = ChannelTransactionParameters {
             holder_pubkeys: holder_pubkeys.clone(),
@@ -2131,8 +2130,7 @@ impl Node {
                 selected_contest_delay: setup.counterparty_selected_contest_delay,
             }),
             funding_outpoint,
-            opt_anchors: if setup.is_anchors() { Some(()) } else { None },
-            opt_non_zero_fee_anchors,
+            channel_type_features: setup.features(),
         };
         channel_transaction_parameters
     }
@@ -2175,7 +2173,7 @@ impl Node {
     /// Get shutdown_pubkey to use as PublicKey at channel closure
     // FIXME - this method is deprecated
     pub fn get_ldk_shutdown_scriptpubkey(&self) -> ShutdownScript {
-        self.keys_manager.get_shutdown_scriptpubkey()
+        self.keys_manager.get_shutdown_scriptpubkey().unwrap()
     }
 
     /// Get the layer-1 xprv
@@ -2267,14 +2265,14 @@ impl Node {
         &self,
         hrp_bytes: &[u8],
         invoice_data: &[u5],
-    ) -> Result<SignedRawInvoice, Status> {
+    ) -> Result<SignedRawBolt11Invoice, Status> {
         let hrp: RawHrp = String::from_utf8(hrp_bytes.to_vec())
             .map_err(|_| invalid_argument("invoice hrp not utf-8"))?
             .parse()
             .map_err(|e| invalid_argument(format!("parse error: {}", e)))?;
         let data = RawDataPart::from_base32(invoice_data)
             .map_err(|e| invalid_argument(format!("parse error: {}", e)))?;
-        let raw_invoice = RawInvoice { hrp, data };
+        let raw_invoice = RawBolt11Invoice { hrp, data };
 
         let invoice_preimage = construct_invoice_preimage(&hrp_bytes, &invoice_data);
         let secp_ctx = Secp256k1::signing_only();

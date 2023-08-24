@@ -9,17 +9,19 @@ use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
 use bitcoin::secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey};
 use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::{Script, Transaction, TxOut};
-use lightning::chain::keysinterface::{
-    ChannelSigner, EcdsaChannelSigner, EntropySource, KeyMaterial, NodeSigner, Recipient,
-    SignerProvider, SpendableOutputDescriptor, WriteableEcdsaChannelSigner,
-};
+use lightning::events::bump_transaction::HTLCDescriptor;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys,
 };
+use lightning::ln::features::ChannelTypeFeatures;
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
 use lightning::ln::{chan_utils, PaymentPreimage};
+use lightning::sign::{
+    ChannelSigner, EcdsaChannelSigner, EntropySource, KeyMaterial, NodeSigner, Recipient,
+    SignerProvider, SpendableOutputDescriptor, WriteableEcdsaChannelSigner,
+};
 use lightning::util::ser::{Readable, Writeable, Writer};
 
 use log::{debug, error, info};
@@ -191,10 +193,9 @@ impl LoopbackChannelSigner {
         vec![1]
     }
 
-    fn is_anchors(&self) -> bool {
+    fn features(&self) -> ChannelTypeFeatures {
         let setup = self.get_channel_setup().expect("not ready");
-        setup.commitment_type == CommitmentType::Anchors
-            || setup.commitment_type == CommitmentType::AnchorsZeroFeeHtlc
+        setup.features()
     }
 }
 
@@ -432,7 +433,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
     ) -> Result<Signature, ()> {
         let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
         let tx_keys = self.make_counterparty_tx_keys(&per_commitment_point, secp_ctx)?;
-        let redeem_script = chan_utils::get_htlc_redeemscript(&htlc, self.is_anchors(), &tx_keys);
+        let redeem_script = chan_utils::get_htlc_redeemscript(&htlc, &self.features(), &tx_keys);
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2
@@ -453,6 +454,16 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         Ok(sig)
     }
 
+    fn sign_holder_htlc_transaction(
+        &self,
+        _htlc_tx: &Transaction,
+        _input: usize,
+        _htlc_descriptor: &HTLCDescriptor,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<Signature, ()> {
+        todo!("sign_holder_htlc_transaction - #381")
+    }
+
     fn sign_counterparty_htlc_transaction(
         &self,
         htlc_tx: &Transaction,
@@ -463,7 +474,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         let chan_keys = self.make_counterparty_tx_keys(per_commitment_point, secp_ctx)?;
-        let redeem_script = chan_utils::get_htlc_redeemscript(htlc, self.is_anchors(), &chan_keys);
+        let redeem_script = chan_utils::get_htlc_redeemscript(htlc, &self.features(), &chan_keys);
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2
@@ -538,15 +549,15 @@ impl WriteableEcdsaChannelSigner for LoopbackChannelSigner {}
 impl SignerProvider for LoopbackSignerKeysInterface {
     type Signer = LoopbackChannelSigner;
 
-    fn get_destination_script(&self) -> Script {
+    fn get_destination_script(&self) -> Result<Script, ()> {
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
         let pubkey = self.get_node().get_wallet_pubkey(&wallet_path).expect("pubkey");
-        Script::new_v0_p2wpkh(&WPubkeyHash::hash(&pubkey.serialize()))
+        Ok(Script::new_v0_p2wpkh(&WPubkeyHash::hash(&pubkey.serialize())))
     }
 
-    fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {
+    fn get_shutdown_scriptpubkey(&self) -> Result<ShutdownScript, ()> {
         // FIXME - this method is deprecated
-        self.get_node().get_ldk_shutdown_scriptpubkey()
+        Ok(self.get_node().get_ldk_shutdown_scriptpubkey())
     }
 
     fn generate_channel_keys_id(

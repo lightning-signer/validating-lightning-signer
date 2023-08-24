@@ -19,7 +19,7 @@ use lightning_signer::channel::{Channel, ChannelBase, ChannelSetup, CommitmentTy
 use lightning_signer::invoice::Invoice;
 use lightning_signer::lightning;
 use lightning_signer::lightning_invoice::{
-    Currency, InvoiceBuilder, RawDataPart, RawHrp, RawInvoice,
+    Currency, InvoiceBuilder, RawDataPart, RawHrp, RawBolt11Invoice,
 };
 use lightning_signer::node::{Node, NodeConfig, NodeServices};
 use lightning_signer::persist::{DummyPersister, Persist};
@@ -130,7 +130,7 @@ fn make_test_invoice(payee: &Arc<Node>, description: &str, payment_hash: Payment
     let (hrp_bytes, invoice_data) = build_test_invoice(description, &payment_hash);
     let hrp: RawHrp = String::from_utf8(hrp_bytes.to_vec()).expect("utf8").parse().expect("hrp");
     let data = RawDataPart::from_base32(&invoice_data).expect("base32");
-    let raw_invoice = RawInvoice { hrp, data };
+    let raw_invoice = RawBolt11Invoice { hrp, data };
     let sig = payee.sign_invoice(&hrp_bytes, &invoice_data).unwrap();
     raw_invoice.sign::<_, ()>(|_| Ok(sig)).unwrap().try_into().expect("invoice")
 }

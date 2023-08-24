@@ -12,9 +12,9 @@ use bitcoin::{
     Sighash, Transaction,
 };
 use core::time::Duration;
-use lightning::chain::keysinterface::InMemorySigner;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::ln::PaymentHash;
+use lightning::sign::InMemorySigner;
 use log::{debug, error};
 use serde_derive::{Deserialize, Serialize};
 use txoo::proof::{TxoProof, VerifyError};

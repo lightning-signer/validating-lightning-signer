@@ -160,7 +160,8 @@ pub fn decode_commitment_tx(
 ) -> (Option<u32>, Vec<u32>) {
     let cp_params = params.counterparty_parameters.as_ref().unwrap();
 
-    let opt_anchors = params.opt_anchors.is_some();
+    let opt_anchors = params.channel_type_features.supports_anchors_nonzero_fee_htlc_tx()
+        || params.channel_type_features.supports_anchors_zero_fee_htlc_tx();
     let holder_pubkeys = &params.holder_pubkeys;
     let cp_pubkeys = &cp_params.pubkeys;
 
@@ -285,6 +286,7 @@ mod tests {
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::Transaction;
     use lightning::ln::chan_utils::{htlc_success_tx_weight, htlc_timeout_tx_weight};
+    use lightning::ln::features::ChannelTypeFeatures;
 
     #[test]
     fn test_parse_closing_tx_holder() {
@@ -377,11 +379,14 @@ mod tests {
 
     #[test]
     fn test_estimate_feerate() {
+        let non_anchor_features = ChannelTypeFeatures::empty();
+        let mut anchor_features = ChannelTypeFeatures::empty();
+        anchor_features.set_anchors_zero_fee_htlc_tx_optional();
         let weights = vec![
-            htlc_timeout_tx_weight(false),
-            htlc_timeout_tx_weight(true),
-            htlc_success_tx_weight(false),
-            htlc_success_tx_weight(true),
+            htlc_timeout_tx_weight(&non_anchor_features),
+            htlc_timeout_tx_weight(&anchor_features),
+            htlc_success_tx_weight(&non_anchor_features),
+            htlc_success_tx_weight(&anchor_features),
         ];
 
         // make sure the feerate is not lower than 253 at the low end,

@@ -25,7 +25,6 @@ use chain::chaininterface;
 use lightning::chain;
 use lightning::chain::chainmonitor::MonitorUpdateId;
 use lightning::chain::channelmonitor::MonitorEvent;
-use lightning::chain::keysinterface::{ChannelSigner, InMemorySigner};
 use lightning::chain::transaction::OutPoint;
 use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{
@@ -34,7 +33,9 @@ use lightning::ln::chan_utils::{
     ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters,
     DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
+use lightning::ln::features::ChannelTypeFeatures;
 use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage, PaymentSecret};
+use lightning::sign::{ChannelSigner, InMemorySigner};
 use lightning::util::test_utils;
 use lightning_invoice::{Currency, InvoiceBuilder};
 use push_decoder::Listener;
@@ -390,6 +391,8 @@ pub fn make_test_channel_keys() -> InMemorySigner {
         [0; 32],
     );
     // This needs to match make_test_channel_setup above.
+    let mut features = ChannelTypeFeatures::empty();
+    features.set_anchors_zero_fee_htlc_tx_optional();
     inmemkeys.provide_channel_parameters(&ChannelTransactionParameters {
         holder_pubkeys: inmemkeys.pubkeys().clone(),
         holder_selected_contest_delay: 5,
@@ -399,8 +402,7 @@ pub fn make_test_channel_keys() -> InMemorySigner {
             selected_contest_delay: 5,
         }),
         funding_outpoint: Some(OutPoint { txid: Txid::all_zeros(), index: 0 }),
-        opt_anchors: None,
-        opt_non_zero_fee_anchors: Some(()),
+        channel_type_features: features,
     });
     inmemkeys
 }
@@ -702,6 +704,10 @@ pub fn make_test_counterparty_keys(
                 [0u8; 32],              // Key derivation parameters
                 [0; 32],
             );
+
+            let mut features = ChannelTypeFeatures::empty();
+            features.set_anchors_zero_fee_htlc_tx_optional();
+
             // This needs to match make_test_channel_setup above.
             cpkeys.provide_channel_parameters(&ChannelTransactionParameters {
                 holder_pubkeys: cpkeys.pubkeys().clone(),
@@ -712,8 +718,7 @@ pub fn make_test_counterparty_keys(
                     selected_contest_delay: 6,
                 }),
                 funding_outpoint: Some(OutPoint { txid: Txid::all_zeros(), index: 0 }),
-                opt_anchors: None,
-                opt_non_zero_fee_anchors: Some(()),
+                channel_type_features: features,
             });
             Ok(cpkeys)
         })
@@ -1194,13 +1199,12 @@ pub fn counterparty_sign_holder_commitment(
                     build_feerate,
                     chan_ctx.setup.counterparty_selected_contest_delay,
                     htlc,
-                    chan_ctx.setup.is_anchors(),
-                    !chan_ctx.setup.is_zero_fee_htlc(),
+                    &chan_ctx.setup.features(),
                     &txkeys.broadcaster_delayed_payment_key,
                     &txkeys.revocation_key,
                 );
                 let htlc_redeemscript =
-                    get_htlc_redeemscript(&htlc, chan_ctx.setup.is_anchors(), &keys);
+                    get_htlc_redeemscript(&htlc, &chan_ctx.setup.features(), &keys);
                 let sig_hash_type = if chan_ctx.setup.is_anchors() {
                     EcdsaSighashType::SinglePlusAnyoneCanPay
                 } else {
@@ -1404,8 +1408,12 @@ pub fn build_tx_scripts(
 
     let mut txouts: Vec<(TxOut, (Option<HTLCOutputInCommitment>, Script))> = Vec::new();
 
+    let features = channel_parameters.channel_type_features();
+    let is_anchors = features.supports_anchors_nonzero_fee_htlc_tx()
+        || features.supports_anchors_zero_fee_htlc_tx();
+
     if to_countersignatory_value_sat > 0 {
-        let (redeem_script, script_pubkey) = if channel_parameters.opt_anchors() {
+        let (redeem_script, script_pubkey) = if is_anchors {
             let script = get_to_countersignatory_with_anchors_redeemscript(
                 &countersignatory_pubkeys.payment_point,
             );
@@ -1431,7 +1439,7 @@ pub fn build_tx_scripts(
         ));
     }
 
-    if channel_parameters.opt_anchors() {
+    if is_anchors {
         if to_broadcaster_value_sat > 0 || !htlcs.is_empty() {
             let anchor_script = get_anchor_redeemscript(broadcaster_funding_key);
             txouts.push((
@@ -1456,7 +1464,7 @@ pub fn build_tx_scripts(
     }
 
     for htlc in htlcs {
-        let script = get_htlc_redeemscript(&htlc, channel_parameters.opt_anchors(), &keys);
+        let script = get_htlc_redeemscript(&htlc, features, &keys);
         let txout = TxOut { script_pubkey: script.to_v0_p2wsh(), value: htlc.amount_msat / 1000 };
         txouts.push((txout, (Some(htlc.clone()), script)));
     }
