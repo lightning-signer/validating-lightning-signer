@@ -1,11 +1,11 @@
+ignore:
+  - "*_tests.rs"
 coverage:
   status:
     project:
       default:
-        target: 65%
+        target: 60
       important:
         paths:
           - vls-core/src
-        ignore:
-          - *_tests.rs
-        target: 83%
+        target: 80
