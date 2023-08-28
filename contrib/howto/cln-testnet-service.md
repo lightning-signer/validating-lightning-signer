@@ -40,7 +40,7 @@ Add the following lines only if you are using `SERIAL`:
 ```
 subdaemon=hsmd:remote_hsmd_serial
 max-concurrent-htlcs=4
-    ```
+```
 
 Add the following line instead if you are using `SOCKET`:
 ```
@@ -86,9 +86,9 @@ sudo chown -R cln:cln  /home/cln/
 Update `~cln/.lightning/testnet-env` to the installed CLN version:
 ```
 sudo -u cln bash -c 'cd ~cln/.lightning/ && \
-  grep -v GREENLIGHT_VERSION testnet-env > testnet-env.new && \
-  echo "GREENLIGHT_VERSION=`lightningd --version`" >> testnet-env.new && \
-  mv testnet-env.new testnet-env'
+grep -v GREENLIGHT_VERSION testnet-env > testnet-env.new && \
+echo "GREENLIGHT_VERSION=`lightningd --version`" >> testnet-env.new && \
+mv testnet-env.new testnet-env'
 ```
 
 Install systemd unit file:
