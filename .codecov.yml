@@ -2,10 +2,10 @@ coverage:
   status:
     project:
       default:
-        target: 63.5%
+        target: 65%
       important:
         paths:
-          - vls-core/src/node.rs
-          - vls-core/src/channel.rs
-          - vls-core/src/policy/simple_validator.rs
-        target: 87%
+          - vls-core/src
+        ignore:
+          - *_tests.rs
+        target: 83%
