@@ -1,6 +1,6 @@
 #[cfg(feature = "postgres")]
 pub mod postgres;
-pub mod sled;
+pub mod redb;
 
 use crate::model::Value;
 use thiserror::Error;
@@ -11,9 +11,10 @@ use tonic::async_trait;
 pub enum Error {
     /// underlying database error
     #[error("database error: {0}")]
-    Sled(#[from] ::sled::Error),
+    Redb(#[from] redb::RedbError),
     #[cfg(feature = "postgres")]
     #[error("database error: {0}")]
+    /// underlying database error
     Postgres(#[from] postgres::PgError),
     /// version conflicts detected - existing values are returned
     #[error("put conflict: {0:?}")]

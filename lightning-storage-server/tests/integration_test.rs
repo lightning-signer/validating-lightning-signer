@@ -1,18 +1,9 @@
 #[cfg(feature = "test-postgres")]
 use lightning_storage_server::database::postgres;
-use lightning_storage_server::database::sled::SledDatabase;
+use lightning_storage_server::database::redb::RedbDatabase;
 use lightning_storage_server::{Database, Error, Value};
 use std::sync::Arc;
 use tempfile;
-
-#[test]
-fn test_sled() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = sled::open(&dir).unwrap();
-    db.insert(b"yo!", b"v1").unwrap();
-    assert_eq!(&db.get(b"yo!").unwrap().unwrap(), b"v1");
-    dir.close().unwrap();
-}
 
 fn make_value(v: u8) -> Value {
     Value { version: 0, value: vec![v] }
@@ -22,7 +13,7 @@ fn make_value(v: u8) -> Value {
 async fn test_sled_database() {
     let dir = tempfile::tempdir().unwrap();
     println!("tempdir: {}", dir.path().display());
-    let db = SledDatabase::new(dir.path().to_str().unwrap()).await.unwrap();
+    let db = RedbDatabase::new(dir.path().to_str().unwrap()).await.unwrap();
     do_basic_with_db(Arc::new(db)).await;
     dir.close().unwrap();
 }

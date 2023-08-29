@@ -21,7 +21,7 @@ dangerous-flags = []
 crypt = []
 
 [dependencies]
-sled = "0.34"
+redb = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_cbor = "0.11"
 tokio = { version = "1.27", features = ["macros", "rt-multi-thread"] }
@@ -59,9 +59,6 @@ path = "src/server_main.rs"
 [[bin]]
 name = "lss-cli"
 path = "src/client_main.rs"
-
-[[example]]
-name = "test_concurrent_access"
 
 [[example]]
 name = "database_bench"
