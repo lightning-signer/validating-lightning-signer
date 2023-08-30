@@ -933,8 +933,9 @@ dependencies = [
 
 [[package]]
 name = "heapmon"
-version = "0.1.1"
-source = "git+https://gitlab.com/lightning-signer/heapmon?rev=a374805e55fa0bd089ff1db18a836e330219bc62#a374805e55fa0bd089ff1db18a836e330219bc62"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf84b8972db62c05ac874852a5b78521626f9ab0de3a8dd5a2a49b7c90cef562"
 dependencies = [
  "backtrace",
  "chrono",
