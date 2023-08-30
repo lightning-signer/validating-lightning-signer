@@ -5,7 +5,7 @@ use log::{error, info, warn};
 
 #[cfg(feature = "postgres")]
 use crate::database::postgres;
-use crate::database::sled::SledDatabase;
+use crate::database::redb::RedbDatabase;
 use crate::server::LightningStorageServer;
 use crate::server::StorageServer;
 use crate::util::{init_secret_key, read_public_key, read_secret_key, setup_logging};
@@ -147,9 +147,9 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         ),
         Some("sled") => Box::new(
             if clear_db {
-                SledDatabase::new_and_clear(datadir.clone()).await
+                RedbDatabase::new_and_clear(datadir.clone()).await
             } else {
-                SledDatabase::new(datadir.clone()).await
+                RedbDatabase::new(datadir.clone()).await
             }
             .unwrap(),
         ),

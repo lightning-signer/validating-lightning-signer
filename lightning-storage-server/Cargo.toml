@@ -7,7 +7,7 @@ edition = "2021"
 description = "A library for implementing a Lightning signer, which externalizes and secures cryptographic operations."
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
-rust-version = "1.66.0"
+rust-version = "1.67.0"
 
 [lib]
 name = "lightning_storage_server"
@@ -21,7 +21,7 @@ dangerous-flags = []
 crypt = []
 
 [dependencies]
-sled = "0.34"
+redb = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_cbor = "0.11"
 tokio = { version = "1.27", features = ["macros", "rt-multi-thread"] }
@@ -59,9 +59,6 @@ path = "src/server_main.rs"
 [[bin]]
 name = "lss-cli"
 path = "src/client_main.rs"
-
-[[example]]
-name = "test_concurrent_access"
 
 [[example]]
 name = "database_bench"
