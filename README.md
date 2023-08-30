@@ -49,6 +49,16 @@ To enable logging for a failing test (adjust log level to preference):
 
     RUST_LOG=trace cargo test
     
+### Using llvm-cov
+
+Dependencies:
+
+    cargo +stable install cargo-llvm-cov --locked
+    
+Run coverage:
+
+    ./scripts/run-llvm-cov
+
 ### Using [kcov](https://github.com/SimonKagstrom/kcov) for Code Coverage
 
 Dependencies:

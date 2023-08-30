@@ -130,21 +130,21 @@ coverage:
     key: vls-coverage
     paths:
       - .cache/cargo
+  coverage: '/^CORE_LINE_COVERAGE: \d+.\d+$/'
   script:
     - rustup show
     - rustup component add rustfmt
-    - cargo install cargo-kcov
+    - cargo install cargo-llvm-cov
     - apt-get update
     - apt-get install -y protobuf-compiler
-    - apt-get install -y cmake g++ pkg-config jq
-    - apt-get install -y libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
-    - cargo kcov --print-install-kcov-sh | sh
-    - CARGO_TARGET_DIR=target/kcov FIXTURES_DIR=`pwd`/data cargo kcov --verbose --all --features test_utils,kcov
-      --lib --test functional_test
-      -- --verify
-      --exclude-region="kcov-ignore-start:kcov-ignore-end"
-      --exclude-pattern="${CARGO_HOME},/usr/include,/usr/src/debug,src/util/loopback.rs"
-    - bash <(curl -s https://codecov.io/bash) -t "${CODECOV_TOKEN}"
+    - apt-get install -y jq
+    - ./scripts/run-llvm-cov
+    - bash <(curl -s https://codecov.io/bash) -f target/codecov.json -t "${CODECOV_TOKEN}"
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: target/cobertura.xml
 
 cargo-audit:
   tags: [ saas-linux-medium-amd64 ]
