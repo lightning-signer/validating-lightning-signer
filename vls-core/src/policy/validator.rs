@@ -1094,8 +1094,6 @@ fn min_opt(a_opt: Option<u64>, b_opt: Option<u64>) -> Option<u64> {
 mod tests {
     use super::*;
     use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
-    use crate::util::test_utils::make_dummy_pubkey;
-    use bitcoin::secp256k1::PublicKey;
     use lightning::ln::PaymentHash;
 
     #[test]
@@ -1630,13 +1628,12 @@ mod tests {
     #[test]
     fn payments_summary_test() {
         let mut state = EnforcementState::new(1000000);
-        let dummy_pubkey = make_dummy_pubkey(1);
 
         // COUNTERPARTY
         let payment_hash = PaymentHash([3; 32]);
         let htlcs = vec![HTLCInfo2 { value_sat: 1000, payment_hash, cltv_expiry: 100 }];
 
-        let cp_tx = make_tx(true, dummy_pubkey, htlcs);
+        let cp_tx = make_tx(true, htlcs);
 
         // no payments yet
         assert!(state.payments_summary(None, None).is_empty());
@@ -1651,7 +1648,7 @@ mod tests {
         assert_eq!(sum.get(&payment_hash), Some(&1000));
 
         // pending failed HTLC
-        let cp_tx2 = make_tx(true, dummy_pubkey, vec![]);
+        let cp_tx2 = make_tx(true, vec![]);
         let sum = state.payments_summary(None, Some(&cp_tx2));
         assert_eq!(sum.get(&payment_hash), Some(&0));
 
@@ -1662,7 +1659,7 @@ mod tests {
         // HOLDER
         let payment_hash = PaymentHash([4; 32]);
         let htlcs = vec![HTLCInfo2 { value_sat: 1000, payment_hash, cltv_expiry: 100 }];
-        let holder_tx = make_tx(false, dummy_pubkey, htlcs);
+        let holder_tx = make_tx(false, htlcs);
 
         // no payments yet
         assert!(state.payments_summary(None, None).is_empty());
@@ -1677,7 +1674,7 @@ mod tests {
         assert_eq!(sum.get(&payment_hash), Some(&1000));
 
         // pending failed HTLC
-        let holder_tx2 = make_tx(false, dummy_pubkey, vec![]);
+        let holder_tx2 = make_tx(false, vec![]);
         let sum = state.payments_summary(Some(&holder_tx2), None);
         assert_eq!(sum.get(&payment_hash), Some(&0));
 
@@ -1689,13 +1686,12 @@ mod tests {
     #[test]
     fn incoming_payments_summary_test() {
         let mut state = EnforcementState::new(1000000);
-        let dummy_pubkey = make_dummy_pubkey(1);
 
         let payment_hash = PaymentHash([3; 32]);
         let htlcs = vec![HTLCInfo2 { value_sat: 1000, payment_hash, cltv_expiry: 100 }];
 
-        let cp_tx = make_tx(false, dummy_pubkey, htlcs.clone());
-        let holder_tx = make_tx(true, dummy_pubkey, htlcs.clone());
+        let cp_tx = make_tx(false, htlcs.clone());
+        let holder_tx = make_tx(true, htlcs.clone());
 
         // no payments yet
         assert!(state.incoming_payments_summary(None, None).is_empty());
@@ -1715,8 +1711,8 @@ mod tests {
         assert_eq!(sum.get(&payment_hash), Some(&1000));
 
         // pending failed HTLC
-        let holder_tx2 = make_tx(true, dummy_pubkey, vec![]);
-        let cp_tx2 = make_tx(false, dummy_pubkey, vec![]);
+        let holder_tx2 = make_tx(true, vec![]);
+        let cp_tx2 = make_tx(false, vec![]);
 
         let sum = state.incoming_payments_summary(None, Some(&cp_tx2));
         assert_eq!(sum.get(&payment_hash), Some(&0));
@@ -1725,19 +1721,11 @@ mod tests {
         assert_eq!(sum.get(&payment_hash), Some(&0));
     }
 
-    fn make_tx(
-        is_received: bool,
-        dummy_pubkey: PublicKey,
-        htlcs: Vec<HTLCInfo2>,
-    ) -> CommitmentInfo2 {
+    fn make_tx(is_received: bool, htlcs: Vec<HTLCInfo2>) -> CommitmentInfo2 {
         CommitmentInfo2::new(
             is_received,
-            dummy_pubkey,
             9000,
-            dummy_pubkey,
-            dummy_pubkey,
             10000,
-            6,
             if is_received { vec![] } else { htlcs.clone() },
             if is_received { htlcs.clone() } else { vec![] },
             1000,
