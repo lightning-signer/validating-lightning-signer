@@ -133,13 +133,8 @@ pub trait PreimageMap {
 #[allow(missing_docs)]
 pub struct CommitmentInfo2 {
     pub is_counterparty_broadcaster: bool,
-    pub to_countersigner_pubkey: PublicKey,
     pub to_countersigner_value_sat: u64,
-    /// Broadcaster revocation pubkey
-    pub revocation_pubkey: PublicKey,
-    pub to_broadcaster_delayed_pubkey: PublicKey,
     pub to_broadcaster_value_sat: u64,
-    pub to_self_delay: u16,
     pub offered_htlcs: Vec<HTLCInfo2>,
     pub received_htlcs: Vec<HTLCInfo2>,
     pub feerate_per_kw: u32,
@@ -149,12 +144,8 @@ impl CommitmentInfo2 {
     /// Construct a normalized CommitmentInfo2
     pub fn new(
         is_counterparty_broadcaster: bool,
-        to_countersigner_pubkey: PublicKey,
         to_countersigner_value_sat: u64,
-        revocation_pubkey: PublicKey,
-        to_broadcaster_delayed_pubkey: PublicKey,
         to_broadcaster_value_sat: u64,
-        to_self_delay: u16,
         mut offered_htlcs: Vec<HTLCInfo2>,
         mut received_htlcs: Vec<HTLCInfo2>,
         feerate_per_kw: u32,
@@ -163,12 +154,8 @@ impl CommitmentInfo2 {
         received_htlcs.sort();
         CommitmentInfo2 {
             is_counterparty_broadcaster,
-            to_countersigner_pubkey,
             to_countersigner_value_sat,
-            revocation_pubkey,
-            to_broadcaster_delayed_pubkey,
             to_broadcaster_value_sat,
-            to_self_delay,
             offered_htlcs,
             received_htlcs,
             feerate_per_kw,

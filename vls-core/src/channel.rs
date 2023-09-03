@@ -561,27 +561,8 @@ impl Channel {
         )
     }
 
-    fn derive_counterparty_payment_pubkey(
-        &self,
-        remote_per_commitment_point: &PublicKey,
-    ) -> Result<PublicKey, Status> {
-        let holder_points = self.keys.pubkeys();
-        let counterparty_key = if self.setup.is_static_remotekey() {
-            holder_points.payment_point
-        } else {
-            derive_public_key(
-                &self.secp_ctx,
-                &remote_per_commitment_point,
-                &holder_points.payment_point,
-            )
-            .map_err(|err| internal_error(format!("could not derive counterparty_key: {}", err)))?
-        };
-        Ok(counterparty_key)
-    }
-
     /// Sign a counterparty commitment transaction after rebuilding it
     /// from the supplied arguments.
-    // TODO anchors support once LDK supports it
     pub fn sign_counterparty_commitment_tx_phase2(
         &mut self,
         remote_per_commitment_point: &PublicKey,
@@ -597,7 +578,6 @@ impl Channel {
         validator.validate_channel_value(&self.setup)?;
 
         let info2 = self.build_counterparty_commitment_info(
-            remote_per_commitment_point,
             to_holder_value_sat,
             to_counterparty_value_sat,
             offered_htlcs.clone(),
@@ -877,7 +857,6 @@ impl Channel {
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
         let per_commitment_point = &self.get_per_commitment_point(commitment_number)?;
         let info2 = self.build_holder_commitment_info(
-            &per_commitment_point,
             to_holder_value_sat,
             to_counterparty_value_sat,
             offered_htlcs,
@@ -1138,7 +1117,6 @@ impl Channel {
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         let info2 = self.build_holder_commitment_info(
-            &per_commitment_point,
             to_holder_value_sat,
             to_counterparty_value_sat,
             offered_htlcs.clone(),
@@ -1698,40 +1676,16 @@ impl ChannelBalance {
 impl Channel {
     pub(crate) fn build_counterparty_commitment_info(
         &self,
-        remote_per_commitment_point: &PublicKey,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
         feerate_per_kw: u32,
     ) -> Result<CommitmentInfo2, Status> {
-        let holder_points = self.keys.pubkeys();
-        let secp_ctx = &self.secp_ctx;
-
-        let to_counterparty_delayed_pubkey = derive_public_key(
-            secp_ctx,
-            &remote_per_commitment_point,
-            &self.setup.counterparty_points.delayed_payment_basepoint,
-        )
-        .map_err(|err| {
-            internal_error(format!("could not derive to_holder_delayed_key: {}", err))
-        })?;
-        let counterparty_payment_pubkey =
-            self.derive_counterparty_payment_pubkey(remote_per_commitment_point)?;
-        let revocation_pubkey = chan_utils::derive_public_revocation_key(
-            secp_ctx,
-            &remote_per_commitment_point,
-            &holder_points.revocation_basepoint,
-        );
-        let to_holder_pubkey = counterparty_payment_pubkey.clone();
         Ok(CommitmentInfo2::new(
             true,
-            to_holder_pubkey,
             to_holder_value_sat,
-            revocation_pubkey,
-            to_counterparty_delayed_pubkey,
             to_counterparty_value_sat,
-            self.setup.holder_selected_contest_delay,
             offered_htlcs,
             received_htlcs,
             feerate_per_kw,
@@ -1740,53 +1694,16 @@ impl Channel {
 
     fn build_holder_commitment_info(
         &self,
-        per_commitment_point: &PublicKey,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
         feerate_per_kw: u32,
     ) -> Result<CommitmentInfo2, Status> {
-        let holder_points = self.keys.pubkeys();
-        let counterparty_points = self.keys.counterparty_pubkeys();
-        let secp_ctx = &self.secp_ctx;
-
-        let to_holder_delayed_pubkey = derive_public_key(
-            secp_ctx,
-            &per_commitment_point,
-            &holder_points.delayed_payment_basepoint,
-        )
-        .map_err(|err| {
-            internal_error(format!("could not derive to_holder_delayed_pubkey: {}", err))
-        })?;
-
-        let counterparty_pubkey = if self.setup.is_static_remotekey() {
-            counterparty_points.payment_point
-        } else {
-            derive_public_key(
-                &self.secp_ctx,
-                &per_commitment_point,
-                &counterparty_points.payment_point,
-            )
-            .map_err(|err| {
-                internal_error(format!("could not derive counterparty_pubkey: {}", err))
-            })?
-        };
-
-        let revocation_pubkey = chan_utils::derive_public_revocation_key(
-            secp_ctx,
-            &per_commitment_point,
-            &counterparty_points.revocation_basepoint,
-        );
-        let to_counterparty_pubkey = counterparty_pubkey.clone();
         Ok(CommitmentInfo2::new(
             false,
-            to_counterparty_pubkey,
             to_counterparty_value_sat,
-            revocation_pubkey,
-            to_holder_delayed_pubkey,
             to_holder_value_sat,
-            self.setup.counterparty_selected_contest_delay,
             offered_htlcs,
             received_htlcs,
             feerate_per_kw,
@@ -1823,7 +1740,6 @@ impl Channel {
         )?;
 
         let info2 = self.build_counterparty_commitment_info(
-            remote_per_commitment_point,
             info.to_countersigner_value_sat,
             info.to_broadcaster_value_sat,
             offered_htlcs,
@@ -1867,8 +1783,8 @@ impl Channel {
             remote_per_commitment_point,
             commitment_number,
             feerate_per_kw,
-            info.to_countersigner_value_sat,
-            info.to_broadcaster_value_sat,
+            info2.to_countersigner_value_sat,
+            info2.to_broadcaster_value_sat,
             htlcs,
         );
 
@@ -1973,7 +1889,6 @@ impl Channel {
         )?;
 
         let info2 = self.build_holder_commitment_info(
-            &per_commitment_point,
             info.to_broadcaster_value_sat,
             info.to_countersigner_value_sat,
             offered_htlcs.clone(),

@@ -707,14 +707,6 @@ impl Validator for SimpleValidator {
         let mut debug_on_return =
             scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info2);
 
-        if info2.to_self_delay != setup.holder_selected_contest_delay {
-            policy_err!(
-                self,
-                "policy-channel-contest-delay-range-holder",
-                "holder_selected_contest_delay mismatch"
-            );
-        }
-
         // if next_counterparty_revoke_num is 20:
         // - commit_num 19 has been revoked
         // - commit_num 20 is current, previously signed, ok to resign
@@ -821,14 +813,6 @@ impl Validator for SimpleValidator {
 
         let mut debug_on_return =
             scoped_debug_return!(estate, commit_num, commitment_point, setup, cstate, info2);
-
-        if info2.to_self_delay != setup.counterparty_selected_contest_delay {
-            policy_err!(
-                self,
-                "policy-channel-contest-delay-range-counterparty",
-                "counterparty_selected_contest_delay mismatch"
-            );
-        }
 
         // Is this a retry?
         if commit_num + 1 == estate.next_holder_commit_num {
@@ -1965,14 +1949,12 @@ mod tests {
     fn make_counterparty_info(
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
-        to_self_delay: u16,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
     ) -> CommitmentInfo2 {
         make_counterparty_info_with_feerate(
             to_holder_value_sat,
             to_counterparty_value_sat,
-            to_self_delay,
             offered_htlcs,
             received_htlcs,
             6500,
@@ -1982,22 +1964,14 @@ mod tests {
     fn make_counterparty_info_with_feerate(
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
-        to_self_delay: u16,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
         feerate_per_kw: u32,
     ) -> CommitmentInfo2 {
-        let to_holder_pubkey = make_test_pubkey(1);
-        let revocation_pubkey = make_test_pubkey(2);
-        let to_broadcaster_delayed_pubkey = make_test_pubkey(3);
         CommitmentInfo2::new(
             true,
-            to_holder_pubkey,
             to_holder_value_sat,
-            revocation_pubkey,
-            to_broadcaster_delayed_pubkey,
             to_counterparty_value_sat,
-            to_self_delay,
             offered_htlcs,
             received_htlcs,
             feerate_per_kw,
@@ -2019,8 +1993,7 @@ mod tests {
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
-        let delay = setup.holder_selected_contest_delay;
-        let info = make_counterparty_info(2_000_000, 999_000, delay, vec![], vec![]);
+        let info = make_counterparty_info(2_000_000, 999_000, vec![], vec![]);
         assert_status_ok!(validator.validate_commitment_tx(
             &enforcement_state,
             commit_num,
@@ -2117,8 +2090,7 @@ mod tests {
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
-        let delay = setup.holder_selected_contest_delay;
-        let info_bad = make_counterparty_info(2_000_000, 1_000_001, delay, vec![], vec![]);
+        let info_bad = make_counterparty_info(2_000_000, 1_000_001, vec![], vec![]);
         assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,
@@ -2146,8 +2118,7 @@ mod tests {
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
-        let delay = setup.holder_selected_contest_delay;
-        let info = make_counterparty_info(2_000_000, 899_000, delay, vec![htlc.clone()], vec![]);
+        let info = make_counterparty_info(2_000_000, 899_000, vec![htlc.clone()], vec![]);
 
         assert_status_ok!(validator.validate_commitment_tx(
             &enforcement_state,
@@ -2158,8 +2129,7 @@ mod tests {
             &info,
         ));
 
-        let info_bad =
-            make_counterparty_info(2_000_000, 1_000_000, delay, vec![htlc.clone()], vec![]);
+        let info_bad = make_counterparty_info(2_000_000, 1_000_000, vec![htlc.clone()], vec![]);
         assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,
@@ -2184,8 +2154,7 @@ mod tests {
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
-        let delay = setup.holder_selected_contest_delay;
-        let info = make_counterparty_info(2_000_000, 800_000, delay, vec![htlc.clone()], vec![]);
+        let info = make_counterparty_info(2_000_000, 800_000, vec![htlc.clone()], vec![]);
 
         let status = validator.validate_commitment_tx(
             &enforcement_state,
@@ -2207,8 +2176,7 @@ mod tests {
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
-        let delay = setup.holder_selected_contest_delay;
-        let info = make_counterparty_info(2_000_000, 999_000, delay, vec![], vec![]);
+        let info = make_counterparty_info(2_000_000, 999_000, vec![], vec![]);
 
         let status = validator.validate_commitment_tx(
             &enforcement_state,
@@ -2234,8 +2202,7 @@ mod tests {
         let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
         let htlcs = (0..1001).map(|_| make_htlc_info2(1100)).collect();
-        let delay = setup.holder_selected_contest_delay;
-        let info_bad = make_counterparty_info(99_000_000, 900_000, delay, vec![], htlcs);
+        let info_bad = make_counterparty_info(99_000_000, 900_000, vec![], htlcs);
         assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,
@@ -2258,7 +2225,6 @@ mod tests {
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
-        let delay = setup.holder_selected_contest_delay;
         let htlcs = (0..1000)
             .map(|_| HTLCInfo2 {
                 value_sat: 10001,
@@ -2266,7 +2232,7 @@ mod tests {
                 cltv_expiry: 1100,
             })
             .collect();
-        let info_bad = make_counterparty_info(99_000_000, 900_000, delay, vec![], htlcs);
+        let info_bad = make_counterparty_info(99_000_000, 900_000, vec![], htlcs);
         assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,
@@ -2291,9 +2257,8 @@ mod tests {
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
-        let delay = setup.holder_selected_contest_delay;
         let info_good =
-            make_counterparty_info(2_000_000, 990_000, delay, vec![], vec![make_htlc_info2(1005)]);
+            make_counterparty_info(2_000_000, 990_000, vec![], vec![make_htlc_info2(1005)]);
         assert_validation_ok!(validator.validate_commitment_tx(
             &enforcement_state,
             commit_num,
@@ -2303,7 +2268,7 @@ mod tests {
             &info_good,
         ));
         let info_good =
-            make_counterparty_info(2_000_000, 990_000, delay, vec![], vec![make_htlc_info2(2440)]);
+            make_counterparty_info(2_000_000, 990_000, vec![], vec![make_htlc_info2(2440)]);
         assert_validation_ok!(validator.validate_commitment_tx(
             &enforcement_state,
             commit_num,
@@ -2313,7 +2278,7 @@ mod tests {
             &info_good,
         ));
         let info_bad =
-            make_counterparty_info(2_000_000, 990_000, delay, vec![], vec![make_htlc_info2(1004)]);
+            make_counterparty_info(2_000_000, 990_000, vec![], vec![make_htlc_info2(1004)]);
         assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,
@@ -2326,7 +2291,7 @@ mod tests {
             "validate_expiry: received HTLC expiry too early: 1004 < 1005"
         );
         let info_bad =
-            make_counterparty_info(2_000_000, 990_000, delay, vec![], vec![make_htlc_info2(2441)]);
+            make_counterparty_info(2_000_000, 990_000, vec![], vec![make_htlc_info2(2441)]);
         assert_policy_err!(
             validator.validate_commitment_tx(
                 &enforcement_state,

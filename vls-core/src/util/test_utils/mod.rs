@@ -1350,18 +1350,7 @@ pub fn make_test_commitment_tx() -> Transaction {
 }
 
 pub fn make_test_commitment_info() -> CommitmentInfo2 {
-    CommitmentInfo2::new(
-        true,
-        make_test_pubkey(0x20),
-        3_000_000,
-        make_test_pubkey(0x21),
-        make_test_pubkey(0x22),
-        2_000_000,
-        10,
-        vec![],
-        vec![],
-        7500,
-    )
+    CommitmentInfo2::new(true, 3_000_000, 2_000_000, vec![], vec![], 7500)
 }
 
 pub const TEST_NODE_CONFIG: NodeConfig = NodeConfig {
@@ -1875,13 +1864,6 @@ pub fn create_test_channel_setup(dummy_pubkey: PublicKey) -> ChannelSetup {
         counterparty_shutdown_script: None,
         commitment_type: CommitmentType::StaticRemoteKey,
     }
-}
-
-pub fn make_dummy_pubkey(x: u8) -> PublicKey {
-    let secp_ctx = Secp256k1::signing_only();
-    let seckey = SecretKey::from_slice(&[x; 32]).unwrap();
-    let dummy_pubkey = PublicKey::from_secret_key(&secp_ctx, &seckey);
-    dummy_pubkey
 }
 
 pub struct ChannelBalanceBuilder {

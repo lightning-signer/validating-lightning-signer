@@ -60,26 +60,16 @@ mod tests {
             estate.previous_counterparty_point = None;
             estate.current_holder_commit_info = Some(CommitmentInfo2 {
                 is_counterparty_broadcaster: false,
-                to_countersigner_pubkey: make_test_pubkey((holder_commit_num + 100) as u8),
                 to_countersigner_value_sat: to_counterparty_value_sat,
-                revocation_pubkey: make_test_pubkey((holder_commit_num + 101) as u8),
-                to_broadcaster_delayed_pubkey: make_test_pubkey((holder_commit_num + 102) as u8),
                 to_broadcaster_value_sat: to_holder_value_sat,
-                to_self_delay: setup.counterparty_selected_contest_delay,
                 offered_htlcs: vec![],
                 received_htlcs: vec![],
                 feerate_per_kw,
             });
             estate.current_counterparty_commit_info = Some(CommitmentInfo2 {
                 is_counterparty_broadcaster: true,
-                to_countersigner_pubkey: make_test_pubkey((counterparty_commit_num + 100) as u8),
                 to_countersigner_value_sat: to_holder_value_sat,
-                revocation_pubkey: make_test_pubkey((counterparty_commit_num + 101) as u8),
-                to_broadcaster_delayed_pubkey: make_test_pubkey(
-                    (counterparty_commit_num + 102) as u8,
-                ),
                 to_broadcaster_value_sat: to_counterparty_value_sat,
-                to_self_delay: setup.holder_selected_contest_delay,
                 offered_htlcs: vec![],
                 received_htlcs: vec![],
                 feerate_per_kw,
