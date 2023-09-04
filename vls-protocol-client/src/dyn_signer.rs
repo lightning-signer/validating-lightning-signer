@@ -4,7 +4,6 @@ use std::io::Read;
 use delegate::delegate;
 
 use bitcoin::bech32::u5;
-use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::{secp256k1, Script, Transaction, TxOut};
 use lightning::events::bump_transaction::HTLCDescriptor;
 use lightning::ln::chan_utils::{
@@ -36,7 +35,7 @@ use lightning_signer::util::loopback::LoopbackChannelSigner;
 pub trait InnerSign: EcdsaChannelSigner + Send + Sync {
     fn box_clone(&self) -> Box<dyn InnerSign>;
     fn as_any(&self) -> &dyn Any;
-    fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), ::std::io::Error>;
+    fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), std::io::Error>;
 }
 
 /// A ChannelSigner derived struct allowing run-time selection of a signer
@@ -167,7 +166,7 @@ impl ChannelSigner for DynSigner {
 }
 
 impl Writeable for DynSigner {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
+    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), std::io::Error> {
         let inner = self.inner.as_ref();
         let mut buf = Vec::new();
         inner.vwrite(&mut buf)?;
@@ -258,20 +257,12 @@ pub trait SpendableKeysInterface: NodeSigner + SignerProvider + Send + Sync {
         outputs: Vec<TxOut>,
         change_destination_script: Script,
         feerate_sat_per_1000_weight: u32,
-        secp_ctx: &Secp256k1<secp256k1::All>,
+        secp_ctx: &Secp256k1<All>,
     ) -> anyhow::Result<Transaction>;
 
     /// Swept funds from closed channels are sent here
     /// This is implemented by setting the change destination to spend_spendable_outputs to this address.
     fn get_sweep_address(&self) -> Address;
-
-    /// Sign for the layer-1 wallet
-    /// TODO can we use the derivation path in the psbt?
-    fn sign_from_wallet(
-        &self,
-        psbt: &PartiallySignedTransaction,
-        derivations: Vec<u32>,
-    ) -> PartiallySignedTransaction;
 }
 
 impl SpendableKeysInterface for DynKeysInterface {
@@ -283,12 +274,10 @@ impl SpendableKeysInterface for DynKeysInterface {
                 outputs: Vec<TxOut>,
                 change_destination_script: Script,
                 feerate_sat_per_1000_weight: u32,
-                secp_ctx: &Secp256k1<secp256k1::All>,
+                secp_ctx: &Secp256k1<All>,
             ) -> anyhow::Result<Transaction>;
 
             fn get_sweep_address(&self) -> Address;
-
-            fn sign_from_wallet(&self, psbt: &PartiallySignedTransaction, derivations: Vec<u32>) -> PartiallySignedTransaction;
         }
     }
 }

@@ -49,18 +49,16 @@ pub struct Info {
 #[async_trait]
 pub trait ExternalPersist: Send + Sync {
     /// Store the mutations.
-    /// Returns the server hmacs, proving that each backend server persisted the mutations.
-    /// If a server did not respond in time, their HMAC will be empty.
-    /// TODO multiple servers
+    ///
+    /// Returns the server hmac, proving that the mutation was persisted.
     async fn put(&self, mutations: Mutations, client_hmac: &[u8]) -> Result<Vec<u8>, Error>;
 
-    /// Get the full state from a quorum of backend servers and the matching server HMACs.
-    /// Unavailable servers will have an empty HMAC.
+    /// Get the full state.
     ///
-    /// If there is no consensus, an error is returned.
-    /// TODO multiple servers
+    /// In the future, there will be multiple server support, and if there is no
+    /// consensus among the servers, an error will be returned.
     async fn get(&self, key_prefix: String, nonce: &[u8]) -> Result<(Mutations, Vec<u8>), Error>;
 
-    /// Return server information for each backend server.
-    async fn info(&self) -> Result<Vec<Info>, Error>;
+    /// Return server information, including public key and version.
+    async fn info(&self) -> Result<Info, Error>;
 }

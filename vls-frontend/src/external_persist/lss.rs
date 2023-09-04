@@ -102,10 +102,10 @@ impl ExternalPersist for Client {
         Ok((mutations, received_hmac))
     }
 
-    async fn info(&self) -> Result<Vec<Info>, Error> {
+    async fn info(&self) -> Result<Info, Error> {
         let (server_public_key, version) = LssClient::get_info(&self.uri).await?;
         assert_eq!(self.server_public_key, server_public_key, "server public key mismatch");
 
-        Ok(vec![Info { version, pubkey: server_public_key.clone() }])
+        Ok(Info { version, pubkey: server_public_key.clone() })
     }
 }

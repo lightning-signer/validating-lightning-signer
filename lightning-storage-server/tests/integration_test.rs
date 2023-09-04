@@ -53,9 +53,13 @@ async fn do_basic_with_db(db: Arc<dyn Database>) {
         .expect_err("expected conflict");
     match result {
         Error::Conflict(c) => {
-            // at least one conflict should be reported
-            // TODO: supply the full conflicts
-            assert!(!c.is_empty());
+            assert_eq!(c.len(), 2);
+            assert_eq!(c[0].0, "x1b".to_string());
+            let v0 = c[0].1.as_ref().unwrap();
+            assert_eq!(v0.value, vec![11]);
+            assert_eq!(v0.version, 0);
+            assert_eq!(c[1].0, "x1z".to_string());
+            assert!(c[1].1.is_none());
         }
         _ => panic!("expected conflict"),
     }
