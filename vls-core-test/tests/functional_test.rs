@@ -248,8 +248,6 @@ fn holder_balances(signer_node0: &Arc<lightning_signer::node::Node>, id: Channel
     }).expect("channel")
 }
 
-// TODO failing test due to dust limit
-#[ignore]
 #[test]
 fn dust_test() {
     let signer = new_signer();
@@ -261,7 +259,7 @@ fn dust_test() {
     // Create some initial channels
     create_default_chan(&nodes, 0, 1);
 
-    send_payment(&nodes[0], &vec![&nodes[1]], 1234000);
+    send_payment(&nodes[0], &vec![&nodes[1]], 1234);
 }
 
 #[test]
