@@ -5,7 +5,9 @@ coverage:
     project:
       default:
         target: 60
+        removed_code_behavior: adjust_base
       important:
         paths:
           - vls-core/src
         target: 80
+        removed_code_behavior: adjust_base

@@ -4,9 +4,9 @@ use bitcoin::consensus::Encodable;
 use lightning_signer::bitcoin;
 use nix::sys::socket::{socketpair, AddressFamily, SockFlag, SockType};
 
-use vls_protocol::serde_bolt::io::Read;
-use vls_protocol::Error;
-use vls_protocol::{msgs, Result};
+use serde_bolt::{io::Read, ReadBigEndian};
+use vls_protocol::serde_bolt;
+use vls_protocol::{msgs, Error, Result};
 use vls_protocol_signer::vls_protocol;
 
 use crate::connection::UnixConnection;
@@ -51,7 +51,7 @@ impl Client for UnixClient {
     }
 
     fn read_raw(&mut self) -> Result<Vec<u8>> {
-        let len = read_u32(&mut self.conn)?;
+        let len = self.conn.read_u32_be()?;
         let mut data = Vec::new();
         data.resize(len as usize, 0);
         let len = self.conn.read(&mut data)?;
@@ -71,17 +71,4 @@ impl Client for UnixClient {
         self.conn.send_fd(fd_a);
         UnixClient::new(UnixConnection::new(fd_b))
     }
-}
-
-// TODO export from serde_bolt
-pub(crate) fn read_u32<R: Read>(reader: &mut R) -> Result<u32> {
-    let mut buf = [0u8; 4];
-    let len = reader.read(&mut buf)?;
-    if len == 0 {
-        return Err(Error::Eof);
-    }
-    if len < buf.len() {
-        return Err(Error::ShortRead);
-    }
-    Ok(u32::from_be_bytes(buf))
 }

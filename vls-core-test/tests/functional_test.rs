@@ -227,7 +227,6 @@ fn invoice_test() {
 
     assert_eq!(signer_node0.get_state().excess_amount, 0);
     // Gained routing fee
-    // TODO #331
     // assert_eq!(signer_node1.get_state().excess_amount, 1);
     assert_eq!(signer_node2.get_state().excess_amount, 0);
 
@@ -249,8 +248,6 @@ fn holder_balances(signer_node0: &Arc<lightning_signer::node::Node>, id: Channel
     }).expect("channel")
 }
 
-// FIXME failing test due to dust limit
-#[ignore]
 #[test]
 fn dust_test() {
     let signer = new_signer();
@@ -262,7 +259,7 @@ fn dust_test() {
     // Create some initial channels
     create_default_chan(&nodes, 0, 1);
 
-    send_payment(&nodes[0], &vec![&nodes[1]], 1234000);
+    send_payment(&nodes[0], &vec![&nodes[1]], 1234);
 }
 
 #[test]

@@ -372,7 +372,6 @@ macro_rules! check_closed_broadcast {
 		if $with_error_msg {
 			match events[1] {
 				MessageSendEvent::HandleError { action: ErrorAction::SendErrorMessage { ref msg }, node_id: _ } => {
-					// TODO: Check node_id
 					Some(msg.clone())
 				},
 				_ => panic!("Unexpected event"),

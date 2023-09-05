@@ -14,8 +14,6 @@ use std::sync::Arc;
 use vls_persist::kvv::redb::RedbKVVStore;
 use vls_persist::kvv::KVVPersister;
 
-// TODO update to redb
-
 pub fn init_node(
     node_config: NodeConfig,
     seedstr: &str,
