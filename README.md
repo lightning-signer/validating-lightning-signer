@@ -49,7 +49,7 @@ To enable logging for a failing test (adjust log level to preference):
 
     RUST_LOG=trace cargo test
     
-### Using llvm-cov
+### Using llvm-cov for Code Coverage
 
 Dependencies:
 
@@ -58,35 +58,6 @@ Dependencies:
 Run coverage:
 
     ./scripts/run-llvm-cov
-
-### Using [kcov](https://github.com/SimonKagstrom/kcov) for Code Coverage
-
-Dependencies:
-
-    sudo dnf install -y elfutils-devel curl-devel binutils-devel
-
-or
-    
-    sudo apt-get install -y libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
-
-Build v38 of kcov from git@github.com:SimonKagstrom/kcov.git .
-
-Ensure `kcov --verify /tmp/x a.out` does not complain about `libbfd`.
-
-More dependencies:
-
-    cargo install cargo-kcov
-    cargo install cargo-coverage-annotations
-
-Run coverage:
-
-    ./scripts/run-kcov
-    ./scripts/run-kcov --lib
-    ./scripts/run-kcov --test functional_test
-        
-View Coverage Report:
-
-    [target/kcov/cov/index.html](target/kcov/cov/index.html)
 
 ## Benchmarks
 

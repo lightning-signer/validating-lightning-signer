@@ -42,7 +42,6 @@ pub struct Bip32KeyVersion {
     pub privkey_version: u32,
 }
 
-// kcov-ignore-start
 impl Debug for Bip32KeyVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("Bip32KeyVersion")
@@ -51,7 +50,6 @@ impl Debug for Bip32KeyVersion {
             .finish()
     }
 }
-// kcov-ignore-end
 
 // A 32-byte secret that is sensitive
 secret_array_impl!(Secret, 32);

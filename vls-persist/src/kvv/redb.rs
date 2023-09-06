@@ -223,7 +223,7 @@ mod tests {
     }
 
     fn do_restore_test(name: &str) {
-        // running inside kcov doesn't set CARGO_MANIFEST_DIR, so we have a fallback
+        // running inside coverage doesn't set CARGO_MANIFEST_DIR, so we have a fallback
         let fixture_path = if let Ok(module_path) = env::var("CARGO_MANIFEST_DIR") {
             println!("module_path: {}", module_path);
             format!("{}/../data/samples/{}", module_path, name)

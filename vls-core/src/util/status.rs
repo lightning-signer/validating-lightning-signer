@@ -72,7 +72,6 @@ impl Status {
     }
 }
 
-// kcov-ignore-start
 impl fmt::Debug for Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // A manual impl to reduce the noise of frequently empty fields.
@@ -87,7 +86,6 @@ impl fmt::Debug for Status {
         builder.finish()
     }
 }
-// kcov-ignore-end
 
 impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
