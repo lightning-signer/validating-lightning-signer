@@ -4,7 +4,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use lightning_signer::{
     bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey},
     channel::{ChannelId, ChannelSlot},
-    lightning::{chain::keysinterface::InMemorySigner, ln::PaymentHash, util::ser::Writeable},
+    lightning::{ln::PaymentHash, sign::InMemorySigner, util::ser::Writeable},
     node::{Node, NodeServices},
     persist::{MemorySeedPersister, Persist},
     policy::simple_validator::SimpleValidatorFactory,
@@ -21,14 +21,15 @@ use lightning_signer::{
     Arc,
 };
 use tempfile::{tempdir_in, TempDir};
-use vls_persist::kv_json::KVJsonPersister;
+use vls_persist::kvv::redb::RedbKVVStore;
+use vls_persist::kvv::KVVPersister;
 
-fn make_temp_persister<'a>() -> (KVJsonPersister<'a>, TempDir, String) {
+fn make_temp_persister<'a>() -> (KVVPersister<RedbKVVStore>, TempDir, String) {
     let dir = tempdir_in(".").unwrap();
     let path = dir.path().to_owned();
     let path_str = path.to_str().unwrap();
 
-    let persister = KVJsonPersister::new(path_str);
+    let persister = RedbKVVStore::new(path_str);
     persister.clear_database().unwrap();
     (persister, dir, path_str.to_string())
 }
@@ -56,7 +57,7 @@ fn persister_bench(c: &mut Criterion) {
     let (persister, _temp_dir, _path) = make_temp_persister();
     let persister: Arc<dyn Persist> = Arc::new(persister);
     persister.new_node(&node_id, &TEST_NODE_CONFIG, &*node.get_state()).unwrap();
-    persister.new_chain_tracker(&node_id, &node.get_tracker()).unwrap();
+    persister.new_tracker(&node_id, &node.get_tracker()).unwrap();
     persister.new_channel(&node_id, &stub).unwrap();
 
     let services = NodeServices {
