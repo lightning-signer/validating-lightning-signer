@@ -19,8 +19,6 @@ no-std = ["vls-core/no-std"]
 test_utils = ["vls-core/test_utils", "tempfile"]
 redb-kvv = ["redb"]
 memo = ["serde_json"]
-# this is a hack to disable a test that causes an illegal instruction under kcov
-kcov = []
 
 [dependencies]
 vls-core = { path = "../vls-core", version = "0.10.0", default-features = false }
