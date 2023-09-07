@@ -1,4 +1,5 @@
 pub mod cloud;
+pub mod memory;
 #[cfg(feature = "redb-kvv")]
 pub mod redb;
 
