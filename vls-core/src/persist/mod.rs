@@ -143,6 +143,13 @@ pub trait Persist: SendSync {
         Ok(())
     }
 
+    /// Update the persister with the given mutations.
+    ///
+    /// This doesn't require a call to `enter()`.
+    fn put_batch_unlogged(&self, _m: Mutations) -> Result<(), Error> {
+        unimplemented!("put_batch_unlogged is only implemented for KVV persisters")
+    }
+
     /// Create a new node
     fn new_node(
         &self,

@@ -257,7 +257,12 @@ async fn start() {
     let clock = Arc::new(StandardClock());
     let seed = integration_test_seed_or_generate(None);
     let persister = make_persister();
-    let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
+    let services = NodeServices {
+        validator_factory,
+        starting_time_factory,
+        persister: persister.clone(),
+        clock,
+    };
     let mut handler_builder =
         RootHandlerBuilder::new(network, client.id(), services, seed).allowlist(allowlist);
     if should_auto_approve() {
@@ -268,7 +273,9 @@ async fn start() {
 
     let handler = if let Some(external_persist) = looper.external_persist.as_ref() {
         external_persist.init_state().await;
-        // FIXME handle external persist.state
+        let state = external_persist.state.lock().unwrap();
+        let muts: Vec<_> = state.iter().map(|(k, (v, vv))| (k.clone(), (*v, vv.clone()))).collect();
+        persister.put_batch_unlogged(Mutations::from_vec(muts)).expect("put_batch_unlogged");
         let (handler, muts) = handler_builder.build().expect("handler build");
         looper.store(muts).await.expect("store during build");
         handler

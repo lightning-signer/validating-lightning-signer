@@ -1,6 +1,6 @@
 use super::KVVPersister;
 use crate::kvv::{KVVStore, KVV};
-use lightning_signer::persist::{Error, Mutations};
+use lightning_signer::persist::Error;
 use lightning_signer::SendSync;
 use log::error;
 use redb::{Database, ReadableTable, TableDefinition};

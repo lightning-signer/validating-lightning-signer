@@ -288,6 +288,12 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
     fn commit(&self) -> Result<(), Error> {
         self.0.commit()
     }
+
+    fn put_batch_unlogged(&self, muts: Mutations) -> Result<(), Error> {
+        let kvvs = muts.into_iter().map(|(k, (v, vv))| KVV(k, (v, vv))).collect::<Vec<_>>();
+        let kvvs_refs = kvvs.iter().collect::<Vec<_>>();
+        self.0.put_batch_unlogged(&kvvs_refs)
+    }
 }
 
 fn make_key(prefix: impl Into<String>, key: &[u8]) -> String {
