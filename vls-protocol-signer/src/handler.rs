@@ -31,7 +31,7 @@ use lightning_signer::lightning::ln::chan_utils::{
 };
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::{Node, NodeConfig, NodeMonitor, NodeServices};
-use lightning_signer::persist::Mutations;
+use lightning_signer::persist::{Mutations, Persist};
 use lightning_signer::signer::my_keys_manager::MyKeysManager;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
@@ -291,6 +291,11 @@ impl RootHandlerBuilder {
         trace_node_state!(node.get_state());
 
         Ok(RootHandler { id: self.id, node, approver: self.approver })
+    }
+
+    /// The persister
+    pub fn persister(&self) -> Arc<dyn Persist> {
+        self.services.persister.clone()
     }
 }
 
