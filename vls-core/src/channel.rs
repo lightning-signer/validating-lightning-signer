@@ -291,9 +291,9 @@ impl ChannelBase for ChannelStub {
     }
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status> {
-        if commitment_number != 0 {
+        if ![0, 1].contains(&commitment_number) {
             return Err(policy_error(format!(
-                "channel stub can only return point for commitment number zero",
+                "channel stub can only return point for commitment number zero or one",
             ))
             .into());
         }
