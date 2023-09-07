@@ -26,44 +26,6 @@ impl<L: KVVStore> CloudKVVStore<L> {
         let s = Self { local, commit_log: Mutex::new(None) };
         KVVPersister(s)
     }
-
-    /// Start a transaction
-    pub fn enter(&self) {
-        let mut commit_log = self.commit_log.lock().unwrap();
-        assert!(commit_log.is_none(), "cannot enter transaction twice");
-        *commit_log = Some(BTreeMap::new());
-    }
-
-    /// Get the commit log as a Mutations object, to be stored in the cloud
-    pub fn prepare(&self) -> Mutations {
-        let commit_log_opt = self.commit_log.lock().unwrap();
-        let commit_log = commit_log_opt.as_ref().expect("not in transaction");
-        let mutations =
-            commit_log.iter().map(|(k, (v, vv))| (k.clone(), (*v, vv.clone()))).collect();
-        Mutations::from_vec(mutations)
-    }
-
-    /// Commit the commit log to the local KVVStore
-    pub fn commit(&self) -> Result<(), Error> {
-        let mut commit_log_opt = self.commit_log.lock().unwrap();
-        let commit_log = commit_log_opt.take().expect("not in transaction");
-        let mut kvvs = Vec::new();
-        for (key, (version, vv)) in commit_log.into_iter() {
-            kvvs.push(KVV(key, (version, vv)));
-        }
-        let kvv_refs: Vec<&KVV> = kvvs.iter().collect();
-        self.local.put_batch(&kvv_refs)?;
-        Ok(())
-    }
-
-    /// Apply a batch from the cloud tot he local store, without logging it
-    pub fn put_batch_unlogged(&self, kvvs: &[&KVV]) -> Result<(), Error> {
-        let commit_log_opt = self.commit_log.lock().unwrap();
-        if commit_log_opt.is_some() {
-            panic!("cannot put_batch_unlogged while in transaction");
-        }
-        self.local.put_batch(kvvs)
-    }
 }
 
 impl<L: KVVStore> SendSync for CloudKVVStore<L> {}
@@ -140,6 +102,40 @@ impl<L: KVVStore> KVVStore for CloudKVVStore<L> {
         let commit_log = commit_log_opt.as_ref().expect("not in transaction");
         assert!(commit_log.is_empty(), "cannot clear database with pending commits");
         self.local.clear_database()
+    }
+
+    fn enter(&self) {
+        let mut commit_log = self.commit_log.lock().unwrap();
+        assert!(commit_log.is_none(), "cannot enter transaction twice");
+        *commit_log = Some(BTreeMap::new());
+    }
+
+    fn prepare(&self) -> Mutations {
+        let commit_log_opt = self.commit_log.lock().unwrap();
+        let commit_log = commit_log_opt.as_ref().expect("not in transaction");
+        let mutations =
+            commit_log.iter().map(|(k, (v, vv))| (k.clone(), (*v, vv.clone()))).collect();
+        Mutations::from_vec(mutations)
+    }
+
+    fn commit(&self) -> Result<(), Error> {
+        let mut commit_log_opt = self.commit_log.lock().unwrap();
+        let commit_log = commit_log_opt.take().expect("not in transaction");
+        let mut kvvs = Vec::new();
+        for (key, (version, vv)) in commit_log.into_iter() {
+            kvvs.push(KVV(key, (version, vv)));
+        }
+        let kvv_refs: Vec<&KVV> = kvvs.iter().collect();
+        self.local.put_batch(&kvv_refs)?;
+        Ok(())
+    }
+
+    fn put_batch_unlogged(&self, kvvs: &[&KVV]) -> Result<(), Error> {
+        let commit_log_opt = self.commit_log.lock().unwrap();
+        if commit_log_opt.is_some() {
+            panic!("cannot put_batch_unlogged while in transaction");
+        }
+        self.local.put_batch(kvvs)
     }
 }
 

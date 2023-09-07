@@ -1,6 +1,6 @@
 use super::KVVPersister;
 use crate::kvv::{KVVStore, KVV};
-use lightning_signer::persist::Error;
+use lightning_signer::persist::{Error, Mutations};
 use lightning_signer::SendSync;
 use log::error;
 use redb::{Database, ReadableTable, TableDefinition};
@@ -34,6 +34,11 @@ impl SendSync for RedbKVVStore {}
 
 impl RedbKVVStore {
     pub fn new<P: AsRef<Path>>(path: P) -> KVVPersister<Self> {
+        let store = Self::new_store(path);
+        KVVPersister(store)
+    }
+
+    pub fn new_store<P: AsRef<Path>>(path: P) -> RedbKVVStore {
         let path = path.as_ref();
         if !path.exists() {
             fs::create_dir(path).expect("failed to create directory");
@@ -59,7 +64,8 @@ impl RedbKVVStore {
             }
         }
 
-        KVVPersister(Self { db, versions })
+        let store = Self { db, versions };
+        store
     }
 
     fn decode_vv(vv: &[u8]) -> (u64, Vec<u8>) {
@@ -203,12 +209,23 @@ mod tests {
     use alloc::sync::Arc;
     use hex::FromHex;
     use lightning_signer::node::{Node, NodeServices};
-    use lightning_signer::persist::MemorySeedPersister;
+    use lightning_signer::persist::{MemorySeedPersister, Mutations, Persist};
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
     use lightning_signer::util::clock::StandardClock;
     use lightning_signer::util::test_utils::*;
     use std::path::Path;
     use std::{env, fs};
+
+    #[test]
+    fn non_transactional_test() {
+        // cover some trait methods for the non-transactional case
+        let tempdir = tempfile::tempdir().unwrap();
+        let persister = RedbKVVStore::new(tempdir.path());
+        persister.commit().unwrap();
+        assert!(persister.prepare().is_empty());
+        assert!(persister.commit().is_ok());
+        persister.put_batch_unlogged(Mutations::new()).unwrap();
+    }
 
     #[test]
     fn restore_0_9_test() {

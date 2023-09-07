@@ -24,7 +24,6 @@ use vls_frontend::external_persist::lss::Client as LssClient;
 use vls_frontend::external_persist::ExternalPersist;
 use vls_frontend::frontend::SourceFactory;
 use vls_frontend::{external_persist, Frontend};
-use vls_persist::thread_memo_persister::ThreadMemoPersister;
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 use vls_protocol_signer::approver::WarningPositiveApprover;
 use vls_protocol_signer::handler::{ChannelHandler, Handler, RootHandler, RootHandlerBuilder};
@@ -37,7 +36,9 @@ use util::{
     integration_test_seed_or_generate, make_validator_factory_with_filter, read_allowlist,
     setup_logging, should_auto_approve, vls_network,
 };
+use vls_persist::kvv::cloud::CloudKVVStore;
 use vls_persist::kvv::redb::RedbKVVStore;
+use vls_persist::kvv::KVVPersister;
 use vls_proxy::persist::ExternalPersistWithHelper;
 use vls_proxy::*;
 
@@ -267,7 +268,7 @@ async fn start() {
 
     let handler = if let Some(external_persist) = looper.external_persist.as_ref() {
         external_persist.init_state().await;
-        let handler_builder = handler_builder.lss_state(external_persist.state.clone());
+        // FIXME handle external persist.state
         let (handler, muts) = handler_builder.build().expect("handler build");
         looper.store(muts).await.expect("store during build");
         handler
@@ -293,10 +294,12 @@ async fn start() {
 }
 
 fn make_persister() -> Arc<dyn Persist> {
+    let local_store = RedbKVVStore::new_store("remote_hsmd_inplace_data");
     if env::var("VLS_LSS").is_ok() {
-        Arc::new(ThreadMemoPersister {})
+        Arc::new(CloudKVVStore::new(local_store))
     } else {
-        Arc::new(RedbKVVStore::new("remote_hsmd_inplace_data"))
+        let local_persister = KVVPersister(local_store);
+        Arc::new(local_persister)
     }
 }
 
