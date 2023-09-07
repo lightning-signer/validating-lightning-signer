@@ -136,10 +136,14 @@ mod tests {
             let result = base.get_per_commitment_point(0);
             assert!(result.is_ok());
 
-            // get_per_commitment_point for future commit_num should policy-fail.
+            // get_per_commitment_point for the second commitment should also work ([#245])
+            let result = base.get_per_commitment_point(1);
+            assert!(result.is_ok());
+
+            // get_per_commitment_point should not work beyond the second
             assert_failed_precondition_err!(
-                base.get_per_commitment_point(1),
-                "policy failure: channel stub can only return point for commitment number zero"
+                base.get_per_commitment_point(2),
+                "policy failure: channel stub can only return point for commitment number zero or one"
             );
 
             // get_per_commitment_secret never works for a stub.
