@@ -8,5 +8,5 @@ pub mod backup_persister;
 pub mod model;
 pub mod util;
 
-#[cfg(feature = "memo")]
+#[cfg(feature = "kvv")]
 pub mod kvv;
