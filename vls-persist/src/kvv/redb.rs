@@ -1,5 +1,4 @@
-use super::KVVPersister;
-use crate::kvv::{KVVStore, KVV};
+use super::{KVVPersister, KVVStore, KVV};
 use lightning_signer::persist::Error;
 use lightning_signer::SendSync;
 use log::error;
@@ -8,6 +7,7 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::fs;
 use std::path::Path;
+use std::sync::Mutex;
 
 const TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("kv");
 
@@ -27,7 +27,7 @@ pub struct RedbKVVStore {
     db: Database,
     // keep track of current versions for each key, so we can efficiently enforce versioning.
     // we don't expect many keys, so this is OK for low-resource environments.
-    versions: BTreeMap<String, u64>,
+    versions: Mutex<BTreeMap<String, u64>>,
 }
 
 impl SendSync for RedbKVVStore {}
@@ -64,7 +64,7 @@ impl RedbKVVStore {
             }
         }
 
-        let store = Self { db, versions };
+        let store = Self { db, versions: Mutex::new(versions) };
         store
     }
 
@@ -86,14 +86,15 @@ impl KVVStore for RedbKVVStore {
     type Iter = Iter;
 
     fn put(&self, key: &str, value: &[u8]) -> Result<(), Error> {
-        let version = self.versions.get(key).map(|v| v + 1).unwrap_or(0);
+        let version = self.versions.lock().unwrap().get(key).map(|v| v + 1).unwrap_or(0);
         self.put_with_version(key, version, value)
     }
 
     fn put_with_version(&self, key: &str, version: u64, value: &[u8]) -> Result<(), Error> {
         let vv = Self::encode_vv(version, value);
+        let mut versions = self.versions.lock().unwrap();
 
-        if let Some(v) = self.versions.get(key) {
+        if let Some(v) = versions.get(key) {
             if version < *v {
                 error!("version mismatch for {}: {} < {}", key, version, v);
                 // version cannot go backwards
@@ -117,6 +118,7 @@ impl KVVStore for RedbKVVStore {
             let mut table = tx.open_table(TABLE).unwrap();
             table.insert(key, vv.as_slice()).expect("failed to insert");
         }
+        versions.insert(key.to_string(), version);
         tx.commit().unwrap();
         Ok(())
     }
@@ -125,11 +127,12 @@ impl KVVStore for RedbKVVStore {
         let tx = self.db.begin_write().unwrap();
         let mut table = tx.open_table(TABLE).unwrap();
         let mut found_version_mismatch = false;
+        let mut versions = self.versions.lock().unwrap();
 
         for kvv in kvvs.into_iter() {
             let (key, (version, ref value)) = (kvv.0.as_str(), (kvv.1 .0, &kvv.1 .1));
             let vv = Self::encode_vv(version, value);
-            if let Some(v) = self.versions.get(key) {
+            if let Some(v) = versions.get(key) {
                 if version < *v {
                     // version cannot go backwards
                     error!("version mismatch for {}: {} < {}", key, version, v);
@@ -145,6 +148,7 @@ impl KVVStore for RedbKVVStore {
                 }
             }
             table.insert(key, vv.as_slice()).expect("failed to insert");
+            versions.insert(key.to_string(), version);
         }
         drop(table);
         if found_version_mismatch {
@@ -169,7 +173,7 @@ impl KVVStore for RedbKVVStore {
     }
 
     fn get_version(&self, key: &str) -> Result<Option<u64>, Error> {
-        Ok(self.versions.get(key).copied())
+        Ok(self.versions.lock().unwrap().get(key).copied())
     }
 
     fn get_prefix(&self, prefix: &str) -> Result<Self::Iter, Error> {
@@ -205,7 +209,7 @@ impl KVVStore for RedbKVVStore {
 
 #[cfg(test)]
 mod tests {
-    use crate::kvv::redb::RedbKVVStore;
+    use super::*;
     use alloc::sync::Arc;
     use hex::FromHex;
     use lightning_signer::node::{Node, NodeServices};
@@ -215,6 +219,26 @@ mod tests {
     use lightning_signer::util::test_utils::*;
     use std::path::Path;
     use std::{env, fs};
+
+    #[test]
+    fn basic_test() -> Result<(), Error> {
+        let tempdir = tempfile::tempdir().unwrap();
+        let store = RedbKVVStore::new(tempdir.path()).0;
+        store.put("foo1", b"bar")?;
+        store.put("foo2", b"boo")?;
+        assert_eq!(store.get_version("foo1")?.unwrap(), 0);
+        assert_eq!(store.get("foo1")?.unwrap().1, b"bar");
+        store.put_with_version("foo1", 1, b"bar2")?;
+        assert_eq!(store.get_version("foo1")?.unwrap(), 1);
+        store.put_with_version("foo1", 1, b"bar2")?;
+        assert_eq!(store.get_version("foo1")?.unwrap(), 1);
+        assert_eq!(store.get("foo1")?.unwrap().1, b"bar2");
+
+        // wrong version
+        assert!(store.put_with_version("foo1", 0, b"bar2").is_err());
+
+        Ok(())
+    }
 
     #[test]
     fn non_transactional_test() {
