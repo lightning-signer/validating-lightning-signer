@@ -31,8 +31,7 @@ use lightning_signer::lightning::ln::chan_utils::{
 };
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::{Node, NodeConfig, NodeMonitor, NodeServices};
-use lightning_signer::persist::Mutations;
-use lightning_signer::prelude::Mutex;
+use lightning_signer::persist::{Mutations, Persist};
 use lightning_signer::signer::my_keys_manager::MyKeysManager;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::status;
@@ -116,14 +115,15 @@ pub type Result<T> = core::result::Result<T, Error>;
 pub trait Handler {
     /// Handle a message
     fn handle(&self, msg: Message) -> Result<(Box<dyn SerBolt>, Mutations)> {
-        let context = self.node().get_persister().enter(self.lss_state().clone());
+        self.node().get_persister().enter();
         log_request(&msg);
         let result = self.do_handle(msg);
+        let persister = self.node().get_persister();
         if let Err(ref err) = result {
             log_error(err);
             if let Error::Temporary(_) = err {
                 // There must be no mutated state when a temporary error is returned
-                let muts = context.exit();
+                let muts = persister.prepare();
                 if !muts.is_empty() {
                     debug!("stranded mutations: {:#?}", &muts);
                     panic!("temporary error with stranded mutations");
@@ -132,9 +132,15 @@ pub trait Handler {
         }
         let reply = result?;
         log_reply(&reply);
-        let muts = context.exit();
+        let muts = persister.prepare();
         Ok((reply, muts))
     }
+
+    /// Commit the persister transaction if any
+    fn commit(&self) {
+        self.node().get_persister().commit().expect("commit");
+    }
+
     /// Actual handling
     fn do_handle(&self, msg: Message) -> Result<Box<dyn SerBolt>>;
     /// Unused
@@ -146,21 +152,19 @@ pub trait Handler {
     /// of the node state requiring a persist, and your persister writes to the cloud,
     /// you must use [`Handler::with_persist`] instead.
     fn node(&self) -> &Arc<Node>;
-    /// Get the LSS state.
-    /// This will be empty if we are not persisting to the cloud
-    fn lss_state(&self) -> Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>;
+
     /// Perform an operation on the Node that requires persistence.
     /// The operation must not mutate if it fails (returns an error).
+    /// You must call [`Handler::commit`] after you persist the mutations in the
+    /// cloud.
     fn with_persist(&self, f: impl FnOnce(&Node) -> Result<()>) -> Result<Mutations> {
-        let context = self.node().get_persister().enter(self.lss_state().clone());
+        self.node().get_persister().enter();
         let node = self.node();
+        let persister = node.get_persister();
+        let muts = persister.prepare();
         match f(&*node) {
-            Ok(()) => {
-                let muts = context.exit();
-                Ok(muts)
-            }
+            Ok(()) => Ok(muts),
             Err(e) => {
-                let muts = context.exit();
                 if !muts.is_empty() {
                     debug!("stranded mutations: {:#?}", &muts);
                     panic!("failed operation with stranded mutations");
@@ -198,7 +202,6 @@ pub struct RootHandler {
     pub(crate) id: u64,
     node: Arc<Node>,
     approver: Arc<dyn Approve>,
-    lss_state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
 }
 
 /// Builder for RootHandler
@@ -213,7 +216,6 @@ pub struct RootHandlerBuilder {
     allowlist: Vec<String>,
     services: NodeServices,
     approver: Arc<dyn Approve>,
-    lss_state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
 }
 
 impl RootHandlerBuilder {
@@ -231,7 +233,6 @@ impl RootHandlerBuilder {
             allowlist: vec![],
             services,
             approver: Arc::new(NegativeApprover()),
-            lss_state: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 
@@ -247,20 +248,16 @@ impl RootHandlerBuilder {
         self
     }
 
-    /// Set the LSS state
-    pub fn lss_state(mut self, lss_state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>) -> Self {
-        self.lss_state = lss_state;
-        self
-    }
-
     /// Build the root handler.
     ///
-    /// Returns the handler and any mutations that need to be stored
+    /// Returns the handler and any mutations that need to be stored.
+    /// You must call [`Handler::commit`] after you persist the mutations in the
+    /// cloud.
     pub fn build(self) -> Result<(RootHandler, Mutations)> {
         let persister = self.services.persister.clone();
-        let context = persister.enter(self.lss_state.clone());
+        persister.enter();
         let handler = self.do_build()?;
-        let muts = context.exit();
+        let muts = persister.prepare();
         Ok((handler, muts))
     }
 
@@ -293,7 +290,12 @@ impl RootHandlerBuilder {
         };
         trace_node_state!(node.get_state());
 
-        Ok(RootHandler { id: self.id, node, approver: self.approver, lss_state: self.lss_state })
+        Ok(RootHandler { id: self.id, node, approver: self.approver })
+    }
+
+    /// The persister
+    pub fn persister(&self) -> Arc<dyn Persist> {
+        self.services.persister.clone()
     }
 }
 
@@ -803,16 +805,11 @@ impl Handler for RootHandler {
             peer_id: peer_id.0,
             dbid,
             channel_id,
-            lss_state: self.lss_state.clone(),
         }
     }
 
     fn node(&self) -> &Arc<Node> {
         &self.node
-    }
-
-    fn lss_state(&self) -> Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>> {
-        self.lss_state.clone()
     }
 }
 
@@ -856,7 +853,6 @@ pub struct ChannelHandler {
     peer_id: [u8; 33],
     dbid: u64,
     channel_id: ChannelId,
-    lss_state: Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>>,
 }
 
 impl ChannelHandler {
@@ -1232,10 +1228,6 @@ impl Handler for ChannelHandler {
 
     fn node(&self) -> &Arc<Node> {
         &self.node
-    }
-
-    fn lss_state(&self) -> Arc<Mutex<BTreeMap<String, (u64, Vec<u8>)>>> {
-        self.lss_state.clone()
     }
 }
 

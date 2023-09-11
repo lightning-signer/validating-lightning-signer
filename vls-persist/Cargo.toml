@@ -13,12 +13,12 @@ name = "vls_persist"
 path = "src/lib.rs"
 
 [features]
-default = ["std", "memo", "test_utils"]
+default = ["std", "kvv", "test_utils"]
 std = ["vls-core/std", "log/std"]
 no-std = ["vls-core/no-std"]
 test_utils = ["vls-core/test_utils", "tempfile"]
-redb-kvv = ["redb"]
-memo = ["serde_json"]
+redb-kvv = ["redb", "kvv"]
+kvv = ["serde_json"]
 
 [dependencies]
 vls-core = { path = "../vls-core", version = "0.10.0", default-features = false }

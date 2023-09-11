@@ -25,7 +25,7 @@ vls-protocol-signer = { path = "../vls-protocol-signer", version = "0.10.0" }
 vls-protocol-client = { path = "../vls-protocol-client", version = "0.10.0" }
 vls-protocol = { path = "../vls-protocol", version = "0.10.0" }
 vls-frontend = { path = "../vls-frontend", version = "0.10.0" }
-vls-persist = { path = "../vls-persist", version = "0.10.0", default_features = false, features = ["std", "memo", "redb-kvv"] }
+vls-persist = { path = "../vls-persist", version = "0.10.0", default_features = false, features = ["std", "kvv", "redb-kvv"] }
 lightning-storage-server = { path = "../lightning-storage-server", version = "0.3.0", default-features = false }
 nix = "0.26"
 serde = "1.0"

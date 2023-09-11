@@ -7,7 +7,7 @@ use lightning_signer::node::{NodeConfig, NodeState};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
-use lightning_signer::persist::{ChainTrackerListenerEntry, Context, Error, Persist};
+use lightning_signer::persist::{ChainTrackerListenerEntry, Error, Persist};
 use lightning_signer::policy::validator::ValidatorFactory;
 use lightning_signer::prelude::*;
 use lightning_signer::{Arc, SendSync};
@@ -46,10 +46,6 @@ impl<M: Persist, B: Persist> BackupPersister<M, B> {
 impl<M: Persist, B: Persist> SendSync for BackupPersister<M, B> {}
 
 impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
-    fn enter(&self, state: Arc<Mutex<OrderedMap<String, (u64, Vec<u8>)>>>) -> Box<dyn Context> {
-        self.backup.enter(state)
-    }
-
     fn new_node(
         &self,
         node_id: &PublicKey,
@@ -199,7 +195,6 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
 mod tests {
     use super::*;
     use crate::model::{ChainTrackerEntry, NodeEntry, NodeStateEntry};
-    use crate::thread_memo_persister::ThreadMemoPersister;
     use lightning_signer::bitcoin::hashes::hex::ToHex;
     use lightning_signer::node::Node;
     use lightning_signer::util::test_utils::{
@@ -395,35 +390,26 @@ mod tests {
         let (node_id1, node_entry1) = nodes1.into_iter().next().unwrap();
         assert_eq!(node_id, node_id1);
 
-        let backup = ThreadMemoPersister {};
-        let backup_persister = Arc::new(BackupPersister::new(persister, backup));
+        let backup = TestPersister::new();
+        let backup_persister = Arc::new(BackupPersister::new(persister, backup.clone()));
         let nodes2 = backup_persister.get_nodes().unwrap();
         let (node_id2, node_entry2) = nodes2.into_iter().next().unwrap();
         assert_eq!(node_id, node_id2);
 
         let mut services = make_services();
         services.persister = backup_persister.clone();
-        let state = Arc::new(Mutex::new(OrderedMap::new()));
-        let ctx = backup_persister.enter(state.clone());
         let node = Node::restore_node(&node_id, node_entry1, &seed, services.clone()).unwrap();
-        let muts = ctx.exit();
-        // allowlist, node state, node entry, tracker
-        assert_eq!(muts.len(), 4);
 
         // test recovery by starting with a wiped main persister
         let persister = TestPersister::new();
-        let backup = ThreadMemoPersister {};
         let backup_persister = Arc::new(BackupPersister::new(persister.clone(), backup));
         let mut services = make_services();
         services.persister = backup_persister.clone();
-        let ctx = backup_persister.enter(state);
         let nodes1 = backup_persister.get_nodes().unwrap();
         assert_eq!(nodes1.len(), 1);
         let (node_id1, node_entry1) = nodes1.into_iter().next().unwrap();
         let node = Node::restore_node(&node_id, node_entry1, &seed, services).unwrap();
         assert_eq!(node.get_id(), node_id);
-        let muts = ctx.exit();
-        assert_eq!(muts.len(), 0);
 
         // check restoring from main persister after it's been recovered
         let nodes1 = persister.get_nodes().unwrap();

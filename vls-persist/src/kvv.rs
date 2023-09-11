@@ -1,9 +1,10 @@
+pub mod cloud;
+pub mod memory;
 #[cfg(feature = "redb-kvv")]
 pub mod redb;
 
-use alloc::format;
-
 use crate::model::*;
+use alloc::format;
 use core::fmt::Debug;
 use core::ops::Deref;
 use lightning_signer::bitcoin::secp256k1::PublicKey;
@@ -17,7 +18,7 @@ use lightning_signer::persist::model::{
 use lightning_signer::persist::{ChainTrackerListenerEntry, Error, Persist};
 use lightning_signer::policy::validator::{EnforcementState, ValidatorFactory};
 use lightning_signer::prelude::*;
-use lightning_signer::{Arc, SendSync};
+use lightning_signer::{persist::Mutations, Arc, SendSync};
 use serde_json::{from_slice, to_vec};
 
 const NODE_ENTRY_PREFIX: &str = "node/entry";
@@ -65,6 +66,20 @@ pub trait KVVStore: SendSync {
     fn delete(&self, key: &str) -> Result<(), Error>;
     /// Clear the database
     fn clear_database(&self) -> Result<(), Error>;
+    /// Start a transaction
+    fn enter(&self) {}
+    /// Get the commit log as a Mutations object, to be stored in the cloud
+    fn prepare(&self) -> Mutations {
+        Mutations::new()
+    }
+    /// Commit the commit log to the local KVVStore
+    fn commit(&self) -> Result<(), Error> {
+        Ok(())
+    }
+    /// Apply a batch from the cloud to the local store, without logging it
+    fn put_batch_unlogged(&self, kvvs: &[&KVV]) -> Result<(), Error> {
+        self.put_batch(kvvs)
+    }
 }
 
 /// Adapter for a KVVStore to implement Persist.
@@ -261,6 +276,24 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
     fn clear_database(&self) -> Result<(), Error> {
         // delegate to the underlying store
         self.0.clear_database()
+    }
+
+    fn enter(&self) {
+        self.0.enter();
+    }
+
+    fn prepare(&self) -> Mutations {
+        self.0.prepare()
+    }
+
+    fn commit(&self) -> Result<(), Error> {
+        self.0.commit()
+    }
+
+    fn put_batch_unlogged(&self, muts: Mutations) -> Result<(), Error> {
+        let kvvs = muts.into_iter().map(|(k, (v, vv))| KVV(k, (v, vv))).collect::<Vec<_>>();
+        let kvvs_refs = kvvs.iter().collect::<Vec<_>>();
+        self.0.put_batch_unlogged(&kvvs_refs)
     }
 }
 

@@ -86,20 +86,6 @@ impl Debug for Mutations {
     }
 }
 
-/// Storage context, for memorizing implementations
-pub trait Context {
-    /// Exit the context, returning values that were modified
-    fn exit(&self) -> Mutations;
-}
-
-struct DummyContext;
-
-impl Context for DummyContext {
-    fn exit(&self) -> Mutations {
-        Mutations::new()
-    }
-}
-
 #[derive(Clone, Debug)]
 /// Error returned by persister
 pub enum Error {
@@ -135,15 +121,33 @@ pub struct ChainTrackerListenerEntry(pub OutPoint, pub (ChainMonitorState, Liste
 pub trait Persist: SendSync {
     /// Enter a persistence context
     ///
-    /// Entering while the thread is already in a context will panic
+    /// Must call `prepare()`, commit the mutations in the cloud and then
+    /// call `commit()` to persist the mutations locally.
     ///
-    /// Returns a [`Context`] object, which can be used to retrieve the
-    /// modified entries and exit the context.
+    /// If this is not a transactional persister, this is a no-op and
+    /// `prepare()` will return an empty list of mutations.
+    fn enter(&self) {}
+
+    /// Get the logged mutations since the last call to `enter()`.
     ///
-    /// If this is not a memorizing context, the returned object will always
-    /// have an empty list of modified entries.
-    fn enter(&self, _state: Arc<Mutex<OrderedMap<String, (u64, Vec<u8>)>>>) -> Box<dyn Context> {
-        Box::new(DummyContext)
+    /// If this is not a transactional persister, this returns an empty list.
+    fn prepare(&self) -> Mutations {
+        Mutations::new()
+    }
+
+    /// Commit the logged mutations.
+    ///
+    /// If this is not a transactional persister, this is a no-op and the
+    /// mutations were already persisted.
+    fn commit(&self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    /// Update the persister with the given mutations.
+    ///
+    /// This doesn't require a call to `enter()`.
+    fn put_batch_unlogged(&self, _m: Mutations) -> Result<(), Error> {
+        unimplemented!("put_batch_unlogged is only implemented for KVV persisters")
     }
 
     /// Create a new node
