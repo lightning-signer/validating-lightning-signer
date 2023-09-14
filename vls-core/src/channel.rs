@@ -704,6 +704,9 @@ impl Channel {
             &mut htlcs_with_aux,
             &parameters,
         );
+        if self.setup.is_anchors() && !self.setup.is_zero_fee_htlc() {
+            commitment_tx = commitment_tx.with_non_zero_fee_anchors();
+        }
         commitment_tx
     }
 
@@ -1212,7 +1215,7 @@ impl Channel {
             &mut htlcs_with_aux,
             &parameters,
         );
-        if self.setup.is_anchors() {
+        if self.setup.is_anchors() && !self.setup.is_zero_fee_htlc() {
             commitment_tx = commitment_tx.with_non_zero_fee_anchors();
         }
         commitment_tx
