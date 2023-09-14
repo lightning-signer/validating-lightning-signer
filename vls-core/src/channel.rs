@@ -2428,12 +2428,15 @@ mod tests {
     use bitcoin::hashes::hex::ToHex;
     use bitcoin::psbt::serialize::Serialize;
     use bitcoin::secp256k1::{self, Secp256k1, SecretKey};
-    use lightning::ln::chan_utils::HTLCOutputInCommitment;
+    use bitcoin::Txid;
+    use lightning::ln::chan_utils::{build_htlc_transaction, HTLCOutputInCommitment};
     use lightning::ln::PaymentHash;
+    use std::panic::catch_unwind;
 
-    use crate::channel::ChannelBase;
+    use crate::channel::{ChannelBase, CommitmentType};
     use crate::util::test_utils::{
-        init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
+        init_node_and_channel, key::make_test_pubkey, make_test_channel_setup, TEST_NODE_CONFIG,
+        TEST_SEED,
     };
 
     #[test]
@@ -2469,5 +2472,51 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    #[test]
+    fn issue_397_test() {
+        do_issue_397(CommitmentType::AnchorsZeroFeeHtlc);
+    }
+
+    #[test]
+    #[ignore]
+    fn issue_397_non_zero_test() {
+        do_issue_397(CommitmentType::Anchors);
+    }
+
+    #[test]
+    #[ignore]
+    fn issue_397_static_test() {
+        do_issue_397(CommitmentType::StaticRemoteKey);
+    }
+
+    fn do_issue_397(commitment_type: CommitmentType) {
+        use bitcoin::hashes::Hash;
+
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = commitment_type;
+        let features = setup.features();
+        let key1 = make_test_pubkey(1);
+        let key2 = make_test_pubkey(2);
+        let feerate = 100000;
+        let txid = Txid::all_zeros();
+        let contest_delay = 7;
+        let htlc = HTLCOutputInCommitment {
+            offered: true,
+            amount_msat: 1000,
+            cltv_expiry: 100,
+            payment_hash: PaymentHash([0; 32]),
+            transaction_output_index: Some(0),
+        };
+        let res = catch_unwind(|| {
+            build_htlc_transaction(&txid, feerate, contest_delay, &htlc, &features, &key1, &key2);
+        });
+        println!("res={:?}", res);
+        assert!(
+            features.supports_anchors_zero_fee_htlc_tx()
+                && !features.supports_anchors_nonzero_fee_htlc_tx()
+        );
+        assert!(res.is_ok());
     }
 }
