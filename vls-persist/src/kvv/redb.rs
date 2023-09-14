@@ -1,5 +1,5 @@
 use super::{KVVPersister, KVVStore, KVV};
-use lightning_signer::persist::Error;
+use lightning_signer::persist::{Error, SignerId};
 use lightning_signer::SendSync;
 use log::error;
 use redb::{Database, ReadableTable, TableDefinition};
@@ -10,6 +10,10 @@ use std::path::Path;
 use std::sync::Mutex;
 
 const TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("kv");
+const META_TABLE: TableDefinition<&str, &SignerId> = TableDefinition::new("meta");
+
+// this is stored in the meta table, so there's no opportunity for a collision
+const SIGNER_ID_KEY: &'static str = "signer_id";
 
 /// An iterator over a KVVStore range
 pub struct Iter(alloc::vec::IntoIter<KVV>);
@@ -28,6 +32,7 @@ pub struct RedbKVVStore {
     // keep track of current versions for each key, so we can efficiently enforce versioning.
     // we don't expect many keys, so this is OK for low-resource environments.
     versions: Mutex<BTreeMap<String, u64>>,
+    signer_id: SignerId,
 }
 
 impl SendSync for RedbKVVStore {}
@@ -47,12 +52,24 @@ impl RedbKVVStore {
         let mut db = Database::create(path.join("redb")).unwrap();
         db.check_integrity().expect("database integrity check failed");
         let mut versions = BTreeMap::new();
-        {
-            // create the table if it doesn't exist
+        let signer_id = {
+            // create the main table if it doesn't exist
             let tx = db.begin_write().unwrap();
             tx.open_table(TABLE).unwrap();
+
+            // create the id table and signer ID if they don't exist
+            let mut id_table = tx.open_table(META_TABLE).unwrap();
+            let signer_id_bytes = id_table.get(SIGNER_ID_KEY).unwrap().map(|id| id.value().clone());
+            let signer_id = signer_id_bytes.unwrap_or_else(|| {
+                let signer_id = uuid::Uuid::new_v4();
+                id_table.insert(SIGNER_ID_KEY, signer_id.as_bytes()).unwrap();
+                signer_id.into_bytes()
+            });
+            drop(id_table);
             tx.commit().unwrap();
-        }
+            signer_id
+        };
+
         {
             // load the current versions
             let tx = db.begin_read().unwrap();
@@ -64,7 +81,7 @@ impl RedbKVVStore {
             }
         }
 
-        let store = Self { db, versions: Mutex::new(versions) };
+        let store = Self { db, versions: Mutex::new(versions), signer_id };
         store
     }
 
@@ -205,6 +222,10 @@ impl KVVStore for RedbKVVStore {
         tx.commit().unwrap();
         Ok(())
     }
+
+    fn signer_id(&self) -> SignerId {
+        self.signer_id
+    }
 }
 
 #[cfg(test)]
@@ -236,6 +257,12 @@ mod tests {
 
         // wrong version
         assert!(store.put_with_version("foo1", 0, b"bar2").is_err());
+
+        // check that the ID is persistent
+        let id = store.signer_id();
+        drop(store);
+        let store = RedbKVVStore::new(tempdir.path()).0;
+        assert_eq!(store.signer_id(), id);
 
         Ok(())
     }

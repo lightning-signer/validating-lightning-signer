@@ -1,5 +1,6 @@
 use crate::kvv::{Error, KVVPersister, KVVStore, KVV};
 use alloc::collections::BTreeMap;
+use lightning_signer::persist::SignerId;
 use lightning_signer::prelude::*;
 use lightning_signer::{persist::Mutations, SendSync};
 use log::*;
@@ -136,6 +137,10 @@ impl<L: KVVStore> KVVStore for CloudKVVStore<L> {
             panic!("cannot put_batch_unlogged while in transaction");
         }
         self.local.put_batch(kvvs)
+    }
+
+    fn signer_id(&self) -> SignerId {
+        self.local.signer_id()
     }
 }
 

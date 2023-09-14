@@ -1,5 +1,6 @@
 use crate::kvv::{Error, KVVPersister, KVVStore, KVV};
 use alloc::collections::BTreeMap;
+use lightning_signer::persist::SignerId;
 use lightning_signer::prelude::*;
 use lightning_signer::SendSync;
 use log::*;
@@ -7,6 +8,7 @@ use log::*;
 /// A key-version-value in-memory store.
 pub struct MemoryKVVStore {
     data: Mutex<BTreeMap<String, (u64, Vec<u8>)>>,
+    signer_id: SignerId,
 }
 
 /// An iterator over a KVVStore range
@@ -22,8 +24,8 @@ impl Iterator for Iter {
 
 impl MemoryKVVStore {
     /// Create a new MemoryKVVStore
-    pub fn new() -> KVVPersister<Self> {
-        let store = Self { data: Mutex::new(BTreeMap::new()) };
+    pub fn new(signer_id: SignerId) -> KVVPersister<Self> {
+        let store = Self { data: Mutex::new(BTreeMap::new()), signer_id };
         KVVPersister(store)
     }
 }
@@ -117,5 +119,9 @@ impl KVVStore for MemoryKVVStore {
     fn clear_database(&self) -> Result<(), Error> {
         self.data.lock().unwrap().clear();
         Ok(())
+    }
+
+    fn signer_id(&self) -> SignerId {
+        self.signer_id
     }
 }

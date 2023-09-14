@@ -104,6 +104,9 @@ pub enum Error {
 /// Used to keep track of the chain monitor listeners while restoring from persistence
 pub struct ChainTrackerListenerEntry(pub OutPoint, pub (ChainMonitorState, ListenSlot));
 
+/// A unique signer ID for this signer, used by persisters to identify themselves
+pub type SignerId = [u8; 16];
+
 /// Persister of nodes and channels
 ///
 /// A Node will call the relevant methods here as needed.
@@ -241,6 +244,9 @@ pub trait Persist: SendSync {
     fn recovery_required(&self) -> bool {
         false
     }
+
+    /// Get our unique 128-bit signer ID
+    fn signer_id(&self) -> SignerId;
 }
 
 /// A null persister for testing
@@ -336,6 +342,10 @@ impl Persist for DummyPersister {
 
     fn clear_database(&self) -> Result<(), Error> {
         Ok(())
+    }
+
+    fn signer_id(&self) -> [u8; 16] {
+        todo!()
     }
 }
 
