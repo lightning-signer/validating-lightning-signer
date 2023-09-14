@@ -692,7 +692,7 @@ impl Channel {
         let mut htlcs_with_aux = htlcs.iter().map(|h| (h.clone(), ())).collect();
         let channel_parameters = self.make_channel_parameters();
         let parameters = channel_parameters.as_counterparty_broadcastable();
-        let commitment_tx = CommitmentTransaction::new_with_auxiliary_htlc_data(
+        let mut commitment_tx = CommitmentTransaction::new_with_auxiliary_htlc_data(
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             to_counterparty_value_sat,
             to_holder_value_sat,
