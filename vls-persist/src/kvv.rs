@@ -67,7 +67,9 @@ pub trait KVVStore: SendSync {
     /// Clear the database
     fn clear_database(&self) -> Result<(), Error>;
     /// Start a transaction
-    fn enter(&self) {}
+    fn enter(&self) -> Result<(), Error> {
+        Ok(())
+    }
     /// Get the commit log as a Mutations object, to be stored in the cloud
     fn prepare(&self) -> Mutations {
         Mutations::new()
@@ -280,8 +282,8 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
         self.0.clear_database()
     }
 
-    fn enter(&self) {
-        self.0.enter();
+    fn enter(&self) -> Result<(), Error> {
+        self.0.enter()
     }
 
     fn prepare(&self) -> Mutations {

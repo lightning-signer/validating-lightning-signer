@@ -129,7 +129,9 @@ pub trait Persist: SendSync {
     ///
     /// If this is not a transactional persister, this is a no-op and
     /// `prepare()` will return an empty list of mutations.
-    fn enter(&self) {}
+    fn enter(&self) -> Result<(), Error> {
+        Ok(())
+    }
 
     /// Get the logged mutations since the last call to `enter()`.
     ///

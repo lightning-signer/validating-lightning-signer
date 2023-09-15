@@ -125,7 +125,7 @@ impl NodeFront {
         // lock order: persist client, tracker
         let client = external_persist.persist_client.lock().await;
 
-        persister.enter();
+        persister.enter().expect("persister enter");
         f(persister.clone());
         let muts = persister.prepare();
 
@@ -136,7 +136,7 @@ impl NodeFront {
             client.put(muts.clone(), &client_hmac).await.expect("persist failed");
         assert_eq!(received_server_hmac, server_hmac, "server hmac mismatch");
 
-        persister.commit().expect("commit")
+        persister.commit().expect("persister commit")
     }
 }
 
