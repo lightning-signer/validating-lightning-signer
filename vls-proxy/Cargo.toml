@@ -115,3 +115,8 @@ path = "src/decode-vls.rs"
 name = "frontend-system-test"
 path = "src/frontend_system_test.rs"
 required-features = ["system-test"]
+
+[[bin]]
+name = "cloud-system-test"
+path = "src/cloud_system_test.rs"
+required-features = ["system-test"]

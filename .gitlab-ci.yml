@@ -73,6 +73,9 @@ rust-latest-extras:
     - rustup component add rustfmt
     # test LSS
     - (cd lightning-storage-server && cargo test)
+    - (cd lightning-storage-server && cargo run --bin lssd &)
+    - sleep 5
+    - cargo run --bin cloud-system-test --features system-test
 
 rust-1.67.0:
   tags: [ saas-linux-large-amd64 ]
