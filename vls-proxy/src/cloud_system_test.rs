@@ -36,6 +36,17 @@ async fn main() {
     let client = LssClient::new(rpc_url, &server_pubkey, auth).await.unwrap();
 
     do_put(&cloud, &helper, &client, b"foo", false).await;
+
+    assert_eq!(cloud.0.get_local(LAST_WRITER_KEY).unwrap().unwrap().0, 0);
+
+    // an empty transaction
+    cloud.enter().unwrap();
+    let muts = cloud.prepare();
+    assert!(muts.is_empty());
+    cloud.commit().unwrap();
+
+    assert_eq!(cloud.0.get_local(LAST_WRITER_KEY).unwrap().unwrap().0, 0);
+
     do_put(&cloud, &helper, &client, b"boo", false).await;
 
     // emulate restart

@@ -31,6 +31,12 @@ pub struct CloudKVVStore<L: KVVStore> {
 }
 
 impl<L: KVVStore> CloudKVVStore<L> {
+    pub fn get_local(&self, key: &str) -> Result<Option<(u64, Vec<u8>)>, Error> {
+        self.local.get(key)
+    }
+}
+
+impl<L: KVVStore> CloudKVVStore<L> {
     /// Create a new CloudKVVStore backed by the given local KVVStore.
     pub fn new(local: L) -> KVVPersister<Self> {
         let s = Self { local, commit_log: Mutex::new(None) };
@@ -145,14 +151,15 @@ impl<L: KVVStore> KVVStore for CloudKVVStore<L> {
     }
 
     fn prepare(&self) -> Mutations {
-        let commit_log_opt = self.commit_log.lock().unwrap();
-        let commit_log = commit_log_opt.as_ref().expect("not in transaction");
+        let mut commit_log_opt = self.commit_log.lock().unwrap();
+        let commit_log = commit_log_opt.as_mut().expect("not in transaction");
         let mutations: Vec<_> =
             commit_log.iter().map(|(k, (v, vv))| (k.clone(), (*v, vv.clone()))).collect();
 
         // optimize out effectively empty mutations
         if mutations.len() == 1 {
             assert_eq!(mutations[0].0, LAST_WRITER_KEY);
+            commit_log.clear();
             return Mutations::new();
         }
 
