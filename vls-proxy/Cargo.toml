@@ -111,9 +111,9 @@ required-features = ["grpc", "main"]
 name = "decode-vls"
 path = "src/decode-vls.rs"
 
-[[bin]]
-name = "frontend-system-test"
-path = "src/frontend_system_test.rs"
+[[test]]
+name = "frontend_system_test"
+path = "tests/frontend_system_test.rs"
 required-features = ["system-test"]
 
 [[test]]

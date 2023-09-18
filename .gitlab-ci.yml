@@ -53,10 +53,6 @@ rust-latest:
     - cargo test
     # ensure vls-persist builds with no-std
     - cargo build -p vls-persist --no-default-features --features no-std,kvv
-    # system test
-    - bin/bitcoind --regtest --daemon --rpcuser=user --rpcpassword=pass
-    - sleep 5
-    - cargo run --bin frontend-system-test --features system-test
 
 rust-latest-extras:
   tags: [ saas-linux-large-amd64 ]
