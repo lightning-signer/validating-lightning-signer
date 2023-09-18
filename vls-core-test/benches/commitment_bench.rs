@@ -9,11 +9,11 @@ use lightning_signer::{
     },
     channel::{Channel, CommitmentType},
     lightning::{
-        chain::keysinterface::ChannelSigner,
         ln::{
             chan_utils::{self, HTLCOutputInCommitment},
             PaymentHash,
         },
+        sign::ChannelSigner,
     },
     tx::tx::HTLCInfo2,
     util::{
