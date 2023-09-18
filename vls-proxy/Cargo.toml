@@ -16,7 +16,7 @@ grpc = ["tokio", "tokio-stream", "tonic", "prost", "async-stream", "url", "backo
 main = ["clap", "toml", "ctrlc", "fern"]
 log_pretty_print = []
 debug = ["vls-core/debug", "vls-protocol-signer/debug", "log_pretty_print"]
-system-test = ["serde_json", "tempfile"]
+system-test = ["serde_json", "tempfile", "vls-core/test_utils"]
 heapmon_requests = []
 
 [dependencies]
@@ -116,7 +116,7 @@ name = "frontend-system-test"
 path = "src/frontend_system_test.rs"
 required-features = ["system-test"]
 
-[[bin]]
-name = "cloud-system-test"
-path = "src/cloud_system_test.rs"
+[[test]]
+name = "cloud_system_test"
+path = "tests/cloud_system_test.rs"
 required-features = ["system-test"]

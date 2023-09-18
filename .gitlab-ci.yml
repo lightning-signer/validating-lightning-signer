@@ -73,9 +73,6 @@ rust-latest-extras:
     - rustup component add rustfmt
     # test LSS
     - (cd lightning-storage-server && cargo test)
-    - (cd lightning-storage-server && cargo run --bin lssd &)
-    - sleep 5
-    - cargo run --bin cloud-system-test --features system-test
 
 rust-1.67.0:
   tags: [ saas-linux-large-amd64 ]
@@ -129,6 +126,7 @@ coverage:
   tags: [ saas-linux-large-amd64 ]
   stage: build
   image: rust:latest
+  needs: [ "get_bitcoin" ]
   cache:
     key: vls-coverage
     paths:
@@ -141,7 +139,10 @@ coverage:
     - apt-get update
     - apt-get install -y protobuf-compiler
     - apt-get install -y jq
-    - ./scripts/run-llvm-cov
+    - bin/bitcoind --regtest --daemon --rpcuser=user --rpcpassword=pass
+    - (cd lightning-storage-server && cargo run --bin lssd &)
+    - sleep 5
+    - ./scripts/run-llvm-cov --features system-test
     - bash <(curl -s https://codecov.io/bash) -f target/codecov.json -t "${CODECOV_TOKEN}"
   artifacts:
     reports:

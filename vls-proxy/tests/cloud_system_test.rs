@@ -13,8 +13,9 @@ use vls_persist::kvv::cloud::{CloudKVVStore, LAST_WRITER_KEY};
 use vls_persist::kvv::{redb::RedbKVVStore, KVVPersister, KVVStore};
 use vls_proxy::util::setup_logging;
 
-#[tokio::main]
-async fn main() {
+// requires a running lss instance
+#[tokio::test]
+async fn cloud_system_test() {
     let tmpdir = tempfile::tempdir().unwrap();
     let local = RedbKVVStore::new_store(tmpdir.path());
     let cloud = CloudKVVStore::new(local);
