@@ -30,7 +30,7 @@ use lightning_signer::{
 use vls_persist::model::{
     AllowlistItemEntry, ChainTrackerEntry, ChannelEntry, NodeEntry, NodeStateEntry,
 };
-use vls_protocol_signer::lightning_signer::persist::ChainTrackerListenerEntry;
+use vls_protocol_signer::lightning_signer::persist::{ChainTrackerListenerEntry, SignerId};
 
 use crate::setup::SetupFS;
 
@@ -72,14 +72,15 @@ impl Into<persist::Error> for Error {
 pub struct FatJsonPersister {
     setupfs: Arc<RefCell<SetupFS>>,
     node_id: PublicKey,
+    signer_id: SignerId,
 }
 
 impl SendSync for FatJsonPersister {}
 
 impl FatJsonPersister {
-    pub fn new(setupfs: Arc<RefCell<SetupFS>>) -> Self {
+    pub fn new(setupfs: Arc<RefCell<SetupFS>>, signer_id: SignerId) -> Self {
         let node_id = PublicKey::from_str(&setupfs.borrow().runpath()).expect("node_id string");
-        let ss = Self { setupfs, node_id };
+        let ss = Self { setupfs, node_id, signer_id };
         ss.ensure_path(&Self::state_path());
         ss.ensure_path(&Self::node_bucket_path());
         ss.ensure_path(&Self::nodestate_bucket_path());
@@ -493,5 +494,9 @@ impl Persist for FatJsonPersister {
     fn recovery_required(&self) -> bool {
         // map fs errors to true
         self.bucket_exists(&Self::node_bucket_path()).unwrap_or(true)
+    }
+
+    fn signer_id(&self) -> SignerId {
+        self.signer_id
     }
 }

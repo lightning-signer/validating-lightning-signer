@@ -53,10 +53,6 @@ rust-latest:
     - cargo test
     # ensure vls-persist builds with no-std
     - cargo build -p vls-persist --no-default-features --features no-std,kvv
-    # system test
-    - bin/bitcoind --regtest --daemon --rpcuser=user --rpcpassword=pass
-    - sleep 5
-    - cargo run --bin frontend-system-test --features system-test
 
 rust-latest-extras:
   tags: [ saas-linux-large-amd64 ]
@@ -126,6 +122,7 @@ coverage:
   tags: [ saas-linux-large-amd64 ]
   stage: build
   image: rust:latest
+  needs: [ "get_bitcoin" ]
   cache:
     key: vls-coverage
     paths:
@@ -138,7 +135,10 @@ coverage:
     - apt-get update
     - apt-get install -y protobuf-compiler
     - apt-get install -y jq
-    - ./scripts/run-llvm-cov
+    - bin/bitcoind --regtest --daemon --rpcuser=user --rpcpassword=pass
+    - (cd lightning-storage-server && cargo run --bin lssd &)
+    - sleep 5
+    - ./scripts/run-llvm-cov --features system-test
     - bash <(curl -s https://codecov.io/bash) -f target/codecov.json -t "${CODECOV_TOKEN}"
   artifacts:
     reports:

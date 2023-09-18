@@ -184,8 +184,8 @@ struct Args {
     pub rpc: Option<Url>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+#[tokio::test]
+async fn frontend_system_test() -> Result<()> {
     abort_on_panic();
     let tmpdir = tempfile::tempdir()?;
     setup_logging(tmpdir.path().to_str().unwrap(), "system-test", "debug");

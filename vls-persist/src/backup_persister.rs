@@ -188,6 +188,10 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
         // operation or backup -> main when recovering from main persister failure
         true
     }
+
+    fn signer_id(&self) -> [u8; 16] {
+        self.main.signer_id()
+    }
 }
 
 #[cfg(test)]
@@ -197,6 +201,7 @@ mod tests {
     use crate::model::{ChainTrackerEntry, NodeEntry, NodeStateEntry};
     use lightning_signer::bitcoin::hashes::hex::ToHex;
     use lightning_signer::node::Node;
+    use lightning_signer::persist::SignerId;
     use lightning_signer::util::test_utils::{
         hex_decode, make_services, TEST_CHANNEL_ID, TEST_NODE_CONFIG, TEST_SEED,
     };
@@ -369,6 +374,10 @@ mod tests {
 
         fn recovery_required(&self) -> bool {
             self.state.lock().unwrap().is_empty()
+        }
+
+        fn signer_id(&self) -> SignerId {
+            todo!()
         }
     }
 

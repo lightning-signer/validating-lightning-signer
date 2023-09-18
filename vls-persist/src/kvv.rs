@@ -15,7 +15,7 @@ use lightning_signer::node::{NodeConfig, NodeState};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
-use lightning_signer::persist::{ChainTrackerListenerEntry, Error, Persist};
+use lightning_signer::persist::{ChainTrackerListenerEntry, Error, Persist, SignerId};
 use lightning_signer::policy::validator::{EnforcementState, ValidatorFactory};
 use lightning_signer::prelude::*;
 use lightning_signer::{persist::Mutations, Arc, SendSync};
@@ -67,7 +67,9 @@ pub trait KVVStore: SendSync {
     /// Clear the database
     fn clear_database(&self) -> Result<(), Error>;
     /// Start a transaction
-    fn enter(&self) {}
+    fn enter(&self) -> Result<(), Error> {
+        Ok(())
+    }
     /// Get the commit log as a Mutations object, to be stored in the cloud
     fn prepare(&self) -> Mutations {
         Mutations::new()
@@ -80,6 +82,8 @@ pub trait KVVStore: SendSync {
     fn put_batch_unlogged(&self, kvvs: &[&KVV]) -> Result<(), Error> {
         self.put_batch(kvvs)
     }
+    /// Get the signer ID
+    fn signer_id(&self) -> SignerId;
 }
 
 /// Adapter for a KVVStore to implement Persist.
@@ -278,8 +282,8 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
         self.0.clear_database()
     }
 
-    fn enter(&self) {
-        self.0.enter();
+    fn enter(&self) -> Result<(), Error> {
+        self.0.enter()
     }
 
     fn prepare(&self) -> Mutations {
@@ -294,6 +298,10 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
         let kvvs = muts.into_iter().map(|(k, (v, vv))| KVV(k, (v, vv))).collect::<Vec<_>>();
         let kvvs_refs = kvvs.iter().collect::<Vec<_>>();
         self.0.put_batch_unlogged(&kvvs_refs)
+    }
+
+    fn signer_id(&self) -> SignerId {
+        self.0.signer_id()
     }
 }
 

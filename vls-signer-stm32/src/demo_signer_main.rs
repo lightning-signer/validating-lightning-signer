@@ -28,6 +28,7 @@ use lightning_signer::prelude::Box;
 use lightning_signer::util::clock::ManualClock;
 use lightning_signer::util::velocity::VelocityControlSpec;
 use lightning_signer::Arc;
+use rand_core::RngCore;
 use random_starting_time::RandomStartingTimeFactory;
 use vls_protocol::model::PubKey;
 use vls_protocol::msgs::{self, read_serial_request_header, write_serial_response_header, Message};
@@ -114,21 +115,23 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
         let mut devctx = runctx.cmn.devctx.borrow_mut();
 
         devctx.disp.clear_screen();
+        let setupfs = runctx.cmn.setupfs.clone().unwrap();
         devctx.disp.show_texts(&[
             format!("starting"),
             format!(
                 " {: >7}:{: <9}",
                 runctx.cmn.network.to_string(),
-                runctx.cmn.setupfs.as_ref().unwrap().borrow().abbrev_path()
+                setupfs.borrow().abbrev_path()
             ),
         ]);
 
         // The seed and network come from the rundir (via NormalContext)
         let validator_factory = make_validator_factory(runctx.cmn.network, runctx.cmn.permissive);
-        let starting_time_factory =
-            RandomStartingTimeFactory::new(RefCell::new(devctx.rng.take().unwrap()));
-        let persister: Arc<dyn Persist> =
-            Arc::new(FatJsonPersister::new(Arc::clone(&runctx.cmn.setupfs.as_ref().unwrap())));
+        let mut rng = devctx.rng.take().unwrap();
+        let mut signer_id = [0u8; 16];
+        rng.fill_bytes(&mut signer_id);
+        let starting_time_factory = RandomStartingTimeFactory::new(RefCell::new(rng));
+        let persister: Arc<dyn Persist> = Arc::new(FatJsonPersister::new(setupfs, signer_id));
         let clock = Arc::new(ManualClock::new(Duration::ZERO));
         let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
         let allowlist = vec![]; // TODO - add to NormalContext

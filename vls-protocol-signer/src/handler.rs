@@ -115,10 +115,14 @@ pub type Result<T> = core::result::Result<T, Error>;
 pub trait Handler {
     /// Handle a message
     fn handle(&self, msg: Message) -> Result<(Box<dyn SerBolt>, Mutations)> {
-        self.node().get_persister().enter();
+        let node = self.node();
+        let persister = node.get_persister();
+        persister.enter().map_err(|e| {
+            error!("failed to enter persister: {:?}", e);
+            Status::internal("failed to start persister transaction")
+        })?;
         log_request(&msg);
         let result = self.do_handle(msg);
-        let persister = self.node().get_persister();
         if let Err(ref err) = result {
             log_error(err);
             if let Error::Temporary(_) = err {
@@ -158,11 +162,16 @@ pub trait Handler {
     /// You must call [`Handler::commit`] after you persist the mutations in the
     /// cloud.
     fn with_persist(&self, f: impl FnOnce(&Node) -> Result<()>) -> Result<Mutations> {
-        self.node().get_persister().enter();
         let node = self.node();
         let persister = node.get_persister();
+        persister.enter().map_err(|e| {
+            error!("failed to enter persister: {:?}", e);
+            Status::internal("failed to start persister transaction")
+        })?;
+        let result = f(&*node);
         let muts = persister.prepare();
-        match f(&*node) {
+
+        match result {
             Ok(()) => Ok(muts),
             Err(e) => {
                 if !muts.is_empty() {
@@ -255,7 +264,10 @@ impl RootHandlerBuilder {
     /// cloud.
     pub fn build(self) -> Result<(RootHandler, Mutations)> {
         let persister = self.services.persister.clone();
-        persister.enter();
+        persister.enter().map_err(|e| {
+            error!("failed to enter persister: {:?}", e);
+            Status::internal("failed to start persister transaction")
+        })?;
         let handler = self.do_build()?;
         let muts = persister.prepare();
         Ok((handler, muts))
