@@ -34,6 +34,30 @@ impl<L: KVVStore> CloudKVVStore<L> {
     pub fn get_local(&self, key: &str) -> Result<Option<(u64, Vec<u8>)>, Error> {
         self.local.get(key)
     }
+
+    fn do_get_version(
+        &self,
+        commit_log: &BTreeMap<String, (u64, Vec<u8>)>,
+        key: &str,
+    ) -> Result<Option<u64>, Error> {
+        if let Some((v, _)) = commit_log.get(key) {
+            Ok(Some(*v))
+        } else {
+            self.local.get_version(key)
+        }
+    }
+
+    fn do_get(
+        &self,
+        commit_log: &BTreeMap<String, (u64, Vec<u8>)>,
+        key: &str,
+    ) -> Result<Option<(u64, Vec<u8>)>, Error> {
+        if let Some((v, vv)) = commit_log.get(key) {
+            Ok(Some((*v, vv.clone())))
+        } else {
+            self.local.get(key)
+        }
+    }
 }
 
 impl<L: KVVStore> CloudKVVStore<L> {
@@ -75,16 +99,15 @@ impl<L: KVVStore> KVVStore for CloudKVVStore<L> {
     fn put_with_version(&self, key: &str, version: u64, value: &[u8]) -> Result<(), Error> {
         let mut commit_log_opt = self.commit_log.lock().unwrap();
         let commit_log = commit_log_opt.as_mut().expect("not in transaction");
-        let local = self.local.get(key)?;
-        let existing = commit_log.get(key).or_else(|| local.as_ref());
-        if let Some((v, _)) = existing {
-            if version < *v {
+        let existing_version = self.do_get_version(commit_log, key)?;
+        if let Some(v) = existing_version {
+            if version < v {
                 error!("version mismatch for {}: {} < {}", key, version, v);
                 // version cannot go backwards
                 return Err(Error::VersionMismatch);
-            } else if version == *v {
+            } else if version == v {
                 // if same version, value must not have changed
-                let existing = self.local.get(key).expect("failed to get").unwrap();
+                let existing = self.do_get(commit_log, key)?.expect("failed to get existing entry");
                 if existing.1 != value {
                     error!("value mismatch for {}: {}", key, version);
                     return Err(Error::VersionMismatch);
@@ -107,19 +130,13 @@ impl<L: KVVStore> KVVStore for CloudKVVStore<L> {
     fn get(&self, key: &str) -> Result<Option<(u64, Vec<u8>)>, Error> {
         let commit_log_opt = self.commit_log.lock().unwrap();
         let commit_log = commit_log_opt.as_ref().expect("not in transaction");
-        if let Some((v, vv)) = commit_log.get(key) {
-            return Ok(Some((*v, vv.clone())));
-        }
-        self.local.get(key)
+        self.do_get(commit_log, key)
     }
 
     fn get_version(&self, key: &str) -> Result<Option<u64>, Error> {
         let commit_log_opt = self.commit_log.lock().unwrap();
         let commit_log = commit_log_opt.as_ref().expect("not in transaction");
-        if let Some((v, _)) = commit_log.get(key) {
-            return Ok(Some(*v));
-        }
-        self.local.get_version(key)
+        self.do_get_version(commit_log, key)
     }
 
     fn get_prefix(&self, prefix: &str) -> Result<Self::Iter, Error> {
