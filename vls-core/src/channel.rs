@@ -1254,7 +1254,7 @@ impl Channel {
             txid: self.setup.funding_outpoint.txid,
             index: self.setup.funding_outpoint.vout as u16,
         };
-        let opt_non_zero_fee_anchors = if self.setup.is_zero_fee_htlc() { Some(()) } else { None };
+        let opt_non_zero_fee_anchors = if self.setup.is_zero_fee_htlc() { None } else { Some(()) };
         let channel_parameters = ChannelTransactionParameters {
             holder_pubkeys: self.get_channel_basepoints(),
             holder_selected_contest_delay: self.setup.holder_selected_contest_delay,
