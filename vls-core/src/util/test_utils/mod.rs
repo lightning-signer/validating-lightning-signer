@@ -506,7 +506,7 @@ pub fn init_channel(setup: ChannelSetup, node: Arc<Node>) -> ChannelId {
     let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
     node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
     let holder_shutdown_key_path = vec![];
-    node.ready_channel(channel_id.clone(), None, setup, &holder_shutdown_key_path)
+    node.setup_channel(channel_id.clone(), None, setup, &holder_shutdown_key_path)
         .expect("ready channel");
     channel_id
 }
@@ -771,7 +771,7 @@ pub fn set_next_holder_commit_num_for_testing(
 ) {
     node_ctx
         .node
-        .with_ready_channel(&chan_ctx.channel_id, |chan| {
+        .with_channel(&chan_ctx.channel_id, |chan| {
             chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
             Ok(())
         })
@@ -786,7 +786,7 @@ pub fn set_next_counterparty_commit_num_for_testing(
 ) {
     node_ctx
         .node
-        .with_ready_channel(&chan_ctx.channel_id, |chan| {
+        .with_channel(&chan_ctx.channel_id, |chan| {
             chan.enforcement_state
                 .set_next_counterparty_commit_num_for_testing(commit_num, current_point);
             Ok(())
@@ -801,7 +801,7 @@ pub fn set_next_counterparty_revoke_num_for_testing(
 ) {
     node_ctx
         .node
-        .with_ready_channel(&chan_ctx.channel_id, |chan| {
+        .with_channel(&chan_ctx.channel_id, |chan| {
             chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(revoke_num);
             Ok(())
         })
@@ -968,7 +968,7 @@ impl TestFundingTxContext {
     }
 }
 
-pub fn funding_tx_ready_channel(
+pub fn funding_tx_setup_channel(
     node_ctx: &TestNodeContext,
     chan_ctx: &mut TestChannelContext,
     tx: &Transaction,
@@ -979,7 +979,7 @@ pub fn funding_tx_ready_channel(
     let holder_shutdown_key_path = vec![];
     node_ctx
         .node
-        .ready_channel(
+        .setup_channel(
             chan_ctx.channel_id.clone(),
             None,
             chan_ctx.setup.clone(),
@@ -988,7 +988,7 @@ pub fn funding_tx_ready_channel(
         .err()
 }
 
-pub fn synthesize_ready_channel(
+pub fn synthesize_setup_channel(
     node_ctx: &TestNodeContext,
     chan_ctx: &mut TestChannelContext,
     outpoint: bitcoin::OutPoint,
@@ -998,7 +998,7 @@ pub fn synthesize_ready_channel(
     let holder_shutdown_key_path = vec![];
     node_ctx
         .node
-        .ready_channel(
+        .setup_channel(
             chan_ctx.channel_id.clone(),
             None,
             chan_ctx.setup.clone(),
@@ -1007,7 +1007,7 @@ pub fn synthesize_ready_channel(
         .expect("Channel");
     node_ctx
         .node
-        .with_ready_channel(&chan_ctx.channel_id, |chan| {
+        .with_channel(&chan_ctx.channel_id, |chan| {
             chan.enforcement_state.set_next_holder_commit_num_for_testing(next_holder_commit_num);
             Ok(())
         })
@@ -1029,7 +1029,7 @@ pub fn fund_test_channel(node_ctx: &TestNodeContext, channel_amount: u64) -> Tes
 
     let mut tx = tx_ctx.to_tx();
 
-    funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+    funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
     let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
     let (csig, hsigs) =
@@ -1079,7 +1079,7 @@ pub fn channel_commitment(
     let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
     node_ctx
         .node
-        .with_ready_channel(&chan_ctx.channel_id, |chan| {
+        .with_channel(&chan_ctx.channel_id, |chan| {
             let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
             let txkeys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
 
@@ -1139,7 +1139,7 @@ pub fn setup_funded_channel_with_setup(
         bitcoin::OutPoint { txid: Txid::from_slice(&[2u8; 32]).unwrap(), vout: 0 };
     node_ctx
         .node
-        .with_ready_channel(&chan_ctx.channel_id, |chan| {
+        .with_channel(&chan_ctx.channel_id, |chan| {
             let point = make_test_pubkey((next_counterparty_commit_num + 1) as u8);
             chan.enforcement_state.set_next_holder_commit_num_for_testing(next_holder_commit_num);
             chan.enforcement_state
@@ -1162,7 +1162,7 @@ pub fn counterparty_sign_holder_commitment(
 ) -> (Signature, Vec<Signature>) {
     let (commitment_sig, htlc_sigs) = node_ctx
         .node
-        .with_ready_channel(&chan_ctx.channel_id, |chan| {
+        .with_channel(&chan_ctx.channel_id, |chan| {
             let funding_redeemscript = make_funding_redeemscript(
                 &chan.keys.pubkeys().funding_pubkey,
                 &chan.keys.counterparty_pubkeys().funding_pubkey,
@@ -1240,7 +1240,7 @@ pub fn validate_holder_commitment(
         commit_tx_ctx.offered_htlcs.clone(),
         commit_tx_ctx.received_htlcs.clone(),
     );
-    node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
+    node_ctx.node.with_channel(&chan_ctx.channel_id, |chan| {
         let channel_parameters = chan.make_channel_parameters();
         let parameters = channel_parameters.as_holder_broadcastable();
 
@@ -1295,7 +1295,7 @@ pub fn sign_holder_commitment(
     chan_ctx: &TestChannelContext,
     commit_tx_ctx: &TestCommitmentTxContext,
 ) -> Result<(Signature, Vec<Signature>), Status> {
-    node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
+    node_ctx.node.with_channel(&chan_ctx.channel_id, |chan| {
         chan.sign_holder_commitment_tx_phase2(commit_tx_ctx.commit_num)
     })
 }
@@ -1489,7 +1489,7 @@ pub fn build_tx_scripts(
 
 pub fn get_channel_funding_pubkey(node: &Node, channel_id: &ChannelId) -> PublicKey {
     let res: Result<PublicKey, Status> =
-        node.with_ready_channel(&channel_id, |chan| Ok(chan.keys.pubkeys().funding_pubkey));
+        node.with_channel(&channel_id, |chan| Ok(chan.keys.pubkeys().funding_pubkey));
     res.unwrap()
 }
 
@@ -1498,7 +1498,7 @@ pub fn get_channel_htlc_pubkey(
     channel_id: &ChannelId,
     remote_per_commitment_point: &PublicKey,
 ) -> PublicKey {
-    let res: Result<PublicKey, Status> = node.with_ready_channel(&channel_id, |chan| {
+    let res: Result<PublicKey, Status> = node.with_channel(&channel_id, |chan| {
         let secp_ctx = &chan.secp_ctx;
         let pubkey = derive_public_key(
             &secp_ctx,
@@ -1516,7 +1516,7 @@ pub fn get_channel_delayed_payment_pubkey(
     channel_id: &ChannelId,
     remote_per_commitment_point: &PublicKey,
 ) -> PublicKey {
-    let res: Result<PublicKey, Status> = node.with_ready_channel(&channel_id, |chan| {
+    let res: Result<PublicKey, Status> = node.with_channel(&channel_id, |chan| {
         let secp_ctx = &chan.secp_ctx;
         let pubkey = derive_public_key(
             &secp_ctx,
@@ -1534,7 +1534,7 @@ pub fn get_channel_revocation_pubkey(
     channel_id: &ChannelId,
     revocation_point: &PublicKey,
 ) -> PublicKey {
-    let res: Result<PublicKey, Status> = node.with_ready_channel(&channel_id, |chan| {
+    let res: Result<PublicKey, Status> = node.with_channel(&channel_id, |chan| {
         let secp_ctx = &chan.secp_ctx;
         let pubkey = chan_utils::derive_public_revocation_key(
             secp_ctx,
@@ -1678,7 +1678,7 @@ where
     let (commit_sig0, htlc_sigs0) =
         counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx0);
 
-    node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
+    node_ctx.node.with_channel(&chan_ctx.channel_id, |chan| {
         let commit_tx_ctx = commit_tx_ctx0.clone();
         let commit_sig = commit_sig0.clone();
         let htlc_sigs = htlc_sigs0.clone();

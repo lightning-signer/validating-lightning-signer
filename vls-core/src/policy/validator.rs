@@ -38,7 +38,7 @@ pub trait Validator {
     /// The holder_shutdown_key_path should be an empty vector if the
     /// setup.holder_shutdown_script is not set or the address is in
     /// the allowlist.
-    fn validate_ready_channel(
+    fn validate_setup_channel(
         &self,
         wallet: &dyn Wallet,
         setup: &ChannelSetup,

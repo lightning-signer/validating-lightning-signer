@@ -87,7 +87,7 @@ fn persister_bench(c: &mut Criterion) {
     let channel_id1 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
 
     let mut channel = node
-        .ready_channel(channel_id0.clone(), Some(channel_id1.clone()), setup.clone(), &vec![])
+        .setup_channel(channel_id0.clone(), Some(channel_id1.clone()), setup.clone(), &vec![])
         .unwrap();
 
     channel

@@ -514,7 +514,7 @@ mod tests {
             tx: &mut tx,
         });
 
-        let err_opt = funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        let err_opt = funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
         if let Some(err) = err_opt {
             return Err(err);
         }
@@ -676,7 +676,7 @@ mod tests {
 
         let mut tx = tx_ctx.to_tx();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
@@ -734,7 +734,7 @@ mod tests {
 
         let mut tx = tx_ctx.to_tx();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
@@ -771,7 +771,7 @@ mod tests {
 
         let tx = tx_ctx.to_tx();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
@@ -814,7 +814,7 @@ mod tests {
 
         let tx = tx_ctx.to_tx();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
@@ -849,7 +849,7 @@ mod tests {
 
         let mut tx = tx_ctx.to_tx();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
@@ -882,7 +882,7 @@ mod tests {
 
         let mut tx = tx_ctx.to_tx();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
@@ -918,8 +918,8 @@ mod tests {
 
         let mut tx = tx_ctx.to_tx();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
 
         let mut commit_tx_ctx0 = channel_initial_holder_commitment(&node_ctx, &chan_ctx0);
         let (csig0, hsigs0) =
@@ -962,8 +962,8 @@ mod tests {
 
         let tx = tx_ctx.to_tx();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx0, &tx, outpoint_ndx0);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx1, &tx, outpoint_ndx1);
 
         let mut commit_tx_ctx0 = channel_initial_holder_commitment(&node_ctx, &chan_ctx0);
         let (csig0, hsigs0) =
@@ -1002,7 +1002,7 @@ mod tests {
 
         let tx = tx_ctx.to_tx();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
@@ -1033,7 +1033,7 @@ mod tests {
 
         let tx = tx_ctx.to_tx();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =
@@ -1068,7 +1068,7 @@ mod tests {
 
         let tx = tx_ctx.to_tx();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         tx_ctx.opaths[0] = vec![42, 42]; // bad output path
 
@@ -1098,9 +1098,9 @@ mod tests {
 
         let mut tx = tx_ctx.to_tx();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        // Modify the output value after funding_tx_ready_channel
+        // Modify the output value after funding_tx_setup_channel
         tx.output[1].value = channel_amount + 42; // bad output value
 
         // Because the amount is bogus, the channel isn't found and the output is considered
@@ -1127,10 +1127,10 @@ mod tests {
 
         let mut tx = tx_ctx.to_tx();
 
-        // Modify the output value before funding_tx_ready_channel
+        // Modify the output value before funding_tx_setup_channel
         tx.output[1].value = channel_amount + 42; // bad output value
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         assert_failed_precondition_err!(
             tx_ctx.sign(&node_ctx, &tx),
@@ -1158,7 +1158,7 @@ mod tests {
 
         let mut tx = tx_ctx.to_tx();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         // very bogus script
         tx.output[1].script_pubkey = Builder::new()
@@ -1197,7 +1197,7 @@ mod tests {
             .push_slice(&[27; 32])
             .into_script();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         assert_failed_precondition_err!(
             tx_ctx.sign(&node_ctx, &tx),
@@ -1226,7 +1226,7 @@ mod tests {
 
         let tx = tx_ctx.to_tx();
 
-        funding_tx_ready_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
         let (csig, hsigs) =

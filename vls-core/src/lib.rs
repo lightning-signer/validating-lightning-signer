@@ -161,7 +161,7 @@ impl Clone for Box<dyn CommitmentPointProvider> {
 mod sync;
 
 #[cfg(test)]
-mod ready_channel_tests;
+mod setup_channel_tests;
 #[cfg(test)]
 mod sign_counterparty_commitment_tests;
 #[cfg(test)]

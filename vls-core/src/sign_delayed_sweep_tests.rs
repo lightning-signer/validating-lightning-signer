@@ -67,7 +67,7 @@ mod tests {
         )?;
 
         let (sig, tx, per_commitment_point, input, redeemscript, amount_sat) =
-            node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
+            node_ctx.node.with_channel(&chan_ctx.channel_id, |chan| {
                 let mut input = 0;
                 let built_commit =
                     commit_tx_ctx.tx.as_ref().unwrap().trust().built_transaction().clone();

@@ -7,9 +7,7 @@ unset VLS_DISABLE_UPDATE_VERSION
 
 # Note that some of these need additional cargo components installed for build - see respective READMEs
 
-cargo build
-
-cargo build --bin frontend-system-test --features system-test
+cargo build --features system-test,redb-kvv
 
 (cd lightning-storage-server && cargo build)
 

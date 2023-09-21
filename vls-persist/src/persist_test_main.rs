@@ -36,7 +36,7 @@ pub fn main() {
 
     let dummy_pubkey = make_test_key(0x12).0;
     let setup = test_utils::create_test_channel_setup(dummy_pubkey);
-    let channel = node.ready_channel(channel_id, Some(channel_id1), setup, &vec![]).unwrap();
+    let channel = node.setup_channel(channel_id, Some(channel_id1), setup, &vec![]).unwrap();
 
     for (id, entry) in persister.get_node_channels(&node_id).unwrap() {
         println!("{} {:?}", id, entry);

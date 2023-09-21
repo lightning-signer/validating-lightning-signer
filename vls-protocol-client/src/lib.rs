@@ -44,12 +44,12 @@ use vls_protocol::model::{
 use vls_protocol::msgs::{
     DeBolt, Ecdh, EcdhReply, GetChannelBasepoints, GetChannelBasepointsReply,
     GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply,
-    GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply,
-    ReadyChannel, ReadyChannelReply, SerBolt, SignChannelAnnouncement,
-    SignChannelAnnouncementReply, SignCommitmentTxWithHtlcsReply, SignGossipMessage,
-    SignGossipMessageReply, SignInvoice, SignInvoiceReply, SignLocalCommitmentTx2,
-    SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal, SignWithdrawalReply,
-    ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply,
+    GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, SerBolt,
+    SetupChannel, SetupChannelReply, SignChannelAnnouncement, SignChannelAnnouncementReply,
+    SignCommitmentTxWithHtlcsReply, SignGossipMessage, SignGossipMessageReply, SignInvoice,
+    SignInvoiceReply, SignLocalCommitmentTx2, SignMutualCloseTx2, SignRemoteCommitmentTx2,
+    SignTxReply, SignWithdrawal, SignWithdrawalReply, ValidateCommitmentTx2,
+    ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply,
 };
 use vls_protocol::serde_bolt::{Array, ArrayBE, Octets, WireString};
 use vls_protocol::{model, Error as ProtocolError};
@@ -416,7 +416,7 @@ impl ChannelSigner for SignerClient {
         };
 
         let ser_channel_type = commitment_type_to_channel_type(commitment_type);
-        let message = ReadyChannel {
+        let message = SetupChannel {
             is_outbound: p.is_outbound_from_holder,
             channel_value: self.channel_value,
             push_value: 0, // TODO
@@ -437,7 +437,7 @@ impl ChannelSigner for SignerClient {
             channel_type: ser_channel_type.into(),
         };
 
-        let _: ReadyChannelReply = self.call(message).expect("ready channel");
+        let _: SetupChannelReply = self.call(message).expect("setup channel");
     }
 }
 

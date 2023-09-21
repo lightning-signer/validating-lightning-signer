@@ -199,7 +199,7 @@ impl JSNode {
         JSChannelId(channel_id)
     }
 
-    pub fn ready_channel(&self, id: &JSChannelId, s: &JSChannelSetup) -> Result<(), JsValue> {
+    pub fn setup_channel(&self, id: &JSChannelId, s: &JSChannelSetup) -> Result<(), JsValue> {
         let p = s.counterparty_points;
         let cp_points = ChannelPublicKeys {
             funding_pubkey: p.funding_pubkey,
@@ -221,7 +221,7 @@ impl JSNode {
             commitment_type: CommitmentType::StaticRemoteKey,
         };
         let _channel =
-            self.node.ready_channel(id.0.clone(), None, setup, &vec![]).map_err(from_status)?;
+            self.node.setup_channel(id.0.clone(), None, setup, &vec![]).map_err(from_status)?;
         Ok(())
     }
 
@@ -233,7 +233,7 @@ impl JSNode {
         to_counterparty_value_sat: u64,
     ) -> Result<Signature, JsValue> {
         self.node
-            .with_ready_channel(&channel_id.0, |chan| {
+            .with_channel(&channel_id.0, |chan| {
                 chan.sign_holder_commitment_tx_phase2_redundant(
                     commit_num,
                     0, // feerate not used

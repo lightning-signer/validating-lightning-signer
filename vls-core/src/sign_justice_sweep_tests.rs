@@ -60,7 +60,7 @@ mod tests {
         let chan_ctx = TestChannelContext { channel_id, setup: setup.clone(), counterparty_keys };
 
         let (sig, tx, revocation_secret, input, redeemscript, amount_sat) =
-            node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
+            node_ctx.node.with_channel(&chan_ctx.channel_id, |chan| {
                 let secp_ctx = Secp256k1::new();
 
                 // These need to match sign_commitment_tx_with_mutators_setup() ...

@@ -111,7 +111,7 @@ impl LoopbackChannelSigner {
 
     fn get_channel_setup(&self) -> Result<ChannelSetup, ()> {
         self.signer
-            .with_ready_channel(&self.node_id, &self.channel_id, |chan| Ok(chan.setup.clone()))
+            .with_channel(&self.node_id, &self.channel_id, |chan| Ok(chan.setup.clone()))
             .map_err(|s| self.bad_status(s))
     }
 
@@ -155,7 +155,7 @@ impl LoopbackChannelSigner {
 
         let (sig, htlc_sigs) = self
             .signer
-            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+            .with_channel(&self.node_id, &self.channel_id, |chan| {
                 let result = chan.sign_holder_commitment_tx_phase2_redundant(
                     commitment_number,
                     feerate_per_kw,
@@ -222,7 +222,7 @@ impl ChannelSigner for LoopbackChannelSigner {
     fn release_commitment_secret(&self, commitment_number: u64) -> [u8; 32] {
         // signer layer expect forward counting commitment number, but
         // we are passed a backwards counting one
-        let secret = self.signer.with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+        let secret = self.signer.with_channel(&self.node_id, &self.channel_id, |chan| {
             let secret = chan
                 .get_per_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number)
                 .unwrap()[..]
@@ -241,7 +241,7 @@ impl ChannelSigner for LoopbackChannelSigner {
         let commitment_number = INITIAL_COMMITMENT_NUMBER - holder_tx.commitment_number();
 
         self.signer
-            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+            .with_channel(&self.node_id, &self.channel_id, |chan| {
                 chan.htlcs_fulfilled(preimages.clone());
                 let (offered_htlcs, received_htlcs) =
                     LoopbackChannelSigner::convert_to_htlc_info2(holder_tx.htlcs());
@@ -268,9 +268,7 @@ impl ChannelSigner for LoopbackChannelSigner {
 
     fn channel_keys_id(&self) -> [u8; 32] {
         self.signer
-            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
-                Ok(chan.keys.channel_keys_id())
-            })
+            .with_channel(&self.node_id, &self.channel_id, |chan| Ok(chan.keys.channel_keys_id()))
             .expect("missing channel")
     }
 
@@ -295,7 +293,7 @@ impl ChannelSigner for LoopbackChannelSigner {
         let node = self.signer.get_node(&self.node_id).expect("no such node");
 
         let holder_shutdown_key_path = vec![];
-        node.ready_channel(self.channel_id.clone(), None, setup, &holder_shutdown_key_path)
+        node.setup_channel(self.channel_id.clone(), None, setup, &holder_shutdown_key_path)
             .expect("channel already ready or does not exist");
     }
 }
@@ -329,7 +327,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
 
         let (commitment_sig, htlc_sigs) = self
             .signer
-            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+            .with_channel(&self.node_id, &self.channel_id, |chan| {
                 chan.htlcs_fulfilled(preimages.clone());
                 chan.sign_counterparty_commitment_tx_phase2(
                     &per_commitment_point,
@@ -348,7 +346,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
     fn validate_counterparty_revocation(&self, idx: u64, secret: &SecretKey) -> Result<(), ()> {
         let forward_idx = INITIAL_COMMITMENT_NUMBER - idx;
         self.signer
-            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+            .with_channel(&self.node_id, &self.channel_id, |chan| {
                 chan.validate_counterparty_revocation(forward_idx, secret)
             })
             .map_err(|s| self.bad_status(s))?;
@@ -370,7 +368,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         secp_ctx: &Secp256k1<All>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
         self.signer
-            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+            .with_channel(&self.node_id, &self.channel_id, |chan| {
                 chan.keys
                     .unsafe_sign_holder_commitment_and_htlcs(hct, secp_ctx)
                     .map_err(|_| Status::internal("could not unsafe-sign"))
@@ -407,7 +405,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         // TODO phase 2
         let sig = self
             .signer
-            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+            .with_channel(&self.node_id, &self.channel_id, |chan| {
                 chan.sign_justice_sweep(
                     justice_tx,
                     input,
@@ -439,7 +437,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         // TODO phase 2
         let sig = self
             .signer
-            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+            .with_channel(&self.node_id, &self.channel_id, |chan| {
                 chan.sign_justice_sweep(
                     justice_tx,
                     input,
@@ -480,7 +478,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         // TODO phase 2
         let sig = self
             .signer
-            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+            .with_channel(&self.node_id, &self.channel_id, |chan| {
                 chan.sign_counterparty_htlc_sweep(
                     htlc_tx,
                     input,
@@ -505,7 +503,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
 
         // TODO error handling is awkward
         self.signer
-            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+            .with_channel(&self.node_id, &self.channel_id, |chan| {
                 // matches ldk_shutdown_pubkey derivation in [`MyKeysManager::new`]
                 let holder_wallet_path_hint = vec![2];
 
@@ -537,7 +535,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         info!("sign_counterparty_commitment {:?} {:?}", self.node_id, self.channel_id);
 
         self.signer
-            .with_ready_channel(&self.node_id, &self.channel_id, |chan| {
+            .with_channel(&self.node_id, &self.channel_id, |chan| {
                 Ok(chan.sign_channel_announcement_with_funding_key(&msg.encode()))
             })
             .map_err(|s| self.bad_status(s))

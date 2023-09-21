@@ -47,7 +47,7 @@ fn main() {
     let counterparty_pubkey = PublicKey::from_secret_key(&secp_ctx, &counterparty_key);
     let setup = create_test_channel_setup(counterparty_pubkey);
     let channel_id = init_channel(setup, node.clone());
-    node.with_ready_channel(&channel_id, |channel| {
+    node.with_channel(&channel_id, |channel| {
         channel
             .advance_holder_commitment(&counterparty_key, &counterparty_key, vec![], 123000, 0)
             .unwrap();

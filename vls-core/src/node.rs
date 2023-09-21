@@ -1450,14 +1450,10 @@ impl Node {
         f(base)
     }
 
-    /// Execute a function with an existing ready channel.
+    /// Execute a function with an existing configured channel.
     ///
     /// An invalid_argument [Status] will be returned if the channel does not exist.
-    pub fn with_ready_channel<F: Sized, T>(
-        &self,
-        channel_id: &ChannelId,
-        mut f: F,
-    ) -> Result<T, Status>
+    pub fn with_channel<F: Sized, T>(&self, channel_id: &ChannelId, mut f: F) -> Result<T, Status>
     where
         F: FnMut(&mut Channel) -> Result<T, Status>,
     {
@@ -1649,7 +1645,7 @@ impl Node {
         Ok(nodes)
     }
 
-    /// Ready a new channel, making it available for use.
+    /// Setup a new channel, making it available for use.
     ///
     /// This populates fields that are known later in the channel creation flow,
     /// such as fields that are supplied by the counterparty and funding outpoint.
@@ -1659,7 +1655,7 @@ impl Node {
     ///
     /// The channel is promoted from a [ChannelStub] to a [Channel].
     /// After this call, the channel may be referred to by either ID.
-    pub fn ready_channel(
+    pub fn setup_channel(
         &self,
         channel_id0: ChannelId,
         opt_channel_id: Option<ChannelId>,
@@ -1728,7 +1724,7 @@ impl Node {
             }
         };
 
-        validator.validate_ready_channel(self, &setup, holder_shutdown_key_path)?;
+        validator.validate_setup_channel(self, &setup, holder_shutdown_key_path)?;
 
         let mut channels = self.channels.lock().unwrap();
 
@@ -2825,7 +2821,7 @@ mod tests {
     fn channel_debug_test() {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
-        let _status: Result<(), Status> = node.with_ready_channel(&channel_id, |chan| {
+        let _status: Result<(), Status> = node.with_channel(&channel_id, |chan| {
             assert_eq!(format!("{:?}", chan), "channel");
             Ok(())
         });
@@ -2875,21 +2871,21 @@ mod tests {
         // note that these channels are clones of the ones in the node, so the ones in the nodes
         // will not be updated in this test
         let mut channel = node
-            .ready_channel(
+            .setup_channel(
                 channel_id.clone(),
                 None,
                 make_test_channel_setup_with_points(true, points1),
                 &holder_shutdown_key_path,
             )
-            .expect("ready_channel");
+            .expect("setup_channel");
         let mut channel1 = node1
-            .ready_channel(
+            .setup_channel(
                 channel_id1.clone(),
                 None,
                 make_test_channel_setup_with_points(false, points),
                 &holder_shutdown_key_path,
             )
-            .expect("ready_channel 1");
+            .expect("setup_channel 1");
         let commit_num = 0;
         next_state(&mut channel, &mut channel1, commit_num, 2_999_000, 0, vec![], vec![]);
 
@@ -3104,7 +3100,7 @@ mod tests {
         let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
         node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
         assert!(node
-            .with_ready_channel(&channel_id, |_channel| {
+            .with_channel(&channel_id, |_channel| {
                 panic!("should not be called");
                 #[allow(unreachable_code)]
                 Ok(())
@@ -3281,7 +3277,7 @@ mod tests {
                 invoice_validator.clone()
             ));
         }
-        node.with_ready_channel(&channel_id, |chan| {
+        node.with_channel(&channel_id, |chan| {
             chan.htlcs_fulfilled(vec![preimage]);
             Ok(())
         })
@@ -3318,7 +3314,7 @@ mod tests {
                 invoice_validator.clone()
             ));
         }
-        node.with_ready_channel(&channel_id, |chan| {
+        node.with_channel(&channel_id, |chan| {
             chan.htlcs_fulfilled(vec![preimage]);
             Ok(())
         })
@@ -3535,7 +3531,7 @@ mod tests {
         let commit_num = 23;
 
         let (point, secret) = node
-            .with_ready_channel(&channel_id, |chan| {
+            .with_channel(&channel_id, |chan| {
                 // The channel next_holder_commit_num must be 2 past the
                 // requested commit_num for get_per_commitment_secret.
                 chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num + 2);
@@ -3582,7 +3578,7 @@ mod tests {
 
         let ann = hex_decode("0123456789abcdef").unwrap();
         let bsig = node
-            .with_ready_channel(&channel_id, |chan| {
+            .with_channel(&channel_id, |chan| {
                 Ok(chan.sign_channel_announcement_with_funding_key(&ann))
             })
             .unwrap();
@@ -3590,7 +3586,7 @@ mod tests {
         let ca_hash = Sha256dHash::hash(&ann);
         let encmsg = Message::from_slice(&ca_hash[..]).expect("encmsg");
         let secp_ctx = Secp256k1::new();
-        node.with_ready_channel(&channel_id, |chan| {
+        node.with_channel(&channel_id, |chan| {
             let funding_pubkey = PublicKey::from_secret_key(&secp_ctx, &chan.keys.funding_key);
             Ok(secp_ctx.verify_ecdsa(&encmsg, &bsig, &funding_pubkey).expect("verify bsig"))
         })
@@ -3687,21 +3683,21 @@ mod tests {
         // note that these channels are clones of the ones in the node, so the ones in the nodes
         // will not be updated in this test
         let mut channel = node
-            .ready_channel(
+            .setup_channel(
                 channel_id.clone(),
                 None,
                 make_test_channel_setup_with_points(true, points1),
                 &holder_shutdown_key_path,
             )
-            .expect("ready_channel");
+            .expect("setup_channel");
         let mut channel1 = node1
-            .ready_channel(
+            .setup_channel(
                 channel_id1.clone(),
                 None,
                 make_test_channel_setup_with_points(false, points),
                 &holder_shutdown_key_path,
             )
-            .expect("ready_channel 1");
+            .expect("setup_channel 1");
         let commit_num = 0;
         next_state(&mut channel, &mut channel1, commit_num, 2_999_000, 0, vec![], vec![]);
 
@@ -3738,11 +3734,11 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let (channel_id, chan) = node.new_channel(None, &node).unwrap();
 
-        node.ready_channel(channel_id.clone(), None, make_test_channel_setup(), &vec![])
+        node.setup_channel(channel_id.clone(), None, make_test_channel_setup(), &vec![])
             .expect("ready channel");
 
         let uck = node
-            .with_ready_channel(&channel_id, |chan| chan.get_unilateral_close_key(&None, &None))
+            .with_channel(&channel_id, |chan| chan.get_unilateral_close_key(&None, &None))
             .unwrap();
         let keys = &chan.as_ref().unwrap().unwrap_stub().keys;
         let key = keys.pubkeys().payment_point;
@@ -3775,7 +3771,7 @@ mod tests {
         .unwrap();
         let commitment_point = PublicKey::from_secret_key(&secp_ctx, &commitment_secret);
         let uck = node
-            .with_ready_channel(&channel_id, |chan| {
+            .with_channel(&channel_id, |chan| {
                 chan.get_unilateral_close_key(&Some(commitment_point), &Some(revocation_point))
             })
             .unwrap();

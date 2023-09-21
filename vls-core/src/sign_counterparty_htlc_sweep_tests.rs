@@ -90,7 +90,7 @@ mod tests {
         let chan_ctx = TestChannelContext { channel_id, setup: setup.clone(), counterparty_keys };
 
         let (sig, tx, remote_per_commitment_point, input, htlc_redeemscript, htlc_amount_sat) =
-            node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
+            node_ctx.node.with_channel(&chan_ctx.channel_id, |chan| {
                 // These need to match sign_commitment_tx_with_mutators_setup() ...
                 let commit_num = 23;
                 let feerate_per_kw = 5_000;

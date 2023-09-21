@@ -1067,7 +1067,7 @@ mod tests {
         let to_cp = 200000;
         let htlcs = Vec::new();
         let closing_commitment_tx = node
-            .with_ready_channel(&channel_id, |chan| {
+            .with_channel(&channel_id, |chan| {
                 chan.set_next_holder_commit_num_for_testing(commit_num);
                 let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
                 let txkeys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
@@ -1127,7 +1127,7 @@ mod tests {
             transaction_output_index: None,
         }];
         let closing_commitment_tx = node
-            .with_ready_channel(&channel_id, |chan| {
+            .with_channel(&channel_id, |chan| {
                 let per_commitment_point = make_test_pubkey(12);
                 chan.set_next_counterparty_commit_num_for_testing(
                     commit_num,
@@ -1205,9 +1205,7 @@ mod tests {
         let channel = node.get_channel(&channel_id).unwrap();
         let cpp = Box::new(ChannelCommitmentPointProvider::new(channel.clone()));
         let monitor = node
-            .with_ready_channel(&channel_id, |chan| {
-                Ok(chan.monitor.clone().as_monitor(cpp.clone()))
-            })
+            .with_channel(&channel_id, |chan| Ok(chan.monitor.clone().as_monitor(cpp.clone())))
             .unwrap();
         let block_hash = BlockHash::all_zeros();
         monitor.on_add_block(&[], &block_hash);

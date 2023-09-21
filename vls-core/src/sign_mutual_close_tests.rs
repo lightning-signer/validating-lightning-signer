@@ -49,7 +49,7 @@ mod tests {
             to_counterparty_value_sat -= fee;
         };
 
-        node.with_ready_channel(&channel_id, |chan| {
+        node.with_channel(&channel_id, |chan| {
             // Construct the EnforcementState prior to the mutual_close.
             let estate = &mut chan.enforcement_state;
             estate.next_holder_commit_num = holder_commit_num + 1;
@@ -124,7 +124,7 @@ mod tests {
             ChannelBalanceBuilder::new().claimable(2_000_000).channel_count(1).build()
         );
 
-        let (tx, sig) = node.with_ready_channel(&channel_id, |chan| {
+        let (tx, sig) = node.with_channel(&channel_id, |chan| {
             let mut holder_value_sat = to_holder_value_sat;
             let mut counterparty_value_sat = to_counterparty_value_sat;
             let mut holder_shutdown_script = Address::p2wpkh(
@@ -194,13 +194,13 @@ mod tests {
         );
 
         // Secrets can still be released if they are old enough.
-        assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
+        assert_status_ok!(node.with_channel(&channel_id, |chan| {
             chan.get_per_commitment_secret(holder_commit_num - 1)
         }));
 
         // policy-revoke-not-closed
         // Channel is marked closed.
-        assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
+        assert_status_ok!(node.with_channel(&channel_id, |chan| {
             assert_eq!(chan.enforcement_state.channel_closed, true);
             Ok(())
         }));
@@ -244,7 +244,7 @@ mod tests {
             counterparty_shutdown_script,
             funding_outpoint,
             sig,
-        ) = node.with_ready_channel(&channel_id, |chan| {
+        ) = node.with_channel(&channel_id, |chan| {
             let mut wallet_path = init_holder_wallet_path_hint.clone();
             let mut holder_value_sat = to_holder_value_sat;
             let mut counterparty_value_sat = to_counterparty_value_sat;
@@ -323,13 +323,13 @@ mod tests {
         );
 
         // Secrets can still be released if they are old enough.
-        assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
+        assert_status_ok!(node.with_channel(&channel_id, |chan| {
             chan.get_per_commitment_secret(holder_commit_num - 1)
         }));
 
         // policy-revoke-not-closed
         // Channel is marked closed.
-        assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
+        assert_status_ok!(node.with_channel(&channel_id, |chan| {
             assert_eq!(chan.enforcement_state.channel_closed, true);
             Ok(())
         }));

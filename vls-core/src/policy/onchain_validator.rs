@@ -102,13 +102,13 @@ fn make_onchain_policy(_network: Network, filter: PolicyFilter) -> OnchainPolicy
 }
 
 impl Validator for OnchainValidator {
-    fn validate_ready_channel(
+    fn validate_setup_channel(
         &self,
         wallet: &dyn Wallet,
         setup: &ChannelSetup,
         holder_shutdown_key_path: &[u32],
     ) -> Result<(), ValidationError> {
-        self.inner.validate_ready_channel(wallet, setup, holder_shutdown_key_path)
+        self.inner.validate_setup_channel(wallet, setup, holder_shutdown_key_path)
     }
 
     fn validate_channel_value(&self, setup: &ChannelSetup) -> Result<(), ValidationError> {
