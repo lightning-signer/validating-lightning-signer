@@ -378,7 +378,7 @@ impl SimpleValidator {
 }
 
 impl Validator for SimpleValidator {
-    fn validate_ready_channel(
+    fn validate_setup_channel(
         &self,
         wallet: &dyn Wallet,
         setup: &ChannelSetup,
@@ -603,7 +603,7 @@ impl Validator for SimpleValidator {
                             .setup
                             .channel_value_sat
                             .checked_sub(push_val_sat)
-                            .expect("push value underflow checked in ready_channel");
+                            .expect("push value underflow checked in setup_channel");
                         debug!("output {} ({}) funds channel {}", outndx, output.value, chan.id());
                         beneficial_sum =
                             add_beneficial_output!(beneficial_sum, our_value, "channel value")?;
@@ -2012,10 +2012,10 @@ mod tests {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.holder_selected_contest_delay = 5;
-        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_ok());
+        assert!(validator.validate_setup_channel(&*node, &setup, &vec![]).is_ok());
         setup.holder_selected_contest_delay = 4;
         assert_policy_err!(
-            validator.validate_ready_channel(&*node, &setup, &vec![]),
+            validator.validate_setup_channel(&*node, &setup, &vec![]),
             "validate_delay: counterparty contest-delay too small: 4 < 5"
         );
     }
@@ -2026,11 +2026,11 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
-        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_ok());
+        assert!(validator.validate_setup_channel(&*node, &setup, &vec![]).is_ok());
         setup.commitment_type = CommitmentType::Anchors;
-        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_err());
+        assert!(validator.validate_setup_channel(&*node, &setup, &vec![]).is_err());
         setup.commitment_type = CommitmentType::Legacy;
-        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_err());
+        assert!(validator.validate_setup_channel(&*node, &setup, &vec![]).is_err());
     }
 
     // policy-channel-contest-delay-range-holder
@@ -2041,10 +2041,10 @@ mod tests {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.holder_selected_contest_delay = 1440;
-        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_ok());
+        assert!(validator.validate_setup_channel(&*node, &setup, &vec![]).is_ok());
         setup.holder_selected_contest_delay = 1441;
         assert_policy_err!(
-            validator.validate_ready_channel(&*node, &setup, &vec![]),
+            validator.validate_setup_channel(&*node, &setup, &vec![]),
             "validate_delay: counterparty contest-delay too large: 1441 > 1440"
         );
     }
@@ -2057,10 +2057,10 @@ mod tests {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.counterparty_selected_contest_delay = 5;
-        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_ok());
+        assert!(validator.validate_setup_channel(&*node, &setup, &vec![]).is_ok());
         setup.counterparty_selected_contest_delay = 4;
         assert_policy_err!(
-            validator.validate_ready_channel(&*node, &setup, &vec![]),
+            validator.validate_setup_channel(&*node, &setup, &vec![]),
             "validate_delay: holder contest-delay too small: 4 < 5"
         );
     }
@@ -2073,10 +2073,10 @@ mod tests {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.counterparty_selected_contest_delay = 1440;
-        assert!(validator.validate_ready_channel(&*node, &setup, &vec![]).is_ok());
+        assert!(validator.validate_setup_channel(&*node, &setup, &vec![]).is_ok());
         setup.counterparty_selected_contest_delay = 1441;
         assert_policy_err!(
-            validator.validate_ready_channel(&*node, &setup, &vec![]),
+            validator.validate_setup_channel(&*node, &setup, &vec![]),
             "validate_delay: holder contest-delay too large: 1441 > 1440"
         );
     }

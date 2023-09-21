@@ -306,7 +306,7 @@ mod tests {
         let (commit_sig0, htlc_sigs0) =
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx0);
 
-        node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
+        node_ctx.node.with_channel(&chan_ctx.channel_id, |chan| {
             let mut commit_tx_ctx = commit_tx_ctx0.clone();
             let mut commit_sig = commit_sig0.clone();
             let mut htlc_sigs = htlc_sigs0.clone();
@@ -943,7 +943,7 @@ mod tests {
     fn channel_state_counterparty_commit_and_revoke_test() {
         let node_ctx = test_node_ctx(1);
         let mut chan_ctx = test_chan_ctx(&node_ctx, 1, 3_000_000);
-        synthesize_ready_channel(
+        synthesize_setup_channel(
             &node_ctx,
             &mut chan_ctx,
             bitcoin::OutPoint { txid: Txid::from_slice(&[2u8; 32]).unwrap(), vout: 0 },
@@ -951,7 +951,7 @@ mod tests {
         );
         node_ctx
             .node
-            .with_ready_channel(&chan_ctx.channel_id, |chan| {
+            .with_channel(&chan_ctx.channel_id, |chan| {
                 let validator = chan.validator();
                 let state = &mut chan.enforcement_state;
 

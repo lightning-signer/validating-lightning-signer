@@ -360,7 +360,7 @@ impl RootHandler {
                         .as_ref()
                         .map(|p| PublicKey::from_slice(&p.0).expect("TODO"));
 
-                    let ck = self.node.with_ready_channel(&channel_id, |chan| {
+                    let ck = self.node.with_channel(&channel_id, |chan| {
                         let revocation_pubkey = per_commitment_point.as_ref().map(|p| {
                             let revocation_basepoint =
                                 chan.keys.counterparty_pubkeys().revocation_basepoint;
@@ -597,14 +597,13 @@ impl Handler for RootHandler {
                 // the locktime field will be set to 0 for a mutual close.
                 let sig = if tx.lock_time.0 == 0 {
                     let opaths = extract_psbt_output_paths(&m.psbt.0);
-                    self.node.with_ready_channel(&channel_id, |chan| {
-                        chan.sign_mutual_close_tx(&tx, &opaths)
-                    })?
+                    self.node
+                        .with_channel(&channel_id, |chan| chan.sign_mutual_close_tx(&tx, &opaths))?
                 } else {
                     // We ignore everything in the message other than the commitment number,
                     // since the signer already has this info.
                     self.node
-                        .with_ready_channel(&channel_id, |chan| {
+                        .with_channel(&channel_id, |chan| {
                             chan.sign_holder_commitment_tx_phase2(m.commitment_number)
                         })?
                         .0
@@ -777,9 +776,9 @@ impl Handler for RootHandler {
 
                 let channel_id = Self::channel_id(&m.peer_id, m.dbid);
                 self.sign_withdrawal(&mut streamed, utxos)?;
-                let anchor_redeemscript = self.node.with_ready_channel(&channel_id, |channel| {
-                    Ok(channel.get_anchor_redeemscript())
-                })?;
+                let anchor_redeemscript = self
+                    .node
+                    .with_channel(&channel_id, |channel| Ok(channel.get_anchor_redeemscript()))?;
                 let anchor_scriptpubkey = anchor_redeemscript.to_v0_p2wsh();
 
                 let mut psbt = streamed.psbt;
@@ -794,7 +793,7 @@ impl Handler for RootHandler {
                             .unwrap_or(false)
                     })
                     .ok_or_else(|| Status::invalid_argument("anchor not found in psbt"))?;
-                let sig = self.node.with_ready_channel(&channel_id, |channel| {
+                let sig = self.node.with_channel(&channel_id, |channel| {
                     Ok(channel.sign_holder_anchor_input(&psbt.unsigned_tx, anchor_index)?)
                 })?;
                 let witness = vec![signature_to_bitcoin_vec(sig), anchor_redeemscript.to_bytes()];
@@ -881,7 +880,7 @@ impl Handler for ChannelHandler {
             Message::CheckFutureSecret(m) => {
                 let secret_key = SecretKey::from_slice(&m.secret.0)
                     .map_err(|_| Status::invalid_argument("bad secret key"))?;
-                let result = self.node.with_ready_channel(&self.channel_id, |chan| {
+                let result = self.node.with_channel(&self.channel_id, |chan| {
                     chan.check_future_secret(m.commitment_number, &secret_key)
                 })?;
                 Ok(Box::new(msgs::CheckFutureSecretReply { result }))
@@ -922,7 +921,7 @@ impl Handler for ChannelHandler {
 
                 Ok(Box::new(msgs::GetPerCommitmentPoint2Reply { point: PubKey(point.serialize()) }))
             }
-            Message::ReadyChannel(m) => {
+            Message::SetupChannel(m) => {
                 let funding_outpoint =
                     OutPoint { txid: m.funding_txid, vout: m.funding_txout as u32 };
 
@@ -961,14 +960,14 @@ impl Handler for ChannelHandler {
                     counterparty_shutdown_script,
                     commitment_type: channel_type_to_commitment_type(&m.channel_type),
                 };
-                self.node.ready_channel(
+                self.node.setup_channel(
                     self.channel_id.clone(),
                     None,
                     setup,
                     &holder_shutdown_key_path,
                 )?;
 
-                Ok(Box::new(msgs::ReadyChannelReply {}))
+                Ok(Box::new(msgs::SetupChannelReply {}))
             }
             Message::SignRemoteHtlcTx(m) => {
                 let psbt = m.psbt;
@@ -987,7 +986,7 @@ impl Handler for ChannelHandler {
                     .value;
                 let output_witscript =
                     psbt.outputs[0].witness_script.as_ref().expect("output witscript");
-                let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
+                let sig = self.node.with_channel(&self.channel_id, |chan| {
                     chan.sign_counterparty_htlc_tx(
                         &tx,
                         &remote_per_commitment_point,
@@ -1009,7 +1008,7 @@ impl Handler for ChannelHandler {
                 let feerate_sat_per_kw = m.feerate;
                 // Flip offered and received
                 let (offered_htlcs, received_htlcs) = extract_htlcs(&m.htlcs);
-                let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
+                let sig = self.node.with_channel(&self.channel_id, |chan| {
                     chan.sign_counterparty_commitment_tx(
                         &tx,
                         &witscripts,
@@ -1029,7 +1028,7 @@ impl Handler for ChannelHandler {
                 let feerate_sat_per_kw = m.feerate;
                 // Flip offered and received
                 let (offered_htlcs, received_htlcs) = extract_htlcs(&m.htlcs);
-                let (sig, htlc_sigs) = self.node.with_ready_channel(&self.channel_id, |chan| {
+                let (sig, htlc_sigs) = self.node.with_channel(&self.channel_id, |chan| {
                     chan.sign_counterparty_commitment_tx_phase2(
                         &remote_per_commitment_point,
                         commit_num,
@@ -1088,13 +1087,13 @@ impl Handler for ChannelHandler {
                         .map(|o| Address::from_script(&o.script_pubkey, self.node.network()))
                         .collect::<Vec<_>>()
                 );
-                let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
+                let sig = self.node.with_channel(&self.channel_id, |chan| {
                     chan.sign_mutual_close_tx(&tx, &opaths)
                 })?;
                 Ok(Box::new(msgs::SignTxReply { signature: to_bitcoin_sig(sig) }))
             }
             Message::SignMutualCloseTx2(m) => {
-                let sig = self.node.with_ready_channel(&self.channel_id, |chan| {
+                let sig = self.node.with_channel(&self.channel_id, |chan| {
                     chan.sign_mutual_close_tx_phase2(
                         m.to_local_value_sat,
                         m.to_remote_value_sat,
@@ -1127,7 +1126,7 @@ impl Handler for ChannelHandler {
                     })
                     .collect();
                 let (next_per_commitment_point, old_secret) =
-                    self.node.with_ready_channel(&self.channel_id, |chan| {
+                    self.node.with_channel(&self.channel_id, |chan| {
                         chan.validate_holder_commitment_tx(
                             &tx,
                             &witscripts,
@@ -1165,7 +1164,7 @@ impl Handler for ChannelHandler {
                     })
                     .collect();
                 let (next_per_commitment_point, old_secret) =
-                    self.node.with_ready_channel(&self.channel_id, |chan| {
+                    self.node.with_channel(&self.channel_id, |chan| {
                         chan.validate_holder_commitment_tx_phase2(
                             commit_num,
                             feerate_sat_per_kw,
@@ -1185,7 +1184,7 @@ impl Handler for ChannelHandler {
                 }))
             }
             Message::SignLocalCommitmentTx2(m) => {
-                let (sig, htlc_sigs) = self.node.with_ready_channel(&self.channel_id, |chan| {
+                let (sig, htlc_sigs) = self.node.with_channel(&self.channel_id, |chan| {
                     chan.sign_holder_commitment_tx_phase2(m.commitment_number)
                 })?;
                 Ok(Box::new(msgs::SignCommitmentTxWithHtlcsReply {
@@ -1198,7 +1197,7 @@ impl Handler for ChannelHandler {
             Message::ValidateRevocation(m) => {
                 let revoke_num = m.commitment_number;
                 let old_secret = SecretKey::from_slice(&m.commitment_secret.0).expect("secret");
-                self.node.with_ready_channel(&self.channel_id, |chan| {
+                self.node.with_channel(&self.channel_id, |chan| {
                     chan.validate_counterparty_revocation(revoke_num, &old_secret)
                 })?;
                 Ok(Box::new(msgs::ValidateRevocationReply {}))
@@ -1214,7 +1213,7 @@ impl Handler for ChannelHandler {
             ),
             Message::SignChannelAnnouncement(m) => {
                 let message = m.announcement[256 + 2..].to_vec();
-                let bitcoin_sig = self.node.with_ready_channel(&self.channel_id, |chan| {
+                let bitcoin_sig = self.node.with_channel(&self.channel_id, |chan| {
                     Ok(chan.sign_channel_announcement_with_funding_key(&message))
                 })?;
                 let node_sig = self.node.sign_channel_update(&message)?;
@@ -1259,7 +1258,7 @@ fn sign_delayed_payment_to_us(
     let htlc_amount_sat =
         psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
     let wallet_paths = extract_psbt_output_paths(&psbt);
-    let sig = node.with_ready_channel(channel_id, |chan| {
+    let sig = node.with_channel(channel_id, |chan| {
         chan.sign_delayed_sweep(
             &tx,
             input,
@@ -1294,7 +1293,7 @@ fn sign_remote_htlc_to_us(
     let htlc_amount_sat =
         psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
     let wallet_paths = extract_psbt_output_paths(&psbt);
-    let sig = node.with_ready_channel(channel_id, |chan| {
+    let sig = node.with_channel(channel_id, |chan| {
         chan.sign_counterparty_htlc_sweep(
             &tx,
             input,
@@ -1328,7 +1327,7 @@ fn sign_local_htlc_tx(
     let htlc_amount_sat =
         psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
     let output_witscript = psbt.outputs[0].witness_script.as_ref().expect("output witscript");
-    let sig = node.with_ready_channel(channel_id, |chan| {
+    let sig = node.with_channel(channel_id, |chan| {
         chan.sign_holder_htlc_tx(
             &tx,
             commitment_number,
@@ -1361,7 +1360,7 @@ fn sign_penalty_to_us(
     let htlc_amount_sat =
         psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
     let wallet_paths = extract_psbt_output_paths(&psbt);
-    let sig = node.with_ready_channel(&channel_id, |chan| {
+    let sig = node.with_channel(&channel_id, |chan| {
         chan.sign_justice_sweep(
             &tx,
             input,

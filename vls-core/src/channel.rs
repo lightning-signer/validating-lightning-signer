@@ -222,7 +222,7 @@ pub trait ChannelBase: Any {
     }
 }
 
-/// A channel can be in two states - before [Node::ready_channel] it's a
+/// A channel can be in two states - before [Node::setup_channel] it's a
 /// [ChannelStub], afterwards it's a [Channel].  This enum keeps track
 /// of the two different states.
 #[derive(Debug, Clone)]
@@ -260,7 +260,7 @@ impl ChannelSlot {
     }
 }
 
-/// A channel takes this form after [Node::new_channel], and before [Node::ready_channel]
+/// A channel takes this form after [Node::new_channel], and before [Node::setup_channel]
 #[derive(Clone)]
 pub struct ChannelStub {
     /// A backpointer to the node
@@ -348,7 +348,7 @@ impl ChannelStub {
     }
 }
 
-/// After [Node::ready_channel]
+/// After [Node::setup_channel]
 #[derive(Clone)]
 pub struct Channel {
     /// A backpointer to the node
@@ -2373,7 +2373,7 @@ mod tests {
     fn tx_size_test() {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
-        node.with_ready_channel(&channel_id, |chan| {
+        node.with_channel(&channel_id, |chan| {
             let n = 1;
             let commitment_point = chan.get_per_commitment_point(n).unwrap();
             let txkeys = chan.make_holder_tx_keys(&commitment_point).unwrap();

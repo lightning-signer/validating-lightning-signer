@@ -53,7 +53,7 @@ mod tests {
         let remote_percommitment_point = make_test_pubkey(10);
         let counterparty_points = make_test_counterparty_points();
         let (sig, tx) = node
-            .with_ready_channel(&channel_id, |chan| {
+            .with_channel(&channel_id, |chan| {
                 let channel_parameters = chan.make_channel_parameters();
                 let parameters = channel_parameters.as_counterparty_broadcastable();
                 let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point).unwrap();
@@ -160,7 +160,7 @@ mod tests {
         let received_htlcs = vec![htlc2, htlc3];
 
         let (sig, tx) = node
-            .with_ready_channel(&channel_id, |chan| {
+            .with_channel(&channel_id, |chan| {
                 let channel_parameters = chan.make_channel_parameters();
                 let parameters = channel_parameters.as_counterparty_broadcastable();
                 let mut htlcs =
@@ -264,7 +264,7 @@ mod tests {
         let to_counterparty_value_sat = 1_999_000;
 
         let tx = node
-            .with_ready_channel(&channel_id, |chan| {
+            .with_channel(&channel_id, |chan| {
                 // Set the commit_num and revoke_num.
                 chan.enforcement_state.set_next_counterparty_commit_num_for_testing(
                     commit_num,
@@ -290,7 +290,7 @@ mod tests {
             })
             .expect("build");
         let (signature, _) = node
-            .with_ready_channel(&channel_id, |chan| {
+            .with_channel(&channel_id, |chan| {
                 chan.sign_counterparty_commitment_tx_phase2(
                     &remote_percommitment_point,
                     commit_num,
@@ -348,7 +348,7 @@ mod tests {
 
         let remote_percommitment_point = make_test_pubkey(10);
 
-        let (sig, tx) = node.with_ready_channel(&channel_id, |chan| {
+        let (sig, tx) = node.with_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
 
             let commit_num = 23;
@@ -837,7 +837,7 @@ mod tests {
 
         nodemut(&node);
 
-        node.with_ready_channel(&channel_id, |chan| {
+        node.with_channel(&channel_id, |chan| {
             let mut offered_htlcs = offered_htlcs0.clone();
             let mut received_htlcs = received_htlcs0.clone();
             let channel_parameters = chan.make_channel_parameters();

@@ -393,7 +393,7 @@ pub struct GetPerCommitmentPoint2Reply {
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(31)]
-pub struct ReadyChannel {
+pub struct SetupChannel {
     pub is_outbound: bool,
     pub channel_value: u64,
     pub push_value: u64,
@@ -412,7 +412,7 @@ pub struct ReadyChannel {
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(131)]
-pub struct ReadyChannelReply {}
+pub struct SetupChannelReply {}
 
 ///
 /// CLN only
@@ -914,8 +914,8 @@ pub enum Message {
     GetPerCommitmentPointReply(GetPerCommitmentPointReply),
     GetPerCommitmentPoint2(GetPerCommitmentPoint2),
     GetPerCommitmentPoint2Reply(GetPerCommitmentPoint2Reply),
-    ReadyChannel(ReadyChannel),
-    ReadyChannelReply(ReadyChannelReply),
+    SetupChannel(SetupChannel),
+    SetupChannelReply(SetupChannelReply),
     ValidateCommitmentTx(ValidateCommitmentTx),
     ValidateCommitmentTx2(ValidateCommitmentTx2),
     ValidateCommitmentTxReply(ValidateCommitmentTxReply),

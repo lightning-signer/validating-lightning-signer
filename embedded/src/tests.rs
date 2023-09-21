@@ -192,21 +192,21 @@ pub fn test_lightning_signer(postscript: fn()) {
     let points = node.get_channel(&channel_id).unwrap().lock().unwrap().get_channel_basepoints();
     let points1 = node1.get_channel(&channel_id1).unwrap().lock().unwrap().get_channel_basepoints();
     let mut channel = node
-        .ready_channel(
+        .setup_channel(
             channel_id,
             None,
             make_test_channel_setup(true, points1),
             &holder_shutdown_key_path,
         )
-        .expect("ready_channel");
+        .expect("setup_channel");
     let mut channel1 = node1
-        .ready_channel(
+        .setup_channel(
             channel_id1,
             None,
             make_test_channel_setup(false, points),
             &holder_shutdown_key_path,
         )
-        .expect("ready_channel 1");
+        .expect("setup_channel 1");
 
     // Initial commitment
     let mut commit_num = 0;

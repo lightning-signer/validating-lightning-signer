@@ -38,7 +38,7 @@ mod tests {
         let to_holder_value_sat = 1_000_000;
         let to_counterparty_value_sat = 1_999_000;
         let tx = node
-            .with_ready_channel(&channel_id, |chan| {
+            .with_channel(&channel_id, |chan| {
                 chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
                 let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
                 let txkeys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
@@ -54,7 +54,7 @@ mod tests {
             })
             .expect("build");
         let (signature, _) = node
-            .with_ready_channel(&channel_id, |chan| {
+            .with_channel(&channel_id, |chan| {
                 chan.sign_holder_commitment_tx_phase2_redundant(
                     commit_num,
                     0, // feerate not used
@@ -189,7 +189,7 @@ mod tests {
         SignInputMutator: Fn(&mut SignMutationState),
     {
         let (sig, htlc_sigs, tx, htlcs, htlc_txs, htlc_redeemscripts, per_commitment_point) =
-            node_ctx.node.with_ready_channel(&chan_ctx.channel_id, |chan| {
+            node_ctx.node.with_channel(&chan_ctx.channel_id, |chan| {
                 let mut commit_tx_ctx = commit_tx_ctx0.clone();
 
                 let per_commitment_point =

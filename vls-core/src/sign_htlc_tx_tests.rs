@@ -44,7 +44,7 @@ mod tests {
         let n: u64 = 1;
 
         let (per_commitment_point, txkeys, to_self_delay) = node
-            .with_ready_channel(&channel_id, |chan| {
+            .with_channel(&channel_id, |chan| {
                 chan.enforcement_state.set_next_holder_commit_num_for_testing(n);
                 let per_commitment_point = chan.get_per_commitment_point(n).expect("point");
                 let txkeys =
@@ -78,7 +78,7 @@ mod tests {
         let htlc_pubkey = get_channel_htlc_pubkey(&node, &channel_id, &per_commitment_point);
 
         let sig = node
-            .with_ready_channel(&channel_id, |chan| {
+            .with_channel(&channel_id, |chan| {
                 chan.sign_holder_htlc_tx(
                     &htlc_tx,
                     n,
@@ -93,7 +93,7 @@ mod tests {
         check_signature(&htlc_tx, 0, sig, &htlc_pubkey, htlc_amount_sat, &htlc_redeemscript);
 
         let sig1 = node
-            .with_ready_channel(&channel_id, |chan| {
+            .with_channel(&channel_id, |chan| {
                 chan.sign_holder_htlc_tx(
                     &htlc_tx,
                     999,
@@ -146,72 +146,70 @@ mod tests {
         let remote_per_commitment_point = make_test_pubkey(10);
         let htlc_amount_sat = 1_000_000;
 
-        let (typedsig, htlc_tx, htlc_redeemscript) =
-            node.with_ready_channel(&channel_id, |chan| {
-                let mut channel_parameters = chan.make_channel_parameters();
+        let (typedsig, htlc_tx, htlc_redeemscript) = node.with_channel(&channel_id, |chan| {
+            let mut channel_parameters = chan.make_channel_parameters();
 
-                // Mutate the channel parameters
-                chanparammut(&mut ChanParamMutationState {
-                    is_counterparty: true,
-                    param: &mut channel_parameters,
-                });
+            // Mutate the channel parameters
+            chanparammut(&mut ChanParamMutationState {
+                is_counterparty: true,
+                param: &mut channel_parameters,
+            });
 
-                let mut keys = chan.make_counterparty_tx_keys(&remote_per_commitment_point)?;
+            let mut keys = chan.make_counterparty_tx_keys(&remote_per_commitment_point)?;
 
-                // Mutate the tx creation keys.
-                keysmut(&mut KeysMutationState { keys: &mut keys });
+            // Mutate the tx creation keys.
+            keysmut(&mut KeysMutationState { keys: &mut keys });
 
-                let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
-                let feerate_per_kw = 1000;
-                let to_self_delay =
-                    channel_parameters.as_counterparty_broadcastable().contest_delay();
+            let commitment_txid = bitcoin::Txid::from_slice(&[2u8; 32]).unwrap();
+            let feerate_per_kw = 1000;
+            let to_self_delay = channel_parameters.as_counterparty_broadcastable().contest_delay();
 
-                let htlc = HTLCOutputInCommitment {
-                    offered: is_offered,
-                    amount_msat: htlc_amount_sat * 1000,
-                    cltv_expiry: if is_offered { 2 << 16 } else { 0 },
-                    payment_hash: PaymentHash([1; 32]),
-                    transaction_output_index: Some(0),
-                };
+            let htlc = HTLCOutputInCommitment {
+                offered: is_offered,
+                amount_msat: htlc_amount_sat * 1000,
+                cltv_expiry: if is_offered { 2 << 16 } else { 0 },
+                payment_hash: PaymentHash([1; 32]),
+                transaction_output_index: Some(0),
+            };
 
-                let build_feerate = if setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
+            let build_feerate = if setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
 
-                let mut htlc_tx = build_htlc_transaction(
-                    &commitment_txid,
-                    build_feerate,
-                    to_self_delay,
-                    &htlc,
-                    &setup.features(),
-                    &keys.broadcaster_delayed_payment_key,
-                    &keys.revocation_key,
-                );
+            let mut htlc_tx = build_htlc_transaction(
+                &commitment_txid,
+                build_feerate,
+                to_self_delay,
+                &htlc,
+                &setup.features(),
+                &keys.broadcaster_delayed_payment_key,
+                &keys.revocation_key,
+            );
 
-                let mut cstate = make_test_chain_state();
+            let mut cstate = make_test_chain_state();
 
-                // Mutate the transaction.
-                txmut(&mut TxMutationState {
-                    is_offered: is_offered,
-                    cstate: &mut cstate,
-                    tx: &mut htlc_tx,
-                });
+            // Mutate the transaction.
+            txmut(&mut TxMutationState {
+                is_offered: is_offered,
+                cstate: &mut cstate,
+                tx: &mut htlc_tx,
+            });
 
-                let htlc_redeemscript = get_htlc_redeemscript(&htlc, &setup.features(), &keys);
+            let htlc_redeemscript = get_htlc_redeemscript(&htlc, &setup.features(), &keys);
 
-                let output_witscript = get_revokeable_redeemscript(
-                    &keys.revocation_key,
-                    to_self_delay,
-                    &keys.broadcaster_delayed_payment_key,
-                );
+            let output_witscript = get_revokeable_redeemscript(
+                &keys.revocation_key,
+                to_self_delay,
+                &keys.broadcaster_delayed_payment_key,
+            );
 
-                let typedsig = chan.sign_counterparty_htlc_tx(
-                    &htlc_tx,
-                    &remote_per_commitment_point,
-                    &htlc_redeemscript,
-                    htlc_amount_sat,
-                    &output_witscript,
-                )?;
-                Ok((typedsig, htlc_tx, htlc_redeemscript))
-            })?;
+            let typedsig = chan.sign_counterparty_htlc_tx(
+                &htlc_tx,
+                &remote_per_commitment_point,
+                &htlc_redeemscript,
+                htlc_amount_sat,
+                &output_witscript,
+            )?;
+            Ok((typedsig, htlc_tx, htlc_redeemscript))
+        })?;
 
         let expected_txid = if commitment_type == CommitmentType::StaticRemoteKey {
             if is_offered {
@@ -265,8 +263,8 @@ mod tests {
         let commit_num = 23;
         let htlc_amount_sat = 1_000_000;
 
-        let (typedsig, per_commitment_point, htlc_tx, htlc_redeemscript) = node
-            .with_ready_channel(&channel_id, |chan| {
+        let (typedsig, per_commitment_point, htlc_tx, htlc_redeemscript) =
+            node.with_channel(&channel_id, |chan| {
                 chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
                 let mut channel_parameters = chan.make_channel_parameters();
 

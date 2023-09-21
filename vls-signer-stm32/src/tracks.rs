@@ -142,7 +142,7 @@ fn track_char(msg: &Message) -> char {
         Message::GetChannelBasepoints(_m) => 'b',
         Message::SignWithdrawal(_m) => 'W',
 
-        Message::ReadyChannel(_m) => '(',
+        Message::SetupChannel(_m) => '(',
         Message::GetPerCommitmentPoint(_m) => 'p',
         Message::GetPerCommitmentPoint2(_m) => 'p',
 
@@ -206,7 +206,7 @@ fn track_char(msg: &Message) -> char {
         | Message::SignNodeAnnouncementReply(_)
         | Message::GetPerCommitmentPointReply(_)
         | Message::GetPerCommitmentPoint2Reply(_)
-        | Message::ReadyChannelReply(_)
+        | Message::SetupChannelReply(_)
         | Message::ValidateCommitmentTxReply(_)
         | Message::ValidateRevocationReply(_)
         | Message::SignCommitmentTxWithHtlcsReply(_)

@@ -95,7 +95,7 @@ fn sign_remote_commitment_bench(c: &mut Criterion) {
 
         let test_config = BenchTestConfig::new(23, 20_000, 1100, 1_000_000, sum_htlcs);
 
-        node.with_ready_channel(&channel_id, |chan| {
+        node.with_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
             let parameters = channel_parameters.as_counterparty_broadcastable();
             let mut htlcs = {
@@ -257,7 +257,7 @@ fn validate_revocation_bench(c: &mut Criterion) {
         }
 
         let test_config = BenchTestConfig::new(1, 20_000, 1100, 1_000_000, sum_htlcs);
-        node.with_ready_channel(&channel_id, |chan| {
+        node.with_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
 
             for idx in 0..REV_COMMIT_NUM {

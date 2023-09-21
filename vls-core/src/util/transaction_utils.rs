@@ -295,11 +295,11 @@ mod tests {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[0], make_test_channel_setup());
         let params = node
-            .with_ready_channel(&channel_id, |channel| Ok(channel.make_channel_parameters()))
+            .with_channel(&channel_id, |channel| Ok(channel.make_channel_parameters()))
             .unwrap();
 
         let (holder_commitment, per_commitment_point) = node
-            .with_ready_channel(&channel_id, |channel| {
+            .with_channel(&channel_id, |channel| {
                 let per_commitment_point =
                     channel.get_per_commitment_point(commitment_number).unwrap();
                 let keys = channel.make_holder_tx_keys(&per_commitment_point).unwrap();
@@ -335,14 +335,14 @@ mod tests {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[0], make_test_channel_setup());
         let params = node
-            .with_ready_channel(&channel_id, |channel| Ok(channel.make_channel_parameters()))
+            .with_channel(&channel_id, |channel| Ok(channel.make_channel_parameters()))
             .unwrap();
 
         let cp_per_commitment_secret = SecretKey::from_slice(&[2; 32]).unwrap();
         let cp_per_commitment_point =
             PublicKey::from_secret_key(&secp_ctx, &cp_per_commitment_secret);
         let (cp_commitment, holder_per_commitment_point) = node
-            .with_ready_channel(&channel_id, |channel| {
+            .with_channel(&channel_id, |channel| {
                 // this is not used in the test because we are parsing a counterparty commitment,
                 // but we need to set it to something different than the counterparty one
                 let holder_per_commitment_point =

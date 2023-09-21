@@ -237,7 +237,7 @@ fn invoice_test() {
 
 // Get the holder policy balance, as well as the actual balance in the holder and counterparty txs
 fn holder_balances(signer_node0: &Arc<lightning_signer::node::Node>, id: ChannelId, is_outbound: bool) -> (u64, u64, u64) {
-    signer_node0.with_ready_channel(&id, |chan| {
+    signer_node0.with_channel(&id, |chan| {
         let estate = &chan.enforcement_state;
         let nstate = signer_node0.get_state();
         let claimable_balance = estate.current_holder_commit_info.clone().unwrap().claimable_balance(&*nstate, is_outbound, if is_outbound { 100000 } else { 0 });

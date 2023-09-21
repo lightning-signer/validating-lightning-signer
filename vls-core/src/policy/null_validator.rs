@@ -47,7 +47,7 @@ impl ValidatorFactory for NullValidatorFactory {
 pub struct NullValidator(Arc<dyn Validator>); // So we can DRY by borrowing its decode methods ...
 
 impl Validator for NullValidator {
-    fn validate_ready_channel(
+    fn validate_setup_channel(
         &self,
         _wallet: &dyn Wallet,
         _setup: &ChannelSetup,

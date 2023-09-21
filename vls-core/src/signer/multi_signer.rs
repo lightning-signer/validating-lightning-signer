@@ -160,7 +160,7 @@ impl MultiSigner {
         channel_id: &ChannelId,
         outpoint: OutPoint,
     ) -> Result<(), Status> {
-        self.with_ready_channel(node_id, channel_id, |chan| {
+        self.with_channel(node_id, channel_id, |chan| {
             if chan.setup.funding_outpoint.is_null() {
                 chan.setup.funding_outpoint = outpoint;
             } else if chan.setup.funding_outpoint != outpoint {
@@ -206,8 +206,8 @@ impl MultiSigner {
         Ok(Arc::clone(node))
     }
 
-    /// See [`Node::with_ready_channel`]
-    pub fn with_ready_channel<F: Sized, T>(
+    /// See [`Node::with_channel`]
+    pub fn with_channel<F: Sized, T>(
         &self,
         node_id: &PublicKey,
         channel_id: &ChannelId,

@@ -25,7 +25,7 @@ fn channel_test() {
     );
     let outpoint = JSOutPoint::default();
     let setup = JSChannelSetup::new(false, 10000, 0, outpoint, 6, cp_keys, 6);
-    node.ready_channel(&channel_id, &setup).unwrap();
+    node.setup_channel(&channel_id, &setup).unwrap();
     let _sig1 = node
         .sign_holder_commitment(
             &channel_id,

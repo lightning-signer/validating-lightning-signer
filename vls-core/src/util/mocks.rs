@@ -58,7 +58,7 @@ impl ValidatorFactory for MockValidatorFactory {
 }
 
 impl Validator for MockValidator {
-    fn validate_ready_channel(
+    fn validate_setup_channel(
         &self,
         wallet: &dyn Wallet,
         setup: &ChannelSetup,

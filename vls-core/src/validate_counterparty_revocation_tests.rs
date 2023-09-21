@@ -45,7 +45,7 @@ mod tests {
         let (node, _setup, channel_id, offered_htlcs, received_htlcs) =
             sign_commitment_tx_with_mutators_setup(CommitmentType::StaticRemoteKey);
 
-        node.with_ready_channel(&channel_id, |chan| {
+        node.with_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
 
             let feerate_per_kw = 0;
@@ -273,7 +273,7 @@ mod tests {
             sign_commitment_tx_with_mutators_setup(CommitmentType::StaticRemoteKey);
 
         // Setup enforcement state
-        assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
+        assert_status_ok!(node.with_channel(&channel_id, |chan| {
             // provide all secrets so that we don't worry about secret chaining
             for idx in 0..REV_COMMIT_NUM {
                 let (_, secret) = make_per_commitment(idx);
@@ -294,7 +294,7 @@ mod tests {
         }));
 
         // Sign counterparty REV_COMMIT_NUM
-        assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
+        assert_status_ok!(node.with_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
 
             let (remote_percommit_point, _) = make_per_commitment(REV_COMMIT_NUM);
@@ -357,7 +357,7 @@ mod tests {
         }));
 
         // Revoke REV_COMMIT_NUM - 1
-        assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
+        assert_status_ok!(node.with_channel(&channel_id, |chan| {
             assert_status_ok!(chan.validate_counterparty_revocation(
                 REV_COMMIT_NUM - 1,
                 &make_per_commitment(REV_COMMIT_NUM - 1).1,
@@ -370,7 +370,7 @@ mod tests {
         }));
 
         // Sign counterparty REV_COMMIT_NUM + 1
-        assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
+        assert_status_ok!(node.with_channel(&channel_id, |chan| {
             let channel_parameters = chan.make_channel_parameters();
 
             let (remote_percommit_point, _) = make_per_commitment(REV_COMMIT_NUM + 1);
@@ -425,7 +425,7 @@ mod tests {
         }));
 
         // Revoke REV_COMMIT_NUM with lots of checking
-        assert_status_ok!(node.with_ready_channel(&channel_id, |chan| {
+        assert_status_ok!(node.with_channel(&channel_id, |chan| {
             // state is what we think it is
             assert_eq!(chan.enforcement_state.next_counterparty_revoke_num, REV_COMMIT_NUM);
             assert!(chan.enforcement_state.previous_counterparty_commit_info.is_some());
