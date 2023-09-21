@@ -35,46 +35,46 @@ impl SendSync for MemoryKVVStore {}
 impl KVVStore for MemoryKVVStore {
     type Iter = Iter;
 
-    fn put(&self, key: &str, value: &[u8]) -> Result<(), Error> {
+    fn put(&self, key: &str, value: Vec<u8>) -> Result<(), Error> {
         let version = self.get_version(key)?.map(|v| v + 1).unwrap_or(0);
         self.put_with_version(key, version, value)
     }
 
-    fn put_with_version(&self, key: &str, version: u64, value: &[u8]) -> Result<(), Error> {
+    fn put_with_version(&self, key: &str, version: u64, value: Vec<u8>) -> Result<(), Error> {
         let mut data = self.data.lock().unwrap();
         let existing = data.get(key);
-        if let Some((v, vv)) = existing {
-            if version < *v {
-                error!("version mismatch for {}: {} < {}", key, version, v);
+        if let Some((ver, val)) = existing {
+            if version < *ver {
+                error!("version mismatch for {}: {} < {}", key, version, ver);
                 // version cannot go backwards
                 return Err(Error::VersionMismatch);
-            } else if version == *v {
+            } else if version == *ver {
                 // if same version, value must not have changed
-                if vv != value {
+                if *val != value {
                     error!("value mismatch for {}: {}", key, version);
                     return Err(Error::VersionMismatch);
                 }
                 return Ok(());
             }
         }
-        data.insert(key.to_string(), (version, value.to_vec()));
+        data.insert(key.to_string(), (version, value));
         Ok(())
     }
 
-    fn put_batch(&self, kvvs: &[&KVV]) -> Result<(), Error> {
+    fn put_batch(&self, kvvs: Vec<KVV>) -> Result<(), Error> {
         let mut data = self.data.lock().unwrap();
-        for kvv in kvvs.into_iter() {
+        for kvv in kvvs.iter() {
             let key = &kvv.0;
             let (version, value) = &kvv.1;
             let existing = data.get(key);
-            if let Some((v, vv)) = existing {
-                if version < v {
-                    error!("version mismatch for {}: {} < {}", key, version, v);
+            if let Some((ver, val)) = existing {
+                if version < ver {
+                    error!("version mismatch for {}: {} < {}", key, version, ver);
                     // version cannot go backwards
                     return Err(Error::VersionMismatch);
-                } else if version == v {
+                } else if version == ver {
                     // if same version, value must not have changed
-                    if vv != value {
+                    if val != value {
                         error!("value mismatch for {}: {}", key, version);
                         return Err(Error::VersionMismatch);
                     }
@@ -82,9 +82,8 @@ impl KVVStore for MemoryKVVStore {
             }
         }
         for kvv in kvvs.into_iter() {
-            let key = kvv.0.clone();
-            let (version, value) = &kvv.1;
-            data.insert(key.to_string(), (*version, value.clone()));
+            let key = kvv.0;
+            data.insert(key.to_string(), kvv.1);
         }
         Ok(())
     }
@@ -102,9 +101,9 @@ impl KVVStore for MemoryKVVStore {
     fn get_prefix(&self, prefix: &str) -> Result<Self::Iter, Error> {
         let data = self.data.lock().unwrap();
         let mut result = Vec::new();
-        for (k, (v, vv)) in data.range(prefix.to_string()..) {
+        for (k, (ver, value)) in data.range(prefix.to_string()..) {
             if k.starts_with(prefix) {
-                result.push(KVV(k.clone(), (*v, vv.clone())));
+                result.push(KVV(k.clone(), (*ver, value.clone())));
             } else {
                 break;
             }
@@ -113,7 +112,7 @@ impl KVVStore for MemoryKVVStore {
     }
 
     fn delete(&self, key: &str) -> Result<(), Error> {
-        self.put(key, &[])
+        self.put(key, Vec::new())
     }
 
     fn clear_database(&self) -> Result<(), Error> {

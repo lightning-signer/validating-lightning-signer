@@ -109,7 +109,7 @@ async fn do_put(
     rollback: bool,
 ) {
     cloud.enter().unwrap();
-    cloud.put("foo", value).unwrap();
+    cloud.put("foo", value.to_vec()).unwrap();
 
     let muts = cloud.prepare();
     // write muts into LSS
