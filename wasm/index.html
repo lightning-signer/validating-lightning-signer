@@ -47,7 +47,7 @@
             counterparty_points,
             6, // counterparty to-self delay
         );
-        node.ready_channel(chan_id, channel_setup);
+        node.setup_channel(chan_id, channel_setup);
         console.log('Done');
 
         console.log('This should fail with a policy error');
@@ -65,7 +65,7 @@
         );
         let ex;
         try {
-            node.ready_channel(chan_id1, setup1);
+            node.setup_channel(chan_id1, setup1);
         } catch (e) {ex = e;}
         if (!ex) throw "Did not throw expected exception";
         console.log("Caught expected exception", ex.toString());
