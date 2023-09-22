@@ -1812,11 +1812,21 @@ impl Channel {
 
         let point = recomposed_tx.trust().keys().per_commitment_point;
 
-        // Sign the recomposed commitment.
-        let sigs = self
-            .keys
-            .sign_counterparty_commitment(&recomposed_tx, Vec::new(), &self.secp_ctx)
-            .map_err(|_| internal_error(format!("sign_counterparty_commitment failed")))?;
+        // we don't use keys.sign_counterparty_commitment here because it also signs HTLCs
+        let trusted_tx = recomposed_tx.trust();
+
+        let funding_pubkey = &self.keys.pubkeys().funding_pubkey;
+        let counterparty_funding_pubkey = &self.setup.counterparty_points.funding_pubkey;
+        let channel_funding_redeemscript =
+            make_funding_redeemscript(funding_pubkey, counterparty_funding_pubkey);
+
+        let built_tx = trusted_tx.built_transaction();
+        let sig = built_tx.sign_counterparty_commitment(
+            &self.keys.funding_key,
+            &channel_funding_redeemscript,
+            self.setup.channel_value_sat,
+            &self.secp_ctx,
+        );
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(None, Some(&info2));
         state.validate_payments(
@@ -1846,8 +1856,7 @@ impl Channel {
         trace_enforcement_state!(self);
         self.persist()?;
 
-        // Discard the htlc signatures for now.
-        Ok(sigs.0)
+        Ok(sig)
     }
 
     fn make_validated_recomposed_holder_commitment_tx(
