@@ -49,11 +49,11 @@ pub trait KVVStore: SendSync {
     type Iter: Iterator<Item = KVV>;
 
     /// Put a key-value pair into the store
-    fn put(&self, key: &str, value: &[u8]) -> Result<(), Error>;
+    fn put(&self, key: &str, value: Vec<u8>) -> Result<(), Error>;
     /// If the key already exists, the version must be greater than the existing version.
-    fn put_with_version(&self, key: &str, version: u64, value: &[u8]) -> Result<(), Error>;
+    fn put_with_version(&self, key: &str, version: u64, value: Vec<u8>) -> Result<(), Error>;
     /// Atomically put several KVVs into the store
-    fn put_batch(&self, kvvs: &[&KVV]) -> Result<(), Error>;
+    fn put_batch(&self, kvvs: Vec<KVV>) -> Result<(), Error>;
     /// Get a key-value pair from the store
     /// Returns Ok(None) if the key does not exist.
     fn get(&self, key: &str) -> Result<Option<(u64, Vec<u8>)>, Error>;
@@ -79,7 +79,7 @@ pub trait KVVStore: SendSync {
         Ok(())
     }
     /// Apply a batch from the cloud to the local store, without logging it
-    fn put_batch_unlogged(&self, kvvs: &[&KVV]) -> Result<(), Error> {
+    fn put_batch_unlogged(&self, kvvs: Vec<KVV>) -> Result<(), Error> {
         self.put_batch(kvvs)
     }
     /// Get the signer ID
@@ -114,14 +114,14 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
             network: config.network.to_string(),
         };
         let value = to_vec(&entry).unwrap();
-        self.put(&key, &value)
+        self.put(&key, value)
     }
 
     fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), Error> {
         let key = make_key(NODE_STATE_PREFIX, &node_id.serialize());
         let entry: NodeStateEntry = state.into();
         let value = to_vec(&entry).unwrap();
-        self.put(&key, &value)
+        self.put(&key, value)
     }
 
     fn delete_node(&self, node_id: &PublicKey) -> Result<(), Error> {
@@ -142,7 +142,7 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
             blockheight: Some(stub.blockheight),
         };
         let value = to_vec(&entry).unwrap();
-        self.put(&key, &value)
+        self.put(&key, value)
     }
 
     fn delete_channel(&self, node_id: &PublicKey, channel_id: &ChannelId) -> Result<(), Error> {
@@ -166,7 +166,7 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
         let key = make_key(NODE_TRACKER_PREFIX, &node_id.serialize());
         let model: ChainTrackerEntry = tracker.into();
         let value = to_vec(&model).unwrap();
-        self.put(&key, &value)
+        self.put(&key, value)
     }
 
     fn get_tracker(
@@ -192,7 +192,7 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
             blockheight: None,
         };
         let value = to_vec(&entry).unwrap();
-        self.put(&key, &value)
+        self.put(&key, value)
     }
 
     fn get_channel(
@@ -233,7 +233,7 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
         let key = make_key(ALLOWLIST_PREFIX, &node_id.serialize());
         let entry = AllowlistItemEntry { allowlist };
         let value = to_vec(&entry).unwrap();
-        self.put(&key, &value)
+        self.put(&key, value)
     }
 
     fn get_node_allowlist(&self, node_id: &PublicKey) -> Result<Vec<String>, Error> {
@@ -296,8 +296,7 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
 
     fn put_batch_unlogged(&self, muts: Mutations) -> Result<(), Error> {
         let kvvs = muts.into_iter().map(|(k, (v, vv))| KVV(k, (v, vv))).collect::<Vec<_>>();
-        let kvvs_refs = kvvs.iter().collect::<Vec<_>>();
-        self.0.put_batch_unlogged(&kvvs_refs)
+        self.0.put_batch_unlogged(kvvs)
     }
 
     fn signer_id(&self) -> SignerId {

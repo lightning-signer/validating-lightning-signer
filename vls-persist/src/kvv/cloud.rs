@@ -34,6 +34,30 @@ impl<L: KVVStore> CloudKVVStore<L> {
     pub fn get_local(&self, key: &str) -> Result<Option<(u64, Vec<u8>)>, Error> {
         self.local.get(key)
     }
+
+    fn do_get_version(
+        &self,
+        commit_log: &BTreeMap<String, (u64, Vec<u8>)>,
+        key: &str,
+    ) -> Result<Option<u64>, Error> {
+        if let Some((v, _)) = commit_log.get(key) {
+            Ok(Some(*v))
+        } else {
+            self.local.get_version(key)
+        }
+    }
+
+    fn do_get(
+        &self,
+        commit_log: &BTreeMap<String, (u64, Vec<u8>)>,
+        key: &str,
+    ) -> Result<Option<(u64, Vec<u8>)>, Error> {
+        if let Some((v, vv)) = commit_log.get(key) {
+            Ok(Some((*v, vv.clone())))
+        } else {
+            self.local.get(key)
+        }
+    }
 }
 
 impl<L: KVVStore> CloudKVVStore<L> {
@@ -67,24 +91,23 @@ impl<L: KVVStore> SendSync for CloudKVVStore<L> {}
 impl<L: KVVStore> KVVStore for CloudKVVStore<L> {
     type Iter = L::Iter;
 
-    fn put(&self, key: &str, value: &[u8]) -> Result<(), Error> {
+    fn put(&self, key: &str, value: Vec<u8>) -> Result<(), Error> {
         let version = self.get_version(key)?.map(|v| v + 1).unwrap_or(0);
         self.put_with_version(key, version, value)
     }
 
-    fn put_with_version(&self, key: &str, version: u64, value: &[u8]) -> Result<(), Error> {
+    fn put_with_version(&self, key: &str, version: u64, value: Vec<u8>) -> Result<(), Error> {
         let mut commit_log_opt = self.commit_log.lock().unwrap();
         let commit_log = commit_log_opt.as_mut().expect("not in transaction");
-        let local = self.local.get(key)?;
-        let existing = commit_log.get(key).or_else(|| local.as_ref());
-        if let Some((v, _)) = existing {
-            if version < *v {
+        let existing_version = self.do_get_version(commit_log, key)?;
+        if let Some(v) = existing_version {
+            if version < v {
                 error!("version mismatch for {}: {} < {}", key, version, v);
                 // version cannot go backwards
                 return Err(Error::VersionMismatch);
-            } else if version == *v {
+            } else if version == v {
                 // if same version, value must not have changed
-                let existing = self.local.get(key).expect("failed to get").unwrap();
+                let existing = self.do_get(commit_log, key)?.expect("failed to get existing entry");
                 if existing.1 != value {
                     error!("value mismatch for {}: {}", key, version);
                     return Err(Error::VersionMismatch);
@@ -92,14 +115,14 @@ impl<L: KVVStore> KVVStore for CloudKVVStore<L> {
                 return Ok(());
             }
         }
-        commit_log.insert(key.to_string(), (version, value.to_vec()));
+        commit_log.insert(key.to_string(), (version, value));
         Ok(())
     }
 
-    fn put_batch(&self, kvvs: &[&KVV]) -> Result<(), Error> {
+    fn put_batch(&self, kvvs: Vec<KVV>) -> Result<(), Error> {
         // we are already transactional, because of commit logging, so just call put_with_version
         for kvv in kvvs.into_iter() {
-            self.put_with_version(kvv.0.as_str(), kvv.1 .0, &kvv.1 .1)?;
+            self.put_with_version(kvv.0.as_str(), kvv.1 .0, kvv.1 .1)?;
         }
         Ok(())
     }
@@ -107,19 +130,13 @@ impl<L: KVVStore> KVVStore for CloudKVVStore<L> {
     fn get(&self, key: &str) -> Result<Option<(u64, Vec<u8>)>, Error> {
         let commit_log_opt = self.commit_log.lock().unwrap();
         let commit_log = commit_log_opt.as_ref().expect("not in transaction");
-        if let Some((v, vv)) = commit_log.get(key) {
-            return Ok(Some((*v, vv.clone())));
-        }
-        self.local.get(key)
+        self.do_get(commit_log, key)
     }
 
     fn get_version(&self, key: &str) -> Result<Option<u64>, Error> {
         let commit_log_opt = self.commit_log.lock().unwrap();
         let commit_log = commit_log_opt.as_ref().expect("not in transaction");
-        if let Some((v, _)) = commit_log.get(key) {
-            return Ok(Some(*v));
-        }
-        self.local.get_version(key)
+        self.do_get_version(commit_log, key)
     }
 
     fn get_prefix(&self, prefix: &str) -> Result<Self::Iter, Error> {
@@ -128,7 +145,7 @@ impl<L: KVVStore> KVVStore for CloudKVVStore<L> {
     }
 
     fn delete(&self, key: &str) -> Result<(), Error> {
-        self.put(key, &[])
+        self.put(key, Vec::new())
     }
 
     fn clear_database(&self) -> Result<(), Error> {
@@ -173,12 +190,11 @@ impl<L: KVVStore> KVVStore for CloudKVVStore<L> {
         for (key, (version, vv)) in commit_log.into_iter() {
             kvvs.push(KVV(key, (version, vv)));
         }
-        let kvv_refs: Vec<&KVV> = kvvs.iter().collect();
-        self.local.put_batch(&kvv_refs)?;
+        self.local.put_batch(kvvs)?;
         Ok(())
     }
 
-    fn put_batch_unlogged(&self, kvvs: &[&KVV]) -> Result<(), Error> {
+    fn put_batch_unlogged(&self, kvvs: Vec<KVV>) -> Result<(), Error> {
         let commit_log_opt = self.commit_log.lock().unwrap();
         if commit_log_opt.is_some() {
             panic!("cannot put_batch_unlogged while in transaction");
@@ -201,18 +217,18 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap();
         let local = RedbKVVStore::new(tempdir.path()).0;
         let signer_id = local.signer_id();
-        local.put("foo1", b"bar")?;
+        local.put("foo1", b"bar".to_vec())?;
 
         let cloud = CloudKVVStore::new(local);
 
         cloud.enter()?;
-        cloud.put("foo2", b"boo")?;
+        cloud.put("foo2", b"boo".to_vec())?;
 
         // wrong version
-        assert!(cloud.put_with_version("foo1", 0, b"bar2").is_err());
+        assert!(cloud.put_with_version("foo1", 0, b"bar2".to_vec()).is_err());
 
         assert_eq!(cloud.get("foo1")?.unwrap().1, b"bar");
-        cloud.put_with_version("foo1", 1, b"bar2")?;
+        cloud.put_with_version("foo1", 1, b"bar2".to_vec())?;
         assert_eq!(cloud.get("foo1")?.unwrap().1, b"bar2");
 
         let mutations = cloud.prepare();
@@ -238,7 +254,7 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap();
         let local = RedbKVVStore::new(tempdir.path()).0;
         let cloud = CloudKVVStore::new(local);
-        cloud.put("foo", b"bar").unwrap();
+        cloud.put("foo", b"bar".to_vec()).unwrap();
     }
 
     #[test]
@@ -246,7 +262,7 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap();
         let local = RedbKVVStore::new(tempdir.path()).0;
         let cloud = CloudKVVStore::new(local);
-        cloud.put_batch_unlogged(&[&KVV("foo".to_string(), (0, b"bar".to_vec()))]).unwrap();
+        cloud.put_batch_unlogged(vec![KVV("foo".to_string(), (0, b"bar".to_vec()))]).unwrap();
         cloud.enter().unwrap();
         assert_eq!(cloud.get("foo").unwrap().unwrap().1, b"bar");
     }
@@ -258,6 +274,6 @@ mod tests {
         let local = RedbKVVStore::new(tempdir.path()).0;
         let cloud = CloudKVVStore::new(local);
         cloud.enter().unwrap();
-        cloud.put_batch_unlogged(&[]).unwrap();
+        cloud.put_batch_unlogged(Vec::new()).unwrap();
     }
 }

@@ -91,10 +91,10 @@ impl RedbKVVStore {
         (version, value)
     }
 
-    fn encode_vv(version: u64, value: &[u8]) -> Vec<u8> {
+    fn encode_vv(version: u64, value: Vec<u8>) -> Vec<u8> {
         let mut vv = Vec::with_capacity(value.len() + 8);
         vv.extend_from_slice(&version.to_be_bytes());
-        vv.extend_from_slice(value);
+        vv.extend_from_slice(&value);
         vv
     }
 }
@@ -102,12 +102,12 @@ impl RedbKVVStore {
 impl KVVStore for RedbKVVStore {
     type Iter = Iter;
 
-    fn put(&self, key: &str, value: &[u8]) -> Result<(), Error> {
+    fn put(&self, key: &str, value: Vec<u8>) -> Result<(), Error> {
         let version = self.versions.lock().unwrap().get(key).map(|v| v + 1).unwrap_or(0);
         self.put_with_version(key, version, value)
     }
 
-    fn put_with_version(&self, key: &str, version: u64, value: &[u8]) -> Result<(), Error> {
+    fn put_with_version(&self, key: &str, version: u64, value: Vec<u8>) -> Result<(), Error> {
         let vv = Self::encode_vv(version, value);
         let mut versions = self.versions.lock().unwrap();
 
@@ -140,14 +140,14 @@ impl KVVStore for RedbKVVStore {
         Ok(())
     }
 
-    fn put_batch(&self, kvvs: &[&KVV]) -> Result<(), Error> {
+    fn put_batch(&self, kvvs: Vec<KVV>) -> Result<(), Error> {
         let tx = self.db.begin_write().unwrap();
         let mut table = tx.open_table(TABLE).unwrap();
         let mut found_version_mismatch = false;
         let mut versions = self.versions.lock().unwrap();
 
         for kvv in kvvs.into_iter() {
-            let (key, (version, ref value)) = (kvv.0.as_str(), (kvv.1 .0, &kvv.1 .1));
+            let (key, (version, value)) = (kvv.0.as_str(), (kvv.1 .0, kvv.1 .1));
             let vv = Self::encode_vv(version, value);
             if let Some(v) = versions.get(key) {
                 if version < *v {
@@ -210,7 +210,7 @@ impl KVVStore for RedbKVVStore {
     }
 
     fn delete(&self, key: &str) -> Result<(), Error> {
-        self.put(key, &[])
+        self.put(key, Vec::new())
     }
 
     fn clear_database(&self) -> Result<(), Error> {
@@ -245,18 +245,18 @@ mod tests {
     fn basic_test() -> Result<(), Error> {
         let tempdir = tempfile::tempdir().unwrap();
         let store = RedbKVVStore::new(tempdir.path()).0;
-        store.put("foo1", b"bar")?;
-        store.put("foo2", b"boo")?;
+        store.put("foo1", b"bar".to_vec())?;
+        store.put("foo2", b"boo".to_vec())?;
         assert_eq!(store.get_version("foo1")?.unwrap(), 0);
         assert_eq!(store.get("foo1")?.unwrap().1, b"bar");
-        store.put_with_version("foo1", 1, b"bar2")?;
+        store.put_with_version("foo1", 1, b"bar2".to_vec())?;
         assert_eq!(store.get_version("foo1")?.unwrap(), 1);
-        store.put_with_version("foo1", 1, b"bar2")?;
+        store.put_with_version("foo1", 1, b"bar2".to_vec())?;
         assert_eq!(store.get_version("foo1")?.unwrap(), 1);
         assert_eq!(store.get("foo1")?.unwrap().1, b"bar2");
 
         // wrong version
-        assert!(store.put_with_version("foo1", 0, b"bar2").is_err());
+        assert!(store.put_with_version("foo1", 0, b"bar2".to_vec()).is_err());
 
         // check that the ID is persistent
         let id = store.signer_id();
