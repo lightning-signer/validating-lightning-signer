@@ -2241,7 +2241,14 @@ impl Node {
                 ))
             };
         }
-        state.issued_invoices.insert(hash, payment_state);
+
+        // We don't care about zero amount invoices, since they can be considered
+        // already fullfilled, and we could give out the preimage for free without
+        // any risk.  These are generated, for example, when the node is receiving
+        // a keysend.
+        if payment_state.amount_msat > 0 {
+            state.issued_invoices.insert(hash, payment_state);
+        }
 
         Ok(sig)
     }
@@ -3080,9 +3087,19 @@ mod tests {
         payment_hash: &PaymentHash,
         now: Duration,
     ) -> (Vec<u8>, Vec<u5>) {
+        let amount = 100_000;
+        build_test_invoice_with_time_and_amount(description, payment_hash, now, amount)
+    }
+
+    fn build_test_invoice_with_time_and_amount(
+        description: &str,
+        payment_hash: &PaymentHash,
+        now: Duration,
+        amount: u64,
+    ) -> (Vec<u8>, Vec<u5>) {
         let raw_invoice = InvoiceBuilder::new(Currency::Bitcoin)
             .duration_since_epoch(now)
-            .amount_milli_satoshis(100_000)
+            .amount_milli_satoshis(amount)
             .payment_hash(Sha256Hash::from_slice(&payment_hash.0).unwrap())
             .payment_secret(PaymentSecret([0; 32]))
             .description(description.to_string())
@@ -3201,6 +3218,20 @@ mod tests {
         state.prune_issued_invoices(node.clock.now() + Duration::from_secs(3600 * 23));
         assert_eq!(state.issued_invoices.len(), 1);
         state.prune_issued_invoices(node.clock.now() + Duration::from_secs(3600 * 25));
+        assert_eq!(state.issued_invoices.len(), 0);
+    }
+
+    #[test]
+    fn drop_zero_amount_issued_invoice_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let (hrp, data) = build_test_invoice_with_time_and_amount(
+            "invoice",
+            &PaymentHash([0; 32]),
+            SystemTime::now().duration_since(UNIX_EPOCH).expect("time"),
+            0,
+        );
+        node.sign_invoice(&hrp, &data).unwrap();
+        let state = node.get_state();
         assert_eq!(state.issued_invoices.len(), 0);
     }
 
