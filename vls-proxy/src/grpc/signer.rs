@@ -143,6 +143,7 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
         HEAPMON.filter("sled::pagecache");
         HEAPMON.filter("backtrace::symbolize");
         HEAPMON.filter("redb::");
+        HEAPMON.filter("tokio_util::codec::length_delimited");
         peak_thresh
     };
 
