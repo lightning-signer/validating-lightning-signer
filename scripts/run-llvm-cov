@@ -2,7 +2,8 @@
 
 set -e
 
-export VLS_DISABLE_UPDATE_VERSION=0
+# need latest nightly for coverage(no) directives
+export RUSTUP_TOOLCHAIN=nightly
 
 # increases coverage
 export RUST_LOG=debug
