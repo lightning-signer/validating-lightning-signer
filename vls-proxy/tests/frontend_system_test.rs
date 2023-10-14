@@ -114,7 +114,7 @@ impl SignerPort for DummySignerPort {
                 state.height += 1;
                 let header: BlockHeader = deserialize(&add.header.0).unwrap();
                 trace!("header {:?}", header);
-                let proof: TxoProof = deserialize(&add.unspent_proof.unwrap().0).unwrap();
+                let proof: TxoProof = add.unspent_proof.unwrap().0;
                 state.tracker.add_block(header, proof).expect("add block failed");
                 state.block_hash = header.block_hash();
                 let reply = AddBlockReply {};

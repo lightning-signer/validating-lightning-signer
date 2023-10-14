@@ -13,7 +13,7 @@ use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
 use lightning_signer::bitcoin;
 
 use vls_frontend::{ChainTrack, ChainTrackDirectory};
-use vls_protocol::msgs::{self, Message, SerBolt};
+use vls_protocol::msgs::{self, DebugTxoProof, Message, SerBolt};
 use vls_protocol::serde_bolt::{self, LargeOctets, Octets};
 use vls_protocol_client::SignerPort;
 
@@ -221,7 +221,7 @@ impl ChainTrack for NodePortFront {
 
         let req = msgs::AddBlock {
             header: Octets(serialize(&header)),
-            unspent_proof: Some(LargeOctets(serialize(&proof))),
+            unspent_proof: Some(DebugTxoProof(proof)),
         };
         let reply = self.signer_port.handle_message(req.as_vec()).await.expect("AddBlock failed");
         if let Ok(Message::AddBlockReply(_)) = msgs::from_vec(reply) {

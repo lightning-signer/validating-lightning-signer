@@ -635,10 +635,9 @@ impl Handler for RootHandler {
                 let mut tracker = self.node.get_tracker();
                 let proof = m
                     .unspent_proof
-                    .map(|prf| deserialize(prf.0.as_slice()).expect("deserialize TxoProof"))
                     .ok_or(Status::invalid_argument("could not deserialize proof"))?;
                 tracker
-                    .add_block(deserialize(m.header.0.as_slice()).expect("header"), proof)
+                    .add_block(deserialize(m.header.0.as_slice()).expect("header"), proof.0)
                     .expect("add_block");
                 self.node
                     .get_persister()

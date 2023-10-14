@@ -7,7 +7,8 @@ use as_any::AsAny;
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::{BlockHash, OutPoint, Transaction, Txid};
-use core::fmt::Debug;
+use core::fmt::{Debug, Formatter};
+use core::ops::Deref;
 use serde_bolt::{bitcoin, ReadBigEndian};
 
 use crate::error::{Error, Result};
@@ -19,6 +20,7 @@ use serde_bolt::{
     io, io::Read, io::Write, take::Take, to_vec, Array, ArrayBE, LargeOctets, Octets, WireString,
     WithSize,
 };
+use txoo::proof::{ProofType, TxoProof};
 
 use log::error;
 
@@ -795,13 +797,43 @@ pub struct ReverseWatchesReply {
     pub outpoints: Array<OutPoint>,
 }
 
+/// A debug wrapper around a TxoProof
+pub struct DebugTxoProof(pub TxoProof);
+
+impl Debug for DebugTxoProof {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match &self.0.proof {
+            ProofType::Filter(filt, _) => write!(f, "TxoProof filter len={}", filt.len()),
+            ProofType::Block(_) => write!(f, "TxoProof block"),
+            ProofType::ExternalBlock() => write!(f, "TxoProof external block"),
+        }
+    }
+}
+
+impl Deref for DebugTxoProof {
+    type Target = TxoProof;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Decodable for DebugTxoProof {
+    fn consensus_decode<D: Read + ?Sized>(
+        d: &mut D,
+    ) -> core::result::Result<Self, bitcoin::consensus::encode::Error> {
+        let proof = TxoProof::consensus_decode(d)?;
+        Ok(DebugTxoProof(proof))
+    }
+}
+
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2005)]
 pub struct AddBlock {
     /// Bitcoin consensus encoded
     pub header: Octets,
     /// Bitcoin consensus encoded TXOO TxoProof
-    pub unspent_proof: Option<LargeOctets>,
+    pub unspent_proof: Option<DebugTxoProof>,
 }
 
 ///

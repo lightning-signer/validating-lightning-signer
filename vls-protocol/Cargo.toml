@@ -15,6 +15,7 @@ bolt-derive = { path = "../bolt-derive", version = "0.2.0" }
 log = "0.4"
 as-any = "0.3"
 hex = { version = "0.4", default-features = false }
+txoo = { version = "0.6.1", default-features = false }
 
 [dev-dependencies]
 regex = "1.5"
