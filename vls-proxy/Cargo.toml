@@ -120,3 +120,7 @@ required-features = ["system-test"]
 name = "cloud_system_test"
 path = "tests/cloud_system_test.rs"
 required-features = ["system-test"]
+
+[[example]]
+name = "compact_proof"
+path = "examples/compact_proof.rs"
