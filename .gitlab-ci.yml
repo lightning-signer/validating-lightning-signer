@@ -138,8 +138,8 @@ coverage:
     - apt-get install -y protobuf-compiler
     - apt-get install -y jq
     - bin/bitcoind --regtest --daemon --rpcuser=user --rpcpassword=pass
-    - (cd lightning-storage-server && cargo run --bin lssd &)
-    - sleep 5
+    - (cd lightning-storage-server && cargo build --bin lssd && cargo run --bin lssd &)
+    - sleep 2
     - ./scripts/run-llvm-cov --features system-test
     - bash <(curl -s https://codecov.io/bash) -f target/codecov.json -t "${CODECOV_TOKEN}"
   artifacts:

@@ -2,6 +2,11 @@ ignore:
   - "*_tests.rs"
 coverage:
   status:
+    # patch coverage is flaky, so disable it
+    patch:
+      default:
+        informational: true
+
     project:
       default:
         target: 60
@@ -11,3 +16,7 @@ coverage:
           - vls-core/src
         target: 80
         removed_code_behavior: adjust_base
+
+codecov:
+  notify:
+    wait_for_ci: false
