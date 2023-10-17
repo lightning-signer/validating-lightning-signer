@@ -79,7 +79,7 @@ version = "0.2.2"
 default-features = false
 
 [dependencies.txoo]
-version = "0.6.1"
+version = "0.6.2-beta.1"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #rev = "5c60af419bd94ddd25f009fde2f09a7c7b1b285b"
 #branch = "main"
@@ -87,7 +87,7 @@ version = "0.6.1"
 default-features = false
 
 [dev-dependencies.txoo-bitcoind-client]
-version = "0.6.1"
+version = "0.6.2-beta.1"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #rev = "5c60af419bd94ddd25f009fde2f09a7c7b1b285b"
 #branch = "main"
