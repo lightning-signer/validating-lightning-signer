@@ -14,15 +14,6 @@ Possible values:
 - `VLS_MODE=cln:socket`
 - `VLS_MODE=cln:serial`
 
-#### `VLS_DISABLE_UPDATE_VERSION` - Disable rebuilding binaries with current version
-
-The `VLS_DISABLE_UPDATE_VERSION` env variable is interpreted by the
-`vls` build system, for example `cargo build` or `cargo test`.
-
-Unfortunately, `cargo build` always rebuilds the binaries (even when they are up to date) to
-ensure the git version string is current.  Setting `VLS_DISABLE_UPDATE_VERSION=1` disables
-this behavior.  This is useful in development when building repeatedly.
-
 #### `VLS_AUTOAPPROVE` - Automatically approve payments
 
 The `VLS_AUTOAPPROVE` env variable is interpreted by `vlsd2` and `remote_hsmd_inplace`.

@@ -2494,6 +2494,7 @@ dependencies = [
  "tonic",
  "txoo",
  "txoo-bitcoind-client",
+ "vls-core",
 ]
 
 [[package]]

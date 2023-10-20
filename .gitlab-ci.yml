@@ -117,7 +117,7 @@ demo-signer:
   stage: build
   image: devrandom01/rust-qemu:nightly-1-73-2023-07-23
   script:
-    - (cd vls-signer-stm32 && cargo build --features stm32f412 --release --bin demo_signer)
+    - (cd vls-signer-stm32 && cargo build --release --bin demo_signer)
     - (cd wasm && wasm-pack test --firefox --headless && cargo test)
 
 coverage:
@@ -138,8 +138,8 @@ coverage:
     - apt-get install -y protobuf-compiler
     - apt-get install -y jq
     - bin/bitcoind --regtest --daemon --rpcuser=user --rpcpassword=pass
-    - (cd lightning-storage-server && cargo run --bin lssd &)
-    - sleep 5
+    - (cd lightning-storage-server && cargo build --bin lssd && cargo run --bin lssd &)
+    - sleep 2
     - ./scripts/run-llvm-cov --features system-test
     - bash <(curl -s https://codecov.io/bash) -f target/codecov.json -t "${CODECOV_TOKEN}"
   artifacts:

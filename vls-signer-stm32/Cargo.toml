@@ -48,6 +48,7 @@ version = "0.13"
 features = ["fsmc_lcd", "fsmc", "sdio", "sdio-host", "otg-fs", "usb_fs"]
 
 [features]
+default = ["stm32f413"]
 stm32f412 = ["stm32f4xx-hal/stm32f412"]
 stm32f413 = ["stm32f4xx-hal/stm32f413"]
 trace = []
