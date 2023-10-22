@@ -51,7 +51,8 @@ impl Client for UnixClient {
     }
 
     fn read_raw(&mut self) -> Result<Vec<u8>> {
-        let len = self.conn.read_u32_be()?;
+        // map to IO error, otherwise we get a Bitcoin error because of where read_u32_be is defined
+        let len = self.conn.read_u32_be().map_err(|e| Error::Io(e.to_string()))?;
         let mut data = Vec::new();
         data.resize(len as usize, 0);
         let len = self.conn.read(&mut data)?;
