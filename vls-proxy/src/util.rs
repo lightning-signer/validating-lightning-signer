@@ -146,6 +146,7 @@ pub fn add_hsmd_args(app: App) -> App {
                 .long("dev-disconnect")
                 .takes_value(true),
         )
+        .arg(Arg::new("developer").long("developer").help("ignored dev flag"))
         .arg(Arg::new("log-io").long("log-io").help("ignored dev flag"))
         .arg(arg!(--version "show a dummy version"))
         .arg(Arg::new("git-desc").long("git-desc").help("print git desc version and exit"))
