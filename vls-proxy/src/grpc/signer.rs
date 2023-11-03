@@ -20,6 +20,7 @@ use lightning_signer::util::status::Status;
 use lightning_signer::util::velocity::VelocityControlSpec;
 use log::*;
 use std::convert::TryInto;
+use std::error::Error as _;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
 use std::result::Result as StdResult;
@@ -234,10 +235,11 @@ async fn do_connect(uri: Uri) -> HsmdClient<Channel> {
             Err(e) => {
                 // unfortunately the error kind is not otherwise exposed
                 if e.to_string() == "transport error" {
-                    warn!("{} connecting to signer, will retry", e);
+                    let source = e.source().map_or("-".to_string(), |e| e.to_string());
+                    warn!("error connecting to node, will retry: {} - {}", e, source);
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 } else {
-                    panic!("{} connecting to signer", e);
+                    panic!("fatal error connecting to node: {}", e);
                 }
             }
         }
