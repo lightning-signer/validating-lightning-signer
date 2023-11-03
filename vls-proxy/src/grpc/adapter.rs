@@ -81,7 +81,7 @@ impl ProtocolAdapter {
                                 capabilities: 0,
                             });
                             reqs.requests.insert(request_id, req);
-                            info!("sending request {} to signer", request_id);
+                            debug!("sending request {} to signer", request_id);
                             yield SignerRequest {
                                 request_id,
                                 message: message,
@@ -117,7 +117,7 @@ impl ProtocolAdapter {
                     resp_opt = stream.next() => {
                         match resp_opt {
                             Some(Ok(resp)) => {
-                                info!("got signer response {}", resp.request_id);
+                                debug!("got signer response {}", resp.request_id);
                                 // temporary failures are not fatal and are handled below
                                 if !resp.error.is_empty() && !resp.is_temporary_failure {
                                     error!("signer error: {}", resp.error);
