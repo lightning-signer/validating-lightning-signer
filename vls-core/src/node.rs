@@ -2120,7 +2120,7 @@ impl Node {
             txid: setup.funding_outpoint.txid,
             index: setup.funding_outpoint.vout as u16,
         });
-        let opt_non_zero_fee_anchors = if setup.is_zero_fee_htlc() { Some(()) } else { None };
+        let opt_non_zero_fee_anchors = if setup.is_zero_fee_htlc() { None } else { Some(()) };
 
         let channel_transaction_parameters = ChannelTransactionParameters {
             holder_pubkeys: holder_pubkeys.clone(),

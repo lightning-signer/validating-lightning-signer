@@ -38,7 +38,7 @@ use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::transaction_utils::add_holder_sig;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::wallet::Wallet;
-use crate::{policy_err, Arc, CommitmentPointProvider, Weak};
+use crate::{catch_panic, policy_err, Arc, CommitmentPointProvider, Weak};
 
 /// Channel identifier
 ///
@@ -620,10 +620,12 @@ impl Channel {
             htlcs,
         );
 
-        let (sig, htlc_sigs) = self
-            .keys
-            .sign_counterparty_commitment(&commitment_tx, Vec::new(), &self.secp_ctx)
-            .map_err(|_| internal_error("failed to sign"))?;
+        let (sig, htlc_sigs) = catch_panic!(
+            self.keys.sign_counterparty_commitment(&commitment_tx, Vec::new(), &self.secp_ctx),
+            "sign_counterparty_commitment panic {} chantype={:?}",
+            self.setup.commitment_type,
+        )
+        .map_err(|_| internal_error("failed to sign"))?;
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(None, Some(&info2));
         state.validate_payments(
@@ -690,7 +692,7 @@ impl Channel {
         let mut htlcs_with_aux = htlcs.iter().map(|h| (h.clone(), ())).collect();
         let channel_parameters = self.make_channel_parameters();
         let parameters = channel_parameters.as_counterparty_broadcastable();
-        let commitment_tx = CommitmentTransaction::new_with_auxiliary_htlc_data(
+        let mut commitment_tx = CommitmentTransaction::new_with_auxiliary_htlc_data(
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             to_counterparty_value_sat,
             to_holder_value_sat,
@@ -702,6 +704,9 @@ impl Channel {
             &mut htlcs_with_aux,
             &parameters,
         );
+        if self.setup.is_anchors() && !self.setup.is_zero_fee_htlc() {
+            commitment_tx = commitment_tx.with_non_zero_fee_anchors();
+        }
         commitment_tx
     }
 
@@ -783,16 +788,22 @@ impl Channel {
 
             let htlc_redeemscript = get_htlc_redeemscript(htlc, self.setup.is_anchors(), &txkeys);
 
+            let setup = &self.setup;
+
             // policy-onchain-format-standard
-            let recomposed_htlc_tx = build_htlc_transaction(
-                &commitment_txid,
-                build_feerate,
-                to_self_delay,
-                htlc,
-                self.setup.is_anchors(),
-                !self.setup.is_zero_fee_htlc(),
-                &txkeys.broadcaster_delayed_payment_key,
-                &txkeys.revocation_key,
+            let recomposed_htlc_tx = catch_panic!(
+                build_htlc_transaction(
+                    &commitment_txid,
+                    build_feerate,
+                    to_self_delay,
+                    htlc,
+                    setup.is_anchors(),
+                    !setup.is_zero_fee_htlc(),
+                    &txkeys.broadcaster_delayed_payment_key,
+                    &txkeys.revocation_key,
+                ),
+                "build_htlc_transaction panic {} chantype={:?}",
+                self.setup.commitment_type
             );
 
             let recomposed_tx_sighash = Message::from_slice(
@@ -1204,7 +1215,7 @@ impl Channel {
             &mut htlcs_with_aux,
             &parameters,
         );
-        if self.setup.is_anchors() {
+        if self.setup.is_anchors() && !self.setup.is_zero_fee_htlc() {
             commitment_tx = commitment_tx.with_non_zero_fee_anchors();
         }
         commitment_tx
@@ -1243,7 +1254,7 @@ impl Channel {
             txid: self.setup.funding_outpoint.txid,
             index: self.setup.funding_outpoint.vout as u16,
         };
-        let opt_non_zero_fee_anchors = if self.setup.is_zero_fee_htlc() { Some(()) } else { None };
+        let opt_non_zero_fee_anchors = if self.setup.is_zero_fee_htlc() { None } else { Some(()) };
         let channel_parameters = ChannelTransactionParameters {
             holder_pubkeys: self.get_channel_basepoints(),
             holder_selected_contest_delay: self.setup.holder_selected_contest_delay,
@@ -1537,15 +1548,20 @@ impl Channel {
 
         let mut htlc_sigs = Vec::with_capacity(tx.htlcs().len());
         for htlc in tx.htlcs() {
-            let htlc_tx = build_htlc_transaction(
-                &trusted_tx.txid(),
-                feerate,
-                self.setup.counterparty_selected_contest_delay,
-                htlc,
-                self.setup.is_anchors(),
-                !self.setup.is_zero_fee_htlc(),
-                &txkeys.broadcaster_delayed_payment_key,
-                &txkeys.revocation_key,
+            let htlc_tx = catch_panic!(
+                build_htlc_transaction(
+                    &trusted_tx.txid(),
+                    feerate,
+                    self.setup.counterparty_selected_contest_delay,
+                    htlc,
+                    self.setup.is_anchors(),
+                    !self.setup.is_zero_fee_htlc(),
+                    &txkeys.broadcaster_delayed_payment_key,
+                    &txkeys.revocation_key,
+                ),
+                "build_htlc_transaction panic {} chantype={:?} htlc={:?}",
+                self.setup.commitment_type,
+                htlc
             );
             let htlc_redeemscript = get_htlc_redeemscript(&htlc, self.setup.is_anchors(), &txkeys);
             let sig_hash_type = if self.setup.is_anchors() {
@@ -1889,10 +1905,12 @@ impl Channel {
         let point = recomposed_tx.trust().keys().per_commitment_point;
 
         // Sign the recomposed commitment.
-        let sigs = self
-            .keys
-            .sign_counterparty_commitment(&recomposed_tx, Vec::new(), &self.secp_ctx)
-            .map_err(|_| internal_error(format!("sign_counterparty_commitment failed")))?;
+        let sigs = catch_panic!(
+            self.keys.sign_counterparty_commitment(&recomposed_tx, Vec::new(), &self.secp_ctx),
+            "sign_counterparty_commitment panic {} chantype={:?}",
+            self.setup.commitment_type,
+        )
+        .map_err(|_| internal_error(format!("sign_counterparty_commitment failed")))?;
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(None, Some(&info2));
         state.validate_payments(
@@ -2428,12 +2446,15 @@ mod tests {
     use bitcoin::hashes::hex::ToHex;
     use bitcoin::psbt::serialize::Serialize;
     use bitcoin::secp256k1::{self, Secp256k1, SecretKey};
-    use lightning::ln::chan_utils::HTLCOutputInCommitment;
+    use bitcoin::Txid;
+    use lightning::ln::chan_utils::{build_htlc_transaction, HTLCOutputInCommitment};
     use lightning::ln::PaymentHash;
+    use std::panic::catch_unwind;
 
     use crate::channel::ChannelBase;
     use crate::util::test_utils::{
-        init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
+        init_node_and_channel, key::make_test_pubkey, make_test_channel_setup, TEST_NODE_CONFIG,
+        TEST_SEED,
     };
 
     #[test]
@@ -2469,5 +2490,53 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    #[test]
+    fn issue_397_test() {
+        do_issue_397(true, false);
+    }
+
+    #[test]
+    #[ignore]
+    fn issue_397_non_zero_test() {
+        do_issue_397(true, true);
+    }
+
+    #[test]
+    #[ignore]
+    fn issue_397_static_test() {
+        do_issue_397(false, false);
+    }
+
+    fn do_issue_397(is_anchors: bool, is_nonzero_fee: bool) {
+        use bitcoin::hashes::Hash;
+
+        let key1 = make_test_pubkey(1);
+        let key2 = make_test_pubkey(2);
+        let feerate = 100000;
+        let txid = Txid::all_zeros();
+        let contest_delay = 7;
+        let htlc = HTLCOutputInCommitment {
+            offered: true,
+            amount_msat: 1000,
+            cltv_expiry: 100,
+            payment_hash: PaymentHash([0; 32]),
+            transaction_output_index: Some(0),
+        };
+        let res = catch_unwind(|| {
+            build_htlc_transaction(
+                &txid,
+                feerate,
+                contest_delay,
+                &htlc,
+                is_anchors,
+                is_nonzero_fee,
+                &key1,
+                &key2,
+            );
+        });
+        println!("res={:?}", res);
+        assert!(res.is_ok());
     }
 }
