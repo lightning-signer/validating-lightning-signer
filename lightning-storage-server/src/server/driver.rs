@@ -159,9 +159,8 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
 
     let server = StorageServer { database, public_key, secret_key };
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
-
     ctrlc::set_handler(move || {
-        warn!("ctrl-C");
+        warn!("ctrlc handler triggering shutdown");
         shutdown_trigger.trigger();
     })
     .expect("Error setting Ctrl-C handler");

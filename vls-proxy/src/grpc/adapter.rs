@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::pin::Pin;
-use std::process::exit;
 use std::result::Result as StdResult;
 use std::sync::Arc;
 
@@ -107,6 +106,7 @@ impl ProtocolAdapter {
     pub fn start_stream_reader(&self, mut stream: Streaming<SignerResponse>) -> JoinHandle<()> {
         let requests = self.requests.clone();
         let shutdown_signal = self.shutdown_signal.clone();
+        let shutdown_trigger = self.shutdown_trigger.clone();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -120,14 +120,9 @@ impl ProtocolAdapter {
                                 debug!("got signer response {}", resp.request_id);
                                 // temporary failures are not fatal and are handled below
                                 if !resp.error.is_empty() && !resp.is_temporary_failure {
-                                    error!("signer error: {}", resp.error);
-                                    // all signer errors are fatal
-                                    // TODO exit more cleanly
-                                    // Right now there's no clean way to stop the UNIX fd reader
-                                    // loop (aka "Signer Loop") if the adapter determines there's a
-                                    // fatal error in the signer sub-process, so just be aggressive
-                                    // here and exit.
-                                    exit(1);
+                                    error!("signer error: {}; triggering shutdown", resp.error);
+                                    shutdown_trigger.trigger();
+                                    break;
                                 }
 
                                 if resp.is_temporary_failure {
@@ -140,16 +135,16 @@ impl ProtocolAdapter {
                                     let reply = ChannelReply { reply: resp.message, is_temporary_failure: resp.is_temporary_failure };
                                     let send_res = channel_req.reply_tx.send(reply);
                                     if send_res.is_err() {
-                                        error!("failed to send response back to internal channel");
-                                        // TODO exit more cleanly
-                                        // see above
-                                        exit(1);
+                                        error!("failed to send response back to internal channel; \
+                                               triggering shutdown");
+                                        shutdown_trigger.trigger();
+                                        break;
                                     }
                                 } else {
-                                    error!("got response for unknown request ID {}", resp.request_id);
-                                    // TODO exit more cleanly
-                                    // see above
-                                    exit(1);
+                                    error!("got response for unknown request ID {}; \
+                                            triggering shutdown", resp.request_id);
+                                    shutdown_trigger.trigger();
+                                    break;
                                 }
                             }
                             Some(Err(err)) => {

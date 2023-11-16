@@ -10,6 +10,8 @@ use url::Url;
 use lightning_signer::bitcoin::{BlockHash, FilterHeader, Network};
 use log::info;
 
+use triggered::Listener;
+
 use crate::{chain_follower::ChainFollower, ChainTrack, ChainTrackDirectory};
 
 pub struct SourceFactory {
@@ -47,6 +49,7 @@ pub struct Frontend {
     rpc_url: Url,
     tracker_ids: Arc<Mutex<HashSet<Vec<u8>>>>,
     source_factory: Arc<SourceFactory>,
+    shutdown_signal: Listener,
 }
 
 impl Frontend {
@@ -55,9 +58,10 @@ impl Frontend {
         signer: Arc<dyn ChainTrackDirectory>,
         source_factory: Arc<SourceFactory>,
         rpc_url: Url,
+        shutdown_signal: Listener,
     ) -> Frontend {
         let tracker_ids = Arc::new(Mutex::new(HashSet::new()));
-        Frontend { directory: signer, source_factory, rpc_url, tracker_ids }
+        Frontend { directory: signer, source_factory, rpc_url, tracker_ids, shutdown_signal }
     }
 
     pub fn directory(&self) -> Arc<dyn ChainTrackDirectory> {
@@ -67,18 +71,23 @@ impl Frontend {
     /// Start a task which creates a chain follower for each existing tracker
     pub fn start(&self) {
         let s = self.clone();
+        let shutdown_signal = self.shutdown_signal.clone();
         task::spawn(async move {
-            s.start_loop().await;
+            s.start_loop(shutdown_signal).await;
         });
         info!("frontend started");
     }
 
-    async fn start_loop(&self) {
+    async fn start_loop(&self, shutdown_signal: Listener) {
         let mut interval = time::interval(Duration::from_secs(1));
         loop {
-            interval.tick().await;
-            self.handle_new_trackers().await;
+            let shutdown_signal_clone = shutdown_signal.clone();
+            tokio::select! {
+                _ = interval.tick() => self.handle_new_trackers().await,
+                _ = shutdown_signal_clone => break,
+            }
         }
+        info!("frontend stopped");
     }
 
     async fn handle_new_trackers(&self) {

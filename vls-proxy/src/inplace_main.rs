@@ -4,7 +4,7 @@ use std::env;
 use std::sync::Mutex;
 
 use clap::{arg, App};
-use log::{error, info};
+use log::{error, info, warn};
 use url::Url;
 
 use bitcoin::Network;
@@ -245,6 +245,14 @@ fn make_clap_app() -> App<'static> {
 async fn start() {
     setup_logging(".", "remote_hsmd_inplace", "info");
     info!("remote_hsmd_inplace git_desc={} starting", GIT_DESC);
+
+    let (shutdown_trigger, shutdown_signal) = triggered::trigger();
+    ctrlc::set_handler(move || {
+        warn!("ctrlc handler triggering shutdown");
+        shutdown_trigger.trigger();
+    })
+    .expect("Error setting Ctrl-C handler");
+
     let conn = UnixConnection::new(3);
     let client = UnixClient::new(conn);
     let allowlist = read_allowlist();
@@ -293,6 +301,7 @@ async fn start() {
         }),
         source_factory,
         Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
+        shutdown_signal.clone(),
     );
 
     tokio::task::spawn(async move { block_in_place(|| frontend.start()) });
