@@ -245,6 +245,7 @@ fn make_clap_app() -> App<'static> {
 async fn start() {
     setup_logging(".", "remote_hsmd_inplace", "info");
     info!("remote_hsmd_inplace git_desc={} starting", GIT_DESC);
+    let (_shutdown_trigger, shutdown_signal) = triggered::trigger();
     let conn = UnixConnection::new(3);
     let client = UnixClient::new(conn);
     let allowlist = read_allowlist();
@@ -293,6 +294,7 @@ async fn start() {
         }),
         source_factory,
         Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
+        shutdown_signal.clone(),
     );
 
     tokio::task::spawn(async move { block_in_place(|| frontend.start()) });

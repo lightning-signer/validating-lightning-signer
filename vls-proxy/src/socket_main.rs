@@ -91,6 +91,7 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
         Arc::new(SignerPortFront::new(signer_port.clone(), network)),
         source_factory,
         Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
+        shutdown_signal.clone(),
     );
     frontend.start();
 

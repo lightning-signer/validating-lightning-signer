@@ -200,6 +200,7 @@ async fn frontend_system_test() -> Result<()> {
 
 async fn run_with_network(tmpdir: TempDir, network: Network, url: Url) -> Result<()> {
     println!("running with network {} rpc {}", network, url);
+    let (_shutdown_trigger, shutdown_signal) = triggered::trigger();
     let client = BitcoindClient::new(url.clone()).await;
     let info = get_info(&client).await?;
     let signer_port = Arc::new(DummySignerPort::new(network));
@@ -208,6 +209,7 @@ async fn run_with_network(tmpdir: TempDir, network: Network, url: Url) -> Result
         Arc::new(SignerPortFront::new(signer_port.clone(), network)),
         source_factory,
         url,
+        shutdown_signal.clone(),
     );
     frontend.start();
     loop {
@@ -237,12 +239,14 @@ async fn run_regtest(tmpdir: TempDir) -> Result<()> {
     let block_hash = mine(&client, &address, 1).await?;
     height += 1;
 
+    let (_shutdown_trigger, shutdown_signal) = triggered::trigger();
     let signer_port = Arc::new(DummySignerPort::new(network));
     let source_factory = Arc::new(SourceFactory::new(tmpdir.path(), network));
     let frontend = Frontend::new(
         Arc::new(SignerPortFront::new(signer_port.clone(), network)),
         source_factory,
         url,
+        shutdown_signal.clone(),
     );
     frontend.start();
 

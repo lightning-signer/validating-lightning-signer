@@ -59,6 +59,7 @@ impl ProtocolAdapter {
         let receiver = self.receiver.clone();
         let requests = self.requests.clone();
         let shutdown_signal = self.shutdown_signal.clone();
+        let shutdown_trigger = self.shutdown_trigger.clone();
 
         let output = async_stream::try_stream! {
             let mut receiver = receiver.lock().await;
@@ -99,6 +100,7 @@ impl ProtocolAdapter {
             stream_reader_task.abort();
             // ignore join result
             let _ = stream_reader_task.await;
+            shutdown_trigger.trigger();
         };
         Box::pin(output)
     }
@@ -107,6 +109,7 @@ impl ProtocolAdapter {
     pub fn start_stream_reader(&self, mut stream: Streaming<SignerResponse>) -> JoinHandle<()> {
         let requests = self.requests.clone();
         let shutdown_signal = self.shutdown_signal.clone();
+        let shutdown_trigger = self.shutdown_trigger.clone();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -127,6 +130,7 @@ impl ProtocolAdapter {
                                     // loop (aka "Signer Loop") if the adapter determines there's a
                                     // fatal error in the signer sub-process, so just be aggressive
                                     // here and exit.
+                                    shutdown_trigger.trigger();
                                     exit(1);
                                 }
 
@@ -143,12 +147,14 @@ impl ProtocolAdapter {
                                         error!("failed to send response back to internal channel");
                                         // TODO exit more cleanly
                                         // see above
+                                        shutdown_trigger.trigger();
                                         exit(1);
                                     }
                                 } else {
                                     error!("got response for unknown request ID {}", resp.request_id);
                                     // TODO exit more cleanly
                                     // see above
+                                    shutdown_trigger.trigger();
                                     exit(1);
                                 }
                             }
@@ -167,6 +173,7 @@ impl ProtocolAdapter {
                 }
             }
             info!("stream reader loop finished");
+            shutdown_trigger.trigger();
         })
     }
 }

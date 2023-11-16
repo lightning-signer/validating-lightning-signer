@@ -89,6 +89,8 @@ pub fn main() -> anyhow::Result<()> {
     if matches.is_present("test") {
         run_test(serial_port)?;
     } else {
+        let (_shutdown_trigger, shutdown_signal) = triggered::trigger();
+
         let conn = UnixConnection::new(parent_fd);
         let client = UnixClient::new(conn);
         let serial = Arc::new(Mutex::new(connect(serial_port)?));
@@ -101,6 +103,7 @@ pub fn main() -> anyhow::Result<()> {
             signer_front,
             source_factory,
             Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
+            shutdown_signal.clone(),
         );
 
         let runtime = create_runtime("serial-frontend");
