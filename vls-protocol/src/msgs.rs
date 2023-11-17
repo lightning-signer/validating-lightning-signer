@@ -26,6 +26,9 @@ use log::error;
 
 const MAX_MESSAGE_SIZE: u32 = 128 * 1024;
 
+// Error codes used to demarcate Message::SignerError instances
+pub const CODE_ORPHAN_BLOCK: u16 = 401;
+
 /// Serialize a message with a type prefix, in BOLT style
 pub trait SerBolt: Debug + AsAny + Send {
     fn as_vec(&self) -> Vec<u8>;
@@ -893,6 +896,15 @@ pub struct Unknown {
 }
 
 #[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(3000)]
+pub struct SignerError {
+    // Error code
+    pub code: u16,
+    // Error message
+    pub message: WireString,
+}
+
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(65535)]
 pub struct UnknownPlaceholder {}
 
@@ -996,6 +1008,7 @@ pub enum Message {
     BlockChunk(BlockChunk),
     BlockChunkReply(BlockChunkReply),
     Unknown(Unknown),
+    SignerError(SignerError),
 }
 
 /// Read a length framed BOLT message of any type:

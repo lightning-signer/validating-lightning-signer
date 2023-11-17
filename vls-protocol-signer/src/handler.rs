@@ -40,6 +40,7 @@ use lightning_signer::{function, trace_node_state};
 use log::*;
 use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
+use lightning_signer::chain::tracker::Error as TrackerError;
 use lightning_signer::util::crypto_utils::signature_to_bitcoin_vec;
 use lightning_signer::util::status::{Code, Status};
 use lightning_signer::wallet::Wallet;
@@ -636,9 +637,18 @@ impl Handler for RootHandler {
                 let proof = m
                     .unspent_proof
                     .ok_or(Status::invalid_argument("could not deserialize proof"))?;
-                tracker
+                match tracker
                     .add_block(deserialize(m.header.0.as_slice()).expect("header"), proof.0)
-                    .expect("add_block");
+                {
+                    Ok(_) => (),
+                    Err(TrackerError::OrphanBlock(msg)) => {
+                        return Ok(Box::new(msgs::SignerError {
+                            code: msgs::CODE_ORPHAN_BLOCK,
+                            message: WireString(msg.into_bytes()),
+                        }));
+                    }
+                    Err(_e) => panic!("add_block"),
+                }
                 self.node
                     .get_persister()
                     .update_tracker(&self.node.get_id(), &tracker)

@@ -16,7 +16,7 @@ use bitcoin::{
 
 use crate::policy::validator::ValidatorFactory;
 #[allow(unused_imports)]
-use log::{debug, error};
+use log::{debug, error, warn};
 use push_decoder::{BlockDecoder, Listener as PushListener};
 use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -33,6 +33,8 @@ use crate::util::ser_util::{OutPointDef, TxidDef};
 pub enum Error {
     /// Chain progression is invalid (e.g. invalid difficulty change)
     InvalidChain,
+    /// Previous blockhash of new block header doesn't match the current tip
+    OrphanBlock(String),
     /// Block is invalid (e.g. block hash not under target)
     InvalidBlock,
     /// Reorg size greater than [`ChainTracker::MAX_REORG_SIZE`]
@@ -45,6 +47,14 @@ macro_rules! error_invalid_chain {
     ($($arg:tt)*) => {{
         error!("InvalidChain: {}", format!($($arg)*));
         Error::InvalidChain
+    }};
+}
+
+macro_rules! error_orphan_block {
+    ($($arg:tt)*) => {{
+        let message = format!($($arg)*);
+        warn!("OrphanBlock: {}", message);
+        Error::OrphanBlock(message)
     }};
 }
 
@@ -538,7 +548,7 @@ impl<L: ChainListener> ChainTracker<L> {
         let prev_header = &prev_headers.0;
         // Check hash is correctly chained
         if header.prev_blockhash != prev_header.block_hash() {
-            return Err(error_invalid_chain!(
+            return Err(error_orphan_block!(
                 "header.prev_blockhash {} != self.tip.block_hash {}",
                 header.prev_blockhash.to_hex(),
                 prev_header.block_hash().to_hex()
