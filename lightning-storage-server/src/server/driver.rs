@@ -151,7 +151,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 RedbDatabase::new(datadir.clone()).await
             }
-            .unwrap(),
+            .unwrap_or_else(|err| panic!("trouble opening redb in {:?}: {}", datadir, err)),
         ),
         None => panic!("database not specified, even though there is a default value"),
         Some(v) => Err(format!("unsupported option for --database: {}", v))?,
