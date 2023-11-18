@@ -496,6 +496,7 @@ impl Handler for RootHandler {
                         msgs::SignHtlcTxMingle::TYPE as u32,
                         // TODO advertise splicing when it is implemented
                         // msgs::SignSpliceTx::TYPE as u32,
+                        msgs::CheckOutpoint::TYPE as u32,
                     ]
                     .into(),
                     node_id: PubKey(node_id),
@@ -967,6 +968,20 @@ impl Handler for ChannelHandler {
                 )?;
 
                 Ok(Box::new(msgs::SetupChannelReply {}))
+            }
+            Message::CheckOutpoint(m) => {
+                let funding_outpoint =
+                    OutPoint { txid: m.funding_txid, vout: m.funding_txout as u32 };
+                // FIXME - make the call on the node!
+                warn!("null placeholder for CheckOutpoint on outpoint {:?}", funding_outpoint);
+                Ok(Box::new(msgs::CheckOutpointReply { is_buried: true }))
+            }
+            Message::LockOutpoint(m) => {
+                let funding_outpoint =
+                    OutPoint { txid: m.funding_txid, vout: m.funding_txout as u32 };
+                // FIXME - make the call on the node!
+                warn!("null placeholder for LockOutpoint on outpoint {:?}", funding_outpoint);
+                Ok(Box::new(msgs::LockOutpointReply {}))
             }
             Message::SignRemoteHtlcTx(m) => {
                 let psbt = m.psbt;
