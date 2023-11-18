@@ -145,6 +145,8 @@ fn track_char(msg: &Message) -> char {
         Message::SetupChannel(_m) => '(',
         Message::GetPerCommitmentPoint(_m) => 'p',
         Message::GetPerCommitmentPoint2(_m) => 'p',
+        Message::CheckOutpoint(_m) => '?',
+        Message::LockOutpoint(_m) => '!',
 
         Message::SignRemoteCommitmentTx(_m) => 's',
         Message::SignRemoteCommitmentTx2(_m) => 's',
@@ -180,7 +182,7 @@ fn track_char(msg: &Message) -> char {
 
         Message::Ping(_m) => '.',
         Message::Memleak(_m) => '_',
-        Message::Unknown(_m) => '?',
+        Message::Unknown(_m) => ' ',
 
         // we shouldn't see any of these
         Message::Pong(_)
@@ -207,6 +209,8 @@ fn track_char(msg: &Message) -> char {
         | Message::GetPerCommitmentPointReply(_)
         | Message::GetPerCommitmentPoint2Reply(_)
         | Message::SetupChannelReply(_)
+        | Message::CheckOutpointReply(_)
+        | Message::LockOutpointReply(_)
         | Message::ValidateCommitmentTxReply(_)
         | Message::ValidateRevocationReply(_)
         | Message::SignCommitmentTxWithHtlcsReply(_)
