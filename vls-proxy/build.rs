@@ -27,7 +27,12 @@ fn update_version() {
     if version_source != old_version_source {
         fs::write(&version_path, version_source).unwrap();
     }
-    println!("cargo:rerun-if-changed=../.git/logs/HEAD"); // run if git HEAD changes
+    // run if git HEAD changes
+    if Path::new("../.git/logs/HEAD").exists() {
+        println!("cargo:rerun-if-changed=../.git/logs/HEAD");
+    } else {
+        println!("cargo:rerun-if-changed=../../.git/modules/vls/logs/HEAD");
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
