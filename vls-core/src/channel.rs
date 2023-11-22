@@ -39,7 +39,7 @@ use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::transaction_utils::add_holder_sig;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::wallet::Wallet;
-use crate::{policy_err, Arc, CommitmentPointProvider, Weak};
+use crate::{catch_panic, policy_err, Arc, CommitmentPointProvider, Weak};
 
 /// Channel identifier
 ///
@@ -611,10 +611,12 @@ impl Channel {
             htlcs,
         );
 
-        let (sig, htlc_sigs) = self
-            .keys
-            .sign_counterparty_commitment(&commitment_tx, Vec::new(), &self.secp_ctx)
-            .map_err(|_| internal_error("failed to sign"))?;
+        let (sig, htlc_sigs) = catch_panic!(
+            self.keys.sign_counterparty_commitment(&commitment_tx, Vec::new(), &self.secp_ctx),
+            "sign_counterparty_commitment panic {} chantype={:?}",
+            self.setup.commitment_type,
+        )
+        .map_err(|_| internal_error("failed to sign"))?;
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(None, Some(&info2));
         state.validate_payments(
@@ -775,15 +777,21 @@ impl Channel {
 
             let htlc_redeemscript = get_htlc_redeemscript(htlc, &features, &txkeys);
 
+            let features = self.setup.features();
+
             // policy-onchain-format-standard
-            let recomposed_htlc_tx = build_htlc_transaction(
-                &commitment_txid,
-                build_feerate,
-                to_self_delay,
-                htlc,
-                &self.setup.features(),
-                &txkeys.broadcaster_delayed_payment_key,
-                &txkeys.revocation_key,
+            let recomposed_htlc_tx = catch_panic!(
+                build_htlc_transaction(
+                    &commitment_txid,
+                    build_feerate,
+                    to_self_delay,
+                    htlc,
+                    &features,
+                    &txkeys.broadcaster_delayed_payment_key,
+                    &txkeys.revocation_key,
+                ),
+                "build_htlc_transaction panic {} chantype={:?}",
+                self.setup.commitment_type
             );
 
             let recomposed_tx_sighash = Message::from_slice(
@@ -1524,14 +1532,19 @@ impl Channel {
 
         let mut htlc_sigs = Vec::with_capacity(tx.htlcs().len());
         for htlc in tx.htlcs() {
-            let htlc_tx = build_htlc_transaction(
-                &trusted_tx.txid(),
-                feerate,
-                self.setup.counterparty_selected_contest_delay,
-                htlc,
-                &features,
-                &txkeys.broadcaster_delayed_payment_key,
-                &txkeys.revocation_key,
+            let htlc_tx = catch_panic!(
+                build_htlc_transaction(
+                    &trusted_tx.txid(),
+                    feerate,
+                    self.setup.counterparty_selected_contest_delay,
+                    htlc,
+                    &features,
+                    &txkeys.broadcaster_delayed_payment_key,
+                    &txkeys.revocation_key,
+                ),
+                "build_htlc_transaction panic {} chantype={:?} htlc={:?}",
+                self.setup.commitment_type,
+                htlc
             );
             let htlc_redeemscript = get_htlc_redeemscript(&htlc, &features, &txkeys);
             let sig_hash_type = if self.setup.is_anchors() {
@@ -1821,11 +1834,15 @@ impl Channel {
             make_funding_redeemscript(funding_pubkey, counterparty_funding_pubkey);
 
         let built_tx = trusted_tx.built_transaction();
-        let sig = built_tx.sign_counterparty_commitment(
-            &self.keys.funding_key,
-            &channel_funding_redeemscript,
-            self.setup.channel_value_sat,
-            &self.secp_ctx,
+        let sig = catch_panic!(
+            built_tx.sign_counterparty_commitment(
+                &self.keys.funding_key,
+                &channel_funding_redeemscript,
+                self.setup.channel_value_sat,
+                &self.secp_ctx,
+            ),
+            "sign_counterparty_commitment panic {} chantype={:?}",
+            self.setup.commitment_type
         );
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(None, Some(&info2));
