@@ -114,16 +114,36 @@ pub fn setup_logging<P: AsRef<Path>>(datadir: P, who: &str, level_arg: &str) {
     use fern::colors::{Color, ColoredLevelConfig};
     use std::str::FromStr;
 
-    let colors = ColoredLevelConfig::new().info(Color::Green).error(Color::Red).warn(Color::Yellow);
+    // Should we support seperate console and file log levels?
     let level = env::var("RUST_LOG").unwrap_or(level_arg.to_string());
+
+    // file
+    let who_clone = who.to_string();
     let logfile = datadir.as_ref().join(format!("{}.log", who));
-    let who = who.to_string();
-    fern::Dispatch::new()
+    let file_config = fern::Dispatch::new()
         .format(move |out, message, record| {
             out.finish(format_args!(
                 "[{} {}/{} {}] {}",
                 tstamp(),
-                who,
+                who_clone,
+                record.target(),
+                record.level(),
+                message
+            ))
+        })
+        .level(log::LevelFilter::from_str(&level).expect("level"))
+        .level_for("h2", log::LevelFilter::Info)
+        .chain(fern::log_file(logfile).expect("file log config"));
+
+    // console
+    let who_clone = who.to_string();
+    let colors = ColoredLevelConfig::new().info(Color::Green).error(Color::Red).warn(Color::Yellow);
+    let console_config = fern::Dispatch::new()
+        .format(move |out, message, record| {
+            out.finish(format_args!(
+                "[{} {}/{} {}] {}",
+                tstamp(),
+                who_clone,
                 record.target(),
                 colors.color(record.level()),
                 message
@@ -131,10 +151,9 @@ pub fn setup_logging<P: AsRef<Path>>(datadir: P, who: &str, level_arg: &str) {
         })
         .level(log::LevelFilter::from_str(&level).expect("level"))
         .level_for("h2", log::LevelFilter::Info)
-        .chain(std::io::stdout())
-        .chain(fern::log_file(logfile).expect("log file"))
-        .apply()
-        .expect("log config");
+        .chain(std::io::stdout());
+
+    fern::Dispatch::new().chain(console_config).chain(file_config).apply().expect("log config");
 }
 
 #[cfg(feature = "main")]
