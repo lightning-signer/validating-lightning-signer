@@ -10,7 +10,7 @@ pub enum Error {
     UnexpectedType(u16),
     BadFraming,
     /// Bitcoin consensus decoding error
-    Bitcoin,
+    Bitcoin(String),
     /// Includes the message type for trailing bytes
     TrailingBytes(usize, u16),
     ShortRead,
@@ -21,8 +21,8 @@ pub enum Error {
 
 // convert bitcoin consensus decode error to our error
 impl From<BitcoinError> for Error {
-    fn from(_: BitcoinError) -> Self {
-        Error::Bitcoin
+    fn from(e: BitcoinError) -> Self {
+        Error::Bitcoin(e.to_string())
     }
 }
 

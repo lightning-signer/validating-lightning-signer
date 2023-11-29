@@ -1,13 +1,18 @@
+use async_trait::async_trait;
 use backoff::Error as BackoffError;
 use log::*;
+use lru::LruCache;
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::SystemTime;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::spawn_blocking;
 use triggered::Trigger;
 
-use async_trait::async_trait;
+use lightning_signer::bitcoin::hashes::sha256::Hash as Sha256Hash;
+use lightning_signer::bitcoin::hashes::Hash;
 
 use super::adapter::{ChannelReply, ChannelRequest, ClientId};
 use crate::client::Client;
@@ -15,6 +20,14 @@ use crate::{log_error, log_pretty, log_reply, log_request};
 use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
 use vls_protocol_client::{ClientResult as Result, Error, SignerPort};
 use vls_protocol_signer::vls_protocol;
+
+const PREAPPROVE_CACHE_TTL: Duration = Duration::from_secs(60);
+const PREAPPROVE_CACHE_SIZE: usize = 6;
+
+struct PreapprovalCacheEntry {
+    tstamp: SystemTime,
+    reply_bytes: Vec<u8>,
+}
 
 pub struct GrpcSignerPort {
     sender: mpsc::Sender<ChannelRequest>,
@@ -117,25 +130,36 @@ pub struct SignerLoop<C: 'static + Client> {
     signer_port: Arc<GrpcSignerPort>,
     client_id: Option<ClientId>,
     shutdown_trigger: Option<Trigger>,
+    preapproval_cache: LruCache<Sha256Hash, PreapprovalCacheEntry>,
 }
 
 impl<C: 'static + Client> SignerLoop<C> {
     /// Create a loop for the root (lightningd) connection, but doesn't start it yet
     pub fn new(client: C, signer_port: Arc<GrpcSignerPort>, shutdown_trigger: Trigger) -> Self {
         let log_prefix = format!("{}/{}", std::process::id(), client.id());
+        let preapproval_cache = LruCache::new(NonZeroUsize::new(PREAPPROVE_CACHE_SIZE).unwrap());
         Self {
             client,
             log_prefix,
             signer_port,
             client_id: None,
             shutdown_trigger: Some(shutdown_trigger),
+            preapproval_cache,
         }
     }
 
     // Create a loop for a non-root connection
     fn new_for_client(client: C, signer_port: Arc<GrpcSignerPort>, client_id: ClientId) -> Self {
         let log_prefix = format!("{}/{}", std::process::id(), client.id());
-        Self { client, log_prefix, signer_port, client_id: Some(client_id), shutdown_trigger: None }
+        let preapproval_cache = LruCache::new(NonZeroUsize::new(PREAPPROVE_CACHE_SIZE).unwrap());
+        Self {
+            client,
+            log_prefix,
+            signer_port,
+            client_id: Some(client_id),
+            shutdown_trigger: None,
+            preapproval_cache,
+        }
     }
 
     /// Start the read loop
@@ -169,20 +193,61 @@ impl<C: 'static + Client> SignerLoop<C> {
                         SignerLoop::new_for_client(new_client, self.signer_port.clone(), client_id);
                     spawn_blocking(move || new_loop.start());
                 }
-                _ => {
-                    let result = self.handle_message(raw_msg);
-                    if let Err(ref err) = result {
-                        log_error!(err);
+                Message::PreapproveInvoice(_) | Message::PreapproveKeysend(_) => {
+                    let now = SystemTime::now();
+                    let req_hash = Sha256Hash::hash(&raw_msg);
+                    if let Some(entry) = self.preapproval_cache.get(&req_hash) {
+                        let age = now.duration_since(entry.tstamp).expect("age");
+                        if age < PREAPPROVE_CACHE_TTL {
+                            debug!("{} found in preapproval cache", self.log_prefix);
+                            let reply = entry.reply_bytes.clone();
+                            log_reply!(reply, self);
+                            self.client.write_vec(reply)?;
+                            continue;
+                        }
                     }
-                    let reply = result?;
-                    log_reply!(reply);
-
-                    // Write the reply to the node
-                    self.client.write_vec(reply)?;
-                    info!("replied {}", self.log_prefix);
+                    let reply_bytes = self.do_proxy_msg(raw_msg)?;
+                    let reply = msgs::from_vec(reply_bytes.clone()).expect("parse reply failed");
+                    // Did we just witness an approval?
+                    match reply {
+                        Message::PreapproveKeysendReply(pkr) =>
+                            if pkr.result == true {
+                                debug!("{} adding keysend to preapproval cache", self.log_prefix);
+                                self.preapproval_cache.put(
+                                    req_hash,
+                                    PreapprovalCacheEntry { tstamp: now, reply_bytes },
+                                );
+                            },
+                        Message::PreapproveInvoiceReply(pir) =>
+                            if pir.result == true {
+                                debug!("{} adding invoice to preapproval cache", self.log_prefix);
+                                self.preapproval_cache.put(
+                                    req_hash,
+                                    PreapprovalCacheEntry { tstamp: now, reply_bytes },
+                                );
+                            },
+                        _ => {} // allow future out-of-band reply types
+                    }
+                }
+                _ => {
+                    self.do_proxy_msg(raw_msg)?;
                 }
             }
         }
+    }
+
+    // Proxy the request to the signer, return the result to the node.
+    // Returns the last response for caching
+    fn do_proxy_msg(&mut self, raw_msg: Vec<u8>) -> Result<Vec<u8>> {
+        let result = self.handle_message(raw_msg);
+        if let Err(ref err) = result {
+            log_error!(err, self);
+        }
+        let reply = result?;
+        log_reply!(reply, self);
+        self.client.write_vec(reply.clone())?;
+        info!("replied {}", self.log_prefix);
+        Ok(reply)
     }
 
     fn handle_message(&mut self, message: Vec<u8>) -> Result<Vec<u8>> {

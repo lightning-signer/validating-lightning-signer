@@ -10,3 +10,5 @@ cargo clean
 (cd vls-signer-stm32 && cargo clean)
 
 (cd embedded && cargo clean)
+
+(cd wasm && cargo clean)

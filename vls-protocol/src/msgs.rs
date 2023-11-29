@@ -417,6 +417,34 @@ pub struct SetupChannel {
 pub struct SetupChannelReply {}
 
 ///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(32)]
+pub struct CheckOutpoint {
+    pub funding_txid: Txid,
+    pub funding_txout: u16,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(132)]
+pub struct CheckOutpointReply {
+    pub is_buried: bool,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(37)]
+pub struct LockOutpoint {
+    pub funding_txid: Txid,
+    pub funding_txout: u16,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(137)]
+pub struct LockOutpointReply {}
+
+///
 /// CLN only
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(35)]
@@ -948,6 +976,10 @@ pub enum Message {
     GetPerCommitmentPoint2Reply(GetPerCommitmentPoint2Reply),
     SetupChannel(SetupChannel),
     SetupChannelReply(SetupChannelReply),
+    CheckOutpoint(CheckOutpoint),
+    CheckOutpointReply(CheckOutpointReply),
+    LockOutpoint(LockOutpoint),
+    LockOutpointReply(LockOutpointReply),
     ValidateCommitmentTx(ValidateCommitmentTx),
     ValidateCommitmentTx2(ValidateCommitmentTx2),
     ValidateCommitmentTxReply(ValidateCommitmentTxReply),

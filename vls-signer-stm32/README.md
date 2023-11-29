@@ -10,6 +10,7 @@ sudo apt install screen -y
 On Fedora:
 ```
 sudo dnf install arm-none-eabi-gcc-cs gdb -y
+sudo dnf install -y arm-none-eabi-gcc-cs-c++.x86_64 arm-none-eabi-newlib.noarch
 sudo dnf install libusbx-devel systemd-devel -y
 sudo dnf install glibc-devel.i686 glibc-devel -y
 sudo dnf install screen -y
