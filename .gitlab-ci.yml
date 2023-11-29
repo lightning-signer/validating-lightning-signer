@@ -166,6 +166,8 @@ changelog:
     - |
       if [ "$(git cat-file -p $CI_COMMIT_SHA | grep -c 'parent')" -gt 1 ]; then
         echo "This is a merge commit, don't require a changelog entry"
+      elif [[ "$CI_COMMIT_REF_NAME" =~ release ]]; then
+        echo "This is a release branch, don't require a changelog entry"
       else
         echo "This is not a merge commit."
         if git log 'main..HEAD' --pretty="%s%x09%b" | grep -q -E 'Changelog-(\S*): (.*)$'; then
