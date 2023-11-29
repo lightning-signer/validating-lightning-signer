@@ -77,6 +77,7 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
     let server = HsmdService::new(shutdown_trigger.clone(), shutdown_signal.clone());
     let trigger1 = shutdown_trigger.clone();
     ctrlc::set_handler(move || {
+        info!("ctrlc handler triggering shutdown");
         trigger1.trigger();
     })
     .expect("Error setting Ctrl-C handler");

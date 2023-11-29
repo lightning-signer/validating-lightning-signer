@@ -81,7 +81,7 @@ impl ProtocolAdapter {
                                 capabilities: 0,
                             });
                             reqs.requests.insert(request_id, req);
-                            debug!("sending request {} to signer", request_id);
+                            debug!("writer sending request {} to signer", request_id);
                             yield SignerRequest {
                                 request_id,
                                 message: message,
@@ -89,7 +89,7 @@ impl ProtocolAdapter {
                             };
                         } else {
                             // parent closed UNIX fd - we are shutting down
-                            info!("parent closed - shutting down signer stream");
+                            info!("writer: parent closed - shutting down signer stream");
                             break;
                         }
                     }

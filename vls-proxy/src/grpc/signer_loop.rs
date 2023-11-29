@@ -164,22 +164,23 @@ impl<C: 'static + Client> SignerLoop<C> {
 
     /// Start the read loop
     pub fn start(&mut self) {
-        info!("loop {}: start", self.log_prefix);
+        info!("read loop {}: start", self.log_prefix);
         match self.do_loop() {
-            Ok(()) => info!("loop {}: done", self.log_prefix),
-            Err(Error::Protocol(ProtocolError::Eof)) => info!("loop {}: ending", self.log_prefix),
-            Err(e) => error!("loop {}: error {:?}", self.log_prefix, e),
+            Ok(()) => info!("read loop {} done", self.log_prefix),
+            Err(Error::Protocol(ProtocolError::Eof)) =>
+                info!("read loop {} saw EOF; ending", self.log_prefix),
+            Err(e) => error!("read loop {} saw error {:?}; ending", self.log_prefix, e),
         }
         if let Some(trigger) = self.shutdown_trigger.as_ref() {
+            info!("read loop {} terminated; triggering shutdown", self.log_prefix);
             trigger.trigger();
-            info!("loop {}: triggered shutdown", self.log_prefix);
         }
     }
 
     fn do_loop(&mut self) -> Result<()> {
         loop {
             let raw_msg = self.client.read_raw()?;
-            debug!("loop {}: got raw", self.log_prefix);
+            debug!("read loop {}: got raw", self.log_prefix);
             let msg = msgs::from_vec(raw_msg.clone())?;
             log_request!(msg);
             match msg {
@@ -260,14 +261,14 @@ impl<C: 'static + Client> SignerLoop<C> {
                 reply_rx.blocking_recv().map_err(|_| BackoffError::permanent(Error::Transport))?;
             if reply.is_temporary_failure {
                 // Retry with backoff
-                info!("loop {}: temporary error, retrying", self.log_prefix);
+                info!("read loop {}: temporary error, retrying", self.log_prefix);
                 return Err(BackoffError::transient(Error::Transport));
             }
             return Ok(reply.reply);
         })
         .map_err(|e| error_from_backoff(e))
         .map_err(|e| {
-            error!("loop {}: signer retry failed: {:?}", self.log_prefix, e);
+            error!("read loop {}: signer retry failed: {:?}", self.log_prefix, e);
             e
         })?;
         Ok(result)
