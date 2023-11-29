@@ -136,7 +136,7 @@ pub struct SignerLoop<C: 'static + Client> {
 impl<C: 'static + Client> SignerLoop<C> {
     /// Create a loop for the root (lightningd) connection, but doesn't start it yet
     pub fn new(client: C, signer_port: Arc<GrpcSignerPort>, shutdown_trigger: Trigger) -> Self {
-        let log_prefix = format!("{}/{}", std::process::id(), client.id());
+        let log_prefix = format!("{}/{}/{}", std::process::id(), client.id(), 0);
         let preapproval_cache = LruCache::new(NonZeroUsize::new(PREAPPROVE_CACHE_SIZE).unwrap());
         Self {
             client,
@@ -150,7 +150,7 @@ impl<C: 'static + Client> SignerLoop<C> {
 
     // Create a loop for a non-root connection
     fn new_for_client(client: C, signer_port: Arc<GrpcSignerPort>, client_id: ClientId) -> Self {
-        let log_prefix = format!("{}/{}", std::process::id(), client.id());
+        let log_prefix = format!("{}/{}/{}", std::process::id(), client.id(), client_id.dbid);
         let preapproval_cache = LruCache::new(NonZeroUsize::new(PREAPPROVE_CACHE_SIZE).unwrap());
         Self {
             client,
