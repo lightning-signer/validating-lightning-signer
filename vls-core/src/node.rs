@@ -2521,6 +2521,9 @@ impl Node {
             )));
         }
 
+        // REMOVE-ME: This is only here for failure testing
+        policy_err!(self.validator(), "policy-fail-on-purpose", "fail on purpose to test cleanup");
+
         if let Some(payment_state) = state.invoices.get(&payment_hash) {
             return if payment_state.invoice_hash == invoice_hash {
                 Ok(true)

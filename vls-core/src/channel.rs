@@ -2138,14 +2138,21 @@ impl Channel {
             opaths,
         )?;
 
-        let sig = self
-            .keys
-            .sign_closing_transaction(&recomposed_tx, &self.secp_ctx)
-            .map_err(|_| Status::internal("failed to sign"))?;
-        self.enforcement_state.channel_closed = true;
-        trace_enforcement_state!(self);
-        self.persist()?;
-        Ok(sig)
+        // REMOVE-ME: This is a purposly bad sig to investigate failure modes
+        let dummy_sig = Secp256k1::new().sign_ecdsa(
+            &secp256k1::Message::from_slice(&[42; 32]).unwrap(),
+            &SecretKey::from_slice(&[42; 32]).unwrap(),
+        );
+        Ok(dummy_sig)
+
+        // let sig = self
+        //     .keys
+        //     .sign_closing_transaction(&recomposed_tx, &self.secp_ctx)
+        //     .map_err(|_| Status::internal("failed to sign"))?;
+        // self.enforcement_state.channel_closed = true;
+        // trace_enforcement_state!(self);
+        // self.persist()?;
+        // Ok(sig)
     }
 
     /// Phase 1
