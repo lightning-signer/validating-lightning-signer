@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.11.0-rc.1] - 2023-06-15: "Beta 3"
+
+This release is focused on stability and performance.
+
+### Added
+
+- CloudKVVStore for cloud storage backed by a local store
+- proxy: Extend the preapproval cache to the socket proxy. ([#431])
+- Added warning placeholders for the CheckOutpoint and LockOutpoint until they are fully implemented
+- Added --feature vls-proxy/heapmon_requests to enable peak request heap monitoring.
+
+### Changed
+
+- LSS now uses redb instead of sled for the embedded DB option
+- build: The `workspace.resolver` has been set to "2"
+- don't store zero amount issued invoices, e.g. synthetic invoices for keysend receiving
+- reduce MSRV to 1.66
+- update to LDK 0.0.116
+- write a last-writer record to cloud store for sync checking
+- ready_channel is now setup_channel
+- Channel stubs are allowed to get 2nd per-commitment point ([#245])
+- Use llvm-cov instead of kcov for coverage reports [(#382)]
+- better version.rs update logic, VLS_DISABLE_UPDATE_VERSION no longer needed
+- default to stm32f413 for the demo signer
+- improved memory handling in persistence
+- logging: The console log will use color and the file log will be plain.
+- reduce AddBlock memory use ([#415])
+
+### Removed
+
+- support for sled in vls-persist
+
+### Fixed
+
+- catch any LDK panics when building HTLC transactions
+- core: Use block time instead of block height to wait for final htcl sweep because testnet blockstorms cause premature channel pruning ([#412])
+- eliminate unnecessary signing of HTLC transactions
+
+### Security
+
+- Updated reqwest to mitigate RUSTSEC-2023-0052
+- Updated rustls and rustls-webpki to mitigate RUSTSEC-2023-0053
+- Updated txoo to mitigate RUSTSEC-2023-0052
+
 ## [0.10.0] - 2023-06-15: "Beta 2"
 
 The main focus of this release is low-resource environments and CLN 23.08 support.
