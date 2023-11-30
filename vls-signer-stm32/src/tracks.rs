@@ -179,6 +179,7 @@ fn track_char(msg: &Message) -> char {
         Message::AddBlock(_m) => ']',
         Message::ReverseWatches(_m) => '{',
         Message::RemoveBlock(_m) => '}',
+        Message::SignerError(_m) => 'o',
 
         Message::Ping(_m) => '.',
         Message::Memleak(_m) => '_',

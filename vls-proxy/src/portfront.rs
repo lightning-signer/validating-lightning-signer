@@ -224,10 +224,16 @@ impl ChainTrack for NodePortFront {
             unspent_proof: Some(DebugTxoProof(proof)),
         };
         let reply = self.signer_port.handle_message(req.as_vec()).await.expect("AddBlock failed");
-        if let Ok(Message::AddBlockReply(_)) = msgs::from_vec(reply) {
-            return;
-        } else {
-            panic!("unexpected AddBlockReply");
+        match msgs::from_vec(reply) {
+            Ok(Message::AddBlockReply(_)) => return,
+            Ok(Message::SignerError(msgs::SignerError { code, message })) => match code {
+                msgs::CODE_ORPHAN_BLOCK => {
+                    warn!("signer returned an OrphanBlock error: {:?}", message);
+                    return;
+                }
+                _ => panic!("NodePortFront can't handle error code {}", code),
+            },
+            _ => panic!("unexpected AddBlockReply"),
         }
     }
 
