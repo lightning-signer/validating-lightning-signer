@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use clap::App;
 #[allow(unused_imports)]
-use log::{error, info};
+use log::{error, info, warn};
 use tokio::task::spawn_blocking;
 use url::Url;
 
@@ -73,13 +73,14 @@ fn make_clap_app() -> App<'static> {
 #[tokio::main(worker_threads = 2)]
 async fn start_server(addr: SocketAddr, client: UnixClient) {
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
-
-    let server = HsmdService::new(shutdown_trigger.clone(), shutdown_signal.clone());
     let trigger1 = shutdown_trigger.clone();
     ctrlc::set_handler(move || {
+        warn!("ctrlc handler triggering shutdown");
         trigger1.trigger();
     })
     .expect("Error setting Ctrl-C handler");
+
+    let server = HsmdService::new(shutdown_trigger.clone(), shutdown_signal.clone());
 
     let incoming = TcpIncoming::new(addr, false, None).expect("listen incoming"); // new_from_std seems to be infallible
 
@@ -91,12 +92,15 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
         Arc::new(SignerPortFront::new(signer_port.clone(), network)),
         source_factory,
         Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
+        shutdown_signal.clone(),
     );
     frontend.start();
 
     // Start the UNIX fd listener loop
+    let shutdown_signal_clone = shutdown_signal.clone();
     spawn_blocking(move || {
-        let mut signer_loop = SignerLoop::new(client, signer_port, shutdown_trigger);
+        let mut signer_loop =
+            SignerLoop::new(client, signer_port, shutdown_trigger, shutdown_signal_clone);
         signer_loop.start()
     });
 

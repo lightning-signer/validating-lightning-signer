@@ -2521,6 +2521,7 @@ dependencies = [
  "log",
  "test-log",
  "tokio",
+ "triggered",
  "txoo-bitcoind-client",
  "url",
  "vls-core",

@@ -3,13 +3,14 @@ use backoff::Error as BackoffError;
 use log::*;
 use lru::LruCache;
 use std::num::NonZeroUsize;
+use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::spawn_blocking;
-use triggered::Trigger;
+use triggered::{Listener, Trigger};
 
 use lightning_signer::bitcoin::hashes::sha256::Hash as Sha256Hash;
 use lightning_signer::bitcoin::hashes::Hash;
@@ -130,13 +131,19 @@ pub struct SignerLoop<C: 'static + Client> {
     signer_port: Arc<GrpcSignerPort>,
     client_id: Option<ClientId>,
     shutdown_trigger: Option<Trigger>,
+    shutdown_signal: Option<Listener>,
     preapproval_cache: LruCache<Sha256Hash, PreapprovalCacheEntry>,
 }
 
 impl<C: 'static + Client> SignerLoop<C> {
     /// Create a loop for the root (lightningd) connection, but doesn't start it yet
-    pub fn new(client: C, signer_port: Arc<GrpcSignerPort>, shutdown_trigger: Trigger) -> Self {
-        let log_prefix = format!("{}/{}", std::process::id(), client.id());
+    pub fn new(
+        client: C,
+        signer_port: Arc<GrpcSignerPort>,
+        shutdown_trigger: Trigger,
+        shutdown_signal: Listener,
+    ) -> Self {
+        let log_prefix = format!("{}/{}/{}", std::process::id(), client.id(), 0);
         let preapproval_cache = LruCache::new(NonZeroUsize::new(PREAPPROVE_CACHE_SIZE).unwrap());
         Self {
             client,
@@ -144,13 +151,14 @@ impl<C: 'static + Client> SignerLoop<C> {
             signer_port,
             client_id: None,
             shutdown_trigger: Some(shutdown_trigger),
+            shutdown_signal: Some(shutdown_signal),
             preapproval_cache,
         }
     }
 
     // Create a loop for a non-root connection
     fn new_for_client(client: C, signer_port: Arc<GrpcSignerPort>, client_id: ClientId) -> Self {
-        let log_prefix = format!("{}/{}", std::process::id(), client.id());
+        let log_prefix = format!("{}/{}/{}", std::process::id(), client.id(), client_id.dbid);
         let preapproval_cache = LruCache::new(NonZeroUsize::new(PREAPPROVE_CACHE_SIZE).unwrap());
         Self {
             client,
@@ -158,28 +166,46 @@ impl<C: 'static + Client> SignerLoop<C> {
             signer_port,
             client_id: Some(client_id),
             shutdown_trigger: None,
+            shutdown_signal: None,
             preapproval_cache,
         }
     }
 
     /// Start the read loop
     pub fn start(&mut self) {
-        info!("loop {}: start", self.log_prefix);
+        info!("read loop {}: start", self.log_prefix);
+        if let Some(shutdown_signal) = self.shutdown_signal.as_ref() {
+            // TODO exit more cleanly
+            // Right now there's no clean way to stop the UNIX fd reader loop so just be
+            // aggressive here and exit when it's time to shutdown
+            let shutdown_signal_clone = shutdown_signal.clone();
+            let log_prefix_clone = self.log_prefix.clone();
+            tokio::spawn(async move {
+                info!("read loop {} waiting for shutdown", log_prefix_clone);
+                tokio::select! {
+                    _ = shutdown_signal_clone => {
+                        info!("read loop {} saw shutdown, calling exit", log_prefix_clone);
+                        process::exit(0);
+                    }
+                }
+            });
+        }
         match self.do_loop() {
-            Ok(()) => info!("loop {}: done", self.log_prefix),
-            Err(Error::Protocol(ProtocolError::Eof)) => info!("loop {}: ending", self.log_prefix),
-            Err(e) => error!("loop {}: error {:?}", self.log_prefix, e),
+            Ok(()) => info!("read loop {} done", self.log_prefix),
+            Err(Error::Protocol(ProtocolError::Eof)) =>
+                info!("read loop {} saw EOF; ending", self.log_prefix),
+            Err(e) => error!("read loop {} saw error {:?}; ending", self.log_prefix, e),
         }
         if let Some(trigger) = self.shutdown_trigger.as_ref() {
+            warn!("read loop {} terminated; triggering shutdown", self.log_prefix);
             trigger.trigger();
-            info!("loop {}: triggered shutdown", self.log_prefix);
         }
     }
 
     fn do_loop(&mut self) -> Result<()> {
         loop {
             let raw_msg = self.client.read_raw()?;
-            debug!("loop {}: got raw", self.log_prefix);
+            debug!("read loop {}: got raw", self.log_prefix);
             let msg = msgs::from_vec(raw_msg.clone())?;
             log_request!(msg);
             match msg {
@@ -260,14 +286,14 @@ impl<C: 'static + Client> SignerLoop<C> {
                 reply_rx.blocking_recv().map_err(|_| BackoffError::permanent(Error::Transport))?;
             if reply.is_temporary_failure {
                 // Retry with backoff
-                info!("loop {}: temporary error, retrying", self.log_prefix);
+                info!("read loop {}: temporary error, retrying", self.log_prefix);
                 return Err(BackoffError::transient(Error::Transport));
             }
             return Ok(reply.reply);
         })
         .map_err(|e| error_from_backoff(e))
         .map_err(|e| {
-            error!("loop {}: signer retry failed: {:?}", self.log_prefix, e);
+            error!("read loop {}: signer retry failed: {:?}", self.log_prefix, e);
             e
         })?;
         Ok(result)

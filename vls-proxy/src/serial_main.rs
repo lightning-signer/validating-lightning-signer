@@ -8,7 +8,7 @@ use clap::{arg, App};
 use url::Url;
 
 #[allow(unused_imports)]
-use log::{error, info};
+use log::{error, info, warn};
 
 use lightning_signer::bitcoin::Network;
 
@@ -89,6 +89,13 @@ pub fn main() -> anyhow::Result<()> {
     if matches.is_present("test") {
         run_test(serial_port)?;
     } else {
+        let (shutdown_trigger, shutdown_signal) = triggered::trigger();
+        ctrlc::set_handler(move || {
+            warn!("ctrlc handler triggering shutdown");
+            shutdown_trigger.trigger();
+        })
+        .expect("Error setting Ctrl-C handler");
+
         let conn = UnixConnection::new(parent_fd);
         let client = UnixClient::new(conn);
         let serial = Arc::new(Mutex::new(connect(serial_port)?));
@@ -101,6 +108,7 @@ pub fn main() -> anyhow::Result<()> {
             signer_front,
             source_factory,
             Url::parse(&bitcoind_rpc_url()).expect("malformed rpc url"),
+            shutdown_signal.clone(),
         );
 
         let runtime = create_runtime("serial-frontend");
