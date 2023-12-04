@@ -498,6 +498,7 @@ impl Handler for RootHandler {
                         // TODO advertise splicing when it is implemented
                         // msgs::SignSpliceTx::TYPE as u32,
                         msgs::CheckOutpoint::TYPE as u32,
+                        msgs::ForgetChannel::TYPE as u32,
                     ]
                     .into(),
                     node_id: PubKey(node_id),
@@ -531,6 +532,11 @@ impl Handler for RootHandler {
                 let channel_id = Self::channel_id(&m.node_id, m.dbid);
                 self.node.new_channel(Some(channel_id), &self.node)?;
                 Ok(Box::new(msgs::NewChannelReply {}))
+            }
+            Message::ForgetChannel(m) => {
+                let channel_id = Self::channel_id(&m.node_id, m.dbid);
+                self.node.forget_channel(&channel_id)?;
+                Ok(Box::new(msgs::ForgetChannelReply {}))
             }
             Message::GetChannelBasepoints(m) => {
                 let channel_id = Self::channel_id(&m.node_id, m.dbid);

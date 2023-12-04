@@ -421,6 +421,19 @@ pub struct SetupChannelReply {}
 
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(34)]
+pub struct ForgetChannel {
+    pub node_id: PubKey,
+    pub dbid: u64,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(134)]
+pub struct ForgetChannelReply {}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(32)]
 pub struct CheckOutpoint {
     pub funding_txid: Txid,
@@ -988,6 +1001,8 @@ pub enum Message {
     GetPerCommitmentPoint2Reply(GetPerCommitmentPoint2Reply),
     SetupChannel(SetupChannel),
     SetupChannelReply(SetupChannelReply),
+    ForgetChannel(ForgetChannel),
+    ForgetChannelReply(ForgetChannelReply),
     CheckOutpoint(CheckOutpoint),
     CheckOutpointReply(CheckOutpointReply),
     LockOutpoint(LockOutpoint),

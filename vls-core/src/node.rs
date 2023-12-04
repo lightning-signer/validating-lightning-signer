@@ -2623,6 +2623,27 @@ impl Node {
         VelocityControl::new(velocity_control_spec)
     }
 
+    /// The node tells us that it is forgetting a channel
+    pub fn forget_channel(&self, channel_id: &ChannelId) -> Result<(), Status> {
+        let channels = self.channels.lock().unwrap();
+        let found = channels.get(channel_id);
+        if let Some(slot) = found {
+            let channel = slot.lock().unwrap();
+            match &*channel {
+                ChannelSlot::Stub(_) => {
+                    info!("forget_channel stub {}", channel_id);
+                }
+                ChannelSlot::Ready(chan) => {
+                    info!("forget_channel {}", channel_id);
+                    chan.forget()?;
+                }
+            }
+        } else {
+            debug!("forget_channel didn't find {}", channel_id);
+        }
+        return Ok(());
+    }
+
     fn prune_channels(&self, tracker: &mut ChainTracker<ChainMonitor>) {
         // Prune stubs/channels which are no longer needed in memory.
         let mut channels = self.channels.lock().unwrap();

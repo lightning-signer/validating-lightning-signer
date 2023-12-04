@@ -1482,6 +1482,13 @@ impl Channel {
         self.monitor.add_funding_inputs(tx);
     }
 
+    /// Mark this channel as forgotten by our node clearing it for pruning on the next heartbeat
+    pub fn forget(&self) -> Result<(), Status> {
+        self.monitor.forget_channel();
+        self.persist()?;
+        Ok(())
+    }
+
     /// Return channel balances
     pub fn balance(&self) -> ChannelBalance {
         let node = self.get_node();
