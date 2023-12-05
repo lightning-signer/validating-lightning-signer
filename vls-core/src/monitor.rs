@@ -13,8 +13,12 @@ use crate::prelude::*;
 use crate::util::transaction_utils::{decode_commitment_number, decode_commitment_tx};
 use crate::{Arc, CommitmentPointProvider};
 
+// As a workaround for vls#435 we wait for a fairly large number of
+// extra blocks to pass before we prune channels that are done.
+const PRUNE_SAFETY_MARGIN: u32 = 2016;
+
 // the depth at which we consider a channel to be done
-const MIN_DEPTH: u32 = 100;
+const MIN_DEPTH: u32 = 100 + PRUNE_SAFETY_MARGIN;
 
 // the maximum time we will watch for HTLC sweeps on closed channels
 const MAX_CLOSING_TIME: Duration = Duration::from_secs(60 * 60 * 24 * 14);
