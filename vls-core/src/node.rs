@@ -1232,6 +1232,7 @@ impl Node {
                     let monitor_base = ChainMonitorBase::new_from_persistence(
                         funding_outpoint.clone(),
                         tracker_state,
+                        channel_id.as_ref().unwrap_or(&channel_id0),
                     );
                     let channel = Channel {
                         node: Arc::downgrade(&node),
@@ -1669,6 +1670,10 @@ impl Node {
             Some(channel_id0.clone()),
         );
 
+        // If a permanent channel_id was provided use it, otherwise
+        // continue with the initial channel_id0.
+        let chan_id = opt_channel_id.as_ref().unwrap_or(&channel_id0);
+
         let chan = {
             let channels = self.channels.lock().unwrap();
             let arcobj = channels.get(&channel_id0).ok_or_else(|| {
@@ -1693,7 +1698,7 @@ impl Node {
                 Node::channel_setup_to_channel_transaction_parameters(&setup, holder_pubkeys);
             keys.provide_channel_parameters(&channel_transaction_parameters);
             let funding_outpoint = setup.funding_outpoint;
-            let monitor = ChainMonitorBase::new(funding_outpoint, tracker.height());
+            let monitor = ChainMonitorBase::new(funding_outpoint, tracker.height(), chan_id);
             monitor.add_funding_outpoint(&funding_outpoint);
             let to_holder_msat = if setup.is_outbound {
                 // This is also checked in the validator, but we have to check
@@ -1735,17 +1740,13 @@ impl Node {
 
         let commitment_point_provider = ChannelCommitmentPointProvider::new(chan_arc.clone());
 
-        // If a permanent channel_id was provided use it, otherwise
-        // continue with the initial channel_id0.
-        let chan_id = opt_channel_id.unwrap_or(channel_id0.clone());
-
         // Associate the new ready channel with the channel id.
         channels.insert(chan_id.clone(), chan_arc.clone());
 
         // If we are using a new permanent channel_id additionally
         // associate the channel with the original (initial)
         // channel_id as well.
-        if channel_id0 != chan_id {
+        if channel_id0 != *chan_id {
             channels.insert(channel_id0, chan_arc.clone());
         }
 

@@ -6,8 +6,10 @@ use bitcoin::{BlockHash, BlockHeader, OutPoint, PackedLockTime, Transaction, TxI
 use log::*;
 use push_decoder::{self, Listener as _};
 use serde_derive::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 use crate::chain::tracker::ChainListener;
+use crate::channel::ChannelId;
 use crate::policy::validator::ChainState;
 use crate::prelude::*;
 use crate::util::transaction_utils::{decode_commitment_number, decode_commitment_tx};
@@ -75,6 +77,7 @@ impl ClosingOutpoints {
 }
 
 /// State
+#[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct State {
     // Chain height
@@ -106,6 +109,9 @@ pub struct State {
     // Whether we saw a block yet - used for sanity check
     #[serde(default)]
     saw_block: bool,
+    // The associated channel_id for logging and debugging
+    #[serde(skip)]
+    channel_id: Option<ChannelId>,
 }
 
 // A push decoder listener.
@@ -375,6 +381,10 @@ impl<'a> push_decoder::Listener for PushListener<'a> {
 }
 
 impl State {
+    fn channel_id(&self) -> &ChannelId {
+        self.channel_id.as_ref().expect("missing associated channel_id in monitor::State")
+    }
+
     fn depth_of(&self, other_height: Option<u32>) -> u32 {
         (self.height + 1).saturating_sub(other_height.unwrap_or(self.height + 1))
     }
@@ -675,7 +685,7 @@ pub struct ChainMonitorBase {
 impl ChainMonitorBase {
     /// Create a new chain monitor.
     /// Use add_funding to really start monitoring.
-    pub fn new(funding_outpoint: OutPoint, height: u32) -> Self {
+    pub fn new(funding_outpoint: OutPoint, height: u32, chan_id: &ChannelId) -> Self {
         let state = State {
             height,
             funding_txids: Vec::new(),
@@ -691,14 +701,21 @@ impl ChainMonitorBase {
             our_output_swept_height: None,
             our_output_swept_time: None,
             saw_block: false,
+            channel_id: Some(chan_id.clone()),
         };
 
         Self { funding_outpoint, state: Arc::new(Mutex::new(state)) }
     }
 
     /// recreate this monitor after restoring from persistence
-    pub fn new_from_persistence(funding_outpoint: OutPoint, state: State) -> Self {
-        Self { funding_outpoint, state: Arc::new(Mutex::new(state)) }
+    pub fn new_from_persistence(
+        funding_outpoint: OutPoint,
+        state: State,
+        channel_id: &ChannelId,
+    ) -> Self {
+        let state = Arc::new(Mutex::new(state));
+        state.lock().unwrap().channel_id = Some(channel_id.clone());
+        Self { funding_outpoint, state }
     }
 
     /// Get the ChainMonitor
@@ -973,7 +990,8 @@ mod tests {
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);
         let outpoint = OutPoint::new(tx.txid(), 0);
         let cpp = Box::new(DummyCommitmentPointProvider {});
-        let monitor = ChainMonitorBase::new(outpoint, 0).as_monitor(cpp);
+        let chan_id = ChannelId::new(&[33u8; 32]);
+        let monitor = ChainMonitorBase::new(outpoint, 0, &chan_id).as_monitor(cpp);
         let block_hash = BlockHash::all_zeros();
         let mut block_time = BLOCK_TIME_BASE;
         monitor.add_funding(&tx, 0);
@@ -1003,7 +1021,8 @@ mod tests {
         let tx2 = make_tx(vec![make_txin(2)]);
         let outpoint = OutPoint::new(tx.txid(), 0);
         let cpp = Box::new(DummyCommitmentPointProvider {});
-        let monitor = ChainMonitorBase::new(outpoint, 0).as_monitor(cpp);
+        let chan_id = ChannelId::new(&[33u8; 32]);
+        let monitor = ChainMonitorBase::new(outpoint, 0, &chan_id).as_monitor(cpp);
         let block_hash = BlockHash::all_zeros();
         let mut block_time = BLOCK_TIME_BASE;
         monitor.add_funding(&tx, 0);
@@ -1032,7 +1051,8 @@ mod tests {
     fn test_stream() {
         let outpoint = OutPoint::new(Txid::from_slice(&[1; 32]).unwrap(), 0);
         let cpp = Box::new(DummyCommitmentPointProvider {});
-        let monitor = ChainMonitorBase::new(outpoint, 0).as_monitor(cpp);
+        let chan_id = ChannelId::new(&[33u8; 32]);
+        let monitor = ChainMonitorBase::new(outpoint, 0, &chan_id).as_monitor(cpp);
         let header = BlockHeader {
             version: 0,
             prev_blockhash: BlockHash::all_zeros(),
