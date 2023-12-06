@@ -6,7 +6,7 @@
                (show-trailing-whitespace . t)
                (c-basic-offset . 4)
                (tab-width . 4)
-               (fill-column . 100)
+               (fill-column . 80)
                (inhibit-rust-format-buffer . nil)
                ))
  )

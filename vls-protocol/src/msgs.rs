@@ -498,7 +498,7 @@ pub struct ValidateRevocationReply {}
 
 ///
 /// CLN only
-#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[derive(SerBolt, Encodable, Decodable)]
 #[message_id(5)]
 pub struct SignCommitmentTx {
     pub peer_id: PubKey,
@@ -507,6 +507,27 @@ pub struct SignCommitmentTx {
     pub psbt: WithSize<PartiallySignedTransaction>,
     pub remote_funding_key: PubKey,
     pub commitment_number: u64,
+}
+
+impl Debug for SignCommitmentTx {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        // Sometimes c-lightning calls handle_sign_commitment_tx with mutual
+        // close transactions.  We can tell the difference because the locktime
+        // field will be set to 0 for a mutual close.
+        let name = if self.tx.0.lock_time.0 == 0 {
+            "SignMutualCloseTx as a SignCommitmentTx"
+        } else {
+            "SignCommitmentTx"
+        };
+        f.debug_struct(name)
+            .field("peer_id", &self.peer_id)
+            .field("dbid", &self.dbid)
+            .field("tx", &self.tx)
+            .field("psbt", &self.psbt)
+            .field("remote_funding_key", &self.remote_funding_key)
+            .field("commitment_number", &self.commitment_number)
+            .finish()
+    }
 }
 
 ///
