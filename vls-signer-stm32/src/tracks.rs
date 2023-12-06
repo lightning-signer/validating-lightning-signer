@@ -139,6 +139,7 @@ fn track_char(msg: &Message) -> char {
         Message::CheckFutureSecret(_m) => '~',
 
         Message::NewChannel(_m) => '+',
+        Message::ForgetChannel(_m) => '-',
         Message::GetChannelBasepoints(_m) => 'b',
         Message::SignWithdrawal(_m) => 'W',
 
@@ -220,6 +221,7 @@ fn track_char(msg: &Message) -> char {
         | Message::SignAnchorspendReply(_)
         | Message::SignHtlcTxMingleReply(_)
         | Message::NewChannelReply(_)
+        | Message::ForgetChannelReply(_)
         | Message::GetChannelBasepointsReply(_)
         | Message::TipInfoReply(_)
         | Message::ForwardWatchesReply(_)

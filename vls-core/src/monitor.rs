@@ -6,8 +6,10 @@ use bitcoin::{BlockHash, BlockHeader, OutPoint, PackedLockTime, Transaction, TxI
 use log::*;
 use push_decoder::{self, Listener as _};
 use serde_derive::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 use crate::chain::tracker::ChainListener;
+use crate::channel::ChannelId;
 use crate::policy::validator::ChainState;
 use crate::prelude::*;
 use crate::util::transaction_utils::{decode_commitment_number, decode_commitment_tx};
@@ -18,7 +20,7 @@ use crate::{Arc, CommitmentPointProvider};
 const PRUNE_SAFETY_MARGIN: u32 = 2016;
 
 // the depth at which we consider a channel to be done
-const MIN_DEPTH: u32 = 100 + PRUNE_SAFETY_MARGIN;
+const MIN_DEPTH: u32 = 100;
 
 // the maximum time we will watch for HTLC sweeps on closed channels
 const MAX_CLOSING_TIME: Duration = Duration::from_secs(60 * 60 * 24 * 14);
@@ -75,6 +77,7 @@ impl ClosingOutpoints {
 }
 
 /// State
+#[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct State {
     // Chain height
@@ -106,6 +109,12 @@ pub struct State {
     // Whether we saw a block yet - used for sanity check
     #[serde(default)]
     saw_block: bool,
+    // Whether the node has forgotten this channel
+    #[serde(default)]
+    saw_forget_channel: bool,
+    // The associated channel_id for logging and debugging
+    #[serde(skip)]
+    channel_id: Option<ChannelId>,
 }
 
 // A push decoder listener.
@@ -375,6 +384,10 @@ impl<'a> push_decoder::Listener for PushListener<'a> {
 }
 
 impl State {
+    fn channel_id(&self) -> &ChannelId {
+        self.channel_id.as_ref().expect("missing associated channel_id in monitor::State")
+    }
+
     fn depth_of(&self, other_height: Option<u32>) -> u32 {
         (self.height + 1).saturating_sub(other_height.unwrap_or(self.height + 1))
     }
@@ -389,6 +402,37 @@ impl State {
         }
     }
 
+    fn deep_enough(&self, other_height: Option<u32>) -> bool {
+        // If the event depth is less than MIN_DEPTH we never prune.
+        // If the event depth is greater we prune if saw_forget_channel is true.
+        // If the event depth is large enough we prune unconditionally.
+        let depth = self.depth_of(other_height);
+        if depth < MIN_DEPTH {
+            // Not deep enough, we aren't done
+            false
+        } else if depth < MIN_DEPTH + PRUNE_SAFETY_MARGIN {
+            if self.saw_forget_channel {
+                // Deep enough and the node thinks it's done too
+                true
+            } else {
+                // Deep enough, but we haven't heard from the node
+                warn!(
+                    "expected forget_channel for {} overdue; waiting {} more blocks",
+                    self.channel_id(),
+                    MIN_DEPTH + PRUNE_SAFETY_MARGIN - depth
+                );
+                false
+            }
+        } else {
+            warn!(
+                "pruning {} after {} blocks even though we haven't heard from the node",
+                self.channel_id(),
+                MIN_DEPTH + PRUNE_SAFETY_MARGIN
+            );
+            true
+        }
+    }
+
     fn is_done(&self, now: Duration) -> bool {
         // we are done if:
         // - funding was double spent
@@ -399,22 +443,26 @@ impl State {
         // TODO: check 2nd level HTLCs
         // TODO: disregard received HTLCs that we can't claim (we don't have the preimage)
 
-        if self.depth_of(self.funding_double_spent_height) >= MIN_DEPTH {
+        if self.deep_enough(self.funding_double_spent_height) {
             return true;
         }
-        if self.depth_of(self.mutual_closing_height) >= MIN_DEPTH {
+
+        if self.deep_enough(self.mutual_closing_height) {
             return true;
         }
-        if self.depth_of(self.closing_swept_height) >= MIN_DEPTH {
+
+        if self.deep_enough(self.closing_swept_height) {
             return true;
         }
+
         // since we don't yet have the logic to tell which HTLCs we can claim,
         // time out watching them after MAX_CLOSING_TIME
         if let Some(our_output_swept_time) = self.our_output_swept_time {
             if now >= our_output_swept_time + MAX_CLOSING_TIME {
                 warn!(
-                    "considering monitor done, because unilateral closing tx confirmed \
+                    "considering {} done, because unilateral closing tx confirmed \
                      and our main output was swept at {:?}",
+                    self.channel_id(),
                     our_output_swept_time
                 );
                 return true;
@@ -675,7 +723,7 @@ pub struct ChainMonitorBase {
 impl ChainMonitorBase {
     /// Create a new chain monitor.
     /// Use add_funding to really start monitoring.
-    pub fn new(funding_outpoint: OutPoint, height: u32) -> Self {
+    pub fn new(funding_outpoint: OutPoint, height: u32, chan_id: &ChannelId) -> Self {
         let state = State {
             height,
             funding_txids: Vec::new(),
@@ -691,14 +739,22 @@ impl ChainMonitorBase {
             our_output_swept_height: None,
             our_output_swept_time: None,
             saw_block: false,
+            saw_forget_channel: false,
+            channel_id: Some(chan_id.clone()),
         };
 
         Self { funding_outpoint, state: Arc::new(Mutex::new(state)) }
     }
 
     /// recreate this monitor after restoring from persistence
-    pub fn new_from_persistence(funding_outpoint: OutPoint, state: State) -> Self {
-        Self { funding_outpoint, state: Arc::new(Mutex::new(state)) }
+    pub fn new_from_persistence(
+        funding_outpoint: OutPoint,
+        state: State,
+        channel_id: &ChannelId,
+    ) -> Self {
+        let state = Arc::new(Mutex::new(state));
+        state.lock().unwrap().channel_id = Some(channel_id.clone());
+        Self { funding_outpoint, state }
     }
 
     /// Get the ChainMonitor
@@ -754,6 +810,12 @@ impl ChainMonitorBase {
         let mut state = self.state.lock().expect("lock");
         state.maybe_upgrade_our_output_swept(now);
         state.is_done(now)
+    }
+
+    /// Called when the node tells us it forgot the channel
+    pub fn forget_channel(&self) {
+        let mut state = self.state.lock().expect("lock");
+        state.saw_forget_channel = true;
     }
 }
 
@@ -973,7 +1035,8 @@ mod tests {
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);
         let outpoint = OutPoint::new(tx.txid(), 0);
         let cpp = Box::new(DummyCommitmentPointProvider {});
-        let monitor = ChainMonitorBase::new(outpoint, 0).as_monitor(cpp);
+        let chan_id = ChannelId::new(&[33u8; 32]);
+        let monitor = ChainMonitorBase::new(outpoint, 0, &chan_id).as_monitor(cpp);
         let block_hash = BlockHash::all_zeros();
         let mut block_time = BLOCK_TIME_BASE;
         monitor.add_funding(&tx, 0);
@@ -1003,7 +1066,8 @@ mod tests {
         let tx2 = make_tx(vec![make_txin(2)]);
         let outpoint = OutPoint::new(tx.txid(), 0);
         let cpp = Box::new(DummyCommitmentPointProvider {});
-        let monitor = ChainMonitorBase::new(outpoint, 0).as_monitor(cpp);
+        let chan_id = ChannelId::new(&[33u8; 32]);
+        let monitor = ChainMonitorBase::new(outpoint, 0, &chan_id).as_monitor(cpp);
         let block_hash = BlockHash::all_zeros();
         let mut block_time = BLOCK_TIME_BASE;
         monitor.add_funding(&tx, 0);
@@ -1032,7 +1096,8 @@ mod tests {
     fn test_stream() {
         let outpoint = OutPoint::new(Txid::from_slice(&[1; 32]).unwrap(), 0);
         let cpp = Box::new(DummyCommitmentPointProvider {});
-        let monitor = ChainMonitorBase::new(outpoint, 0).as_monitor(cpp);
+        let chan_id = ChannelId::new(&[33u8; 32]);
+        let monitor = ChainMonitorBase::new(outpoint, 0, &chan_id).as_monitor(cpp);
         let header = BlockHeader {
             version: 0,
             prev_blockhash: BlockHash::all_zeros(),
@@ -1114,9 +1179,124 @@ mod tests {
             block_time += 600;
         }
         assert!(!monitor.is_done(make_duration(block_time)));
+        node.forget_channel(&channel_id).unwrap();
         monitor.on_add_block(&[], &block_hash, block_time);
         block_time += 600;
         assert!(monitor.is_done(make_duration(block_time)));
+
+        // channel should still be there until the heartbeat
+        assert!(node.get_channel(&channel_id).is_ok());
+
+        // channel should be pruned after a heartbeat
+        node.get_heartbeat();
+        assert!(node.get_channel(&channel_id).is_err());
+        assert_eq!(node.get_tracker().listeners.len(), 0);
+    }
+
+    #[test]
+    fn test_mutual_close_with_forget_channel() {
+        let block_hash = BlockHash::all_zeros();
+        let mut block_time = BLOCK_TIME_BASE;
+        let (node, channel_id, monitor, funding_txid) = setup_funded_channel();
+
+        // channel should exist after a heartbeat
+        node.get_heartbeat();
+        assert!(node.get_channel(&channel_id).is_ok());
+        assert_eq!(node.get_tracker().listeners.len(), 1);
+
+        let close_tx = make_tx(vec![TxIn {
+            previous_output: OutPoint::new(funding_txid, 0),
+            script_sig: Default::default(),
+            sequence: Default::default(),
+            witness: Default::default(),
+        }]);
+        monitor.on_add_block(&[close_tx.clone()], &block_hash, block_time);
+        block_time += 600;
+        assert_eq!(monitor.closing_depth(), 1);
+        assert!(!monitor.is_done(make_duration(block_time)));
+
+        // channel should exist after a heartbeat
+        node.get_heartbeat();
+        assert!(node.get_channel(&channel_id).is_ok());
+        assert_eq!(node.get_tracker().listeners.len(), 1);
+
+        for _ in 1..MIN_DEPTH - 1 {
+            monitor.on_add_block(&[], &block_hash, block_time);
+            block_time += 600;
+        }
+        assert!(!monitor.is_done(make_duration(block_time)));
+        monitor.on_add_block(&[], &block_hash, block_time);
+        block_time += 600;
+        assert!(!monitor.is_done(make_duration(block_time)));
+
+        // channel should still be there until the forget_channel
+        assert!(node.get_channel(&channel_id).is_ok());
+        node.forget_channel(&channel_id).unwrap();
+
+        // need a heartbeat to do the pruning
+        assert!(node.get_channel(&channel_id).is_ok());
+        node.get_heartbeat();
+        assert!(node.get_channel(&channel_id).is_err());
+        assert_eq!(node.get_tracker().listeners.len(), 0);
+    }
+
+    #[test]
+    fn test_mutual_close_with_missing_forget_channel() {
+        let block_hash = BlockHash::all_zeros();
+        let mut block_time = BLOCK_TIME_BASE;
+        let (node, channel_id, monitor, funding_txid) = setup_funded_channel();
+
+        // channel should exist after a heartbeat
+        node.get_heartbeat();
+        assert!(node.get_channel(&channel_id).is_ok());
+        assert_eq!(node.get_tracker().listeners.len(), 1);
+
+        let close_tx = make_tx(vec![TxIn {
+            previous_output: OutPoint::new(funding_txid, 0),
+            script_sig: Default::default(),
+            sequence: Default::default(),
+            witness: Default::default(),
+        }]);
+        monitor.on_add_block(&[close_tx.clone()], &block_hash, block_time);
+        block_time += 600;
+        assert_eq!(monitor.closing_depth(), 1);
+        assert!(!monitor.is_done(make_duration(block_time)));
+
+        // channel should exist after a heartbeat
+        node.get_heartbeat();
+        assert!(node.get_channel(&channel_id).is_ok());
+        assert_eq!(node.get_tracker().listeners.len(), 1);
+
+        for _ in 1..MIN_DEPTH - 1 {
+            monitor.on_add_block(&[], &block_hash, block_time);
+            block_time += 600;
+        }
+        assert!(!monitor.is_done(make_duration(block_time)));
+        monitor.on_add_block(&[], &block_hash, block_time);
+        block_time += 600;
+
+        // we're not done because no forget_channel seen
+        assert!(!monitor.is_done(make_duration(block_time)));
+        assert!(node.get_channel(&channel_id).is_ok());
+
+        // channel should still be there after heartbeat
+        node.get_heartbeat();
+        assert!(node.get_channel(&channel_id).is_ok());
+
+        // wait almost long enough
+        for _ in 0..PRUNE_SAFETY_MARGIN - 1 {
+            monitor.on_add_block(&[], &block_hash, block_time);
+            block_time += 600;
+        }
+        assert!(!monitor.is_done(make_duration(block_time)));
+
+        // final block and we are done w/o forget from node
+        monitor.on_add_block(&[], &block_hash, block_time);
+        block_time += 600;
+        assert!(monitor.is_done(make_duration(block_time)));
+
+        // channel should still be there until the heartbeat
+        assert!(node.get_channel(&channel_id).is_ok());
 
         // channel should be pruned after a heartbeat
         node.get_heartbeat();
@@ -1182,6 +1362,7 @@ mod tests {
             monitor.on_add_block(&[], &block_hash, block_time);
             block_time += 600;
         }
+        node.forget_channel(&channel_id).unwrap();
         assert!(monitor.is_done(make_duration(block_time)));
     }
 

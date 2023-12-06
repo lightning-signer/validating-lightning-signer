@@ -265,7 +265,9 @@ mod tests {
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);
         let outpoint = OutPoint::new(tx.txid(), 0);
         let commitment_point_provider = Box::new(DummyCommitmentPointProvider {});
-        let monitor = ChainMonitorBase::new(outpoint, 0).as_monitor(commitment_point_provider);
+        let chan_id = ChannelId::new(&[33u8; 32]);
+        let monitor =
+            ChainMonitorBase::new(outpoint, 0, &chan_id).as_monitor(commitment_point_provider);
         monitor.add_funding(&tx, 0);
         let genesis = genesis_block(Network::Regtest);
         let validator_factory = Arc::new(SimpleValidatorFactory::new());
