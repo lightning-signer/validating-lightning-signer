@@ -21,3 +21,4 @@
 - [VLS Environment Variables](./env-vars.md)
 - [Troubleshooting](./troubleshooting.md)
 - [Using the heapmon_requests Feature](./heapmon-requests.md)
+- [Configuring journactl](./journalctl.md)
