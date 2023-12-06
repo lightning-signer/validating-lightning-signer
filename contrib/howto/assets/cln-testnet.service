@@ -5,7 +5,7 @@ After=bitcoind-testnet.service
 
 [Service]
 EnvironmentFile=/home/cln/.lightning/testnet-env
-ExecStart=/usr/local/bin/lightningd --conf=/home/cln/.lightning/testnet-config --network=testnet --log-file=/home/cln/.lightning/testnet/lightning.log
+ExecStart=/usr/local/bin/lightningd --conf=/home/cln/.lightning/testnet-config --network=testnet --log-file=- --log-file=/home/cln/.lightning/testnet/lightning.log
 PIDFile=/home/cln/.lightning/lightningd-testnet.pid
 User=cln
 Group=cln
