@@ -1,0 +1,118 @@
+#!/bin/bash
+
+# Initialize log context variables
+all=false
+vls=false
+lightningd=false
+proxy=false
+
+# Postprocessing
+watches=false
+
+# Constructed filter components
+channelid=""
+dbid=""
+funding=""
+
+# Function to display usage
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTION...] [-- REGEXP...]
+
+ -a, --all           Match key lines from all servers
+ -v, --vls           Match key lines from the vls signer
+ -l, --lightningd    Match key lines from lightningd
+ -p, --proxy         match key lines from the remote_hsmd proxy
+
+ -w, --watches       Shorten {Forward,Reverse}WatchesReply lines
+
+ -c, --channelid=CHANNELID   Match lines for CHANNELID
+ -d, --dbid=DBID             Match lines for database id DBID
+ -f, --funding=TXID:VOUT     Match lines for funding outpoint TXID:VOUT
+
+EOF
+    [ "$1" = "exit" ] && exit 1
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -a|--all) all=true; shift ;;
+        -v|--vls) vls=true; shift ;;
+        -l|--lightningd) lightningd=true; shift ;;
+        -p|--proxy) proxy=true; shift ;;
+
+        -w|--watches) watches=true; shift ;;
+
+        -c|--channelid*)
+            channelid="${1#*=}"
+            [[ "$channelid" == "$1" ]] && channelid="$2" && shift
+            shift
+            ;;
+        -d|--dbid*)
+            dbid="${1#*=}"
+            [[ "$dbid" == "$1" ]] && dbid="$2" && shift
+            shift
+            ;;
+        -f|--funding*)
+            funding="${1#*=}"
+            [[ "$funding" == "$1" ]] && funding="$2" && shift
+            shift
+            ;;
+
+        --) shift; break ;; # Stop option parsing on '--'
+        *) usage exit;; # Handle unknown options
+    esac
+done
+
+regex=""
+
+# VLS binaries log "git_desc"
+if $vls || $proxy || $all; then
+    regex+="git_desc|"
+fi
+
+# CLN and CLBOSS startup and block heralds
+if $lightningd || $all; then
+    regex+="Server started|"
+    regex+="New block at|"
+    regex+="Adding block|"
+fi
+
+# sendrawtx with non-zero exit status
+if $lightningd || $all; then
+    regex+="sendrawtx exit\\s[1-9][0-9]*|"
+    regex+="error broadcasting tx|"
+fi
+
+# Channelid might be special in the future
+if [[ -n $channelid ]]; then
+    regex+="$channelid|"
+fi
+
+# CLN dbid
+if [[ -n $dbid ]]; then
+    regex+="(dbid:? |chan#)$dbid\b|"
+fi
+
+# Funding outpoint
+if [[ -n $funding ]]; then
+    IFS=':' read -ra ADDR <<< "$funding"
+    hex_number="${ADDR[0]}"
+    decimal_number="${ADDR[1]}"
+    regex+="$hex_number, (vout|funding_txout|outnum): $decimal_number\b|"
+fi
+
+# Append remaining arguments to the regex after '--'
+for arg in "$@"; do
+    regex+="$arg|"
+done
+
+# Remove the trailing '|'
+regex=${regex%|}
+
+# Check if we should abridge the watches
+if $watches; then
+    grep -E --text --color=always "$regex" | sed -E 's/(ForwardWatchesReply|ReverseWatchesReply) \{.*/\1 { ... }/'
+else
+    grep -E --text --color=always "$regex"
+fi
