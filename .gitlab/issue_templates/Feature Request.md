@@ -25,7 +25,9 @@
 <!-- Are there any examples of this which exist in other software? !-->
 
 ## Priority/Severity
-<!-- Please provide details on what factors are driving this priority/severity. The priority and severity assigned may be different to this !-->
+<!-- Please place an "X" inside the square brackets "[]" for the appropriate priority. Please provide information on what factors contribute to this priority/severity. The priority and severity assigned may be different to this !-->
+```
 - [ ] High (This will bring a huge increase in performance/productivity/usability/legislative cover)
 - [ ] Medium (This will bring a good increase in performance/productivity/usability)
 - [ ] Low (anything else e.g., trivial, minor improvements)
+```

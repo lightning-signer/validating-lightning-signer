@@ -10,7 +10,9 @@
 <!-- This might only be one part, but may involve multiple sections !-->
 
 ## Priority/Severity
-<!-- Delete as appropriate. The priority and severity assigned may be different to this !-->
+<!-- Please place an "X" inside the square brackets "[]" for the appropriate priority and delete the others as appropriate. The priority and severity assigned may be different to this !-->
+```
 - [ ] High (This will bring a huge increase in performance/productivity/usability, or is a legislative requirement)
 - [ ] Medium (This will bring a good increase in performance/productivity/usability)
 - [ ] Low (anything else e.g., trivial, minor improvements)
+```
