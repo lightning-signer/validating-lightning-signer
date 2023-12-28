@@ -6,6 +6,7 @@ members = [
     "vls-core",
     "vls-core-test",
     "vls-frontend",
+    "vls-cli",
 
     "bolt-derive",
     "vls-persist",

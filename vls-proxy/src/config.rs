@@ -3,6 +3,7 @@ use lightning_signer::bitcoin::Network;
 use lightning_signer::policy::filter::{FilterResult, FilterRule};
 use lightning_signer::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
 use std::ffi::OsStr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::process::exit;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{env, fs};
@@ -21,6 +22,9 @@ pub const CLAP_NETWORK_URL_MAPPING: &[(&str, Option<&str>, Option<&str>)] = &[
 ];
 
 const DEFAULT_DIR: &str = ".lightning-signer";
+pub const RPC_SERVER_PORT: u16 = 8011;
+pub const RPC_SERVER_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+pub const RPC_SERVER_ENDPOINT: &'static str = "http://127.0.0.1:8011";
 
 pub trait HasSignerArgs {
     fn signer_args(&self) -> &SignerArgs;
@@ -120,6 +124,22 @@ pub struct SignerArgs {
 
     #[clap(long, value_parser=parse_filter_rule, help = "policy filter rule, e.g. 'policy-channel-safe-mode:warn' or 'policy-channel-*:error'")]
     pub policy_filter: Vec<FilterRule>,
+
+    #[clap(
+        long,
+        help = "rpc server's bind address",
+        default_value_t = RPC_SERVER_ADDRESS,
+        value_parser
+    )]
+    pub rpc_server_address: IpAddr,
+
+    #[clap(
+        long,
+        help = "rpc server's port",
+        default_value_t = RPC_SERVER_PORT,
+        value_parser
+    )]
+    pub rpc_server_port: u16,
 }
 
 impl HasSignerArgs for SignerArgs {
@@ -338,6 +358,10 @@ mod tests {
             "abc123",
             "--recover-l1-range",
             "100",
+            "--rpc-server-address",
+            "127.0.0.1",
+            "--rpc-server-port",
+            "8011",
         ]
         .into_iter()
         .map(|s| s.to_string())
@@ -352,6 +376,8 @@ mod tests {
         assert_eq!(args.recover_type, "bitcoind");
         assert_eq!(args.recover_to.unwrap().as_str(), "abc123");
         assert_eq!(args.recover_l1_range, Some(100));
+        assert_eq!(args.rpc_server_address, IpAddr::V4(Ipv4Addr::LOCALHOST));
+        assert_eq!(args.rpc_server_port, 8011);
     }
 
     #[test]

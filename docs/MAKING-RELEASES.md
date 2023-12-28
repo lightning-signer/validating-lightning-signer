@@ -30,7 +30,7 @@ Here's a checklist for the release process.
 1. Merge the above PR.
 1. Update `Cargo.toml` for each crate, and build with `./scripts/build-all`
 1. Publish the crates with `cargo publish` (you can test first with `--dry-run`)
-1. Tag it and push the tags: 
+1. Tag it and push the tags:
      - `VERSION=<VERSION>-rc.1`
      - `git pull`
      - `git tag -a -s v${VERSION} -m v${VERSION}`
@@ -88,6 +88,7 @@ Cargo publishing should be done in this order with matching versions:
 - `cargo publish -p vls-protocol-client`
 - `cargo publish -p vls-frontend`
 - `cargo publish -p vls-proxy`
+- `cargo publish -p vls-cli`
 
 You may also be interested in:
 
