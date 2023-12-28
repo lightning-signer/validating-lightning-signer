@@ -1,10 +1,12 @@
 use super::hsmd::hsmd_client::HsmdClient;
 use super::hsmd::{PingRequest, SignerRequest, SignerResponse};
 use crate::config::SignerArgs;
+use crate::rpc_server::start_rpc_server;
 use crate::util::{
     integration_test_seed_or_generate, make_validator_factory_with_filter_and_velocity,
     read_allowlist, should_auto_approve,
 };
+
 use clap::Parser;
 use http::Uri;
 use lightning_signer::bitcoin::Network;
@@ -131,6 +133,15 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
     let root_handler = make_handler(datadir, args);
     reset_allowlist(&root_handler, &read_allowlist());
 
+    let (addr, join_rpc_server) = start_rpc_server(
+        Arc::clone(root_handler.node()),
+        args.rpc_server_address,
+        args.rpc_server_port,
+    )
+    .await
+    .expect("start_rpc_server");
+    info!("rpc server running on {}", addr);
+
     let mut request_stream = client.signer_stream(response_stream).await.unwrap().into_inner();
 
     #[cfg(feature = "heapmon_requests")]
@@ -218,6 +229,11 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
                 break;
             }
         }
+    }
+
+    let join_result = join_rpc_server.await;
+    if let Err(e) = join_result {
+        error!("rpc server error: {:?}", e);
     }
 }
 
