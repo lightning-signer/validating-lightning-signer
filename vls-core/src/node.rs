@@ -3013,10 +3013,13 @@ mod tests {
 
         assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0".to_string(), false));
 
+        // we should decrease the `max_fee` value otherwise we overpay in fee percentage
+        // in this case we take the 5% of the max_fee
+        let percentage_max_fee = (max_fee * 5) / 100;
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),
-            &vec![(hash, max_fee + 1)].into_iter().collect(),
+            &vec![(hash, percentage_max_fee)].into_iter().collect(),
             &Default::default(),
             strict_validator.clone(),
         );
@@ -3165,6 +3168,56 @@ mod tests {
             node.new_channel(None, &node).expect("new_channel");
         }
         assert!(node.new_channel(None, &node).is_err());
+    }
+
+    #[test]
+    fn percentage_fee_exceeded_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let policy = make_simple_policy(Network::Testnet);
+        let validator = SimpleValidatorFactory::new_with_policy(policy).make_validator(
+            Network::Testnet,
+            node.get_id(),
+            None,
+        );
+
+        // We are paying an invoice of 10 msat and the outcome of this payment is 20 msat.
+        // This mean that the route fee 10 msat of routing fee. So this violate the policy
+        // regarding the max routing feee percentage.
+        let result = validator.validate_payment_balance(0, 20, Some(10));
+
+        // we are overpaying in percentage fee
+        assert_eq!(
+            result,
+            Err(policy_error(
+                "validate_payment_balance: fee_percentage > max_feerate_percentage: 100% > 10%"
+            )),
+            "{:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn policy_generic_error_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let policy = make_simple_policy(Network::Testnet);
+        let max_fee = policy.max_routing_fee_msat / 1000;
+        let validator = SimpleValidatorFactory::new_with_policy(policy).make_validator(
+            Network::Testnet,
+            node.get_id(),
+            None,
+        );
+
+        let result = validator.validate_payment_balance(0, max_fee + 2, Some(100));
+
+        // we are overpaying in percentage fee
+        assert_eq!(
+            result,
+            Err(policy_error(
+                "validate_payment_balance: fee_percentage > max_feerate_percentage: 22% > 10%"
+            )),
+            "{:?}",
+            result
+        );
     }
 
     #[test]
