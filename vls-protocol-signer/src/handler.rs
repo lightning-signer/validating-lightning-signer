@@ -316,7 +316,7 @@ impl RootHandler {
     fn channel_id(node_id: &PubKey, dbid: u64) -> ChannelId {
         let mut nonce = [0u8; 33 + 8];
         nonce[0..33].copy_from_slice(&node_id.0);
-        nonce[33..].copy_from_slice(&dbid.to_le_bytes());
+        nonce[33..].copy_from_slice(&dbid.to_be_bytes());
         let channel_id = ChannelId::new(&nonce);
         channel_id
     }
