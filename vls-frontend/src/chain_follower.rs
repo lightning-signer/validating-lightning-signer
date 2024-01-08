@@ -141,6 +141,7 @@ impl ChainFollower {
 
     async fn run(&self) {
         let mut interval = time::interval(Duration::from_millis(self.update_interval));
+        interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
             loop {
