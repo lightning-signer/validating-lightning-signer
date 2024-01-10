@@ -153,7 +153,7 @@ fn dest_wallet_path() -> ArrayBE<u32> {
 
 fn dbid_to_channel_id(dbid: u64) -> [u8; 32] {
     let mut res = [0; 32];
-    let ser_dbid = dbid.to_le_bytes();
+    let ser_dbid = dbid.to_be_bytes();
     res[0..8].copy_from_slice(&ser_dbid);
     res
 }
@@ -161,7 +161,7 @@ fn dbid_to_channel_id(dbid: u64) -> [u8; 32] {
 fn channel_id_to_dbid(slice: &[u8; 32]) -> u64 {
     let mut s = [0; 8];
     s.copy_from_slice(&slice[0..8]);
-    u64::from_le_bytes(s)
+    u64::from_be_bytes(s)
 }
 
 impl SignerClient {
