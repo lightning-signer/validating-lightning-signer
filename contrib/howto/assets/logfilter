@@ -64,6 +64,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# ----------------------------------------------------------------
+# Setup the interest filter
+
 regex=""
 
 # VLS startup and warns
@@ -89,6 +92,7 @@ if $lightningd || $all; then
     regex+="Adding block|"
     regex+="BROKEN|"
     regex+="UNUSUAL|"
+    regex+="State changed from|"
 fi
 
 # sendrawtx with non-zero exit status
@@ -123,9 +127,35 @@ done
 # Remove the trailing '|'
 regex=${regex%|}
 
-# Check if we should abridge the watches
-if $watches; then
-    grep -E --text --color=always "$regex" | sed -E 's/(ForwardWatchesReply|ReverseWatchesReply) \{.*/\1 { ... }/'
-else
-    grep -E --text --color=always "$regex"
+# ----------------------------------------------------------------
+# Setup the lame hit removal filter
+
+vregex=""
+
+if $lightningd || $all; then
+    vregex+="Ignoring fee limits|"
+    vregex+='/swapstatus .* not accessible|'
+    vregex+='read loop .* saw error Protocol.*; ending|'
 fi
+
+# Remove the trailing '|'
+vregex=${vregex%|}
+
+# ----------------------------------------------------------------
+# Run the filters
+
+# Initialize the command
+cmd="grep -E --text --color=always \"$regex\""
+
+# Append the sed command if watches are enabled
+if $watches; then
+    cmd+=" | sed -E 's/(ForwardWatchesReply|ReverseWatchesReply) {.*}/\1 { ... }/'"
+fi
+
+# Append the final grep command only if vregex has content
+if [[ -n $vregex ]]; then
+    cmd+=" | grep -E -v '$vregex'"
+fi
+
+# Execute the constructed command
+eval "$cmd"
