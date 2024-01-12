@@ -66,16 +66,29 @@ done
 
 regex=""
 
-# VLS binaries log "git_desc"
-if $vls || $proxy || $all; then
+# VLS startup and warns
+if $vls || $all; then
     regex+="git_desc|"
+    regex+="\bWARN\b|"
+    regex+="\bERROR\b|"
+    regex+="received error from handler|"
 fi
 
-# CLN and CLBOSS startup and block heralds
+# proxy startup and warns
+if $proxy || $all; then
+    regex+="git_desc|"
+    regex+="\bWARN\b|"
+    regex+="\bERROR\b|"
+    regex+="signer error|"
+fi
+
+# CLN and CLBOSS startup, block heralds, and warns
 if $lightningd || $all; then
     regex+="Server started|"
     regex+="New block at|"
     regex+="Adding block|"
+    regex+="BROKEN|"
+    regex+="UNUSUAL|"
 fi
 
 # sendrawtx with non-zero exit status
