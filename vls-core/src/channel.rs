@@ -2272,45 +2272,66 @@ impl Channel {
     }
 
     /// Get the unilateral close key and the witness stack suffix,
-    /// for sweeping the to-remote output of a counterparty's force-close
+    /// for sweeping our main output from a commitment transaction.
+    /// If the revocation_pubkey is Some, then we are sweeping a
+    /// holder commitment transaction, otherwise we are sweeping a
+    /// counterparty commitment transaction.
+    /// commitment_point is used to derive the key if it is Some.
+    /// Since we don't support legacy channels, commitment_point must
+    /// be Some iff revocation_pubkey is Some.
     // TODO(devrandom) key leaking from this layer
     pub fn get_unilateral_close_key(
         &self,
-        commitment_point_opt: &Option<PublicKey>,
+        commitment_point: &Option<PublicKey>,
         revocation_pubkey: &Option<PublicKey>,
     ) -> Result<(SecretKey, Vec<Vec<u8>>), Status> {
-        Ok(match commitment_point_opt {
-            Some(commitment_point) => {
-                let base_key = if revocation_pubkey.is_some() {
-                    &self.keys.delayed_payment_base_key
-                } else {
-                    &self.keys.payment_key
-                };
-                let key = derive_private_key(&self.secp_ctx, &commitment_point, base_key);
-                let pubkey = PublicKey::from_secret_key(&self.secp_ctx, &key);
+        if let Some(commitment_point) = commitment_point {
+            // The key is rotated via the commitment point.  Since we removed support
+            // for rotating the to-remote key (legacy channel type), we enforce below that
+            // this is the to-local case.
+            let base_key = if revocation_pubkey.is_some() {
+                &self.keys.delayed_payment_base_key
+            } else {
+                &self.keys.payment_key
+            };
+            let key = derive_private_key(&self.secp_ctx, &commitment_point, base_key);
+            let pubkey = PublicKey::from_secret_key(&self.secp_ctx, &key);
 
-                let witness_stack_prefix = if let Some(r) = revocation_pubkey {
-                    let contest_delay = self.setup.counterparty_selected_contest_delay;
-                    let redeemscript =
-                        chan_utils::get_revokeable_redeemscript(r, contest_delay, &pubkey)
-                            .to_bytes();
-                    vec![vec![], redeemscript]
-                } else {
-                    vec![PublicKey::from_secret_key(&self.secp_ctx, &base_key).serialize().to_vec()]
-                };
-                (key, witness_stack_prefix)
-            }
-            None => {
-                if revocation_pubkey.is_some() {
-                    return Err(invalid_argument("delayed output without commitment point"));
-                }
-                // option_static_remotekey in effect
-                let key = self.keys.payment_key.clone();
+            let witness_stack_prefix = if let Some(r) = revocation_pubkey {
+                // p2wsh
+                let contest_delay = self.setup.counterparty_selected_contest_delay;
                 let redeemscript =
-                    PublicKey::from_secret_key(&self.secp_ctx, &key).serialize().to_vec();
-                (key, vec![redeemscript])
+                    chan_utils::get_revokeable_redeemscript(r, contest_delay, &pubkey).to_bytes();
+                vec![vec![], redeemscript]
+            } else {
+                return Err(invalid_argument(
+                    "no support for legacy rotated to-remote, commitment point is provided and revocation_pubkey is not"
+                ));
+            };
+            Ok((key, witness_stack_prefix))
+        } else {
+            // The key is not rotated, so we use the base key.  This must be the to-remote case
+            // because the to-local is always rotated.
+            if revocation_pubkey.is_some() {
+                return Err(invalid_argument(
+                    "delayed to-local output must be rotated, but no commitment point provided",
+                ));
             }
-        })
+
+            let key = self.keys.payment_key.clone();
+            let pubkey = PublicKey::from_secret_key(&self.secp_ctx, &key);
+            let witness_stack_prefix = if self.setup.is_anchors() {
+                // p2wsh
+                let redeemscript =
+                    chan_utils::get_to_countersignatory_with_anchors_redeemscript(&pubkey)
+                        .to_bytes();
+                vec![redeemscript]
+            } else {
+                // p2wpkh
+                vec![pubkey.serialize().to_vec()]
+            };
+            Ok((key, witness_stack_prefix))
+        }
     }
 
     /// Mark any in-flight payments (outgoing HTLCs) on this channel with the
