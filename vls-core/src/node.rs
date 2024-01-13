@@ -2834,7 +2834,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
     use test_log::test;
 
-    use crate::channel::ChannelBase;
+    use crate::channel::{ChannelBase, CommitmentType};
     use crate::policy::filter::{FilterRule, PolicyFilter};
     use crate::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
     use crate::tx::tx::ANCHOR_SAT;
@@ -3780,6 +3780,37 @@ mod tests {
         spend_tx
             .verify(|point| Some(holder_tx.output[point.vout as usize].clone()))
             .expect("verify");
+    }
+
+    #[test]
+    fn get_unilateral_close_key_anchors_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let (channel_id, chan) = node.new_channel(None, &node).unwrap();
+
+        let mut setup = make_test_channel_setup();
+        setup.commitment_type = CommitmentType::AnchorsZeroFeeHtlc;
+
+        node.setup_channel(channel_id.clone(), None, setup, &vec![])
+            .expect("ready channel");
+
+        let uck = node
+            .with_channel(&channel_id, |chan| chan.get_unilateral_close_key(&None, &None))
+            .unwrap();
+        let keys = &chan.as_ref().unwrap().unwrap_stub().keys;
+        let pubkey = keys.pubkeys().payment_point;
+        let redeem_script = chan_utils::get_to_countersignatory_with_anchors_redeemscript(&pubkey);
+
+        assert_eq!(
+            uck,
+            (
+                SecretKey::from_slice(
+                    &hex_decode("e6eb522940c9d1dcffc82f4eaff5b81ad318bdaa952061fa73fd6f717f73e160")
+                        .unwrap()[..]
+                )
+                .unwrap(),
+                vec![redeem_script.to_bytes()]
+            )
+        );
     }
 
     #[test]
