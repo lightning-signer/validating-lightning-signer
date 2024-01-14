@@ -5,6 +5,7 @@ all=false
 vls=false
 lightningd=false
 proxy=false
+integration=false
 
 # Postprocessing
 watches=false
@@ -22,7 +23,8 @@ Usage: $(basename "$0") [OPTION...] [-- REGEXP...]
  -a, --all           Match key lines from all servers
  -v, --vls           Match key lines from the vls signer
  -l, --lightningd    Match key lines from lightningd
- -p, --proxy         match key lines from the remote_hsmd proxy
+ -p, --proxy         Match key lines from the remote_hsmd proxy
+ -i, --integration   Match key lines from the integration framework
 
  -w, --watches       Shorten {Forward,Reverse}WatchesReply lines
 
@@ -75,6 +77,9 @@ if $vls || $all; then
     regex+="\bWARN\b|"
     regex+="\bERROR\b|"
     regex+="received error from handler|"
+    regex+="panicked at|"
+    regex+="added block|"
+    regex+="removed block|"
 fi
 
 # proxy startup and warns
@@ -90,6 +95,7 @@ if $lightningd || $all; then
     regex+="Server started|"
     regex+="New block at|"
     regex+="Adding block|"
+    regex+="Removing stale block|"
     regex+="BROKEN|"
     regex+="UNUSUAL|"
     regex+="State changed from|"
@@ -119,6 +125,13 @@ if [[ -n $funding ]]; then
     regex+="$hex_number, (vout|funding_txout|outnum): $decimal_number\b|"
 fi
 
+# Integration testing
+if $integration || $all; then
+    regex+="Time-out:|"
+    regex+="-stderr:|"
+    regex+='==== ([0-9]+ passed)?,?([0-9]+ warnings)?,?([0-9]+ failed)?.* ===='
+fi
+
 # Append remaining arguments to the regex after '--'
 for arg in "$@"; do
     regex+="$arg|"
@@ -136,6 +149,15 @@ if $lightningd || $all; then
     vregex+="Ignoring fee limits|"
     vregex+='/swapstatus .* not accessible|'
     vregex+='read loop .* saw error Protocol.*; ending|'
+fi
+
+# Integration testing
+if $integration || $all; then
+    vregex+="Waiting for .* in the logs|"
+    vregex+="Found .* in logs|"
+    vregex+="Did not find .* in logs|"
+    vregex+="wait_for_log|"
+    vregex+="warnings summary|"
 fi
 
 # Remove the trailing '|'
