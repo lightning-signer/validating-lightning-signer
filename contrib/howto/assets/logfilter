@@ -145,6 +145,10 @@ regex=${regex%|}
 
 vregex=""
 
+if $vls || $all; then
+    vregex+="error connecting to node, will retry|"
+fi
+
 if $lightningd || $all; then
     vregex+="Ignoring fee limits|"
     vregex+='/swapstatus .* not accessible|'
