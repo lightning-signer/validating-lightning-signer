@@ -26,6 +26,7 @@ bitcoin-rpcpassword=6ffb57ab46aa726
 bitcoin-rpcconnect=127.0.0.1
 bitcoin-rpcport=18332
 max-locktime-blocks=288
+experimental-anchors
 EOL
 EOF
 ```
