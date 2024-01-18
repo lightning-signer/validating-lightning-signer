@@ -13,6 +13,10 @@ Some validation rules will change with the evolution of the Lightning protocol -
 
 # Mandatory Validation Rules
 
+## Generic Errors
+* Generic Error - A generic validation error that was caused by an user input <br>
+  `policy-generic-error`
+
 ## Opening a Channel
 * Delay - the local and remote imposed to_self_delay must be reasonable <br>
   `policy-channel-contest-delay-range-holder`,

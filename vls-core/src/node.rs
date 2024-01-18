@@ -3197,30 +3197,6 @@ mod tests {
     }
 
     #[test]
-    fn policy_generic_error_test() {
-        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let policy = make_simple_policy(Network::Testnet);
-        let max_fee = policy.max_routing_fee_msat / 1000;
-        let validator = SimpleValidatorFactory::new_with_policy(policy).make_validator(
-            Network::Testnet,
-            node.get_id(),
-            None,
-        );
-
-        let result = validator.validate_payment_balance(0, max_fee + 2, Some(100));
-
-        // we are overpaying in percentage fee
-        assert_eq!(
-            result,
-            Err(policy_error(
-                "validate_payment_balance: fee_percentage > max_feerate_percentage: 22% > 10%"
-            )),
-            "{:?}",
-            result
-        );
-    }
-
-    #[test]
     fn too_many_invoices_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let payee_node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);

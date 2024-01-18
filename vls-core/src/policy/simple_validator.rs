@@ -1661,8 +1661,10 @@ impl Validator for SimpleValidator {
 
             // check if the payment is payment an percentage of the fee
             let fee = outgoing_msat - invoiced_amount_msat - incoming_msat;
-            let actual_fee_percentage =
-                fee.checked_mul(100).expect("overflow") / invoiced_amount_msat;
+            let actual_fee_percentage = fee
+                .checked_mul(100)
+                .ok_or(policy_error(format!("policy-generic-error: invoice amount too big")))?
+                / invoiced_amount_msat;
             if actual_fee_percentage > self.policy.max_feerate_percentage.into() {
                 policy_err!(
                     self,
