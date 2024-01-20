@@ -44,6 +44,28 @@ impl KVV {
     }
 }
 
+pub trait ValueFormat: SendSync {
+    /// Serialize a value
+    fn ser_value<T: ?Sized + serde::Serialize>(value: &T) -> Result<Vec<u8>, Error>;
+    /// Deserialize a value
+    fn de_value<T: serde::de::DeserializeOwned>(value: &[u8]) -> Result<T, Error>;
+}
+
+pub struct JsonFormat;
+
+impl SendSync for JsonFormat {}
+
+impl ValueFormat for JsonFormat {
+    /// Serialize a value
+    fn ser_value<T: ?Sized + serde::Serialize>(value: &T) -> Result<Vec<u8>, Error>{
+        to_vec(value).map_err(|e| Error::SerdeError(e.to_string()))
+    }
+    /// Deserialize a value
+    fn de_value<T: serde::de::DeserializeOwned>(value: &[u8]) -> Result<T, Error> {
+        from_slice(value).map_err(|e| Error::SerdeError(e.to_string()))
+    }
+}
+
 /// A key-version-value store
 pub trait KVVStore: SendSync {
     type Iter: Iterator<Item = KVV>;
@@ -88,9 +110,9 @@ pub trait KVVStore: SendSync {
 
 /// Adapter for a KVVStore to implement Persist.
 // NOTE: we can't use a generic impl because Persist is not in this crate.
-pub struct KVVPersister<S: KVVStore>(pub S);
+pub struct KVVPersister<S: KVVStore, F: ValueFormat>(pub S, pub F);
 
-impl<S: KVVStore> Deref for KVVPersister<S> {
+impl<S: KVVStore, F: ValueFormat> Deref for KVVPersister<S, F> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
@@ -98,9 +120,9 @@ impl<S: KVVStore> Deref for KVVPersister<S> {
     }
 }
 
-impl<S: KVVStore> SendSync for KVVPersister<S> {}
+impl<S: KVVStore, F: ValueFormat> SendSync for KVVPersister<S, F> {}
 
-impl<S: KVVStore> Persist for KVVPersister<S> {
+impl<S: KVVStore, F: ValueFormat> Persist for KVVPersister<S, F> {
     fn new_node(
         &self,
         node_id: &PublicKey,
@@ -113,14 +135,14 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
             key_derivation_style: config.key_derivation_style as u8,
             network: config.network.to_string(),
         };
-        let value = to_vec(&entry).unwrap();
+        let value = F::ser_value(&entry)?;
         self.put(&key, value)
     }
 
     fn update_node(&self, node_id: &PublicKey, state: &NodeState) -> Result<(), Error> {
         let key = make_key(NODE_STATE_PREFIX, &node_id.serialize());
         let entry: NodeStateEntry = state.into();
-        let value = to_vec(&entry).unwrap();
+        let value = F::ser_value(&entry)?;
         self.put(&key, value)
     }
 
@@ -141,7 +163,7 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
             enforcement_state: EnforcementState::new(0),
             blockheight: Some(stub.blockheight),
         };
-        let value = to_vec(&entry).unwrap();
+        let value = F::ser_value(&entry)?;
         self.put(&key, value)
     }
 
@@ -165,7 +187,7 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
     ) -> Result<(), Error> {
         let key = make_key(NODE_TRACKER_PREFIX, &node_id.serialize());
         let model: ChainTrackerEntry = tracker.into();
-        let value = to_vec(&model).unwrap();
+        let value = F::ser_value(&model)?;
         self.put(&key, value)
     }
 
@@ -176,7 +198,7 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
     ) -> Result<(ChainTracker<ChainMonitor>, Vec<ChainTrackerListenerEntry>), Error> {
         let key = make_key(NODE_TRACKER_PREFIX, &node_id.serialize());
         let value = self.get(&key)?.expect("tracker not found").1;
-        let model: ChainTrackerEntry = from_slice(&value).unwrap();
+        let model: ChainTrackerEntry = F::de_value(&value)?;
         Ok(model.into_tracker(node_id.clone(), validator_factory))
     }
 
@@ -191,7 +213,7 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
             enforcement_state: channel.enforcement_state.clone(),
             blockheight: None,
         };
-        let value = to_vec(&entry).unwrap();
+        let value = F::ser_value(&entry)?;
         self.put(&key, value)
     }
 
@@ -202,7 +224,7 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
     ) -> Result<CoreChannelEntry, Error> {
         let key = make_key2(CHANNEL_PREFIX, &node_id.serialize(), channel_id.as_slice());
         let value = self.get(&key)?.expect("channel not found").1;
-        let entry: ChannelEntry = from_slice(&value).unwrap();
+        let entry: ChannelEntry = F::de_value(&value)?;
         Ok(entry.into())
     }
 
@@ -219,7 +241,7 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
             }
             let suffix = extract_key_suffix(&prefix, &key);
             let channel_id = ChannelId::new(&suffix);
-            let entry: ChannelEntry = from_slice(&value).unwrap();
+            let entry: ChannelEntry = F::de_value(&value)?;
             res.push((channel_id, entry.into()));
         }
         Ok(res)
@@ -232,48 +254,48 @@ impl<S: KVVStore> Persist for KVVPersister<S> {
     ) -> Result<(), Error> {
         let key = make_key(ALLOWLIST_PREFIX, &node_id.serialize());
         let entry = AllowlistItemEntry { allowlist };
-        let value = to_vec(&entry).unwrap();
+        let value = F::ser_value(&entry)?;
         self.put(&key, value)
     }
 
     fn get_node_allowlist(&self, node_id: &PublicKey) -> Result<Vec<String>, Error> {
         let key = make_key(ALLOWLIST_PREFIX, &node_id.serialize());
         let value = self.get(&key)?.expect("allowlist not found").1;
-        let entry: AllowlistItemEntry = from_slice(&value).unwrap();
+        let entry: AllowlistItemEntry = F::de_value(&value)?;
         Ok(entry.allowlist)
     }
 
     fn get_nodes(&self) -> Result<Vec<(PublicKey, CoreNodeEntry)>, Error> {
         let prefix = NODE_ENTRY_PREFIX.to_string() + SEPARATOR;
         let mut res = Vec::new();
-        self.get_prefix(&prefix)?
+        let kvvs = self.get_prefix(&prefix)?
             .map(KVV::into_inner)
-            .filter(|(_k, (_r, value))| !value.is_empty())
-            .for_each(|(key, (_r, value))| {
-                let suffix = extract_key_suffix(&prefix, &key);
-                let node_id = PublicKey::from_slice(&suffix).unwrap();
-                let entry: NodeEntry = from_slice(&value).unwrap();
-                let state_value = self
-                    .get(&make_key(NODE_STATE_PREFIX, &node_id.serialize()))
-                    .unwrap()
-                    .unwrap()
-                    .1;
-                let state_entry: NodeStateEntry = from_slice(&state_value).unwrap();
-                let state = NodeState::restore(
-                    state_entry.invoices,
-                    state_entry.issued_invoices,
-                    state_entry.preimages,
-                    0,
-                    state_entry.velocity_control.into(),
-                    state_entry.fee_velocity_control.into(),
-                );
-                let node_entry = CoreNodeEntry {
-                    key_derivation_style: entry.key_derivation_style as u8,
-                    network: entry.network,
-                    state,
-                };
-                res.push((node_id, node_entry));
-            });
+            .filter(|(_k, (_r, value))| !value.is_empty());
+        for (key, (_r, value)) in kvvs {
+            let suffix = extract_key_suffix(&prefix, &key);
+            let node_id = PublicKey::from_slice(&suffix).unwrap();
+            let entry: NodeEntry = F::de_value(&value)?;
+            let state_value = self
+                .get(&make_key(NODE_STATE_PREFIX, &node_id.serialize()))
+                .unwrap()
+                .unwrap()
+                .1;
+            let state_entry: NodeStateEntry = F::de_value(&state_value)?;
+            let state = NodeState::restore(
+                state_entry.invoices,
+                state_entry.issued_invoices,
+                state_entry.preimages,
+                0,
+                state_entry.velocity_control.into(),
+                state_entry.fee_velocity_control.into(),
+            );
+            let node_entry = CoreNodeEntry {
+                key_derivation_style: entry.key_derivation_style as u8,
+                network: entry.network,
+                state,
+            };
+            res.push((node_id, node_entry));
+        }
         Ok(res)
     }
 

@@ -10,7 +10,7 @@ use log::*;
 use vls_frontend::external_persist::lss::{Client as LssClient, Client};
 use vls_frontend::external_persist::ExternalPersist;
 use vls_persist::kvv::cloud::{CloudKVVStore, LAST_WRITER_KEY};
-use vls_persist::kvv::{redb::RedbKVVStore, KVVPersister, KVVStore};
+use vls_persist::kvv::{redb::RedbKVVStore, JsonFormat, KVVPersister, KVVStore};
 use vls_proxy::util::setup_logging;
 
 // requires a running lss instance
@@ -18,7 +18,7 @@ use vls_proxy::util::setup_logging;
 async fn cloud_system_test() {
     let tmpdir = tempfile::tempdir().unwrap();
     let local = RedbKVVStore::new_store(tmpdir.path());
-    let cloud = CloudKVVStore::new(local);
+    let cloud = KVVPersister(CloudKVVStore::new(local), JsonFormat);
     setup_logging(tmpdir.path(), "cloud_system_test", "debug");
     let rpc_url = "http://127.0.0.1:55551";
     let mut seed = [0u8; 32];
@@ -53,7 +53,7 @@ async fn cloud_system_test() {
     // emulate restart
     drop(cloud);
     let local = RedbKVVStore::new_store(tmpdir.path());
-    let cloud = CloudKVVStore::new(local);
+    let cloud = KVVPersister(CloudKVVStore::new(local), JsonFormat);
 
     do_put(&cloud, &helper, &client, b"cow", false).await;
 
@@ -76,7 +76,7 @@ async fn cloud_system_test() {
     // emulate restart
     drop(cloud);
     let local = RedbKVVStore::new_store(tmpdir.path());
-    let cloud = CloudKVVStore::new(local);
+    let cloud = KVVPersister(CloudKVVStore::new(local), JsonFormat);
 
     let key_res = do_get(LAST_WRITER_KEY, &keys, &mut helper, &client).await;
     assert!(!cloud.is_in_sync(Some(key_res[0].1.clone())));
@@ -102,7 +102,7 @@ async fn do_get(
 }
 
 async fn do_put(
-    cloud: &KVVPersister<CloudKVVStore<RedbKVVStore>>,
+    cloud: &KVVPersister<CloudKVVStore<RedbKVVStore>, JsonFormat>,
     helper: &ExternalPersistHelper,
     client: &Client,
     value: &[u8; 3],

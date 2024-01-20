@@ -1,4 +1,4 @@
-use crate::kvv::{Error, KVVPersister, KVVStore, KVV};
+use crate::kvv::{Error, KVVStore, KVV};
 use alloc::collections::BTreeMap;
 use lightning_signer::persist::SignerId;
 use lightning_signer::prelude::*;
@@ -24,9 +24,8 @@ impl Iterator for Iter {
 
 impl MemoryKVVStore {
     /// Create a new MemoryKVVStore
-    pub fn new(signer_id: SignerId) -> KVVPersister<Self> {
-        let store = Self { data: Mutex::new(BTreeMap::new()), signer_id };
-        KVVPersister(store)
+    pub fn new(signer_id: SignerId) -> Self {
+        Self { data: Mutex::new(BTreeMap::new()), signer_id }
     }
 }
 

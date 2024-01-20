@@ -1,4 +1,4 @@
-use super::{KVVPersister, KVVStore, KVV};
+use super::{KVVStore, KVV};
 use lightning_signer::persist::{Error, SignerId};
 use lightning_signer::SendSync;
 use log::error;
@@ -38,9 +38,8 @@ pub struct RedbKVVStore {
 impl SendSync for RedbKVVStore {}
 
 impl RedbKVVStore {
-    pub fn new<P: AsRef<Path>>(path: P) -> KVVPersister<Self> {
-        let store = Self::new_store(path);
-        KVVPersister(store)
+    pub fn new<P: AsRef<Path>>(path: P) -> Self {
+        Self::new_store(path)
     }
 
     pub fn new_store<P: AsRef<Path>>(path: P) -> RedbKVVStore {
@@ -231,6 +230,7 @@ impl KVVStore for RedbKVVStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kvv::{JsonFormat, KVVPersister};
     use alloc::sync::Arc;
     use hex::FromHex;
     use lightning_signer::node::{Node, NodeServices};
@@ -244,7 +244,7 @@ mod tests {
     #[test]
     fn basic_test() -> Result<(), Error> {
         let tempdir = tempfile::tempdir().unwrap();
-        let store = RedbKVVStore::new(tempdir.path()).0;
+        let store = RedbKVVStore::new(tempdir.path());
         store.put("foo1", b"bar".to_vec())?;
         store.put("foo2", b"boo".to_vec())?;
         assert_eq!(store.get_version("foo1")?.unwrap(), 0);
@@ -261,7 +261,7 @@ mod tests {
         // check that the ID is persistent
         let id = store.signer_id();
         drop(store);
-        let store = RedbKVVStore::new(tempdir.path()).0;
+        let store = RedbKVVStore::new(tempdir.path());
         assert_eq!(store.signer_id(), id);
 
         Ok(())
@@ -271,7 +271,7 @@ mod tests {
     fn non_transactional_test() {
         // cover some trait methods for the non-transactional case
         let tempdir = tempfile::tempdir().unwrap();
-        let persister = RedbKVVStore::new(tempdir.path());
+        let persister = KVVPersister(RedbKVVStore::new(tempdir.path()), JsonFormat);
         persister.commit().unwrap();
         assert!(persister.prepare().is_empty());
         assert!(persister.commit().is_ok());
@@ -317,7 +317,7 @@ mod tests {
             fs::copy(path, dest).unwrap();
         }
 
-        let persister = RedbKVVStore::new(&tempdir);
+        let persister = KVVPersister(RedbKVVStore::new(&tempdir), JsonFormat);
         let mut seed = [0; 32];
         seed.copy_from_slice(Vec::from_hex(TEST_SEED[0]).unwrap().as_slice());
 

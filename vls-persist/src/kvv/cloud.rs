@@ -1,4 +1,4 @@
-use crate::kvv::{Error, KVVPersister, KVVStore, KVV};
+use crate::kvv::{Error, KVVStore, KVV};
 use alloc::collections::BTreeMap;
 use lightning_signer::persist::SignerId;
 use lightning_signer::prelude::*;
@@ -62,9 +62,8 @@ impl<L: KVVStore> CloudKVVStore<L> {
 
 impl<L: KVVStore> CloudKVVStore<L> {
     /// Create a new CloudKVVStore backed by the given local KVVStore.
-    pub fn new(local: L) -> KVVPersister<Self> {
-        let s = Self { local, commit_log: Mutex::new(None) };
-        KVVPersister(s)
+    pub fn new(local: L) -> Self {
+        Self { local, commit_log: Mutex::new(None) }
     }
 
     /// Check if the cloud store is in sync with the local store,
@@ -215,7 +214,7 @@ mod tests {
     #[test]
     fn cloud_test() -> Result<(), Error> {
         let tempdir = tempfile::tempdir().unwrap();
-        let local = RedbKVVStore::new(tempdir.path()).0;
+        let local = RedbKVVStore::new(tempdir.path());
         let signer_id = local.signer_id();
         local.put("foo1", b"bar".to_vec())?;
 
@@ -252,7 +251,7 @@ mod tests {
     #[should_panic(expected = "not in transaction")]
     fn no_transaction_test() {
         let tempdir = tempfile::tempdir().unwrap();
-        let local = RedbKVVStore::new(tempdir.path()).0;
+        let local = RedbKVVStore::new(tempdir.path());
         let cloud = CloudKVVStore::new(local);
         cloud.put("foo", b"bar".to_vec()).unwrap();
     }
@@ -260,7 +259,7 @@ mod tests {
     #[test]
     fn put_batch_unlogged_test() {
         let tempdir = tempfile::tempdir().unwrap();
-        let local = RedbKVVStore::new(tempdir.path()).0;
+        let local = RedbKVVStore::new(tempdir.path());
         let cloud = CloudKVVStore::new(local);
         cloud.put_batch_unlogged(vec![KVV("foo".to_string(), (0, b"bar".to_vec()))]).unwrap();
         cloud.enter().unwrap();
@@ -271,7 +270,7 @@ mod tests {
     #[should_panic(expected = "cannot put_batch_unlogged while in transaction")]
     fn put_batch_unlogged_in_transaction_test() {
         let tempdir = tempfile::tempdir().unwrap();
-        let local = RedbKVVStore::new(tempdir.path()).0;
+        let local = RedbKVVStore::new(tempdir.path());
         let cloud = CloudKVVStore::new(local);
         cloud.enter().unwrap();
         cloud.put_batch_unlogged(Vec::new()).unwrap();

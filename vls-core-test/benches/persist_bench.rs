@@ -22,14 +22,14 @@ use lightning_signer::{
 };
 use tempfile::{tempdir_in, TempDir};
 use vls_persist::kvv::redb::RedbKVVStore;
-use vls_persist::kvv::KVVPersister;
+use vls_persist::kvv::{JsonFormat, KVVPersister};
 
-fn make_temp_persister<'a>() -> (KVVPersister<RedbKVVStore>, TempDir, String) {
+fn make_temp_persister<'a>() -> (KVVPersister<RedbKVVStore, JsonFormat>, TempDir, String) {
     let dir = tempdir_in(".").unwrap();
     let path = dir.path().to_owned();
     let path_str = path.to_str().unwrap();
 
-    let persister = RedbKVVStore::new(path_str);
+    let persister = KVVPersister(RedbKVVStore::new(path_str), JsonFormat);
     persister.clear_database().unwrap();
     (persister, dir, path_str.to_string())
 }
