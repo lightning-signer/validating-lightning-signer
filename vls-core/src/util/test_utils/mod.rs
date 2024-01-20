@@ -353,6 +353,7 @@ pub fn next_state(
             &htlc_sigs1,
         )
         .unwrap();
+    channel.revoke_previous_holder_commitment(commit_num).unwrap();
 
     channel1
         .validate_holder_commitment_tx_phase2(
@@ -366,6 +367,7 @@ pub fn next_state(
             &htlc_sigs,
         )
         .unwrap();
+    channel1.revoke_previous_holder_commitment(commit_num).unwrap();
 
     if commit_num > 0 {
         let revoke = channel.get_per_commitment_secret(commit_num - 1).unwrap();
@@ -1286,7 +1288,8 @@ pub fn validate_holder_commitment(
             commit_tx_ctx.received_htlcs.clone(),
             &commit_sig,
             &htlc_sigs,
-        )
+        )?;
+        chan.revoke_previous_holder_commitment(commit_tx_ctx.commit_num)
     })
 }
 
@@ -1727,6 +1730,8 @@ where
             &commit_sig,
             &htlc_sigs,
         )?;
+
+        chan.revoke_previous_holder_commitment(commit_tx_ctx.commit_num)?;
 
         Ok(commit_tx_ctx)
     })

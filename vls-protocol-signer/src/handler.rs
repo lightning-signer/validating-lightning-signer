@@ -1166,7 +1166,8 @@ impl Handler for ChannelHandler {
                             received_htlcs.clone(),
                             &commit_sig,
                             &htlc_sigs,
-                        )
+                        )?;
+                        chan.revoke_previous_holder_commitment(commit_num)
                     })?;
                 let old_secret_reply =
                     old_secret.map(|s| DisclosedSecret(s[..].try_into().unwrap()));
@@ -1204,7 +1205,8 @@ impl Handler for ChannelHandler {
                             received_htlcs.clone(),
                             &commit_sig,
                             &htlc_sigs,
-                        )
+                        )?;
+                        chan.revoke_previous_holder_commitment(commit_num - 1)
                     })?;
                 let old_secret_reply =
                     old_secret.map(|s| DisclosedSecret(s[..].try_into().unwrap()));

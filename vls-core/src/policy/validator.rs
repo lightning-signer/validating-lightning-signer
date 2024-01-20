@@ -638,6 +638,9 @@ pub struct EnforcementState {
     /// Counterparty signatures on holder's commitment
     pub current_counterparty_signatures: Option<CommitmentSignatures>,
 
+    /// Next holder commitment
+    pub next_holder_commit_info: Option<(CommitmentInfo2, CommitmentSignatures)>,
+
     // (set by sign_counterparty_commitment_tx)
     pub current_counterparty_commit_info: Option<CommitmentInfo2>,
     // (set by sign_counterparty_commitment_tx)
@@ -665,6 +668,7 @@ impl EnforcementState {
             previous_counterparty_point: None,
             current_holder_commit_info: None,
             current_counterparty_signatures: None,
+            next_holder_commit_info: None,
             current_counterparty_commit_info: None,
             previous_counterparty_commit_info: None,
             channel_closed: false,

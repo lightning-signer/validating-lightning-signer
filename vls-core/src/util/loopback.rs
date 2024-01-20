@@ -255,6 +255,7 @@ impl ChannelSigner for LoopbackChannelSigner {
                     &holder_tx.counterparty_sig,
                     &holder_tx.counterparty_htlc_sigs,
                 )?;
+                chan.revoke_previous_holder_commitment(commitment_number)?;
                 Ok(())
             })
             .map_err(|s| self.bad_status(s))?;

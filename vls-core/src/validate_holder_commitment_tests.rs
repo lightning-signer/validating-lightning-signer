@@ -119,7 +119,7 @@ mod tests {
 
         assert_failed_precondition_err!(
             validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs,),
-            "policy failure: set_next_holder_commit_num: invalid progression: 1 to 3"
+            "policy failure: get_per_commitment_point: commitment_number 3 invalid when next_holder_commit_num is 1"
         );
     }
 
@@ -371,6 +371,11 @@ mod tests {
                 &commit_sig,
                 &htlc_sigs,
             );
+            if deferred_rv.is_ok() {
+                chan.revoke_previous_holder_commitment(commit_tx_ctx.commit_num)?;
+                // check idempotency
+                chan.revoke_previous_holder_commitment(commit_tx_ctx.commit_num)?;
+            }
             validate_channel_state(&ValidationState { chan });
             deferred_rv?;
             Ok(())
@@ -749,7 +754,7 @@ mod tests {
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM + 2);
         },
         |_| "policy failure: validate_holder_commitment_tx: \
-             can't sign revoked commitment_number 43, next_holder_commit_num is 45"
+             can't validate revoked commitment_number 43, next_holder_commit_num is 45"
     );
 
     generate_failed_precondition_error_with_mutated_validation_input!(
@@ -762,7 +767,9 @@ mod tests {
             // Channel state should stay where we set it.
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM - 1);
         },
-        |_| "policy failure: set_next_holder_commit_num: invalid progression: 42 to 44"
+        |_| {
+            "policy failure: get_per_commitment_point: commitment_number 44 invalid when next_holder_commit_num is 42"
+        }
     );
 
     // policy-revoke-not-closed
