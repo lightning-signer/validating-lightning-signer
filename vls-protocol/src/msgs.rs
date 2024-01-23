@@ -29,6 +29,13 @@ const MAX_MESSAGE_SIZE: u32 = 128 * 1024;
 // Error codes used to demarcate Message::SignerError instances
 pub const CODE_ORPHAN_BLOCK: u16 = 401;
 
+/// Our default protcol version
+/// (see also [`HsmdInit::hsm_wire_min_version`], etc.)
+pub const DEFAULT_MAX_PROTOCOL_VERSION: u32 = 4;
+
+/// Our minimum protcol version
+pub const MIN_PROTOCOL_VERSION: u32 = 2;
+
 /// Serialize a message with a type prefix, in BOLT style
 pub trait SerBolt: Debug + AsAny + Send {
     fn as_vec(&self) -> Vec<u8>;

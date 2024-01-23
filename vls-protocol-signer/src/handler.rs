@@ -6,6 +6,7 @@ use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::cmp::min;
 use core::convert::TryInto;
 use core::str::FromStr;
 
@@ -52,6 +53,7 @@ use vls_protocol::model::{
 };
 use vls_protocol::msgs::{
     DeriveSecretReply, PreapproveInvoiceReply, PreapproveKeysendReply, SerBolt, SignBolt12Reply,
+    DEFAULT_MAX_PROTOCOL_VERSION, MIN_PROTOCOL_VERSION,
 };
 use vls_protocol::psbt::StreamedPSBT;
 use vls_protocol::serde_bolt;
@@ -213,6 +215,7 @@ pub struct InitHandler {
     id: u64,
     node: Arc<Node>,
     approver: Arc<dyn Approve>,
+    max_protocol_version: u32,
     protocol_version: Option<u32>,
 }
 
@@ -236,6 +239,7 @@ pub struct HandlerBuilder {
     allowlist: Vec<String>,
     services: NodeServices,
     approver: Arc<dyn Approve>,
+    max_protocol_version: u32,
 }
 
 impl HandlerBuilder {
@@ -253,6 +257,7 @@ impl HandlerBuilder {
             allowlist: vec![],
             services,
             approver: Arc::new(NegativeApprover()),
+            max_protocol_version: DEFAULT_MAX_PROTOCOL_VERSION,
         }
     }
 
@@ -265,6 +270,12 @@ impl HandlerBuilder {
     /// Set the approver
     pub fn approver(mut self, approver: Arc<dyn Approve>) -> Self {
         self.approver = approver;
+        self
+    }
+
+    /// Set the hsmd max protocol version, may still be negotiated down by node
+    pub fn max_protocol_version(mut self, max_version: u32) -> Self {
+        self.max_protocol_version = max_version;
         self
     }
 
@@ -313,7 +324,7 @@ impl HandlerBuilder {
         };
         trace_node_state!(node.get_state());
 
-        Ok(InitHandler::new(self.id, node, self.approver))
+        Ok(InitHandler::new(self.id, node, self.approver, self.max_protocol_version))
     }
 
     /// The persister
@@ -434,8 +445,13 @@ impl RootHandler {
 
 impl InitHandler {
     /// Create a new InitHandler
-    pub fn new(id: u64, node: Arc<Node>, approver: Arc<dyn Approve>) -> InitHandler {
-        InitHandler { id, node, approver, protocol_version: None }
+    pub fn new(
+        id: u64,
+        node: Arc<Node>,
+        approver: Arc<dyn Approve>,
+        max_protocol_version: u32,
+    ) -> InitHandler {
+        InitHandler { id, node, approver, max_protocol_version, protocol_version: None }
     }
 
     /// Get the associated node
@@ -479,8 +495,27 @@ impl InitHandler {
                 let node_id = self.node.get_id().serialize();
                 let bip32 = self.node.get_account_extended_pubkey().encode();
                 let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
-                if m.hsm_wire_max_version < 4 {
-                    self.protocol_version = Some(2);
+                assert!(
+                    m.hsm_wire_min_version <= self.max_protocol_version,
+                    "node's minimum wire protocol version too large: {} > {}",
+                    m.hsm_wire_min_version,
+                    self.max_protocol_version
+                );
+                assert!(
+                    m.hsm_wire_max_version >= MIN_PROTOCOL_VERSION,
+                    "node's maximum wire protocol version too small: {} < {}",
+                    m.hsm_wire_max_version,
+                    MIN_PROTOCOL_VERSION
+                );
+                let mutual_version = min(self.max_protocol_version, m.hsm_wire_max_version);
+                info!(
+                    "signer protocol_version {}, \
+                     node hsm_wire_max_version {}, \
+                     setting protocol_version to {}",
+                    self.max_protocol_version, m.hsm_wire_max_version, mutual_version
+                );
+                self.protocol_version = Some(mutual_version);
+                if mutual_version < 4 {
                     return Ok((
                         true,
                         Box::new(msgs::HsmdInitReplyV2 {
@@ -490,23 +525,10 @@ impl InitHandler {
                         }),
                     ));
                 }
-                assert!(
-                    m.hsm_wire_min_version <= 4,
-                    "node's minimum hsm wire version too large: {} > {}",
-                    m.hsm_wire_min_version,
-                    4
-                );
-                assert!(
-                    m.hsm_wire_max_version >= 4,
-                    "node's maximum hsm wire version too small: {} < {}",
-                    m.hsm_wire_max_version,
-                    4
-                );
-                self.protocol_version = Some(4);
                 Ok((
                     true,
                     Box::new(msgs::HsmdInitReplyV4 {
-                        hsm_version: 4,
+                        hsm_version: mutual_version,
                         hsm_capabilities: vec![
                             msgs::CheckPubKey::TYPE as u32,
                             msgs::SignAnyDelayedPaymentToUs::TYPE as u32,
