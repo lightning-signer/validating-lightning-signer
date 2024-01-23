@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# Check if an argument is provided
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <directory>"
+    exit 1
+fi
+
+DIR=$1
+
+# Check if the directory exists
+if [ ! -d "$DIR" ]; then
+    echo "Directory does not exist: $DIR"
+    exit 1
+fi
+
+# Use the scripts from where we got this script
+SCRIPT_PATH=$(realpath "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
+LOGTESTDIR="$SCRIPT_DIR/logtestdir"
+
+# Change to the specified directory
+cd "$DIR" || exit 1
+
+OUTPUT_FILE="DIRECTORY.md"
+
+# Get the absolute path of the directory
+ABSOLUTE_PATH=$(realpath ".")
+
+# Look for `bitcoin.conf` files to identify test directories
+readarray -t FILE_ARRAY < <(find . -type f -size +0 -regex ".*/bitcoin.conf")
+
+echo "creating $ABSOLUTE_PATH/$OUTPUT_FILE"
+
+# Write the header to the output file
+echo "### Directory: $ABSOLUTE_PATH"	> "$OUTPUT_FILE"
+echo ""					>> "$OUTPUT_FILE"
+
+# Iterate over the array
+for FILE_PATH in "${FILE_ARRAY[@]}"; do
+    TESTDIR_PATH=$(dirname "$FILE_PATH")
+    testname=$(basename "$TESTDIR_PATH")
+    echo "- [\`$testname\`]($TESTDIR_PATH/SUMMARY.md)"	>> "$OUTPUT_FILE"
+    $LOGTESTDIR $TESTDIR_PATH
+done
