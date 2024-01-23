@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# This script concatenates historical rolled (and possibly compressed) log files.
+#
+# Sample invovcation:
+# nohup logcat ~vls/.lightning-signer/testnet/vlsd2.log | logfilter -a
+
+# Check if there is exactly one argument
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <base-log-filename>"
+    exit 1
+fi
+
+# Assign arguments to variables
+base_log_filename="$1"
+
+# Search through compressed files
+for file in $(ls -v ${base_log_filename}-*.gz); do
+    zcat "$file"
+done
+
+# Search through rolled (uncompressed) log files
+for file in $(ls -v ${base_log_filename}-[0-9]* | grep -v '.gz$'); do
+    cat "$file"
+done
+
+# Search the current log file
+cat "${base_log_filename}"

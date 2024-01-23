@@ -1,0 +1,187 @@
+#!/bin/bash
+
+# Initialize log context variables
+all=false
+vls=false
+lightningd=false
+proxy=false
+integration=false
+
+# Postprocessing
+watches=false
+
+# Constructed filter components
+channelid=""
+dbid=""
+funding=""
+
+# Function to display usage
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTION...] [-- REGEXP...]
+
+ -a, --all           Match key lines from all servers
+ -v, --vls           Match key lines from the vls signer
+ -l, --lightningd    Match key lines from lightningd
+ -p, --proxy         Match key lines from the remote_hsmd proxy
+ -i, --integration   Match key lines from the integration framework
+
+ -w, --watches       Shorten {Forward,Reverse}WatchesReply lines
+
+ -c, --channelid=CHANNELID   Match lines for CHANNELID
+ -d, --dbid=DBID             Match lines for database id DBID
+ -f, --funding=TXID:VOUT     Match lines for funding outpoint TXID:VOUT
+
+EOF
+    [ "$1" = "exit" ] && exit 1
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -a|--all) all=true; shift ;;
+        -v|--vls) vls=true; shift ;;
+        -l|--lightningd) lightningd=true; shift ;;
+        -p|--proxy) proxy=true; shift ;;
+
+        -w|--watches) watches=true; shift ;;
+
+        -c|--channelid*)
+            channelid="${1#*=}"
+            [[ "$channelid" == "$1" ]] && channelid="$2" && shift
+            shift
+            ;;
+        -d|--dbid*)
+            dbid="${1#*=}"
+            [[ "$dbid" == "$1" ]] && dbid="$2" && shift
+            shift
+            ;;
+        -f|--funding*)
+            funding="${1#*=}"
+            [[ "$funding" == "$1" ]] && funding="$2" && shift
+            shift
+            ;;
+
+        --) shift; break ;; # Stop option parsing on '--'
+        *) usage exit;; # Handle unknown options
+    esac
+done
+
+# ----------------------------------------------------------------
+# Setup the interest filter
+
+regex=""
+
+# VLS startup and warns
+if $vls || $all; then
+    regex+="git_desc|"
+    regex+="\bWARN\b|"
+    regex+="\bERROR\b|"
+    regex+="received error from handler|"
+    regex+="panicked at|"
+    regex+="added block|"
+    regex+="removed block|"
+fi
+
+# proxy startup and warns
+if $proxy || $all; then
+    regex+="git_desc|"
+    regex+="\bWARN\b|"
+    regex+="\bERROR\b|"
+    regex+="signer error|"
+fi
+
+# CLN and CLBOSS startup, block heralds, and warns
+if $lightningd || $all; then
+    regex+="Server started|"
+    regex+="New block at|"
+    regex+="Adding block|"
+    regex+="Removing stale block|"
+    regex+="BROKEN|"
+    regex+="UNUSUAL|"
+    regex+="State changed from|"
+fi
+
+# sendrawtx with non-zero exit status
+if $lightningd || $all; then
+    regex+="sendrawtx exit\\s[1-9][0-9]*|"
+    regex+="error broadcasting tx|"
+fi
+
+# Channelid might be special in the future
+if [[ -n $channelid ]]; then
+    regex+="$channelid|"
+fi
+
+# CLN dbid
+if [[ -n $dbid ]]; then
+    regex+="(dbid:? |chan#)$dbid\b|"
+fi
+
+# Funding outpoint
+if [[ -n $funding ]]; then
+    IFS=':' read -ra ADDR <<< "$funding"
+    hex_number="${ADDR[0]}"
+    decimal_number="${ADDR[1]}"
+    regex+="$hex_number, (vout|funding_txout|outnum): $decimal_number\b|"
+fi
+
+# Integration testing
+if $integration || $all; then
+    regex+="Time-out:|"
+    regex+="-stderr:|"
+    regex+='==== ([0-9]+ passed)?,?([0-9]+ warnings)?,?([0-9]+ failed)?.* ===='
+fi
+
+# Append remaining arguments to the regex after '--'
+for arg in "$@"; do
+    regex+="$arg|"
+done
+
+# Remove the trailing '|'
+regex=${regex%|}
+
+# ----------------------------------------------------------------
+# Setup the lame hit removal filter
+
+vregex=""
+
+if $vls || $all; then
+    vregex+="error connecting to node, will retry|"
+fi
+
+if $lightningd || $all; then
+    vregex+="Ignoring fee limits|"
+    vregex+='/swapstatus .* not accessible|'
+    vregex+='read loop .* saw error Protocol.*; ending|'
+fi
+
+# Integration testing
+if $integration || $all; then
+    vregex+="Waiting for .* in the logs|"
+    vregex+="Found .* in logs|"
+    vregex+="Did not find .* in logs|"
+    vregex+="wait_for_log|"
+    vregex+="warnings summary|"
+fi
+
+# Remove the trailing '|'
+vregex=${vregex%|}
+
+# ----------------------------------------------------------------
+# Run the filters
+
+# Initialize the command
+cmd="grep -E --text --color=always \"$regex\""
+
+# Append the sed command if watches are enabled
+if $watches; then
+    cmd+=" | sed -E 's/(ForwardWatchesReply|ReverseWatchesReply) {.*}/\1 { ... }/'"
+fi
+
+# Append the final grep command only if vregex has content
+if [[ -n $vregex ]]; then
+    cmd+=" | grep -E -v '$vregex'"
+fi
+
+# Execute the constructed command
+eval "$cmd"
