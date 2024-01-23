@@ -1347,7 +1347,6 @@ impl Channel {
 
         let sig = self.secp_ctx.sign_ecdsa(&sighash, &privkey);
         trace_enforcement_state!(self);
-        self.persist()?;
         Ok(sig)
     }
 
@@ -1395,7 +1394,6 @@ impl Channel {
 
         let sig = self.secp_ctx.sign_ecdsa(&htlc_sighash, &htlc_privkey);
         trace_enforcement_state!(self);
-        self.persist()?;
         Ok(sig)
     }
 
@@ -1441,7 +1439,6 @@ impl Channel {
 
         let sig = self.secp_ctx.sign_ecdsa(&sighash, &privkey);
         trace_enforcement_state!(self);
-        self.persist()?;
         Ok(sig)
     }
 
