@@ -38,7 +38,7 @@ use util::{
 };
 use vls_persist::kvv::cloud::CloudKVVStore;
 use vls_persist::kvv::redb::RedbKVVStore;
-use vls_persist::kvv::KVVPersister;
+use vls_persist::kvv::{JsonFormat, KVVPersister};
 use vls_proxy::persist::ExternalPersistWithHelper;
 use vls_proxy::*;
 
@@ -312,9 +312,9 @@ async fn start() {
 fn make_persister() -> Arc<dyn Persist> {
     let local_store = RedbKVVStore::new_store("remote_hsmd_inplace_data");
     if env::var("VLS_LSS").is_ok() {
-        Arc::new(CloudKVVStore::new(local_store))
+        Arc::new(KVVPersister(CloudKVVStore::new(local_store), JsonFormat))
     } else {
-        let local_persister = KVVPersister(local_store);
+        let local_persister = KVVPersister(local_store, JsonFormat);
         Arc::new(local_persister)
     }
 }

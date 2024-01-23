@@ -8,11 +8,11 @@ use lightning_signer::util::test_utils::{
     self, hex_decode, key::make_test_key, TEST_CHANNEL_ID, TEST_NODE_CONFIG,
 };
 use vls_persist::kvv::redb::RedbKVVStore;
-use vls_persist::kvv::KVVStore;
+use vls_persist::kvv::{JsonFormat, KVVPersister, KVVStore};
 
 pub fn main() {
     let tempdir = tempfile::tempdir().unwrap();
-    let persister = RedbKVVStore::new(&tempdir);
+    let persister = KVVPersister(RedbKVVStore::new(&tempdir), JsonFormat);
     persister.clear_database().unwrap();
     let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
     let channel_id1 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());

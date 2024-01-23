@@ -99,6 +99,8 @@ pub enum Error {
     Internal(String),
     /// Version mismatch
     VersionMismatch,
+    /// Serialization, deserialization error
+    SerdeError(String),
 }
 
 /// Used to keep track of the chain monitor listeners while restoring from persistence

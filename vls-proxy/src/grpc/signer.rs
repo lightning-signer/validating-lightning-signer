@@ -33,7 +33,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
-use vls_persist::kvv::redb::RedbKVVStore;
+use vls_persist::kvv::{JsonFormat, KVVPersister, redb::RedbKVVStore};
 use vls_protocol_signer::approver::WarningPositiveApprover;
 use vls_protocol_signer::handler::{Error, Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::vls_protocol::model::PubKey;
@@ -78,7 +78,7 @@ pub async fn start_signer(datadir: &str, uri: Uri, args: &SignerArgs) {
 pub fn make_handler(datadir: &str, args: &SignerArgs) -> RootHandler {
     let network = args.network;
     let data_path = format!("{}/{}", datadir, network.to_string());
-    let persister = Arc::new(RedbKVVStore::new(&data_path));
+    let persister = Arc::new(KVVPersister(RedbKVVStore::new(&data_path), JsonFormat));
     let seed_persister = Arc::new(FileSeedPersister::new(&data_path));
     let seeddir = PathBuf::from_str(datadir).unwrap().join("..").join(network.to_string());
     let seed = get_or_generate_seed(network, seed_persister, args.integration_test, Some(seeddir));
