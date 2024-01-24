@@ -22,6 +22,7 @@ use lightning_signer::util::status::Status;
 use lightning_signer::util::velocity::VelocityControlSpec;
 use log::*;
 use std::convert::TryInto;
+use std::env;
 use std::error::Error as _;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
@@ -116,6 +117,18 @@ pub fn make_handler(datadir: &str, args: &SignerArgs) -> InitHandler {
     if should_auto_approve() {
         handler_builder = handler_builder.approver(Arc::new(WarningPositiveApprover()));
     }
+    if let Ok(protocol_version_str) = env::var("VLS_MAX_PROTOCOL_VERSION") {
+        match protocol_version_str.parse::<u32>() {
+            Ok(protocol_version) => {
+                warn!("setting max_protocol_version to {}", protocol_version);
+                handler_builder = handler_builder.max_protocol_version(protocol_version);
+            }
+            Err(e) => {
+                panic!("invalid VLS_MAX_PROTOCOL_VERSION {}: {}", protocol_version_str, e);
+            }
+        }
+    }
+
     let (init_handler, _muts) = handler_builder.build().expect("handler build");
 
     init_handler

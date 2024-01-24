@@ -154,6 +154,7 @@ fn track_char(msg: &Message) -> char {
         Message::SignRemoteHtlcTx(_m) => 'h',
         Message::ValidateCommitmentTx(_m) => 'v',
         Message::ValidateCommitmentTx2(_m) => 'v',
+        Message::RevokeCommitmentTx(_m) => 'q',
         Message::ValidateRevocation(_m) => 'r',
         Message::SignMutualCloseTx(_m) => ')',
         Message::SignMutualCloseTx2(_m) => ')',
@@ -214,6 +215,7 @@ fn track_char(msg: &Message) -> char {
         | Message::CheckOutpointReply(_)
         | Message::LockOutpointReply(_)
         | Message::ValidateCommitmentTxReply(_)
+        | Message::RevokeCommitmentTxReply(_)
         | Message::ValidateRevocationReply(_)
         | Message::SignCommitmentTxWithHtlcsReply(_)
         | Message::SignCommitmentTxReply(_)

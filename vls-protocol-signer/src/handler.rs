@@ -2,6 +2,7 @@
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec;
@@ -53,7 +54,7 @@ use vls_protocol::model::{
 };
 use vls_protocol::msgs::{
     DeriveSecretReply, PreapproveInvoiceReply, PreapproveKeysendReply, SerBolt, SignBolt12Reply,
-    DEFAULT_MAX_PROTOCOL_VERSION, MIN_PROTOCOL_VERSION,
+    DEFAULT_MAX_PROTOCOL_VERSION, MIN_PROTOCOL_VERSION, PROTOCOL_VERSION_REVOKE,
 };
 use vls_protocol::psbt::StreamedPSBT;
 use vls_protocol::serde_bolt;
@@ -225,6 +226,7 @@ pub struct RootHandler {
     id: u64,
     node: Arc<Node>,
     approver: Arc<dyn Approve>,
+    protocol_version: u32,
 }
 
 /// Builder for RootHandler
@@ -463,8 +465,8 @@ impl InitHandler {
     ///
     /// Panics if initial negotiation is not complete - see [`InitHandler::handle`].
     pub fn into_root_handler(self) -> RootHandler {
-        assert!(self.protocol_version.is_some(), "initial negotiation not complete");
-        RootHandler { id: self.id, node: self.node, approver: self.approver }
+        let protocol_version = self.protocol_version.expect("initial negotiation not complete");
+        RootHandler { id: self.id, node: self.node, approver: self.approver, protocol_version }
     }
 
     /// Handle a request message, returning a boolean indicating whether the initial negotiation is complete
@@ -525,21 +527,24 @@ impl InitHandler {
                         }),
                     ));
                 }
+                let mut hsm_capabilities = vec![
+                    msgs::CheckPubKey::TYPE as u32,
+                    msgs::SignAnyDelayedPaymentToUs::TYPE as u32,
+                    msgs::SignAnchorspend::TYPE as u32,
+                    msgs::SignHtlcTxMingle::TYPE as u32,
+                    // TODO advertise splicing when it is implemented
+                    // msgs::SignSpliceTx::TYPE as u32,
+                    msgs::CheckOutpoint::TYPE as u32,
+                    msgs::ForgetChannel::TYPE as u32,
+                ];
+                if mutual_version >= PROTOCOL_VERSION_REVOKE {
+                    hsm_capabilities.push(msgs::RevokeCommitmentTx::TYPE as u32);
+                }
                 Ok((
                     true,
                     Box::new(msgs::HsmdInitReplyV4 {
                         hsm_version: mutual_version,
-                        hsm_capabilities: vec![
-                            msgs::CheckPubKey::TYPE as u32,
-                            msgs::SignAnyDelayedPaymentToUs::TYPE as u32,
-                            msgs::SignAnchorspend::TYPE as u32,
-                            msgs::SignHtlcTxMingle::TYPE as u32,
-                            // TODO advertise splicing when it is implemented
-                            // msgs::SignSpliceTx::TYPE as u32,
-                            msgs::CheckOutpoint::TYPE as u32,
-                            msgs::ForgetChannel::TYPE as u32,
-                        ]
-                        .into(),
+                        hsm_capabilities: hsm_capabilities.into(),
                         node_id: PubKey(node_id),
                         bip32: ExtKey(bip32),
                         bolt12: PubKey(bolt12_pubkey),
@@ -928,6 +933,7 @@ impl Handler for RootHandler {
         ChannelHandler {
             id: client_id,
             node: Arc::clone(&self.node),
+            protocol_version: self.protocol_version,
             peer_id: peer_id.0,
             dbid,
             channel_id,
@@ -975,6 +981,7 @@ fn extract_psbt_output_paths(psbt: &PartiallySignedTransaction) -> Vec<Vec<u32>>
 pub struct ChannelHandler {
     id: u64,
     node: Arc<Node>,
+    protocol_version: u32,
     #[allow(unused)]
     peer_id: [u8; 33],
     dbid: u64,
@@ -1266,7 +1273,22 @@ impl Handler for ChannelHandler {
                             &commit_sig,
                             &htlc_sigs,
                         )?;
-                        chan.revoke_previous_holder_commitment(commit_num)
+                        if self.protocol_version < PROTOCOL_VERSION_REVOKE {
+                            // The older protcol presumes the previous is immediately revoked
+                            chan.revoke_previous_holder_commitment(commit_num)
+                        } else {
+                            // The newer protocol defers until an explicit `RevokeCommitmentTx`
+                            if commit_num > 0 {
+                                Ok((chan.get_per_commitment_point(commit_num + 1)?, None))
+                            } else {
+                                // Commitment 0 is special because it doesn't
+                                // have a previous commitment.  Since the
+                                // revocation of the previous commitment normally
+                                // makes a new commitment "current" this final
+                                // step must be invoked explicitly.
+                                Ok((chan.activate_initial_commitment()?, None))
+                            }
+                        }
                     })?;
                 let old_secret_reply =
                     old_secret.map(|s| DisclosedSecret(s[..].try_into().unwrap()));
@@ -1305,7 +1327,22 @@ impl Handler for ChannelHandler {
                             &commit_sig,
                             &htlc_sigs,
                         )?;
-                        chan.revoke_previous_holder_commitment(commit_num - 1)
+                        if self.protocol_version < PROTOCOL_VERSION_REVOKE {
+                            // The older protcol presumes the previous is immediately revoked
+                            chan.revoke_previous_holder_commitment(commit_num)
+                        } else {
+                            // The newer protocol defers until an explicit `RevokeCommitmentTx`
+                            if commit_num > 0 {
+                                Ok((chan.get_per_commitment_point(commit_num + 1)?, None))
+                            } else {
+                                // Commitment 0 is special because it doesn't
+                                // have a previous commitment.  Since the
+                                // revocation of the previous commitment normally
+                                // makes a new commitment "current" this final
+                                // step must be invoked explicitly.
+                                Ok((chan.activate_initial_commitment()?, None))
+                            }
+                        }
                     })?;
                 let old_secret_reply =
                     old_secret.map(|s| DisclosedSecret(s[..].try_into().unwrap()));
@@ -1314,6 +1351,30 @@ impl Handler for ChannelHandler {
                     old_commitment_secret: old_secret_reply,
                 }))
             }
+            Message::RevokeCommitmentTx(m) => {
+                if self.protocol_version < PROTOCOL_VERSION_REVOKE {
+                    return Err(Status::invalid_argument(format!(
+                        "RevokeCommitmentTx called with hsmd_protocol_version {} < {}",
+                        self.protocol_version, PROTOCOL_VERSION_REVOKE,
+                    )))?;
+                }
+                let commit_num = m.commitment_number;
+                let (next_per_commitment_point, old_secret) =
+                    self.node.with_channel(&self.channel_id, |chan| {
+                        chan.revoke_previous_holder_commitment(commit_num + 1)
+                    })?;
+                let old_secret_reply =
+                    old_secret.map(|s| DisclosedSecret(s[..].try_into().unwrap()));
+                let next_per_commitment_point = PubKey(next_per_commitment_point.serialize());
+                let old_commitment_secret = old_secret_reply.ok_or_else(|| {
+                    Status::invalid_argument(format!("no old secret for commitment {}", commit_num))
+                })?;
+                Ok(Box::new(msgs::RevokeCommitmentTxReply {
+                    next_per_commitment_point,
+                    old_commitment_secret,
+                }))
+            }
+
             Message::SignLocalCommitmentTx2(m) => {
                 let (sig, htlc_sigs) = self.node.with_channel(&self.channel_id, |chan| {
                     chan.sign_holder_commitment_tx_phase2(m.commitment_number)

@@ -38,6 +38,17 @@ Setting `VLS_ONCHAIN_VALIDATION_DISABLE=1` disables policy checking
 involving onchain events.  For example ensuring that the funding
 transaction is locked before allowing further channel operations.
 
+#### `VLS_MAX_PROTOCOL_VERSION` - Override maximum wire protocol version
+
+The `VLS_MAX_PROTOCOL_VERSION` env variable is interpreted by `vlsd2` on startup.
+
+Setting `VLS_MAX_PROTOCOL_VERSION=4` limits the maximum protocol
+version which will be used by `vlsd2` when communicating with
+node.  This feature is useful for developers who need to control the
+protocol version for testing or debugging.
+
+This only sets the maximum protocol version; the node may negotiate a lower version.
+
 #### `RUST_LOG` - Set the logging level
 
 The `RUST_LOG` env variable is interpreted by all VLS rust programs.

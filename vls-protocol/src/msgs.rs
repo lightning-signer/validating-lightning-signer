@@ -29,9 +29,12 @@ const MAX_MESSAGE_SIZE: u32 = 128 * 1024;
 // Error codes used to demarcate Message::SignerError instances
 pub const CODE_ORPHAN_BLOCK: u16 = 401;
 
+// Notable hsmd protocol versions
+pub const PROTOCOL_VERSION_REVOKE: u32 = 5; // RevokeCommitmentTx was split from ValidateCommitmentTx
+
 /// Our default protcol version
 /// (see also [`HsmdInit::hsm_wire_min_version`], etc.)
-pub const DEFAULT_MAX_PROTOCOL_VERSION: u32 = 4;
+pub const DEFAULT_MAX_PROTOCOL_VERSION: u32 = PROTOCOL_VERSION_REVOKE;
 
 /// Our minimum protcol version
 pub const MIN_PROTOCOL_VERSION: u32 = 2;
@@ -500,6 +503,22 @@ pub struct ValidateCommitmentTx2 {
 #[message_id(135)]
 pub struct ValidateCommitmentTxReply {
     pub old_commitment_secret: Option<DisclosedSecret>,
+    pub next_per_commitment_point: PubKey,
+}
+
+///
+/// CLN only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(40)]
+pub struct RevokeCommitmentTx {
+    pub commitment_number: u64,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(140)]
+pub struct RevokeCommitmentTxReply {
+    pub old_commitment_secret: DisclosedSecret,
     pub next_per_commitment_point: PubKey,
 }
 
@@ -1038,6 +1057,8 @@ pub enum Message {
     ValidateCommitmentTx(ValidateCommitmentTx),
     ValidateCommitmentTx2(ValidateCommitmentTx2),
     ValidateCommitmentTxReply(ValidateCommitmentTxReply),
+    RevokeCommitmentTx(RevokeCommitmentTx),
+    RevokeCommitmentTxReply(RevokeCommitmentTxReply),
     ValidateRevocation(ValidateRevocation),
     ValidateRevocationReply(ValidateRevocationReply),
     SignRemoteCommitmentTx(SignRemoteCommitmentTx),
