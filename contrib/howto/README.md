@@ -4,6 +4,7 @@
 
 - [Setup Development Tree](./development.md)
 - [Setup testnet CLN+VLS+CLBOSS server in `SOCKET` mode](./socket-server.md)
+- [Setup CLN+VLS+CLBOSS server using Docker](https://gitlab.com/lightning-signer/vls-container#vls-containers)
 - [Setup testnet CLN+VLS+CLBOSS server using STM32 in `SERIAL` mode](./serial-server.md)
 - [Update CLN+VLS Software](./update.md)
 
