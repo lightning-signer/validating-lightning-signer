@@ -74,7 +74,7 @@ impl RedbDatabase {
             let key = format!("{}/{}", client_id_prefix, key_suffix);
             let res_o = table.get(&*key)?;
             let (next_version, existing) = if let Some(res) = res_o {
-                let existing: Value = serde_cbor::from_reader(&res.value()[..]).unwrap();
+                let existing: Value = ciborium::from_reader(&res.value()[..]).unwrap();
                 (existing.version + 1, Some(existing))
             } else {
                 (0, None)
@@ -91,7 +91,7 @@ impl RedbDatabase {
             for (key_suffix, value) in kvs.iter() {
                 let key = format!("{}/{}", client_id_prefix, key_suffix);
                 let mut value_vec = Vec::new();
-                serde_cbor::to_writer(&mut value_vec, value).unwrap();
+                ciborium::into_writer(value, &mut value_vec).unwrap();
                 table.insert(key.as_str(), &value_vec.as_slice()).unwrap();
             }
             drop(table);
@@ -110,7 +110,7 @@ impl RedbDatabase {
         for item in table.range(prefix..)? {
             let (key, value) = item?;
             if key.value().starts_with(&prefix) {
-                let value: Value = serde_cbor::from_reader(&value.value()[..]).unwrap();
+                let value: Value = ciborium::from_reader(&value.value()[..]).unwrap();
                 let key_s = key.value().to_owned().split_off(client_id.len() * 2 + 1);
                 res.push((key_s, value));
             } else {
