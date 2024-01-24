@@ -44,17 +44,17 @@ Build VLS and related crates:
 ### Running Unit Tests
 
     cargo test
-    
+
 To enable logging for a failing test (adjust log level to preference):
 
     RUST_LOG=trace cargo test
-    
+
 ### Using llvm-cov for Code Coverage
 
 Dependencies:
 
     cargo +stable install cargo-llvm-cov --locked
-    
+
 Run coverage:
 
     ./scripts/run-llvm-cov
