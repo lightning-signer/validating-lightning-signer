@@ -4,4 +4,6 @@ if [ -f /etc/redhat-release ] ; then
     dnf install gcc-arm-linux-gnu qemu-system-arm
 elif [ -f /etc/debian_version ] ; then
     apt install gcc-arm-none-eabi qemu-system-arm gdb-multiarch
+elif [ -f /etc/arch-release ] ; then
+    pacman -S arm-none-eabi-gcc arm-none-eabi-newlib qemu-system-arm
 fi
