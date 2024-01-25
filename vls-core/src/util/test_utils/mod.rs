@@ -1289,7 +1289,11 @@ pub fn validate_holder_commitment(
             &commit_sig,
             &htlc_sigs,
         )?;
-        chan.revoke_previous_holder_commitment(commit_tx_ctx.commit_num)
+        if commit_tx_ctx.commit_num == 0 {
+            Ok((chan.activate_initial_commitment()?, None))
+        } else {
+            chan.revoke_previous_holder_commitment(commit_tx_ctx.commit_num)
+        }
     })
 }
 
@@ -1730,8 +1734,11 @@ where
             &commit_sig,
             &htlc_sigs,
         )?;
-
-        chan.revoke_previous_holder_commitment(commit_tx_ctx.commit_num)?;
+        if commit_tx_ctx.commit_num == 0 {
+            chan.activate_initial_commitment()?;
+        } else {
+            chan.revoke_previous_holder_commitment(commit_tx_ctx.commit_num)?;
+        }
 
         Ok(commit_tx_ctx)
     })

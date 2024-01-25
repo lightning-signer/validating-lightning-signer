@@ -2119,6 +2119,37 @@ impl Channel {
         Ok(())
     }
 
+    /// Activate commitment 0 explicitly
+    ///
+    /// Commitment 0 is special because it doesn't have a predecessor
+    /// commitment.  Since the revocation of the prior commitment normally makes
+    /// a new commitment "current" this final step must be invoked explicitly.
+    ///
+    /// Returns the next per_commitment_point.
+    pub fn activate_initial_commitment(&mut self) -> Result<PublicKey, Status> {
+        debug!("activate_initial_commitment");
+
+        if self.enforcement_state.next_holder_commit_num != 0 {
+            return Err(invalid_argument(format!(
+                "activate_initial_commitment called with next_holder_commit_num {}",
+                self.enforcement_state.next_holder_commit_num
+            )));
+        }
+
+        // Remove the info and sigs from next holder and make current
+        if let Some((info2, sigs)) = self.enforcement_state.next_holder_commit_info.take() {
+            self.enforcement_state.set_next_holder_commit_num(1, info2, sigs);
+        } else {
+            return Err(invalid_argument(format!(
+                "activate_initial_commitment called before validation of the initial commitment"
+            )));
+        }
+
+        trace_enforcement_state!(self);
+        self.persist()?;
+        Ok(self.get_per_commitment_point_unchecked(1))
+    }
+
     /// Process the counterparty's revocation
     ///
     /// When this is provided, we know that the counterparty has committed to

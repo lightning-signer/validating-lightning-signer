@@ -14,6 +14,7 @@ mod tests {
     use test_log::test;
 
     use crate::channel::{Channel, ChannelBase, CommitmentType};
+    use crate::node::SpendType;
     use crate::policy::error::policy_error;
     use crate::policy::validator::ChainState;
     use crate::tx::tx::HTLCInfo2;
@@ -81,6 +82,83 @@ mod tests {
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
             .expect("valid holder commitment");
+    }
+
+    #[test]
+    fn activate_initial_commitment_test() {
+        let channel_amount = 3_000_000;
+        let stype = SpendType::P2wpkh;
+        let incoming = channel_amount + 2_000_000;
+        let fee = 1000;
+        let change = incoming - channel_amount - fee;
+
+        let node_ctx = test_node_ctx(1);
+        let mut chan_ctx = test_chan_ctx(&node_ctx, 1, channel_amount);
+        let mut tx_ctx = TestFundingTxContext::new();
+
+        tx_ctx.add_wallet_input(&node_ctx, stype, 1, incoming);
+        tx_ctx.add_wallet_output(&node_ctx, stype, 1, change);
+        let outpoint_ndx = tx_ctx.add_channel_outpoint(&node_ctx, &chan_ctx, channel_amount);
+        let tx = tx_ctx.to_tx();
+
+        funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
+
+        let mut commit_tx_ctx = channel_initial_holder_commitment(&node_ctx, &chan_ctx);
+        let (commit_sig, htlc_sigs) =
+            counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
+
+        let htlcs = Channel::htlcs_info2_to_oic(
+            commit_tx_ctx.offered_htlcs.clone(),
+            commit_tx_ctx.received_htlcs.clone(),
+        );
+
+        let _ = node_ctx.node.with_channel(&chan_ctx.channel_id, |chan| {
+            let channel_parameters = chan.make_channel_parameters();
+            let parameters = channel_parameters.as_holder_broadcastable();
+
+            let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
+            let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+
+            let redeem_scripts = build_tx_scripts(
+                &keys,
+                commit_tx_ctx.to_broadcaster,
+                commit_tx_ctx.to_countersignatory,
+                &htlcs,
+                &parameters,
+                &chan.keys.pubkeys().funding_pubkey,
+                &chan.setup.counterparty_points.funding_pubkey,
+            )
+            .expect("scripts");
+            let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
+
+            // Call before validate fails
+            assert_invalid_argument_err!(
+                chan.activate_initial_commitment(),
+                "activate_initial_commitment called before validation of the initial commitment"
+            );
+
+            chan.validate_holder_commitment_tx(
+                &commit_tx_ctx.tx.as_ref().unwrap().trust().built_transaction().transaction,
+                &output_witscripts,
+                commit_tx_ctx.commit_num,
+                commit_tx_ctx.feerate_per_kw,
+                commit_tx_ctx.offered_htlcs.clone(),
+                commit_tx_ctx.received_htlcs.clone(),
+                &commit_sig,
+                &htlc_sigs,
+            )?;
+
+            // Call right after validate succeeds
+            assert_status_ok!(chan.activate_initial_commitment());
+
+            // Call later fails
+            assert_invalid_argument_err!(
+                chan.activate_initial_commitment(),
+                "activate_initial_commitment called with next_holder_commit_num 1"
+            );
+
+            Ok(())
+        });
     }
 
     // policy-revoke-new-commitment-signed
@@ -361,7 +439,7 @@ mod tests {
 
             // Validate the holder_commitment, but defer error returns till after we've had
             // a chance to validate the channel state for side-effects
-            let deferred_rv = chan.validate_holder_commitment_tx(
+            let mut deferred_rv = chan.validate_holder_commitment_tx(
                 &tx,
                 &output_witscripts,
                 commit_tx_ctx.commit_num,
@@ -371,6 +449,11 @@ mod tests {
                 &commit_sig,
                 &htlc_sigs,
             );
+            if deferred_rv.is_ok() {
+                if commit_tx_ctx.commit_num == 0 {
+                    deferred_rv = chan.activate_initial_commitment().map(|_| ());
+                }
+            }
             if deferred_rv.is_ok() {
                 chan.revoke_previous_holder_commitment(commit_tx_ctx.commit_num)?;
                 // check idempotency
