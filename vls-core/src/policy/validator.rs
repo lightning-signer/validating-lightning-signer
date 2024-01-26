@@ -520,9 +520,7 @@ impl Debug for CounterpartyCommitmentSecrets {
 struct DebugOldSecrets<'a>(pub &'a Vec<([u8; 32], u64)>);
 impl<'a> core::fmt::Debug for DebugOldSecrets<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
-        f.debug_list()
-            .entries(self.0.iter().map(|os| DebugOldSecret(os)))
-            .finish()
+        f.debug_list().entries(self.0.iter().map(|os| DebugOldSecret(os))).finish()
     }
 }
 
@@ -581,7 +579,7 @@ impl CounterpartyCommitmentSecrets {
     pub fn provide_secret(&mut self, idx: u64, secret: [u8; 32]) -> Result<(), ()> {
         let pos = Self::place_secret(idx);
         if pos as usize > self.old_secrets.len() {
-            return Err(())
+            return Err(());
         }
         for i in 0..pos {
             let (old_secret, old_idx) = self.old_secrets[i as usize];
@@ -1107,7 +1105,11 @@ mod tests {
     fn test_per_commitment_storage() {
         // Test bad idx
         let mut monitor = CounterpartyCommitmentSecrets::new();
-        let secret: [u8; 32] =  hex::decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc").unwrap().try_into().unwrap();
+        let secret: [u8; 32] =
+            hex::decode("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc")
+                .unwrap()
+                .try_into()
+                .unwrap();
         assert!(monitor.provide_secret(281474976710654, secret).is_err());
 
         // Test vectors from BOLT 3:

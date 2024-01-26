@@ -33,7 +33,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
-use vls_persist::kvv::{JsonFormat, KVVPersister, redb::RedbKVVStore};
+use vls_persist::kvv::{redb::RedbKVVStore, JsonFormat, KVVPersister};
 use vls_protocol_signer::approver::WarningPositiveApprover;
 use vls_protocol_signer::handler::{Error, Handler, RootHandler, RootHandlerBuilder};
 use vls_protocol_signer::vls_protocol::model::PubKey;

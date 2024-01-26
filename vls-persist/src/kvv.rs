@@ -57,7 +57,7 @@ impl SendSync for JsonFormat {}
 
 impl ValueFormat for JsonFormat {
     /// Serialize a value
-    fn ser_value<T: ?Sized + serde::Serialize>(value: &T) -> Result<Vec<u8>, Error>{
+    fn ser_value<T: ?Sized + serde::Serialize>(value: &T) -> Result<Vec<u8>, Error> {
         to_vec(value).map_err(|e| Error::SerdeError(e.to_string()))
     }
     /// Deserialize a value
@@ -268,18 +268,16 @@ impl<S: KVVStore, F: ValueFormat> Persist for KVVPersister<S, F> {
     fn get_nodes(&self) -> Result<Vec<(PublicKey, CoreNodeEntry)>, Error> {
         let prefix = NODE_ENTRY_PREFIX.to_string() + SEPARATOR;
         let mut res = Vec::new();
-        let kvvs = self.get_prefix(&prefix)?
+        let kvvs = self
+            .get_prefix(&prefix)?
             .map(KVV::into_inner)
             .filter(|(_k, (_r, value))| !value.is_empty());
         for (key, (_r, value)) in kvvs {
             let suffix = extract_key_suffix(&prefix, &key);
             let node_id = PublicKey::from_slice(&suffix).unwrap();
             let entry: NodeEntry = F::de_value(&value)?;
-            let state_value = self
-                .get(&make_key(NODE_STATE_PREFIX, &node_id.serialize()))
-                .unwrap()
-                .unwrap()
-                .1;
+            let state_value =
+                self.get(&make_key(NODE_STATE_PREFIX, &node_id.serialize())).unwrap().unwrap().1;
             let state_entry: NodeStateEntry = F::de_value(&state_value)?;
             let state = NodeState::restore(
                 state_entry.invoices,
