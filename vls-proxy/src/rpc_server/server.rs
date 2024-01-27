@@ -12,6 +12,7 @@ use tokio::task::JoinHandle;
 use crate::GIT_DESC;
 
 use super::InfoModel;
+use tracing::{event, Level, instrument};
 
 pub enum RpcMethods {
     Info,
@@ -25,6 +26,7 @@ impl RpcMethods {
     }
 }
 
+#[instrument]
 pub async fn start_rpc_server(
     node: Arc<Node>,
     ip: IpAddr,
@@ -33,7 +35,8 @@ pub async fn start_rpc_server(
     let server = Server::builder().build(SocketAddr::new(ip, port)).await?;
 
     let mut module = RpcModule::new(node);
-    module.register_method(RpcMethods::Info.as_str(), |_, context| {
+    module.register_method(RpcMethods::Info.as_str(), |params, context| {
+        event!(Level::INFO, "rpc_server: info {:?}", params.as_str());
         let height = context.get_chain_height();
         let channels = context.channels().values().len() as u32;
         Ok::<_, ErrorObject>(InfoModel::new(height, channels, GIT_DESC.to_string()))
@@ -41,6 +44,7 @@ pub async fn start_rpc_server(
 
     let addr = server.local_addr()?;
     let handle = server.start(module);
+    event!(Level::INFO, "rpc_server: listening on {}", addr);
 
     let join_handle = tokio::spawn(handle.stopped());
 

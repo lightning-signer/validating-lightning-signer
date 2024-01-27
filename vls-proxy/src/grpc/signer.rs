@@ -70,8 +70,6 @@ pub async fn start_signer_localhost(port: u16) {
 }
 
 /// Signer binary entry point
-#[allow(unused)]
-#[tokio::main(worker_threads = 2)]
 pub async fn start_signer(datadir: &str, uri: Uri, args: &SignerArgs) {
     info!("signer starting on {} connecting to {}", args.network, uri);
     connect(datadir, uri, args).await;
@@ -233,7 +231,6 @@ async fn handle_requests(
 ) {
     #[cfg(feature = "heapmon_requests")]
     let peak_thresh = {
-        use std::env;
         let peak_thresh = env::var("VLS_HEAPMON_PEAK_THRESH")
             .map(|s| s.parse().expect("VLS_HEAPMON_PEAK_THRESH parse"))
             .unwrap_or(50 * 1024);
