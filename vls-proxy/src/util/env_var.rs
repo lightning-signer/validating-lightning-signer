@@ -16,11 +16,11 @@ pub fn deployment_environment() -> String {
     env::var("DEPLOYMENT_ENV").unwrap_or("DEVELOPMENT".to_string())
 }
 
-pub fn oltp_endpoint() -> String {
+pub fn otlp_endpoint() -> String {
     env::var("OLTP_ENDPOINT").unwrap_or("http://localhost:4317".to_string())
 }
 
-pub fn oltp_timeout() -> u64 {
+pub fn otlp_timeout() -> u64 {
     env::var("OLTP_TIMEOUT")
         .unwrap_or("3".to_string())
         .parse()
