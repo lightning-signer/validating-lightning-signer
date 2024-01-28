@@ -34,7 +34,7 @@ get_bitcoin:
   artifacts:
     paths:
       - bin/bitcoind
-
+    expire_in: 1 week
 
 rust-latest:
   tags: [ saas-linux-large-amd64 ]
@@ -147,6 +147,7 @@ coverage:
       coverage_report:
         coverage_format: cobertura
         path: target/cobertura.xml
+    expire_in: 1 week
 
 cargo-audit:
   tags: [ saas-linux-medium-amd64 ]
