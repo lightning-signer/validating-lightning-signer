@@ -815,27 +815,34 @@ impl Channel {
         Ok(())
     }
 
+    // Advance the holder commitment state so that `N + 1` is the next
+    // and `N - 1` is revoked, where N is `new_current_commitment_number`.
     fn advance_holder_commitment_state(
         &mut self,
         validator: Arc<dyn Validator>,
-        commitment_number: u64,
+        new_current_commitment_number: u64,
         info2: CommitmentInfo2,
         counterparty_signatures: CommitmentSignatures,
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
         // Advance the local commitment number state.
         validator.set_next_holder_commit_num(
             &mut self.enforcement_state,
-            commitment_number + 1,
+            new_current_commitment_number + 1,
             info2,
             counterparty_signatures,
         )?;
 
-        // These calls are guaranteed to pass the commitment_number
-        // check because we just advanced it to the right spot above.
-        let next_holder_commitment_point =
-            self.get_per_commitment_point(commitment_number + 1).unwrap();
+        self.revoke_previous_commitment(new_current_commitment_number)
+    }
+
+    // revoke the commitment before `commitment_number`
+    fn revoke_previous_commitment(
+        &mut self,
+        commitment_number: u64,
+    ) -> Result<(PublicKey, Option<SecretKey>), Status> {
+        let next_holder_commitment_point = self.get_per_commitment_point(commitment_number + 1)?;
         let maybe_old_secret = if commitment_number >= 1 {
-            Some(self.get_per_commitment_secret(commitment_number - 1).unwrap())
+            Some(self.get_per_commitment_secret(commitment_number - 1)?)
         } else {
             None
         };
@@ -844,10 +851,7 @@ impl Channel {
 
     /// Validate the counterparty's signatures on the holder's
     /// commitment and HTLCs when the commitment_signed message is
-    /// received.  Returns the next per_commitment_point and the
-    /// holder's revocation secret for the prior commitment.  This
-    /// method advances the expected next holder commitment number in
-    /// the signer's state.
+    /// received.
     pub fn validate_holder_commitment_tx_phase2(
         &mut self,
         commitment_number: u64,
@@ -858,7 +862,7 @@ impl Channel {
         received_htlcs: Vec<HTLCInfo2>,
         counterparty_commit_sig: &Signature,
         counterparty_htlc_sigs: &[Signature],
-    ) -> Result<(PublicKey, Option<SecretKey>), Status> {
+    ) -> Result<(), Status> {
         let per_commitment_point = &self.get_per_commitment_point(commitment_number)?;
         let info2 = self.build_holder_commitment_info(
             to_holder_value_sat,
@@ -869,7 +873,7 @@ impl Channel {
         )?;
 
         let node = self.get_node();
-        let mut state = node.get_state();
+        let state = node.get_state();
         let delta =
             self.enforcement_state.claimable_balances(&*state, Some(&info2), None, &self.setup);
 
@@ -929,27 +933,75 @@ impl Channel {
             validator.clone(),
         )?;
 
-        let counterparty_signatures =
-            CommitmentSignatures(counterparty_commit_sig.clone(), counterparty_htlc_sigs.to_vec());
-        let (next_holder_commitment_point, maybe_old_secret) = self
-            .advance_holder_commitment_state(
-                validator.clone(),
-                commitment_number,
-                info2,
-                counterparty_signatures,
-            )?;
-
-        state.apply_payments(
-            &self.id0,
-            &incoming_payment_summary,
-            &outgoing_payment_summary,
-            &delta,
-            validator,
-        );
+        if commitment_number == self.enforcement_state.next_holder_commit_num {
+            let counterparty_signatures = CommitmentSignatures(
+                counterparty_commit_sig.clone(),
+                counterparty_htlc_sigs.to_vec(),
+            );
+            self.enforcement_state.next_holder_commit_info = Some((info2, counterparty_signatures));
+        }
 
         trace_enforcement_state!(self);
         self.persist()?;
 
+        Ok(())
+    }
+
+    /// Revoke holder commitment `N - 1` by disclosing its commitment secret.
+    /// After this, `N` is the current holder commitment and `N + 1`
+    /// is the next holder commitment.
+    ///
+    /// Returns the per_commitment_point for commitment `N + 1` and the
+    /// holder's revocation secret for commitment `N - 1` if `N > 0`.
+    ///
+    /// [`validate_holder_commitment_tx`] (or the phase2 version) must be called
+    /// before this method.
+    ///
+    /// The node should have persisted this state change first, because we cannot
+    /// safely roll back a revocation.
+    pub fn revoke_previous_holder_commitment(
+        &mut self,
+        new_current_commitment_number: u64,
+    ) -> Result<(PublicKey, Option<SecretKey>), Status> {
+        let validator = self.validator();
+        let (next_holder_commitment_point, maybe_old_secret) = if let Some((info2, sigs)) =
+            self.enforcement_state.next_holder_commit_info.take()
+        {
+            let incoming_payment_summary =
+                self.enforcement_state.incoming_payments_summary(Some(&info2), None);
+            let outgoing_payment_summary =
+                self.enforcement_state.payments_summary(Some(&info2), None);
+
+            let node = self.get_node();
+            let mut state = node.get_state();
+
+            let delta =
+                self.enforcement_state.claimable_balances(&*state, Some(&info2), None, &self.setup);
+
+            let (next_holder_commitment_point, maybe_old_secret) = self
+                .advance_holder_commitment_state(
+                    validator.clone(),
+                    new_current_commitment_number,
+                    info2,
+                    sigs,
+                )?;
+
+            state.apply_payments(
+                &self.id0,
+                &incoming_payment_summary,
+                &outgoing_payment_summary,
+                &delta,
+                validator,
+            );
+            (next_holder_commitment_point, maybe_old_secret)
+        } else {
+            // this will check that we are doing an idempotent operation (i.e. we are
+            // revoking a commitment that we have already revoked)
+            self.revoke_previous_commitment(new_current_commitment_number)?
+        };
+
+        trace_enforcement_state!(self);
+        self.persist()?;
         Ok((next_holder_commitment_point, maybe_old_secret))
     }
 
@@ -1581,6 +1633,8 @@ impl Channel {
             &counterparty_sig,
             &htlc_sigs,
         )?;
+
+        self.revoke_previous_holder_commitment(commit_num)?;
         Ok(())
     }
 
@@ -2008,7 +2062,7 @@ impl Channel {
         received_htlcs: Vec<HTLCInfo2>,
         counterparty_commit_sig: &Signature,
         counterparty_htlc_sigs: &[Signature],
-    ) -> Result<(PublicKey, Option<SecretKey>), Status> {
+    ) -> Result<(), Status> {
         let validator = self.validator();
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
         let txkeys = self
@@ -2029,7 +2083,7 @@ impl Channel {
             )?;
 
         let node = self.get_node();
-        let mut state = node.get_state();
+        let state = node.get_state();
         let delta =
             self.enforcement_state.claimable_balances(&*state, Some(&info2), None, &self.setup);
 
@@ -2051,28 +2105,49 @@ impl Channel {
             validator.clone(),
         )?;
 
-        let counterparty_signatures =
-            CommitmentSignatures(counterparty_commit_sig.clone(), counterparty_htlc_sigs.to_vec());
-        let (next_holder_commitment_point, maybe_old_secret) = self
-            .advance_holder_commitment_state(
-                validator.clone(),
-                commitment_number,
-                info2,
-                counterparty_signatures,
-            )?;
-
-        state.apply_payments(
-            &self.id0,
-            &incoming_payment_summary,
-            &outgoing_payment_summary,
-            &delta,
-            validator,
-        );
+        if commitment_number == self.enforcement_state.next_holder_commit_num {
+            let counterparty_signatures = CommitmentSignatures(
+                counterparty_commit_sig.clone(),
+                counterparty_htlc_sigs.to_vec(),
+            );
+            self.enforcement_state.next_holder_commit_info = Some((info2, counterparty_signatures));
+        }
 
         trace_enforcement_state!(self);
         self.persist()?;
 
-        Ok((next_holder_commitment_point, maybe_old_secret))
+        Ok(())
+    }
+
+    /// Activate commitment 0 explicitly
+    ///
+    /// Commitment 0 is special because it doesn't have a predecessor
+    /// commitment.  Since the revocation of the prior commitment normally makes
+    /// a new commitment "current" this final step must be invoked explicitly.
+    ///
+    /// Returns the next per_commitment_point.
+    pub fn activate_initial_commitment(&mut self) -> Result<PublicKey, Status> {
+        debug!("activate_initial_commitment");
+
+        if self.enforcement_state.next_holder_commit_num != 0 {
+            return Err(invalid_argument(format!(
+                "activate_initial_commitment called with next_holder_commit_num {}",
+                self.enforcement_state.next_holder_commit_num
+            )));
+        }
+
+        // Remove the info and sigs from next holder and make current
+        if let Some((info2, sigs)) = self.enforcement_state.next_holder_commit_info.take() {
+            self.enforcement_state.set_next_holder_commit_num(1, info2, sigs);
+        } else {
+            return Err(invalid_argument(format!(
+                "activate_initial_commitment called before validation of the initial commitment"
+            )));
+        }
+
+        trace_enforcement_state!(self);
+        self.persist()?;
+        Ok(self.get_per_commitment_point_unchecked(1))
     }
 
     /// Process the counterparty's revocation

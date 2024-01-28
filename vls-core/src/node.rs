@@ -3790,8 +3790,7 @@ mod tests {
         let mut setup = make_test_channel_setup();
         setup.commitment_type = CommitmentType::AnchorsZeroFeeHtlc;
 
-        node.setup_channel(channel_id.clone(), None, setup, &vec![])
-            .expect("ready channel");
+        node.setup_channel(channel_id.clone(), None, setup, &vec![]).expect("ready channel");
 
         let uck = node
             .with_channel(&channel_id, |chan| chan.get_unilateral_close_key(&None, &None))

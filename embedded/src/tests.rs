@@ -303,6 +303,7 @@ fn next_state(
     offered: Vec<HTLCInfo2>,
     received: Vec<HTLCInfo2>,
 ) {
+    myprintln!("next_state {}", commit_num);
     let per_commitment_point = channel.get_per_commitment_point(commit_num).unwrap();
     let per_commitment_point1 = channel1.get_per_commitment_point(commit_num).unwrap();
 
@@ -342,6 +343,7 @@ fn next_state(
             &htlc_sigs1,
         )
         .unwrap();
+    channel.revoke_previous_holder_commitment(commit_num).unwrap();
 
     channel1
         .validate_holder_commitment_tx_phase2(
@@ -355,6 +357,7 @@ fn next_state(
             &htlc_sigs,
         )
         .unwrap();
+    channel1.revoke_previous_holder_commitment(commit_num).unwrap();
 
     if commit_num > 0 {
         let revoke = channel.get_per_commitment_secret(commit_num - 1).unwrap();

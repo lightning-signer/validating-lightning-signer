@@ -837,7 +837,7 @@ impl Validator for SimpleValidator {
             policy_err!(
                 self,
                 "policy-commitment-holder-not-revoked",
-                "can't sign revoked commitment_number {}, \
+                "can't validate revoked commitment_number {}, \
                  next_holder_commit_num is {}",
                 commit_num,
                 estate.next_holder_commit_num
