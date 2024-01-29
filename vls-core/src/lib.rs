@@ -55,7 +55,7 @@ pub mod wallet;
 
 #[cfg(not(feature = "std"))]
 mod io_extras {
-    pub use core2::io::{self, Error, Read, Write};
+    pub use core2::io::{self, Error};
 
     /// A writer which will move data into the void.
     pub struct Sink {

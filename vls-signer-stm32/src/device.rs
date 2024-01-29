@@ -75,7 +75,8 @@ mod device_specific {
         gpio::{Alternate, Input, OpenDrain, Output, Pin},
     };
 
-    pub use ft6x06::long_hard_reset;
+    // pub use ft6x06::long_hard_reset; // why is this no longer used? Mon Jan 29 PST 2024
+
     pub type LcdSubBank = SubBank3;
     pub type LcdResetPin = Pin<'B', 13_u8, Output>;
     pub use stm32f4::stm32f413::FSMC;
