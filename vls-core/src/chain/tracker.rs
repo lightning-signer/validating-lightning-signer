@@ -16,7 +16,7 @@ use bitcoin::{
 
 use crate::policy::validator::ValidatorFactory;
 #[allow(unused_imports)]
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use push_decoder::{BlockDecoder, Listener as PushListener};
 use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -316,6 +316,7 @@ impl<L: ChainListener> ChainTracker<L> {
             ProofType::ExternalBlock() => self.notify_listeners_remove(None, tip_block_hash, None),
         };
 
+        info!("removed block {}: {}", self.height, &self.tip.0.block_hash());
         let mut headers = self.headers.pop_front().expect("already checked");
         mem::swap(&mut self.tip, &mut headers);
         self.height -= 1;
@@ -435,6 +436,7 @@ impl<L: ChainListener> ChainTracker<L> {
         self.headers.push_front(self.tip.clone());
         self.tip = Headers(header, filter_header);
         self.height += 1;
+        info!("added block {}: {}", self.height, &self.tip.0.block_hash());
         Ok(())
     }
 

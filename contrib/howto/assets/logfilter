@@ -1,11 +1,16 @@
 #!/bin/bash
 
-# Initialize log context variables
+# Categories
 all=false
 vls=false
 lightningd=false
 proxy=false
+lssd=false
+bitcoind=false
 integration=false
+
+# Default level
+level=3
 
 # Postprocessing
 watches=false
@@ -15,22 +20,36 @@ channelid=""
 dbid=""
 funding=""
 
+# Add newlines before start heralds
+spacers=true
+
 # Function to display usage
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [OPTION...] [-- REGEXP...]
 
+Sources:
  -a, --all           Match key lines from all servers
  -v, --vls           Match key lines from the vls signer
  -l, --lightningd    Match key lines from lightningd
  -p, --proxy         Match key lines from the remote_hsmd proxy
+ -s, --lssd          Match key lines from the lssd
+ -b  --bitcoind      Match key lines from bitcond
  -i, --integration   Match key lines from the integration framework
 
- -w, --watches       Shorten {Forward,Reverse}WatchesReply lines
+Levels:
+ -l, --level=1       Display errors and warnings
+ -l, --level=2       Add lifecycle (startup, version, shutdown, ...)
+ -l, --level=3       Add progress (blocks, L1 msgs, ...) [DEFAULT]
+ -l, --level=4       Add messages (L2 msgs, ...)
 
+Constructed regexps:
  -c, --channelid=CHANNELID   Match lines for CHANNELID
  -d, --dbid=DBID             Match lines for database id DBID
  -f, --funding=TXID:VOUT     Match lines for funding outpoint TXID:VOUT
+
+Postprocessing:
+ -w, --watches       Shorten {Forward,Reverse}WatchesReply lines
 
 EOF
     [ "$1" = "exit" ] && exit 1
@@ -38,12 +57,19 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -a|--all) all=true; shift ;;
-        -v|--vls) vls=true; shift ;;
-        -l|--lightningd) lightningd=true; shift ;;
-        -p|--proxy) proxy=true; shift ;;
+        -a|--all)		all=true; shift ;;
+        -v|--vls)		vls=true; shift ;;
+        -l|--lightningd)	lightningd=true; shift ;;
+        -p|--proxy)		proxy=true; shift ;;
+        -s|--lssd)		lssd=true; shift ;;
+        -b|--bitcoind)		bitcoind=true; shift ;;
+        -i|--integration)	integration=true; shift ;;
 
-        -w|--watches) watches=true; shift ;;
+        -l|--level*)
+            level="${1#*=}"
+            [[ "$level" == "$1" ]] && level="$2" && shift
+            shift
+            ;;
 
         -c|--channelid*)
             channelid="${1#*=}"
@@ -61,51 +87,130 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
 
+        -w|--watches) watches=true; shift ;;
+
         --) shift; break ;; # Stop option parsing on '--'
         *) usage exit;; # Handle unknown options
     esac
 done
+
+# If $all is set, turn on all the categories
+if $all; then
+    vls=true
+    lightningd=true
+    proxy=true
+    lssd=true
+    bitcoind=true
+    integration=true
+fi
 
 # ----------------------------------------------------------------
 # Setup the interest filter
 
 regex=""
 
-# VLS startup and warns
-if $vls || $all; then
-    regex+="git_desc|"
-    regex+="\bWARN\b|"
-    regex+="\bERROR\b|"
-    regex+="received error from handler|"
-    regex+="panicked at|"
-    regex+="added block|"
-    regex+="removed block|"
+# VLS
+if $vls; then
+    pfx="vlsd2/"
+    if [[ $level -ge 1 ]]; then
+        regex+="${pfx}.*WARN|"
+        regex+="${pfx}.*ERROR|"
+        regex+="${pfx}.*received error from handler|"
+        regex+="${pfx}.*panicked at|"
+    fi
+    if [[ $level -ge 2 ]]; then
+        regex+="${pfx}.*git_desc|"
+        regex+="${pfx}.*setting hsmd_protocol_version to|"
+    fi
+    if [[ $level -ge 3 ]]; then
+        regex+="${pfx}.*added block|"
+        regex+="${pfx}.*removed block|"
+        regex+="${pfx}.*forget_channel|"
+    fi
+    # if [[ $level -ge 4 ]]; then
+    # fi
+fi
+
+# CLN and CLBOSS
+if $lightningd; then
+    if [[ $level -ge 1 ]]; then
+        regex+="BROKEN|"
+        regex+="UNUSUAL|"
+        regex+="sendrawtx exit\\s[1-9][0-9]*|"
+        regex+="error broadcasting tx|"
+    fi
+    if [[ $level -ge 2 ]]; then
+        regex+="Server started|"
+        regex+=": Shutting down|"
+    fi
+    if [[ $level -ge 3 ]]; then
+        regex+="New block at|"
+        regex+="Adding block|"
+        regex+="Removing stale block|"
+        regex+="State changed from|"
+    fi
+    # if [[ $level -ge 4 ]]; then
+    # fi
 fi
 
 # proxy startup and warns
-if $proxy || $all; then
-    regex+="git_desc|"
-    regex+="\bWARN\b|"
-    regex+="\bERROR\b|"
-    regex+="signer error|"
+if $proxy; then
+    pfx="remote_hsmd_socket/"
+    if [[ $level -ge 1 ]]; then
+        regex+="${pfx}.*WARN|"
+        regex+="${pfx}.*ERROR|"
+        regex+="${pfx}.*signer error|"
+    fi
+    if [[ $level -ge 2 ]]; then
+        regex+="${pfx}.*git_desc|"
+    fi
+    if [[ $level -ge 3 ]]; then
+        regex+="${pfx}.*ForgetChannel\(|"
+    fi
+    # if [[ $level -ge 4 ]]; then
+    # fi
 fi
 
-# CLN and CLBOSS startup, block heralds, and warns
-if $lightningd || $all; then
-    regex+="Server started|"
-    regex+="New block at|"
-    regex+="Adding block|"
-    regex+="Removing stale block|"
-    regex+="BROKEN|"
-    regex+="UNUSUAL|"
-    regex+="State changed from|"
+# lssd startup and warns
+if $lssd; then
+    regex+="lssd|"
 fi
 
-# sendrawtx with non-zero exit status
-if $lightningd || $all; then
-    regex+="sendrawtx exit\\s[1-9][0-9]*|"
-    regex+="error broadcasting tx|"
+# bitcoind startup and warns
+if $bitcoind; then
+    # if [[ $level -ge 1 ]]; then
+    # fi
+    if [[ $level -ge 2 ]]; then
+        regex+="Bitcoin Core version|"
+        regex+="Shutdown:|"
+        regex+="Config file arg|"
+        regex+="Command-line arg|"
+    fi
+    if [[ $level -ge 3 ]]; then
+        regex+="UpdateTip:|"
+        regex+="Enqueuing TransactionAddedToMempool:|"
+        regex+="\[lightningd-tests\]|"
+    fi
+    # if [[ $level -ge 4 ]]; then
+    # fi
 fi
+
+# Integration testing
+if $integration; then
+    if [[ $level -ge 1 ]]; then
+        regex+="Time-out:|"
+        regex+="-stderr:|"
+    fi
+    if [[ $level -ge 2 ]]; then
+        regex+='==== ([0-9]+ passed)?,?([0-9]+ warnings)?,?([0-9]+ failed)?.* ====|'
+    fi
+    # if [[ $level -ge 3 ]]; then
+    # fi
+    # if [[ $level -ge 4 ]]; then
+    # fi
+fi
+
+# ----------------
 
 # Channelid might be special in the future
 if [[ -n $channelid ]]; then
@@ -114,7 +219,7 @@ fi
 
 # CLN dbid
 if [[ -n $dbid ]]; then
-    regex+="(dbid:? |chan#)$dbid\b|"
+    regex+="(dbid:? |chan#)$dbid|"
 fi
 
 # Funding outpoint
@@ -122,15 +227,10 @@ if [[ -n $funding ]]; then
     IFS=':' read -ra ADDR <<< "$funding"
     hex_number="${ADDR[0]}"
     decimal_number="${ADDR[1]}"
-    regex+="$hex_number, (vout|funding_txout|outnum): $decimal_number\b|"
+    regex+="$hex_number, (vout|funding_txout|outnum): $decimal_number|"
 fi
 
-# Integration testing
-if $integration || $all; then
-    regex+="Time-out:|"
-    regex+="-stderr:|"
-    regex+='==== ([0-9]+ passed)?,?([0-9]+ warnings)?,?([0-9]+ failed)?.* ===='
-fi
+# ----------------
 
 # Append remaining arguments to the regex after '--'
 for arg in "$@"; do
@@ -141,22 +241,28 @@ done
 regex=${regex%|}
 
 # ----------------------------------------------------------------
-# Setup the lame hit removal filter
+# Setup the noisy hit removal filter
 
 vregex=""
 
-if $vls || $all; then
+if $vls; then
     vregex+="error connecting to node, will retry|"
 fi
 
-if $lightningd || $all; then
+if $lightningd; then
     vregex+="Ignoring fee limits|"
     vregex+='/swapstatus .* not accessible|'
     vregex+='read loop .* saw error Protocol.*; ending|'
+    vregex+='error code: -25.*bad-txns-inputs-missingorspent|'
+    vregex+='error code: -27.*Transaction already in block chain|'
+fi
+
+if $bitcoind; then
+    vregex+="AddToWallet|"
 fi
 
 # Integration testing
-if $integration || $all; then
+if $integration; then
     vregex+="Waiting for .* in the logs|"
     vregex+="Found .* in logs|"
     vregex+="Did not find .* in logs|"
@@ -181,6 +287,16 @@ fi
 # Append the final grep command only if vregex has content
 if [[ -n $vregex ]]; then
     cmd+=" | grep -E -v '$vregex'"
+fi
+
+# Add newlines before start heralds
+if $spacers; then
+    sregex=""
+    sregex+="git_desc|"
+    sregex+="Server started|"
+    sregex+="Bitcoin Core version|"
+    sregex=${sregex%|}
+    cmd+=" | awk '/'\"$sregex\"'/ {print \"\"; print; next;} {print}'"
 fi
 
 # Execute the constructed command

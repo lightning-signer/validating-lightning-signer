@@ -42,6 +42,7 @@ use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
 use lightning_signer::chain::tracker::Error as TrackerError;
 use lightning_signer::util::crypto_utils::signature_to_bitcoin_vec;
+use lightning_signer::util::debug_utils::DebugUnilateralCloseInfo;
 use lightning_signer::util::status::{Code, Status};
 use lightning_signer::wallet::Wallet;
 use serde_bolt::{to_vec, Array, Octets, WireString, WithSize};
@@ -389,7 +390,14 @@ impl RootHandler {
             }
         }
 
-        dbgvals!(ipaths, opaths, tx.txid(), tx, streamed.segwit_flags, uniclosekeys);
+        dbgvals!(
+            ipaths,
+            opaths,
+            tx.txid(),
+            tx,
+            streamed.segwit_flags,
+            DebugUnilateralCloseInfo(&uniclosekeys)
+        );
 
         let approved = self.approver.handle_proposed_onchain(
             &self.node,

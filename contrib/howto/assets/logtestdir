@@ -1,0 +1,65 @@
+#!/bin/bash
+
+# Check if an argument is provided
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <directory>"
+    exit 1
+fi
+
+DIR=$1
+
+# Check if the directory exists
+if [ ! -d "$DIR" ]; then
+    echo "Directory does not exist: $DIR"
+    exit 1
+fi
+
+# Use the scripts from where we got this script
+SCRIPT_PATH=$(realpath "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
+LOGFILTER="$SCRIPT_DIR/logfilter"
+
+# Change to the specified directory
+cd "$DIR" || exit 1
+
+INCLUDE_FILES='.*\(log\|errlog\).*'
+
+# Reasons:
+# vlsd/log is a duplicate (and gets truncated on restarts)
+# debug.log is a duplicate
+# chainstate and friends are db transaction logs
+EXCLUDE_FILES="\
+.*/vlsd/log\
+\|.*/regtest/debug.log\
+\|.*/regtest/\(chainstate\|indexes\|blocks\)/.*\
+"
+OUTPUT_FILE="SUMMARY.md"
+
+# Get the absolute path of the directory
+ABSOLUTE_PATH=$(realpath ".")
+
+# Read the sorted output of find into an array
+readarray -t FILE_ARRAY < <(find . -type f -size +0 -regex "$INCLUDE_FILES" ! -regex "$EXCLUDE_FILES" | sort)
+
+echo "creating $ABSOLUTE_PATH/$OUTPUT_FILE"
+
+# Write the header to the output file
+echo "### Directory: $ABSOLUTE_PATH"				> "$OUTPUT_FILE"
+echo ""								>> "$OUTPUT_FILE"
+echo "**WARNING: ABRIDGED, THE TRUTH IS IN THE LOGS ...**"	>> "$OUTPUT_FILE"
+
+# Iterate over the array
+for FILE_PATH in "${FILE_ARRAY[@]}"; do
+    trimmed_path="${FILE_PATH#./}"
+    echo ""							>> "$OUTPUT_FILE"
+    echo "#### [\`$trimmed_path\`](<$trimmed_path>)"		>> "$OUTPUT_FILE"
+    echo "\`\`\`"						>> "$OUTPUT_FILE"
+    if [[ "$FILE_PATH" == */errlog ]]; then
+        # If the file ends with /errlog, concatenate
+        cat "$FILE_PATH"                                	>> "$OUTPUT_FILE"
+    else
+        # Otherwise, use logfilter
+        $LOGFILTER -a < "$FILE_PATH"                    	>> "$OUTPUT_FILE"
+    fi
+    echo "\`\`\`"						>> "$OUTPUT_FILE"
+done

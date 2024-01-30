@@ -2,6 +2,7 @@ use crate::node::{PaymentState, RoutedPayment};
 use crate::prelude::*;
 use bitcoin::hashes::hex;
 use bitcoin::hashes::hex::ToHex;
+use bitcoin::secp256k1::SecretKey;
 use bitcoin::util::address::Payload;
 use bitcoin::{Address, Network, Script};
 use lightning::ln::chan_utils::{
@@ -201,6 +202,27 @@ pub struct DebugWitVec<'a>(pub &'a Vec<(Vec<u8>, Vec<u8>)>);
 impl<'a> core::fmt::Debug for DebugWitVec<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
         f.debug_list().entries(self.0.iter().map(|ww| DebugWitness(ww))).finish()
+    }
+}
+
+/// Debug support for a unilateral close key
+pub struct DebugUnilateralCloseKey<'a>(pub &'a (SecretKey, Vec<Vec<u8>>));
+impl<'a> core::fmt::Debug for DebugUnilateralCloseKey<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_tuple("UnilateralCloseKey")
+            .field(&self.0 .0)
+            .field(&DebugVecVecU8(&self.0 .1))
+            .finish()
+    }
+}
+
+/// Debug support for unilateral close info
+pub struct DebugUnilateralCloseInfo<'a>(pub &'a Vec<Option<(SecretKey, Vec<Vec<u8>>)>>);
+impl<'a> core::fmt::Debug for DebugUnilateralCloseInfo<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_list()
+            .entries(self.0.iter().map(|o| o.as_ref().map(|vv| DebugUnilateralCloseKey(&vv))))
+            .finish()
     }
 }
 

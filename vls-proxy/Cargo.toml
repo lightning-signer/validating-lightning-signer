@@ -82,11 +82,11 @@ tonic-build = "0.9"
 name = "vls_proxy"
 path = "src/lib.rs"
 
-[[bin]]
-# A single-binary drop-in replacement for hsmd with an in-process VLS
-# AKA cln:inplace
-name = "remote_hsmd_inplace"
-path = "src/inplace_main.rs"
+# [[bin]]
+# # A single-binary drop-in replacement for hsmd with an in-process VLS
+# # AKA cln:inplace
+# name = "remote_hsmd_inplace"
+# path = "src/inplace_main.rs"
 
 [[bin]]
 # A drop-in replacement for hsmd, communicating to an embedded VLS over a serial port
