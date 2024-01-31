@@ -207,10 +207,19 @@ fn log_reply(reply: &Box<dyn SerBolt>) {
     debug!("{:#?}", reply);
 }
 
+/// Initial protocol handler, for negotiating the protocol version
+#[derive(Clone)]
+pub struct InitHandler {
+    id: u64,
+    node: Arc<Node>,
+    approver: Arc<dyn Approve>,
+    protocol_version: Option<u32>,
+}
+
 /// Protocol handler
 #[derive(Clone)]
 pub struct RootHandler {
-    pub(crate) id: u64,
+    id: u64,
     node: Arc<Node>,
     approver: Arc<dyn Approve>,
 }
@@ -220,7 +229,7 @@ pub struct RootHandler {
 /// WARNING: if you don't specify a seed, and you persist to LSS, you must get the seed
 /// from the builder and persist it yourself.  LSS does not persist the seed.
 /// If you don't persist, you will lose your keys.
-pub struct RootHandlerBuilder {
+pub struct HandlerBuilder {
     network: Network,
     id: u64,
     seed: [u8; 32],
@@ -229,15 +238,15 @@ pub struct RootHandlerBuilder {
     approver: Arc<dyn Approve>,
 }
 
-impl RootHandlerBuilder {
+impl HandlerBuilder {
     /// Create a RootHandlerBuilder
     pub fn new(
         network: Network,
         id: u64,
         services: NodeServices,
         seed: [u8; 32],
-    ) -> RootHandlerBuilder {
-        RootHandlerBuilder {
+    ) -> HandlerBuilder {
+        HandlerBuilder {
             network,
             id,
             seed,
@@ -264,7 +273,7 @@ impl RootHandlerBuilder {
     /// Returns the handler and any mutations that need to be stored.
     /// You must call [`Handler::commit`] after you persist the mutations in the
     /// cloud.
-    pub fn build(self) -> Result<(RootHandler, Mutations)> {
+    pub fn build(self) -> Result<(InitHandler, Mutations)> {
         let persister = self.services.persister.clone();
         persister.enter().map_err(|e| {
             error!("failed to enter persister: {:?}", e);
@@ -282,7 +291,7 @@ impl RootHandlerBuilder {
         Node::make_keys_manager(config, &self.seed, &self.services)
     }
 
-    fn do_build(self) -> Result<RootHandler> {
+    fn do_build(self) -> Result<InitHandler> {
         let config = NodeConfig::new(self.network);
 
         let persister = self.services.persister.clone();
@@ -304,7 +313,7 @@ impl RootHandlerBuilder {
         };
         trace_node_state!(node.get_state());
 
-        Ok(RootHandler { id: self.id, node, approver: self.approver })
+        Ok(InitHandler::new(self.id, node, self.approver))
     }
 
     /// The persister
@@ -423,6 +432,124 @@ impl RootHandler {
     }
 }
 
+impl InitHandler {
+    /// Create a new InitHandler
+    pub fn new(id: u64, node: Arc<Node>, approver: Arc<dyn Approve>) -> InitHandler {
+        InitHandler { id, node, approver, protocol_version: None }
+    }
+
+    /// Get the associated node
+    pub fn node(&self) -> &Arc<Node> {
+        &self.node
+    }
+
+    /// Convert to RootHandler.
+    ///
+    /// Panics if initial negotiation is not complete - see [`InitHandler::handle`].
+    pub fn into_root_handler(self) -> RootHandler {
+        assert!(self.protocol_version.is_some(), "initial negotiation not complete");
+        RootHandler { id: self.id, node: self.node, approver: self.approver }
+    }
+
+    /// Handle a request message, returning a boolean indicating whether the initial negotiation is complete
+    /// and a response.
+    ///
+    /// Panics if initial negotiation is already complete.
+    pub fn handle(&mut self, msg: Message) -> Result<(bool, Box<dyn SerBolt>)> {
+        assert!(self.protocol_version.is_none(), "initial negotiation already complete");
+        log_request(&msg);
+        let result = self.do_handle(msg);
+        if let Err(ref err) = result {
+            log_error(err);
+        }
+        let (is_done, reply) = result?;
+        log_reply(&reply);
+        Ok((is_done, reply))
+    }
+
+    fn do_handle(&mut self, msg: Message) -> Result<(bool, Box<dyn SerBolt>)> {
+        match msg {
+            Message::Ping(p) => {
+                info!("got ping with {} {}", p.id, String::from_utf8(p.message.0).unwrap());
+                let reply =
+                    msgs::Pong { id: p.id, message: WireString("pong".as_bytes().to_vec()) };
+                Ok((false, Box::new(reply)))
+            }
+            Message::HsmdInit(m) => {
+                let node_id = self.node.get_id().serialize();
+                let bip32 = self.node.get_account_extended_pubkey().encode();
+                let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
+                if m.hsm_wire_max_version < 4 {
+                    self.protocol_version = Some(2);
+                    return Ok((
+                        true,
+                        Box::new(msgs::HsmdInitReplyV2 {
+                            node_id: PubKey(node_id),
+                            bip32: ExtKey(bip32),
+                            bolt12: PubKey(bolt12_pubkey),
+                        }),
+                    ));
+                }
+                assert!(
+                    m.hsm_wire_min_version <= 4,
+                    "node's minimum hsm wire version too large: {} > {}",
+                    m.hsm_wire_min_version,
+                    4
+                );
+                assert!(
+                    m.hsm_wire_max_version >= 4,
+                    "node's maximum hsm wire version too small: {} < {}",
+                    m.hsm_wire_max_version,
+                    4
+                );
+                self.protocol_version = Some(4);
+                Ok((
+                    true,
+                    Box::new(msgs::HsmdInitReplyV4 {
+                        hsm_version: 4,
+                        hsm_capabilities: vec![
+                            msgs::CheckPubKey::TYPE as u32,
+                            msgs::SignAnyDelayedPaymentToUs::TYPE as u32,
+                            msgs::SignAnchorspend::TYPE as u32,
+                            msgs::SignHtlcTxMingle::TYPE as u32,
+                            // TODO advertise splicing when it is implemented
+                            // msgs::SignSpliceTx::TYPE as u32,
+                            msgs::CheckOutpoint::TYPE as u32,
+                            msgs::ForgetChannel::TYPE as u32,
+                        ]
+                        .into(),
+                        node_id: PubKey(node_id),
+                        bip32: ExtKey(bip32),
+                        bolt12: PubKey(bolt12_pubkey),
+                    }),
+                ))
+            }
+            Message::HsmdInit2(m) => {
+                let bip32 = self.node.get_account_extended_pubkey().encode();
+                let node_id = self.node.get_id().serialize();
+                let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
+                let allowlist: Vec<_> = m
+                    .dev_allowlist
+                    .iter()
+                    .map(|ws| String::from_utf8(ws.0.clone()).expect("utf8"))
+                    .collect();
+                // FIXME disable in production
+                self.node.add_allowlist(&allowlist)?;
+                self.protocol_version = Some(4);
+                Ok((
+                    true,
+                    Box::new(msgs::HsmdInit2Reply {
+                        node_id: PubKey(node_id),
+                        bip32: ExtKey(bip32),
+                        bolt12: PubKey(bolt12_pubkey),
+                    }),
+                ))
+            }
+            m => unimplemented!("init loop {}: unimplemented message {:?}", self.id, m),
+        }
+    }
+}
+
 impl Handler for RootHandler {
     fn do_handle(&self, msg: Message) -> Result<Box<dyn SerBolt>> {
         match msg {
@@ -472,64 +599,6 @@ impl Handler for RootHandler {
                 let sig = self.node.sign_message(&m.message)?;
                 let sig_slice = sig.try_into().expect("recoverable signature size");
                 Ok(Box::new(msgs::SignMessageReply { signature: RecoverableSignature(sig_slice) }))
-            }
-            Message::HsmdInit(m) => {
-                let node_id = self.node.get_id().serialize();
-                let bip32 = self.node.get_account_extended_pubkey().encode();
-                let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
-                if m.hsm_wire_max_version < 4 {
-                    return Ok(Box::new(msgs::HsmdInitReplyV2 {
-                        node_id: PubKey(node_id),
-                        bip32: ExtKey(bip32),
-                        bolt12: PubKey(bolt12_pubkey),
-                    }));
-                }
-                assert!(
-                    m.hsm_wire_min_version <= 4,
-                    "node's minimum hsm wire version too large: {} > {}",
-                    m.hsm_wire_min_version,
-                    4
-                );
-                assert!(
-                    m.hsm_wire_max_version >= 4,
-                    "node's maximum hsm wire version too small: {} < {}",
-                    m.hsm_wire_max_version,
-                    4
-                );
-                Ok(Box::new(msgs::HsmdInitReplyV4 {
-                    hsm_version: 4,
-                    hsm_capabilities: vec![
-                        msgs::CheckPubKey::TYPE as u32,
-                        msgs::SignAnyDelayedPaymentToUs::TYPE as u32,
-                        msgs::SignAnchorspend::TYPE as u32,
-                        msgs::SignHtlcTxMingle::TYPE as u32,
-                        // TODO advertise splicing when it is implemented
-                        // msgs::SignSpliceTx::TYPE as u32,
-                        msgs::CheckOutpoint::TYPE as u32,
-                        msgs::ForgetChannel::TYPE as u32,
-                    ]
-                    .into(),
-                    node_id: PubKey(node_id),
-                    bip32: ExtKey(bip32),
-                    bolt12: PubKey(bolt12_pubkey),
-                }))
-            }
-            Message::HsmdInit2(m) => {
-                let bip32 = self.node.get_account_extended_pubkey().encode();
-                let node_id = self.node.get_id().serialize();
-                let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
-                let allowlist: Vec<_> = m
-                    .dev_allowlist
-                    .iter()
-                    .map(|ws| String::from_utf8(ws.0.clone()).expect("utf8"))
-                    .collect();
-                // FIXME disable in production
-                self.node.add_allowlist(&allowlist)?;
-                Ok(Box::new(msgs::HsmdInit2Reply {
-                    node_id: PubKey(node_id),
-                    bip32: ExtKey(bip32),
-                    bolt12: PubKey(bolt12_pubkey),
-                }))
             }
             Message::Ecdh(m) => {
                 let pubkey = PublicKey::from_slice(&m.point.0).expect("pubkey");

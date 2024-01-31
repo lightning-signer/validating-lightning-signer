@@ -34,7 +34,7 @@ use vls_protocol::model::PubKey;
 use vls_protocol::msgs::{self, read_serial_request_header, write_serial_response_header, Message};
 use vls_protocol::serde_bolt::WireString;
 use vls_protocol_signer::approver::{Approve, WarningPositiveApprover};
-use vls_protocol_signer::handler::{Handler, RootHandler, RootHandlerBuilder};
+use vls_protocol_signer::handler::{Handler, InitHandler, RootHandler, HandlerBuilder};
 use vls_protocol_signer::lightning_signer;
 use vls_protocol_signer::lightning_signer::bitcoin;
 use vls_protocol_signer::vls_protocol;
@@ -111,7 +111,7 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
 
     info!("start_normal_mode {:?}", runctx);
 
-    let root_handler = {
+    let mut init_handler = {
         let mut devctx = runctx.cmn.devctx.borrow_mut();
 
         devctx.disp.clear_screen();
@@ -138,7 +138,7 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
         let seed = runctx.seed;
         let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive);
         let (root_handler, _muts) =
-            RootHandlerBuilder::new(runctx.cmn.network, 0, services, seed.0)
+            HandlerBuilder::new(runctx.cmn.network, 0, services, seed.0)
                 .allowlist(allowlist)
                 .approver(approver)
                 .build()
@@ -154,7 +154,35 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
         root_handler
     };
 
-    handle_requests(runctx.cmn.devctx, root_handler);
+    handle_init_requests(&*runctx.cmn.devctx, &mut init_handler);
+    let root_handler = init_handler.into_root_handler();
+    handle_requests(&*runctx.cmn.devctx, root_handler);
+}
+
+fn handle_init_requests(arc_devctx: &RefCell<DeviceContext>, init_handler: &mut InitHandler) {
+    loop {
+        let mut devctx = arc_devctx.borrow_mut();
+
+        let reqhdr = read_serial_request_header(&mut devctx.serial).expect("read request header");
+
+        let message = msgs::read(&mut devctx.serial).expect("message read failed");
+
+        if reqhdr.dbid > 0 {
+            panic!("dbid > 0 not supported during init");
+        }
+
+        drop(devctx); // Release the DeviceContext during the handler call (Approver needs)
+        let (is_done, reply) =
+            init_handler.handle(message).expect("handle");
+        let mut devctx = arc_devctx.borrow_mut(); // Reacquire the DeviceContext
+
+        write_serial_response_header(&mut devctx.serial, reqhdr.sequence)
+            .expect("write reply header");
+        msgs::write_vec(&mut devctx.serial, reply.as_vec()).expect("write reply");
+        if is_done {
+            break;
+        }
+    }
 }
 
 // Start the signer in test mode, use the seed from the initial HsmdInit2 message.
@@ -197,25 +225,26 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         let allowlist = init.dev_allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
         let seed = init.dev_seed.as_ref().map(|s| s.0).expect("no seed");
         let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive);
-        let (root_handler, _muts) = RootHandlerBuilder::new(runctx.cmn.network, 0, services, seed)
+        let (mut init_handler, _muts) = HandlerBuilder::new(runctx.cmn.network, 0, services, seed)
             .allowlist(allowlist)
             .approver(approver)
             .build()
             .expect("handler build");
-        let (init_reply, _muts) =
-            root_handler.handle(Message::HsmdInit2(init)).expect("handle init");
+        let (is_done, init_reply) =
+            init_handler.handle(Message::HsmdInit2(init)).expect("handle init");
+        assert!(is_done, "init handler not done");
         write_serial_response_header(&mut devctx.serial, reqhdr.sequence)
             .expect("write init header");
         msgs::write_vec(&mut devctx.serial, init_reply.as_vec()).expect("write init reply");
 
         info!("used {} bytes", heap_bytes_used());
-        root_handler
+        init_handler.into_root_handler()
     };
 
-    handle_requests(runctx.cmn.devctx, root_handler);
+    handle_requests(&*runctx.cmn.devctx, root_handler);
 }
 
-fn handle_requests(arc_devctx: Arc<RefCell<DeviceContext>>, root_handler: RootHandler) -> ! {
+fn handle_requests(arc_devctx: &RefCell<DeviceContext>, root_handler: RootHandler) -> ! {
     let mut tracks = tracks::Tracks::new();
     let mut numreq = 0_u64;
     loop {
