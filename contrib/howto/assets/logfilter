@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Use the scripts from where we got this script
+SCRIPT_PATH=$(realpath "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
+LOGELIDE="$SCRIPT_DIR/logelide"
+
 # Categories
 all=false
 everything=false
@@ -317,6 +322,9 @@ if $spacers; then
     sregex=${sregex%|}
     cmd+=" | awk '/'\"$sregex\"'/ {print \"\"; print; next;} {print}'"
 fi
+
+# Elide consecutive runs of lines
+cmd+=" | $LOGELIDE"
 
 # Execute the constructed command
 eval "$cmd"
