@@ -18,7 +18,7 @@ use lightning::util::ser::Writer;
 use serde::de::SeqAccess;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_with::serde_as;
+use serde_with::{serde_as, IfIsHumanReadable};
 use serde_with::{DeserializeAs, SerializeAs};
 
 use crate::channel::ChannelId;
@@ -73,15 +73,15 @@ impl<'de> DeserializeAs<'de, ChannelId> for ChannelIdHandler {
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "ChannelPublicKeys")]
 pub struct ChannelPublicKeysDef {
-    #[serde_as(as = "PublicKeyHandler")]
+    #[serde_as(as = "IfIsHumanReadable<PublicKeyHandler>")]
     pub funding_pubkey: PublicKey,
-    #[serde_as(as = "PublicKeyHandler")]
+    #[serde_as(as = "IfIsHumanReadable<PublicKeyHandler>")]
     pub revocation_basepoint: PublicKey,
-    #[serde_as(as = "PublicKeyHandler")]
+    #[serde_as(as = "IfIsHumanReadable<PublicKeyHandler>")]
     pub payment_point: PublicKey,
-    #[serde_as(as = "PublicKeyHandler")]
+    #[serde_as(as = "IfIsHumanReadable<PublicKeyHandler>")]
     pub delayed_payment_basepoint: PublicKey,
-    #[serde_as(as = "PublicKeyHandler")]
+    #[serde_as(as = "IfIsHumanReadable<PublicKeyHandler>")]
     pub htlc_basepoint: PublicKey,
 }
 

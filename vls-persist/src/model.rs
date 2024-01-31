@@ -9,8 +9,8 @@ use bitcoin::secp256k1::PublicKey;
 use bitcoin::{Network, OutPoint};
 use lightning_signer::chain::tracker::{ChainTracker, Headers, ListenSlot};
 use serde::{Deserialize, Serialize};
-use serde_with::hex::Hex;
 use serde_with::serde_as;
+use serde_with::{hex::Hex, IfIsHumanReadable};
 
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::hashes::Hash;
@@ -60,9 +60,9 @@ impl From<CoreVelocityControl> for VelocityControl {
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub struct NodeStateEntry {
-    #[serde_as(as = "Vec<(Hex, _)>")]
+    #[serde_as(as = "IfIsHumanReadable<Vec<(Hex, _)>>")]
     pub invoices: Vec<(Vec<u8>, PaymentState)>,
-    #[serde_as(as = "Vec<(Hex, _)>")]
+    #[serde_as(as = "IfIsHumanReadable<Vec<(Hex, _)>>")]
     pub issued_invoices: Vec<(Vec<u8>, PaymentState)>,
     pub velocity_control: VelocityControl,
     #[serde(default = "default_fee_velocity_control")]
@@ -109,7 +109,7 @@ pub struct ChannelEntry {
     pub channel_value_satoshis: u64,
     pub channel_setup: Option<ChannelSetup>,
     // Permanent channel ID if different from the initial channel ID
-    #[serde_as(as = "Option<ChannelIdHandler>")]
+    #[serde_as(as = "IfIsHumanReadable<Option<ChannelIdHandler>>")]
     pub id: Option<ChannelId>,
     pub enforcement_state: EnforcementState,
     // birth blockheight for stub, None for channel
@@ -182,14 +182,14 @@ impl AsRef<[u8]> for NodeChannelId {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ChainTrackerEntry {
     // Serialized headers beyond tip
-    #[serde_as(as = "Vec<Hex>")]
+    #[serde_as(as = "IfIsHumanReadable<Vec<Hex>>")]
     headers: Vec<Vec<u8>>,
     // Serialized header at tip
-    #[serde_as(as = "Hex")]
+    #[serde_as(as = "IfIsHumanReadable<Hex>")]
     tip: Vec<u8>,
     height: u32,
     network: Network,
-    #[serde_as(as = "Vec<(OutPointDef, (_, _))>")]
+    #[serde_as(as = "IfIsHumanReadable<Vec<(OutPointDef, (_, _))>>")]
     listeners: Vec<(OutPoint, (ChainMonitorState, ListenSlot))>,
 }
 
