@@ -119,3 +119,74 @@ impl Drop for OtelGuard {
         global::shutdown_tracer_provider();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+    use chrono::Local;
+
+    use opentelemetry::{global::ObjectSafeSpan, trace::{SpanBuilder, Tracer}, Value};
+    use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
+    use tokio::time::sleep;
+    use tracing_subscriber::{fmt, layer::SubscriberExt};
+
+    use crate::util::observability::env_filter;
+
+    #[test]
+    fn test_oltp_export_config() {
+        let config = super::otlp_exporter_config();
+        assert_eq!(config.endpoint, "http://localhost:4317");
+        assert_eq!(config.timeout, std::time::Duration::from_secs(3));
+        assert_eq!(config.protocol, opentelemetry_otlp::Protocol::Grpc);
+    }
+
+    #[test]
+    fn test_resource() {
+        let resource = super::resource();
+        assert_eq!(resource.get(SERVICE_NAME), Some(Value::String(env!("CARGO_PKG_NAME").into())));
+        assert_eq!(resource.get(SERVICE_VERSION), Some(Value::String(super::GIT_DESC.into())));
+        assert_eq!(resource.get(super::DEPLOYMENT_ENVIRONMENT), Some(Value::String(super::deployment_environment().into())));
+    }
+
+    #[tokio::test]
+    async fn test_new_tracer() {
+        let tracer= super::new_tracer();
+        match tracer {
+            Ok(tracer) => {
+                let mut _span = tracer.build(SpanBuilder::default());
+                tracing::info!("tracer test");
+                _span.end();
+            },
+            Err(err) => panic!("Failed to create tracer: {}", err)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_setup_file_appender() {
+        std::env::set_var("RUST_LOG", "info");
+
+        let temp_dir = std::env::temp_dir();
+        let date_string = Local::now().format("%Y-%m-%d");
+        let file_path = temp_dir.join(format!("test.log.{}", date_string));
+
+        let handle = tokio::spawn(async move {
+            let (file_writer, _file_guard) = super::setup_file_appender(temp_dir, "test");
+
+            let subscriber = tracing_subscriber::registry()
+                .with(fmt::layer().with_writer(file_writer))
+                .with(env_filter());
+
+            tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+
+            tracing::info!("test random date: 11/08/2001");
+
+            sleep(Duration::from_millis(10000)).await;
+        });
+
+        let _ = handle.await;
+
+        assert_eq!(file_path.exists(), true);
+        let contents = std::fs::read_to_string(&file_path).expect("failed to read file");
+        assert_eq!(contents.contains("test random date: 11/08/2001"), true);
+    }
+}
