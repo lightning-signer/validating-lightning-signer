@@ -1,12 +1,31 @@
 #!/bin/bash
 
-# Check if an argument is provided
-if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 <directory>"
-    exit 1
-fi
+# Initialize variables
+DIR=""
 
-DIR=$1
+# Function to display usage
+usage() {
+    echo "Usage: $0 -D <directory> [additional logfilter args...]"
+    exit 1
+}
+
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -D|--directory)
+            DIR="$2"
+            shift 2
+            ;;
+        *)  # Any other arguments
+            break
+            ;;
+    esac
+done
+
+# Check if the directory is provided
+if [ -z "$DIR" ]; then
+    usage
+fi
 
 # Check if the directory exists
 if [ ! -d "$DIR" ]; then
@@ -24,16 +43,12 @@ cd "$DIR" || exit 1
 
 INCLUDE_FILES='.*\(log\|errlog\).*'
 
-# Reasons:
-# vlsd/log is a duplicate (and gets truncated on restarts)
-# debug.log is a duplicate
-# chainstate and friends are db transaction logs
+# Exclude patterns
 EXCLUDE_FILES="\
 .*/vlsd/log\
 \|.*/regtest/debug.log\
 \|.*/regtest/\(chainstate\|indexes\|blocks\)/.*\
 "
-OUTPUT_FILE="SUMMARY.md"
 
 # Get the absolute path of the directory
 ABSOLUTE_PATH=$(realpath ".")
@@ -41,25 +56,23 @@ ABSOLUTE_PATH=$(realpath ".")
 # Read the sorted output of find into an array
 readarray -t FILE_ARRAY < <(find . -type f -size +0 -regex "$INCLUDE_FILES" ! -regex "$EXCLUDE_FILES" | sort)
 
-echo "creating $ABSOLUTE_PATH/$OUTPUT_FILE"
-
-# Write the header to the output file
-echo "### Directory: $ABSOLUTE_PATH"				> "$OUTPUT_FILE"
-echo ""								>> "$OUTPUT_FILE"
-echo "**WARNING: ABRIDGED, THE TRUTH IS IN THE LOGS ...**"	>> "$OUTPUT_FILE"
+# Write the header to stdout
+echo "### Directory: $ABSOLUTE_PATH"
+echo ""
+echo "**WARNING: ABRIDGED, THE TRUTH IS IN THE LOGS ...**"
 
 # Iterate over the array
 for FILE_PATH in "${FILE_ARRAY[@]}"; do
     trimmed_path="${FILE_PATH#./}"
-    echo ""							>> "$OUTPUT_FILE"
-    echo "#### [\`$trimmed_path\`](<$trimmed_path>)"		>> "$OUTPUT_FILE"
-    echo "\`\`\`"						>> "$OUTPUT_FILE"
+    echo ""
+    echo "#### [\`$trimmed_path\`](<$trimmed_path>)"
+    echo "\`\`\`"
     if [[ "$FILE_PATH" == */errlog ]]; then
         # If the file ends with /errlog, concatenate
-        cat "$FILE_PATH"                                	>> "$OUTPUT_FILE"
+        cat "$FILE_PATH"
     else
-        # Otherwise, use logfilter
-        $LOGFILTER -a < "$FILE_PATH"                    	>> "$OUTPUT_FILE"
+        # Otherwise, use logfilter with additional arguments passed
+        $LOGFILTER "$@" < "$FILE_PATH"
     fi
-    echo "\`\`\`"						>> "$OUTPUT_FILE"
+    echo "\`\`\`"
 done
