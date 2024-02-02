@@ -42,7 +42,7 @@ use lightning::util::logger::Logger;
 use lightning::util::ser::Writeable;
 use lightning_invoice::{RawBolt11Invoice, RawDataPart, RawHrp, SignedRawBolt11Invoice};
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, IfIsHumanReadable};
+use serde_with::{serde_as, Bytes, IfIsHumanReadable};
 
 #[allow(unused_imports)]
 use log::*;
@@ -119,6 +119,7 @@ impl NodeConfig {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PaymentState {
     /// The hash of the invoice, as a unique ID
+    #[serde_as(as = "IfIsHumanReadable<_, Bytes>")]
     pub invoice_hash: [u8; 32],
     /// Invoiced amount
     pub amount_msat: u64,

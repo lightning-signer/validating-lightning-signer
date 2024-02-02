@@ -17,6 +17,7 @@ use lightning::ln::PaymentHash;
 use lightning::sign::InMemorySigner;
 use log::{debug, error};
 use serde_derive::{Deserialize, Serialize};
+use serde_with::{serde_as, Bytes, IfIsHumanReadable};
 use txoo::proof::{TxoProof, VerifyError};
 
 use crate::channel::{ChannelBalance, ChannelId, ChannelSetup, ChannelSlot};
@@ -504,8 +505,10 @@ pub trait ValidatorFactory: Send + Sync {
 pub struct CommitmentSignatures(pub Signature, pub Vec<Signature>);
 
 /// Copied from LDK because we need to serialize it
+#[serde_as]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CounterpartyCommitmentSecrets {
+    #[serde_as(as = "IfIsHumanReadable<_, Vec<(Bytes, _)>>")]
     old_secrets: Vec<([u8; 32], u64)>,
 }
 

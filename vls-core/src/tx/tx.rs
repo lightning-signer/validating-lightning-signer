@@ -22,9 +22,8 @@ use crate::tx::script::{expect_data, expect_number, expect_op, expect_script_end
 use crate::util::debug_utils::{DebugBytes, DebugPayload};
 use crate::util::AddedItemsIter;
 use bitcoin::hashes::hex::ToHex;
-use serde::{Deserialize as _, Deserializer};
 use serde_derive::{Deserialize, Serialize};
-use serde_with::{serde_as, DeserializeAs, SerializeAs};
+use serde_with::{serde_as, Bytes, IfIsHumanReadable};
 
 const MAX_DELAY: i64 = 2016;
 /// Value for anchor outputs
@@ -56,28 +55,7 @@ impl fmt::Debug for HTLCInfo {
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "PaymentHash")]
-pub struct PaymentHashDef(pub [u8; 32]);
-
-#[derive(Deserialize)]
-struct PaymentHashHelper(#[serde(with = "PaymentHashDef")] PaymentHash);
-
-impl SerializeAs<PaymentHash> for PaymentHashDef {
-    fn serialize_as<S>(value: &PaymentHash, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        PaymentHashDef::serialize(value, serializer)
-    }
-}
-
-impl<'de> DeserializeAs<'de, PaymentHash> for PaymentHashDef {
-    fn deserialize_as<D>(deserializer: D) -> Result<PaymentHash, <D as Deserializer<'de>>::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        PaymentHashHelper::deserialize(deserializer).map(|h| h.0)
-    }
-}
+pub struct PaymentHashDef(#[serde_as(as = "IfIsHumanReadable<_, Bytes>")] pub [u8; 32]);
 
 /// Phase 2 HTLC info
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]

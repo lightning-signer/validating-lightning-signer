@@ -23,7 +23,7 @@ use lightning::sign::{
 };
 use log::*;
 use serde_derive::{Deserialize, Serialize};
-use serde_with::{serde_as, IfIsHumanReadable};
+use serde_with::{hex::Hex, serde_as, Bytes, IfIsHumanReadable};
 
 use crate::monitor::ChainMonitorBase;
 use crate::node::{Node, RoutedPayment};
@@ -48,8 +48,9 @@ use crate::{catch_panic, policy_err, Arc, CommitmentPointProvider, Weak};
 /// A channel may have more than one ID.
 ///
 /// The channel keys are derived from this and a base key.
+#[serde_as]
 #[derive(PartialEq, Eq, Clone, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct ChannelId(Vec<u8>);
+pub struct ChannelId(#[serde_as(as = "IfIsHumanReadable<Hex, Bytes>")] Vec<u8>);
 
 impl ChannelId {
     /// Create an ID
