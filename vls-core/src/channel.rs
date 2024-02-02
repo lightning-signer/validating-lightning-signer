@@ -23,7 +23,7 @@ use lightning::sign::{
 };
 use log::*;
 use serde_derive::{Deserialize, Serialize};
-use serde_with::serde_as;
+use serde_with::{serde_as, IfIsHumanReadable};
 
 use crate::monitor::ChainMonitorBase;
 use crate::node::{Node, RoutedPayment};
@@ -48,7 +48,7 @@ use crate::{catch_panic, policy_err, Arc, CommitmentPointProvider, Weak};
 /// A channel may have more than one ID.
 ///
 /// The channel keys are derived from this and a base key.
-#[derive(PartialEq, Eq, Clone, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, Clone, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ChannelId(Vec<u8>);
 
 impl ChannelId {
@@ -130,21 +130,21 @@ pub struct ChannelSetup {
     /// How much was pushed to the counterparty
     pub push_value_msat: u64,
     /// The funding outpoint
-    #[serde_as(as = "OutPointDef")]
+    #[serde_as(as = "IfIsHumanReadable<OutPointDef>")]
     pub funding_outpoint: OutPoint,
     /// locally imposed requirement on the remote commitment transaction to_self_delay
     pub holder_selected_contest_delay: u16,
     /// The holder's optional upfront shutdown script
-    #[serde_as(as = "Option<ScriptDef>")]
+    #[serde_as(as = "IfIsHumanReadable<Option<ScriptDef>>")]
     pub holder_shutdown_script: Option<Script>,
     /// The counterparty's basepoints and pubkeys
-    #[serde(with = "ChannelPublicKeysDef")]
+    #[serde_as(as = "ChannelPublicKeysDef")]
     pub counterparty_points: ChannelPublicKeys,
     // DUP keys.inner.remote_channel_pubkeys
     /// remotely imposed requirement on the local commitment transaction to_self_delay
     pub counterparty_selected_contest_delay: u16,
     /// The counterparty's optional upfront shutdown script
-    #[serde_as(as = "Option<ScriptDef>")]
+    #[serde_as(as = "IfIsHumanReadable<Option<ScriptDef>>")]
     pub counterparty_shutdown_script: Option<Script>,
     /// The negotiated commitment type
     pub commitment_type: CommitmentType,

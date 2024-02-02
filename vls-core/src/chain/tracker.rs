@@ -19,7 +19,7 @@ use crate::policy::validator::ValidatorFactory;
 use log::{debug, error, info, warn};
 use push_decoder::{BlockDecoder, Listener as PushListener};
 use serde_derive::{Deserialize, Serialize};
-use serde_with::serde_as;
+use serde_with::{serde_as, IfIsHumanReadable};
 use txoo::filter::BlockSpendFilter;
 use txoo::get_latest_checkpoint;
 use txoo::proof::{ProofType, TxoProof};
@@ -77,13 +77,13 @@ macro_rules! error_invalid_proof {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListenSlot {
     /// watched transactions to be confirmed
-    #[serde_as(as = "OrderedSet<TxidDef>")]
+    #[serde_as(as = "IfIsHumanReadable<OrderedSet<TxidDef>>")]
     pub txid_watches: OrderedSet<Txid>,
     /// watched outpoints to be spent
-    #[serde_as(as = "OrderedSet<OutPointDef>")]
+    #[serde_as(as = "IfIsHumanReadable<OrderedSet<OutPointDef>>")]
     pub watches: OrderedSet<OutPoint>,
     /// outpoints we have already seen
-    #[serde_as(as = "OrderedSet<OutPointDef>")]
+    #[serde_as(as = "IfIsHumanReadable<OrderedSet<OutPointDef>>")]
     pub seen: OrderedSet<OutPoint>,
 }
 

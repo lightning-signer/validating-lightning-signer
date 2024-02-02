@@ -42,7 +42,7 @@ use lightning::util::logger::Logger;
 use lightning::util::ser::Writeable;
 use lightning_invoice::{RawBolt11Invoice, RawDataPart, RawHrp, SignedRawBolt11Invoice};
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
+use serde_with::{serde_as, IfIsHumanReadable};
 
 #[allow(unused_imports)]
 use log::*;
@@ -125,10 +125,10 @@ pub struct PaymentState {
     /// Payee's public key, if known
     pub payee: PublicKey,
     /// Timestamp of the payment, as duration since the UNIX epoch
-    #[serde_as(as = "DurationHandler")]
+    #[serde_as(as = "IfIsHumanReadable<DurationHandler>")]
     pub duration_since_epoch: Duration,
     /// Expiry, as duration since the timestamp
-    #[serde_as(as = "DurationHandler")]
+    #[serde_as(as = "IfIsHumanReadable<DurationHandler>")]
     pub expiry_duration: Duration,
     /// Whether the invoice was fulfilled
     /// note: for issued invoices only
