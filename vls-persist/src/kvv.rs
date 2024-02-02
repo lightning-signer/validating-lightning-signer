@@ -1,6 +1,6 @@
 pub mod cloud;
 pub mod memory;
-#[cfg(feature = "redb-kvv")]
+#[cfg(any(feature = "redb-kvv", test))]
 pub mod redb;
 
 use crate::model::*;
