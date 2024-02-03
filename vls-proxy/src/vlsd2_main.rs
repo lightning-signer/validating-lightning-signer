@@ -4,7 +4,6 @@ use http::Uri;
 use lightning_signer::bitcoin::Network;
 use log::*;
 use std::fs;
-use vls_protocol_signer::handler::Handler;
 
 use grpc::signer::make_handler;
 use grpc::signer::start_signer;

@@ -2,10 +2,12 @@
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::cmp::min;
 use core::convert::TryInto;
 use core::str::FromStr;
 
@@ -52,6 +54,7 @@ use vls_protocol::model::{
 };
 use vls_protocol::msgs::{
     DeriveSecretReply, PreapproveInvoiceReply, PreapproveKeysendReply, SerBolt, SignBolt12Reply,
+    DEFAULT_MAX_PROTOCOL_VERSION, MIN_PROTOCOL_VERSION, PROTOCOL_VERSION_REVOKE,
 };
 use vls_protocol::psbt::StreamedPSBT;
 use vls_protocol::serde_bolt;
@@ -207,12 +210,23 @@ fn log_reply(reply: &Box<dyn SerBolt>) {
     debug!("{:#?}", reply);
 }
 
+/// Initial protocol handler, for negotiating the protocol version
+#[derive(Clone)]
+pub struct InitHandler {
+    id: u64,
+    node: Arc<Node>,
+    approver: Arc<dyn Approve>,
+    max_protocol_version: u32,
+    protocol_version: Option<u32>,
+}
+
 /// Protocol handler
 #[derive(Clone)]
 pub struct RootHandler {
-    pub(crate) id: u64,
+    id: u64,
     node: Arc<Node>,
     approver: Arc<dyn Approve>,
+    protocol_version: u32,
 }
 
 /// Builder for RootHandler
@@ -220,30 +234,32 @@ pub struct RootHandler {
 /// WARNING: if you don't specify a seed, and you persist to LSS, you must get the seed
 /// from the builder and persist it yourself.  LSS does not persist the seed.
 /// If you don't persist, you will lose your keys.
-pub struct RootHandlerBuilder {
+pub struct HandlerBuilder {
     network: Network,
     id: u64,
     seed: [u8; 32],
     allowlist: Vec<String>,
     services: NodeServices,
     approver: Arc<dyn Approve>,
+    max_protocol_version: u32,
 }
 
-impl RootHandlerBuilder {
+impl HandlerBuilder {
     /// Create a RootHandlerBuilder
     pub fn new(
         network: Network,
         id: u64,
         services: NodeServices,
         seed: [u8; 32],
-    ) -> RootHandlerBuilder {
-        RootHandlerBuilder {
+    ) -> HandlerBuilder {
+        HandlerBuilder {
             network,
             id,
             seed,
             allowlist: vec![],
             services,
             approver: Arc::new(NegativeApprover()),
+            max_protocol_version: DEFAULT_MAX_PROTOCOL_VERSION,
         }
     }
 
@@ -259,12 +275,18 @@ impl RootHandlerBuilder {
         self
     }
 
+    /// Set the hsmd max protocol version, may still be negotiated down by node
+    pub fn max_protocol_version(mut self, max_version: u32) -> Self {
+        self.max_protocol_version = max_version;
+        self
+    }
+
     /// Build the root handler.
     ///
     /// Returns the handler and any mutations that need to be stored.
     /// You must call [`Handler::commit`] after you persist the mutations in the
     /// cloud.
-    pub fn build(self) -> Result<(RootHandler, Mutations)> {
+    pub fn build(self) -> Result<(InitHandler, Mutations)> {
         let persister = self.services.persister.clone();
         persister.enter().map_err(|e| {
             error!("failed to enter persister: {:?}", e);
@@ -282,7 +304,7 @@ impl RootHandlerBuilder {
         Node::make_keys_manager(config, &self.seed, &self.services)
     }
 
-    fn do_build(self) -> Result<RootHandler> {
+    fn do_build(self) -> Result<InitHandler> {
         let config = NodeConfig::new(self.network);
 
         let persister = self.services.persister.clone();
@@ -304,7 +326,7 @@ impl RootHandlerBuilder {
         };
         trace_node_state!(node.get_state());
 
-        Ok(RootHandler { id: self.id, node, approver: self.approver })
+        Ok(InitHandler::new(self.id, node, self.approver, self.max_protocol_version))
     }
 
     /// The persister
@@ -423,6 +445,138 @@ impl RootHandler {
     }
 }
 
+impl InitHandler {
+    /// Create a new InitHandler
+    pub fn new(
+        id: u64,
+        node: Arc<Node>,
+        approver: Arc<dyn Approve>,
+        max_protocol_version: u32,
+    ) -> InitHandler {
+        InitHandler { id, node, approver, max_protocol_version, protocol_version: None }
+    }
+
+    /// Get the associated node
+    pub fn node(&self) -> &Arc<Node> {
+        &self.node
+    }
+
+    /// Convert to RootHandler.
+    ///
+    /// Panics if initial negotiation is not complete - see [`InitHandler::handle`].
+    pub fn into_root_handler(self) -> RootHandler {
+        let protocol_version = self.protocol_version.expect("initial negotiation not complete");
+        RootHandler { id: self.id, node: self.node, approver: self.approver, protocol_version }
+    }
+
+    /// Handle a request message, returning a boolean indicating whether the initial negotiation is complete
+    /// and a response.
+    ///
+    /// Panics if initial negotiation is already complete.
+    pub fn handle(&mut self, msg: Message) -> Result<(bool, Box<dyn SerBolt>)> {
+        assert!(self.protocol_version.is_none(), "initial negotiation already complete");
+        log_request(&msg);
+        let result = self.do_handle(msg);
+        if let Err(ref err) = result {
+            log_error(err);
+        }
+        let (is_done, reply) = result?;
+        log_reply(&reply);
+        Ok((is_done, reply))
+    }
+
+    fn do_handle(&mut self, msg: Message) -> Result<(bool, Box<dyn SerBolt>)> {
+        match msg {
+            Message::Ping(p) => {
+                info!("got ping with {} {}", p.id, String::from_utf8(p.message.0).unwrap());
+                let reply =
+                    msgs::Pong { id: p.id, message: WireString("pong".as_bytes().to_vec()) };
+                Ok((false, Box::new(reply)))
+            }
+            Message::HsmdInit(m) => {
+                let node_id = self.node.get_id().serialize();
+                let bip32 = self.node.get_account_extended_pubkey().encode();
+                let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
+                assert!(
+                    m.hsm_wire_min_version <= self.max_protocol_version,
+                    "node's minimum wire protocol version too large: {} > {}",
+                    m.hsm_wire_min_version,
+                    self.max_protocol_version
+                );
+                assert!(
+                    m.hsm_wire_max_version >= MIN_PROTOCOL_VERSION,
+                    "node's maximum wire protocol version too small: {} < {}",
+                    m.hsm_wire_max_version,
+                    MIN_PROTOCOL_VERSION
+                );
+                let mutual_version = min(self.max_protocol_version, m.hsm_wire_max_version);
+                info!(
+                    "signer protocol_version {}, \
+                     node hsm_wire_max_version {}, \
+                     setting protocol_version to {}",
+                    self.max_protocol_version, m.hsm_wire_max_version, mutual_version
+                );
+                self.protocol_version = Some(mutual_version);
+                if mutual_version < 4 {
+                    return Ok((
+                        true,
+                        Box::new(msgs::HsmdInitReplyV2 {
+                            node_id: PubKey(node_id),
+                            bip32: ExtKey(bip32),
+                            bolt12: PubKey(bolt12_pubkey),
+                        }),
+                    ));
+                }
+                let mut hsm_capabilities = vec![
+                    msgs::CheckPubKey::TYPE as u32,
+                    msgs::SignAnyDelayedPaymentToUs::TYPE as u32,
+                    msgs::SignAnchorspend::TYPE as u32,
+                    msgs::SignHtlcTxMingle::TYPE as u32,
+                    // TODO advertise splicing when it is implemented
+                    // msgs::SignSpliceTx::TYPE as u32,
+                    msgs::CheckOutpoint::TYPE as u32,
+                    msgs::ForgetChannel::TYPE as u32,
+                ];
+                if mutual_version >= PROTOCOL_VERSION_REVOKE {
+                    hsm_capabilities.push(msgs::RevokeCommitmentTx::TYPE as u32);
+                }
+                Ok((
+                    true,
+                    Box::new(msgs::HsmdInitReplyV4 {
+                        hsm_version: mutual_version,
+                        hsm_capabilities: hsm_capabilities.into(),
+                        node_id: PubKey(node_id),
+                        bip32: ExtKey(bip32),
+                        bolt12: PubKey(bolt12_pubkey),
+                    }),
+                ))
+            }
+            Message::HsmdInit2(m) => {
+                let bip32 = self.node.get_account_extended_pubkey().encode();
+                let node_id = self.node.get_id().serialize();
+                let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
+                let allowlist: Vec<_> = m
+                    .dev_allowlist
+                    .iter()
+                    .map(|ws| String::from_utf8(ws.0.clone()).expect("utf8"))
+                    .collect();
+                // FIXME disable in production
+                self.node.add_allowlist(&allowlist)?;
+                self.protocol_version = Some(4);
+                Ok((
+                    true,
+                    Box::new(msgs::HsmdInit2Reply {
+                        node_id: PubKey(node_id),
+                        bip32: ExtKey(bip32),
+                        bolt12: PubKey(bolt12_pubkey),
+                    }),
+                ))
+            }
+            m => unimplemented!("init loop {}: unimplemented message {:?}", self.id, m),
+        }
+    }
+}
+
 impl Handler for RootHandler {
     fn do_handle(&self, msg: Message) -> Result<Box<dyn SerBolt>> {
         match msg {
@@ -472,64 +626,6 @@ impl Handler for RootHandler {
                 let sig = self.node.sign_message(&m.message)?;
                 let sig_slice = sig.try_into().expect("recoverable signature size");
                 Ok(Box::new(msgs::SignMessageReply { signature: RecoverableSignature(sig_slice) }))
-            }
-            Message::HsmdInit(m) => {
-                let node_id = self.node.get_id().serialize();
-                let bip32 = self.node.get_account_extended_pubkey().encode();
-                let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
-                if m.hsm_wire_max_version < 4 {
-                    return Ok(Box::new(msgs::HsmdInitReplyV2 {
-                        node_id: PubKey(node_id),
-                        bip32: ExtKey(bip32),
-                        bolt12: PubKey(bolt12_pubkey),
-                    }));
-                }
-                assert!(
-                    m.hsm_wire_min_version <= 4,
-                    "node's minimum hsm wire version too large: {} > {}",
-                    m.hsm_wire_min_version,
-                    4
-                );
-                assert!(
-                    m.hsm_wire_max_version >= 4,
-                    "node's maximum hsm wire version too small: {} < {}",
-                    m.hsm_wire_max_version,
-                    4
-                );
-                Ok(Box::new(msgs::HsmdInitReplyV4 {
-                    hsm_version: 4,
-                    hsm_capabilities: vec![
-                        msgs::CheckPubKey::TYPE as u32,
-                        msgs::SignAnyDelayedPaymentToUs::TYPE as u32,
-                        msgs::SignAnchorspend::TYPE as u32,
-                        msgs::SignHtlcTxMingle::TYPE as u32,
-                        // TODO advertise splicing when it is implemented
-                        // msgs::SignSpliceTx::TYPE as u32,
-                        msgs::CheckOutpoint::TYPE as u32,
-                        msgs::ForgetChannel::TYPE as u32,
-                    ]
-                    .into(),
-                    node_id: PubKey(node_id),
-                    bip32: ExtKey(bip32),
-                    bolt12: PubKey(bolt12_pubkey),
-                }))
-            }
-            Message::HsmdInit2(m) => {
-                let bip32 = self.node.get_account_extended_pubkey().encode();
-                let node_id = self.node.get_id().serialize();
-                let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
-                let allowlist: Vec<_> = m
-                    .dev_allowlist
-                    .iter()
-                    .map(|ws| String::from_utf8(ws.0.clone()).expect("utf8"))
-                    .collect();
-                // FIXME disable in production
-                self.node.add_allowlist(&allowlist)?;
-                Ok(Box::new(msgs::HsmdInit2Reply {
-                    node_id: PubKey(node_id),
-                    bip32: ExtKey(bip32),
-                    bolt12: PubKey(bolt12_pubkey),
-                }))
             }
             Message::Ecdh(m) => {
                 let pubkey = PublicKey::from_slice(&m.point.0).expect("pubkey");
@@ -837,6 +933,7 @@ impl Handler for RootHandler {
         ChannelHandler {
             id: client_id,
             node: Arc::clone(&self.node),
+            protocol_version: self.protocol_version,
             peer_id: peer_id.0,
             dbid,
             channel_id,
@@ -884,6 +981,7 @@ fn extract_psbt_output_paths(psbt: &PartiallySignedTransaction) -> Vec<Vec<u32>>
 pub struct ChannelHandler {
     id: u64,
     node: Arc<Node>,
+    protocol_version: u32,
     #[allow(unused)]
     peer_id: [u8; 33],
     dbid: u64,
@@ -1175,7 +1273,22 @@ impl Handler for ChannelHandler {
                             &commit_sig,
                             &htlc_sigs,
                         )?;
-                        chan.revoke_previous_holder_commitment(commit_num)
+                        if self.protocol_version < PROTOCOL_VERSION_REVOKE {
+                            // The older protcol presumes the previous is immediately revoked
+                            chan.revoke_previous_holder_commitment(commit_num)
+                        } else {
+                            // The newer protocol defers until an explicit `RevokeCommitmentTx`
+                            if commit_num > 0 {
+                                Ok((chan.get_per_commitment_point(commit_num + 1)?, None))
+                            } else {
+                                // Commitment 0 is special because it doesn't
+                                // have a previous commitment.  Since the
+                                // revocation of the previous commitment normally
+                                // makes a new commitment "current" this final
+                                // step must be invoked explicitly.
+                                Ok((chan.activate_initial_commitment()?, None))
+                            }
+                        }
                     })?;
                 let old_secret_reply =
                     old_secret.map(|s| DisclosedSecret(s[..].try_into().unwrap()));
@@ -1214,7 +1327,22 @@ impl Handler for ChannelHandler {
                             &commit_sig,
                             &htlc_sigs,
                         )?;
-                        chan.revoke_previous_holder_commitment(commit_num - 1)
+                        if self.protocol_version < PROTOCOL_VERSION_REVOKE {
+                            // The older protcol presumes the previous is immediately revoked
+                            chan.revoke_previous_holder_commitment(commit_num)
+                        } else {
+                            // The newer protocol defers until an explicit `RevokeCommitmentTx`
+                            if commit_num > 0 {
+                                Ok((chan.get_per_commitment_point(commit_num + 1)?, None))
+                            } else {
+                                // Commitment 0 is special because it doesn't
+                                // have a previous commitment.  Since the
+                                // revocation of the previous commitment normally
+                                // makes a new commitment "current" this final
+                                // step must be invoked explicitly.
+                                Ok((chan.activate_initial_commitment()?, None))
+                            }
+                        }
                     })?;
                 let old_secret_reply =
                     old_secret.map(|s| DisclosedSecret(s[..].try_into().unwrap()));
@@ -1223,6 +1351,30 @@ impl Handler for ChannelHandler {
                     old_commitment_secret: old_secret_reply,
                 }))
             }
+            Message::RevokeCommitmentTx(m) => {
+                if self.protocol_version < PROTOCOL_VERSION_REVOKE {
+                    return Err(Status::invalid_argument(format!(
+                        "RevokeCommitmentTx called with hsmd_protocol_version {} < {}",
+                        self.protocol_version, PROTOCOL_VERSION_REVOKE,
+                    )))?;
+                }
+                let commit_num = m.commitment_number;
+                let (next_per_commitment_point, old_secret) =
+                    self.node.with_channel(&self.channel_id, |chan| {
+                        chan.revoke_previous_holder_commitment(commit_num + 1)
+                    })?;
+                let old_secret_reply =
+                    old_secret.map(|s| DisclosedSecret(s[..].try_into().unwrap()));
+                let next_per_commitment_point = PubKey(next_per_commitment_point.serialize());
+                let old_commitment_secret = old_secret_reply.ok_or_else(|| {
+                    Status::invalid_argument(format!("no old secret for commitment {}", commit_num))
+                })?;
+                Ok(Box::new(msgs::RevokeCommitmentTxReply {
+                    next_per_commitment_point,
+                    old_commitment_secret,
+                }))
+            }
+
             Message::SignLocalCommitmentTx2(m) => {
                 let (sig, htlc_sigs) = self.node.with_channel(&self.channel_id, |chan| {
                     chan.sign_holder_commitment_tx_phase2(m.commitment_number)

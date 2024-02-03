@@ -10,7 +10,7 @@ use crate::util::{
 use clap::Parser;
 use http::Uri;
 use lightning_signer::bitcoin::Network;
-use lightning_signer::node::NodeServices;
+use lightning_signer::node::{Node, NodeServices};
 use lightning_signer::persist::fs::FileSeedPersister;
 use lightning_signer::persist::SeedPersist;
 use lightning_signer::policy::filter::{FilterRule, PolicyFilter};
@@ -22,6 +22,7 @@ use lightning_signer::util::status::Status;
 use lightning_signer::util::velocity::VelocityControlSpec;
 use log::*;
 use std::convert::TryInto;
+use std::env;
 use std::error::Error as _;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
@@ -35,7 +36,7 @@ use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use vls_persist::kvv::{redb::RedbKVVStore, JsonFormat, KVVPersister};
 use vls_protocol_signer::approver::WarningPositiveApprover;
-use vls_protocol_signer::handler::{Error, Handler, RootHandler, RootHandlerBuilder};
+use vls_protocol_signer::handler::{Error, Handler, HandlerBuilder, InitHandler, RootHandler};
 use vls_protocol_signer::vls_protocol::model::PubKey;
 use vls_protocol_signer::vls_protocol::msgs;
 
@@ -43,6 +44,9 @@ use vls_protocol_signer::vls_protocol::msgs;
 use heapmon::{self, HeapMon, SummaryOrder};
 #[cfg(feature = "heapmon_requests")]
 use std::alloc::System;
+use tokio::sync::mpsc::Sender;
+use tonic::Streaming;
+
 #[cfg(feature = "heapmon_requests")]
 #[global_allocator]
 pub static HEAPMON: HeapMon<System> = HeapMon::system();
@@ -75,7 +79,7 @@ pub async fn start_signer(datadir: &str, uri: Uri, args: &SignerArgs) {
 }
 
 /// Create a signer protocol handler
-pub fn make_handler(datadir: &str, args: &SignerArgs) -> RootHandler {
+pub fn make_handler(datadir: &str, args: &SignerArgs) -> InitHandler {
     let network = args.network;
     let data_path = format!("{}/{}", datadir, network.to_string());
     let persister = Arc::new(KVVPersister(RedbKVVStore::new(&data_path), JsonFormat));
@@ -109,19 +113,30 @@ pub fn make_handler(datadir: &str, args: &SignerArgs) -> RootHandler {
     let clock = Arc::new(StandardClock());
     let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
     let mut handler_builder =
-        RootHandlerBuilder::new(network, 0, services, seed).allowlist(allowlist.clone());
+        HandlerBuilder::new(network, 0, services, seed).allowlist(allowlist.clone());
     if should_auto_approve() {
         handler_builder = handler_builder.approver(Arc::new(WarningPositiveApprover()));
     }
-    let (root_handler, _muts) = handler_builder.build().expect("handler build");
+    if let Ok(protocol_version_str) = env::var("VLS_MAX_PROTOCOL_VERSION") {
+        match protocol_version_str.parse::<u32>() {
+            Ok(protocol_version) => {
+                warn!("setting max_protocol_version to {}", protocol_version);
+                handler_builder = handler_builder.max_protocol_version(protocol_version);
+            }
+            Err(e) => {
+                panic!("invalid VLS_MAX_PROTOCOL_VERSION {}: {}", protocol_version_str, e);
+            }
+        }
+    }
 
-    root_handler
+    let (init_handler, _muts) = handler_builder.build().expect("handler build");
+
+    init_handler
 }
 
 // NOTE - For this signer mode it is easier to use the ALLOWLIST file to maintain the
 // allowlist. Replace existing entries w/ the current ALLOWLIST file contents.
-fn reset_allowlist(root_handler: &RootHandler, allowlist: &Vec<String>) {
-    let node = root_handler.node();
+fn reset_allowlist(node: &Node, allowlist: &Vec<String>) {
     node.set_allowlist(&allowlist).expect("allowlist");
     info!("allowlist={:?}", node.allowlist().expect("allowlist"));
 }
@@ -130,20 +145,92 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
     let mut client = do_connect(uri).await;
     let (sender, receiver) = mpsc::channel(1);
     let response_stream = ReceiverStream::new(receiver);
-    let root_handler = make_handler(datadir, args);
-    reset_allowlist(&root_handler, &read_allowlist());
+    let mut init_handler = make_handler(datadir, args);
+    let node = Arc::clone(init_handler.node());
 
-    let (addr, join_rpc_server) = start_rpc_server(
-        Arc::clone(root_handler.node()),
-        args.rpc_server_address,
-        args.rpc_server_port,
-    )
-    .await
-    .expect("start_rpc_server");
+    reset_allowlist(&*node, &read_allowlist());
+
+    let (addr, join_rpc_server) =
+        start_rpc_server(node, args.rpc_server_address, args.rpc_server_port)
+            .await
+            .expect("start_rpc_server");
     info!("rpc server running on {}", addr);
 
     let mut request_stream = client.signer_stream(response_stream).await.unwrap().into_inner();
 
+    let is_success = handle_init_requests(&sender, &mut request_stream, &mut init_handler).await;
+
+    if is_success {
+        let root_handler = init_handler.into_root_handler();
+        handle_requests(&sender, &mut request_stream, &root_handler).await;
+    }
+
+    let join_result = join_rpc_server.await;
+    if let Err(e) = join_result {
+        error!("rpc server error: {:?}", e);
+    }
+}
+
+// return true if the negotiation succeeded
+async fn handle_init_requests(
+    sender: &Sender<SignerResponse>,
+    request_stream: &mut Streaming<SignerRequest>,
+    init_handler: &mut InitHandler,
+) -> bool {
+    while let Some(item) = request_stream.next().await {
+        match item {
+            Ok(request) => {
+                let request_id = request.request_id;
+
+                let response = handle_init_request(init_handler, request, request_id);
+                let is_done = response.as_ref().map(|(is_done, _)| *is_done).unwrap_or(false);
+                let response = response.map(|(_, r)| r);
+
+                if send_response(sender, request_id, response).await {
+                    // stream closed
+                    return false;
+                }
+                if is_done {
+                    return true;
+                }
+            }
+            Err(e) => {
+                error!("error on stream: {}", e);
+                return false;
+            }
+        }
+    }
+    false
+}
+
+fn handle_init_request(
+    init_handler: &mut InitHandler,
+    request: SignerRequest,
+    request_id: u64,
+) -> StdResult<(bool, SignerResponse), Error> {
+    let msg = msgs::from_vec(request.message)?;
+    let reply = init_handler.handle(msg);
+
+    let (is_done, response) = match reply {
+        Ok((is_done, res)) => (
+            is_done,
+            Ok(SignerResponse {
+                request_id,
+                message: res.as_vec(),
+                error: String::new(),
+                is_temporary_failure: false,
+            }),
+        ),
+        Err(e) => (false, Err(e)),
+    };
+    response.map(|r| (is_done, r))
+}
+
+async fn handle_requests(
+    sender: &Sender<SignerResponse>,
+    request_stream: &mut Streaming<SignerRequest>,
+    root_handler: &RootHandler,
+) {
     #[cfg(feature = "heapmon_requests")]
     let peak_thresh = {
         use std::env;
@@ -174,7 +261,7 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
                     heapmon_label
                 };
 
-                let response = handle(request, &root_handler);
+                let response = handle_request(request, &root_handler);
 
                 #[cfg(feature = "heapmon_requests")]
                 {
@@ -186,42 +273,9 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
                     }
                 }
 
-                match response {
-                    Ok(response) => {
-                        let res = sender.send(response).await;
-                        if res.is_err() {
-                            error!("stream closed");
-                            break;
-                        }
-                    }
-                    Err(Error::Temporary(error)) => {
-                        error!("received temporary error from handler: {}", error);
-                        let response = SignerResponse {
-                            request_id,
-                            message: vec![],
-                            error: error.message().to_string(),
-                            is_temporary_failure: true,
-                        };
-                        let res = sender.send(response).await;
-                        if res.is_err() {
-                            error!("stream closed");
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        error!("received error from handler: {:?}", e);
-                        let response = SignerResponse {
-                            request_id,
-                            message: vec![],
-                            error: format!("{:?}", e),
-                            is_temporary_failure: false,
-                        };
-                        let res = sender.send(response).await;
-                        if res.is_err() {
-                            error!("stream closed");
-                        }
-                        break;
-                    }
+                if send_response(sender, request_id, response).await {
+                    // stream closed
+                    break;
                 }
             }
             Err(e) => {
@@ -230,11 +284,52 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
             }
         }
     }
+}
 
-    let join_result = join_rpc_server.await;
-    if let Err(e) = join_result {
-        error!("rpc server error: {:?}", e);
+// returns true if there stream was closed
+async fn send_response(
+    sender: &Sender<SignerResponse>,
+    request_id: u64,
+    response: Result<SignerResponse, Error>,
+) -> bool {
+    match response {
+        Ok(response) => {
+            let res = sender.send(response).await;
+            if res.is_err() {
+                error!("stream closed");
+                return true;
+            }
+        }
+        Err(Error::Temporary(error)) => {
+            error!("received temporary error from handler: {}", error);
+            let response = SignerResponse {
+                request_id,
+                message: vec![],
+                error: error.message().to_string(),
+                is_temporary_failure: true,
+            };
+            let res = sender.send(response).await;
+            if res.is_err() {
+                error!("stream closed");
+                return true;
+            }
+        }
+        Err(e) => {
+            error!("received error from handler: {:?}", e);
+            let response = SignerResponse {
+                request_id,
+                message: vec![],
+                error: format!("{:?}", e),
+                is_temporary_failure: false,
+            };
+            let res = sender.send(response).await;
+            if res.is_err() {
+                error!("stream closed");
+            }
+            return true;
+        }
     }
+    false
 }
 
 async fn do_connect(uri: Uri) -> HsmdClient<Channel> {
@@ -287,7 +382,10 @@ fn get_or_generate_seed(
     }
 }
 
-fn handle(request: SignerRequest, root_handler: &RootHandler) -> StdResult<SignerResponse, Error> {
+fn handle_request(
+    request: SignerRequest,
+    root_handler: &RootHandler,
+) -> StdResult<SignerResponse, Error> {
     let msg = msgs::from_vec(request.message)?;
 
     info!(

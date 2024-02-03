@@ -40,6 +40,14 @@ echo ""					>> "$OUTPUT_FILE"
 for FILE_PATH in "${FILE_ARRAY[@]}"; do
     TESTDIR_PATH=$(dirname "$FILE_PATH")
     testname=$(basename "$TESTDIR_PATH")
-    echo "- [\`$testname\`]($TESTDIR_PATH/SUMMARY.md)"	>> "$OUTPUT_FILE"
-    $LOGTESTDIR $TESTDIR_PATH
+
+    echo "creating $TESTDIR_PATH/SUMMARY.md"
+    $LOGTESTDIR -D $TESTDIR_PATH -a > $TESTDIR_PATH/SUMMARY.md
+
+    echo "creating $TESTDIR_PATH/DETAILS.md"
+    $LOGTESTDIR -D $TESTDIR_PATH -A > $TESTDIR_PATH/DETAILS.md
+
+    echo "- \`$testname\`:" >> "$OUTPUT_FILE"
+    echo "  - [SUMMARY]($TESTDIR_PATH/SUMMARY.md)" >> "$OUTPUT_FILE"
+    echo "  - [DETAILS]($TESTDIR_PATH/DETAILS.md)" >> "$OUTPUT_FILE"
 done

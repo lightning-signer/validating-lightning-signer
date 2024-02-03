@@ -1,7 +1,13 @@
 #!/bin/bash
 
+# Use the scripts from where we got this script
+SCRIPT_PATH=$(realpath "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
+LOGELIDE="$SCRIPT_DIR/logelide"
+
 # Categories
 all=false
+everything=false
 vls=false
 lightningd=false
 proxy=false
@@ -30,6 +36,7 @@ Usage: $(basename "$0") [OPTION...] [-- REGEXP...]
 
 Sources:
  -a, --all           Match key lines from all servers
+ -A, --everything    Match key lines from all servers at highest level
  -v, --vls           Match key lines from the vls signer
  -l, --lightningd    Match key lines from lightningd
  -p, --proxy         Match key lines from the remote_hsmd proxy
@@ -38,10 +45,10 @@ Sources:
  -i, --integration   Match key lines from the integration framework
 
 Levels:
- -l, --level=1       Display errors and warnings
- -l, --level=2       Add lifecycle (startup, version, shutdown, ...)
- -l, --level=3       Add progress (blocks, L1 msgs, ...) [DEFAULT]
- -l, --level=4       Add messages (L2 msgs, ...)
+ -e, --level=1       Display errors and warnings
+ -e, --level=2       Add lifecycle (startup, version, shutdown, ...)
+ -e, --level=3       Add L1 activity (blocks, L1 msgs, ...) [DEFAULT]
+ -e, --level=4       Add L2 activity
 
 Constructed regexps:
  -c, --channelid=CHANNELID   Match lines for CHANNELID
@@ -58,6 +65,7 @@ EOF
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -a|--all)		all=true; shift ;;
+        -A|--everything)	everything=true; shift ;;
         -v|--vls)		vls=true; shift ;;
         -l|--lightningd)	lightningd=true; shift ;;
         -p|--proxy)		proxy=true; shift ;;
@@ -65,7 +73,7 @@ while [[ $# -gt 0 ]]; do
         -b|--bitcoind)		bitcoind=true; shift ;;
         -i|--integration)	integration=true; shift ;;
 
-        -l|--level*)
+        -e|--level*)
             level="${1#*=}"
             [[ "$level" == "$1" ]] && level="$2" && shift
             shift
@@ -94,6 +102,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# If $everything is set turn on all and highest level
+if $everything; then
+    all=true
+    level=4
+fi
+
 # If $all is set, turn on all the categories
 if $all; then
     vls=true
@@ -120,15 +134,17 @@ if $vls; then
     fi
     if [[ $level -ge 2 ]]; then
         regex+="${pfx}.*git_desc|"
-        regex+="${pfx}.*setting hsmd_protocol_version to|"
+        regex+="${pfx}.*setting protocol_version to|"
     fi
     if [[ $level -ge 3 ]]; then
         regex+="${pfx}.*added block|"
         regex+="${pfx}.*removed block|"
         regex+="${pfx}.*forget_channel|"
     fi
-    # if [[ $level -ge 4 ]]; then
-    # fi
+    if [[ $level -ge 4 ]]; then
+        regex+="${pfx}.*signer got request|"
+        regex+="${pfx}.*signer sending reply|"
+    fi
 fi
 
 # CLN and CLBOSS
@@ -149,8 +165,9 @@ if $lightningd; then
         regex+="Removing stale block|"
         regex+="State changed from|"
     fi
-    # if [[ $level -ge 4 ]]; then
-    # fi
+    if [[ $level -ge 4 ]]; then
+        regex+="->|"
+    fi
 fi
 
 # proxy startup and warns
@@ -247,6 +264,12 @@ vregex=""
 
 if $vls; then
     vregex+="error connecting to node, will retry|"
+    vregex+="signer got request.*(TipInfo|GetHeartbeat|ForwardWatches|AddBlock)|"
+    vregex+="signer sending reply.*(TipInfoReply|GetHeartbeat|ForwardWatchesReply|AddBlockReply)|"
+fi
+
+if $proxy; then
+    vregex+="vls_proxy.*new client|"
 fi
 
 if $lightningd; then
@@ -255,6 +278,7 @@ if $lightningd; then
     vregex+='read loop .* saw error Protocol.*; ending|'
     vregex+='error code: -25.*bad-txns-inputs-missingorspent|'
     vregex+='error code: -27.*Transaction already in block chain|'
+    vregex+='connectd: dev_report_fds:|'
 fi
 
 if $bitcoind; then
@@ -298,6 +322,9 @@ if $spacers; then
     sregex=${sregex%|}
     cmd+=" | awk '/'\"$sregex\"'/ {print \"\"; print; next;} {print}'"
 fi
+
+# Elide consecutive runs of lines
+cmd+=" | $LOGELIDE"
 
 # Execute the constructed command
 eval "$cmd"
