@@ -52,8 +52,6 @@ mod tests {
     use clap::Parser;
     use std::sync::Arc;
 
-    use vls_protocol_signer::handler::Handler;
-
     use crate::{
         config::{SignerArgs, RPC_SERVER_ADDRESS, RPC_SERVER_PORT},
         grpc::signer::make_handler,
