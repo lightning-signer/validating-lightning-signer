@@ -143,6 +143,7 @@ impl KVVStore for RedbKVVStore {
         let tx = self.db.begin_write().unwrap();
         let mut table = tx.open_table(TABLE).unwrap();
         let mut found_version_mismatch = false;
+        let mut staged_versions: BTreeMap<String, u64> = BTreeMap::new();
         let mut versions = self.versions.lock().unwrap();
 
         for kvv in kvvs.into_iter() {
@@ -164,7 +165,7 @@ impl KVVStore for RedbKVVStore {
                 }
             }
             table.insert(key, vv.as_slice()).expect("failed to insert");
-            versions.insert(key.to_string(), version);
+            staged_versions.insert(key.to_string(), version);
         }
         drop(table);
         if found_version_mismatch {
@@ -173,6 +174,9 @@ impl KVVStore for RedbKVVStore {
             return Err(Error::VersionMismatch);
         }
         tx.commit().unwrap();
+        for (key, value) in staged_versions.into_iter() {
+            versions.insert(key, value);
+        }
         Ok(())
     }
 
@@ -264,6 +268,27 @@ mod tests {
         let store = RedbKVVStore::new(tempdir.path());
         assert_eq!(store.signer_id(), id);
 
+        Ok(())
+    }
+
+    #[test]
+    fn put_batch_test() -> Result<(), Error> {
+        let tempdir = tempfile::tempdir().unwrap();
+        let store = RedbKVVStore::new(tempdir.path());
+        let kvvs = vec![
+            KVV("foo1".to_string(), (0, b"bar".to_vec())),
+            KVV("foo1".to_string(), (0, b"bar".to_vec())),
+            KVV("foo2".to_string(), (0, b"bar".to_vec())),
+        ];
+        assert!(store.put_batch(kvvs).is_ok());
+        let kvvs = vec![
+            KVV("foo1".to_string(), (1, b"bar2".to_vec())),
+            KVV("foo2".to_string(), (0, b"bar3".to_vec())),
+        ];
+        assert!(store.put_batch(kvvs).is_err());
+        store.put_with_version("foo1", 1, b"bar3".to_vec())?;
+        assert_eq!(store.get_version("foo1")?.unwrap(), 1);
+        assert_eq!(store.get("foo1")?.unwrap().1, b"bar3");
         Ok(())
     }
 

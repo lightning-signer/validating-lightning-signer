@@ -91,14 +91,14 @@ impl<L: KVVStore> KVVStore for CloudKVVStore<L> {
     type Iter = L::Iter;
 
     fn put(&self, key: &str, value: Vec<u8>) -> Result<(), Error> {
-        let version = self.get_version(key)?.map(|v| v + 1).unwrap_or(0);
+        let version = self.local.get_version(key)?.map(|v| v + 1).unwrap_or(0);
         self.put_with_version(key, version, value)
     }
 
     fn put_with_version(&self, key: &str, version: u64, value: Vec<u8>) -> Result<(), Error> {
         let mut commit_log_opt = self.commit_log.lock().unwrap();
         let commit_log = commit_log_opt.as_mut().expect("not in transaction");
-        let existing_version = self.do_get_version(commit_log, key)?;
+        let existing_version = self.local.get_version(key)?;
         if let Some(v) = existing_version {
             if version < v {
                 error!("version mismatch for {}: {} < {}", key, version, v);
@@ -106,7 +106,7 @@ impl<L: KVVStore> KVVStore for CloudKVVStore<L> {
                 return Err(Error::VersionMismatch);
             } else if version == v {
                 // if same version, value must not have changed
-                let existing = self.do_get(commit_log, key)?.expect("failed to get existing entry");
+                let existing = self.local.get(key)?.expect("failed to get existing entry");
                 if existing.1 != value {
                     error!("value mismatch for {}: {}", key, version);
                     return Err(Error::VersionMismatch);
@@ -236,11 +236,13 @@ mod tests {
         assert_eq!(mutations[0], ("_WRITER".to_owned(), (0, signer_id.to_vec())));
         assert_eq!(mutations[1], ("foo1".to_owned(), (1, b"bar2".to_vec())));
         assert_eq!(mutations[2], ("foo2".to_owned(), (0, b"boo".to_vec())));
-
         assert_eq!(cloud.local.get("foo1")?.unwrap(), (0, b"bar".to_vec()));
-        cloud.commit()?;
 
-        assert_eq!(cloud.local.get("foo1")?.unwrap(), (1, b"bar2".to_vec()));
+        cloud.put("foo1", b"bar3".to_vec())?;
+        assert_eq!(cloud.get("foo1")?.unwrap(), (1, b"bar3".to_vec()));
+
+        cloud.commit()?;
+        assert_eq!(cloud.local.get("foo1")?.unwrap(), (1, b"bar3".to_vec()));
 
         assert!(cloud.is_in_sync(Some((0, signer_id.to_vec()))));
 
