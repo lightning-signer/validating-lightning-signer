@@ -10,7 +10,7 @@ use bitcoin::{Network, OutPoint};
 use lightning_signer::chain::tracker::{ChainTracker, Headers, ListenSlot};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use serde_with::{hex::Hex, IfIsHumanReadable};
+use serde_with::{hex::Hex, Bytes, IfIsHumanReadable};
 
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::hashes::Hash;
@@ -60,14 +60,15 @@ impl From<CoreVelocityControl> for VelocityControl {
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub struct NodeStateEntry {
-    #[serde_as(as = "IfIsHumanReadable<Vec<(Hex, _)>>")]
+    #[serde_as(as = "IfIsHumanReadable<Vec<(Hex, _)>, Vec<(Bytes, _)>>")]
     pub invoices: Vec<(Vec<u8>, PaymentState)>,
-    #[serde_as(as = "IfIsHumanReadable<Vec<(Hex, _)>>")]
+    #[serde_as(as = "IfIsHumanReadable<Vec<(Hex, _)>, Vec<(Bytes, _)>>")]
     pub issued_invoices: Vec<(Vec<u8>, PaymentState)>,
     pub velocity_control: VelocityControl,
     #[serde(default = "default_fee_velocity_control")]
     pub fee_velocity_control: VelocityControl,
     #[serde(default)]
+    #[serde_as(as = "IfIsHumanReadable<_, Vec<Bytes>>")]
     pub preimages: Vec<[u8; 32]>,
     // TODO(devrandom): add routing control fields, once they stabilize
 }
@@ -182,10 +183,10 @@ impl AsRef<[u8]> for NodeChannelId {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ChainTrackerEntry {
     // Serialized headers beyond tip
-    #[serde_as(as = "IfIsHumanReadable<Vec<Hex>>")]
+    #[serde_as(as = "IfIsHumanReadable<Vec<Hex>, Vec<Bytes>>")]
     headers: Vec<Vec<u8>>,
     // Serialized header at tip
-    #[serde_as(as = "IfIsHumanReadable<Hex>")]
+    #[serde_as(as = "IfIsHumanReadable<Hex, Bytes>")]
     tip: Vec<u8>,
     height: u32,
     network: Network,
