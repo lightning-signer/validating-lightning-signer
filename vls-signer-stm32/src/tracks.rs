@@ -121,8 +121,9 @@ impl Tracks {
 
 fn track_char(msg: &Message) -> char {
     match msg {
+        Message::HsmdDevPreinit(_m) => '%',
         Message::HsmdInit(_m) => '@',
-        Message::HsmdInit2(_m) => '%',
+        Message::HsmdInit2(_m) => '@',
         Message::NodeInfo(_m) => '#',
         Message::Ecdh(_m) => 'e',
         Message::CheckPubKey(_m) => '=',
@@ -195,6 +196,7 @@ fn track_char(msg: &Message) -> char {
 
         // we shouldn't see any of these
         Message::Pong(_)
+        | Message::HsmdDevPreinitReply(_)
         | Message::HsmdInitReplyV2(_)
         | Message::HsmdInitReplyV4(_)
         | Message::HsmdInit2Reply(_)

@@ -91,11 +91,11 @@ pub fn connect(serial_port: String) -> anyhow::Result<SerialWrap> {
     let seed = read_integration_test_seed(".").map(|s| DevSecret(s)).or(Some(DevSecret([1; 32])));
     // FIXME remove this
     info!("allowlist {:?} seed {:?}", allowlist, seed);
-    let init = msgs::HsmdInit2 {
+    let preinit = msgs::HsmdDevPreinit {
         derivation_style: 0,
         network_name: WireString(Network::Testnet.to_string().as_bytes().to_vec()),
-        dev_seed: seed,
-        dev_allowlist: allowlist.into(),
+        seed: seed,
+        allowlist: allowlist.into(),
     };
     let sequence = 0;
     let peer_id = [0; 33];
@@ -104,10 +104,10 @@ pub fn connect(serial_port: String) -> anyhow::Result<SerialWrap> {
         &mut serial,
         &SerialRequestHeader { sequence, peer_id, dbid },
     )?;
-    msgs::write(&mut serial, init)?;
+    msgs::write(&mut serial, preinit)?;
     msgs::read_serial_response_header(&mut serial, sequence)?;
-    let init_reply: msgs::HsmdInit2Reply = msgs::read_message(&mut serial)?;
-    info!("init reply {:?}", init_reply);
+    let preinit_reply: msgs::HsmdDevPreinitReply = msgs::read_message(&mut serial)?;
+    info!("preinit reply {:?}", preinit_reply);
     Ok(serial)
 }
 
