@@ -34,7 +34,7 @@ use vls_protocol::model::PubKey;
 use vls_protocol::msgs::{self, read_serial_request_header, write_serial_response_header, Message};
 use vls_protocol::serde_bolt::WireString;
 use vls_protocol_signer::approver::{Approve, WarningPositiveApprover};
-use vls_protocol_signer::handler::{Handler, InitHandler, RootHandler, HandlerBuilder};
+use vls_protocol_signer::handler::{Handler, HandlerBuilder, InitHandler, RootHandler};
 use vls_protocol_signer::lightning_signer;
 use vls_protocol_signer::lightning_signer::bitcoin;
 use vls_protocol_signer::vls_protocol;
@@ -137,12 +137,11 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
         let allowlist = vec![]; // TODO - add to NormalContext
         let seed = runctx.seed;
         let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive);
-        let (root_handler, _muts) =
-            HandlerBuilder::new(runctx.cmn.network, 0, services, seed.0)
-                .allowlist(allowlist)
-                .approver(approver)
-                .build()
-                .expect("handler build");
+        let (root_handler, _muts) = HandlerBuilder::new(runctx.cmn.network, 0, services, seed.0)
+            .allowlist(allowlist)
+            .approver(approver)
+            .build()
+            .expect("handler build");
         info!("used {} bytes", heap_bytes_used());
 
         display_intro(
@@ -172,8 +171,7 @@ fn handle_init_requests(arc_devctx: &RefCell<DeviceContext>, init_handler: &mut 
         }
 
         drop(devctx); // Release the DeviceContext during the handler call (Approver needs)
-        let (is_done, reply) =
-            init_handler.handle(message).expect("handle");
+        let (is_done, reply) = init_handler.handle(message).expect("handle");
         let mut devctx = arc_devctx.borrow_mut(); // Reacquire the DeviceContext
 
         write_serial_response_header(&mut devctx.serial, reqhdr.sequence)
