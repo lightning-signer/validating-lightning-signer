@@ -159,7 +159,13 @@ fn track_char(msg: &Message) -> char {
         Message::SignMutualCloseTx(_m) => ')',
         Message::SignMutualCloseTx2(_m) => ')',
 
-        Message::SignCommitmentTx(_m) => 'S',
+        Message::SignCommitmentTx(m) => {
+            if m.tx.0.lock_time.0 == 0 {
+                ')' // really a SignMutualCloseTx
+            } else {
+                'S'
+            }
+        }
         Message::SignLocalCommitmentTx2(_m) => 'S',
         Message::SignLocalHtlcTx(_m) => 'L',
         Message::SignAnyLocalHtlcTx(_m) => 'L',
