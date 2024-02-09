@@ -3,7 +3,6 @@
 import sys
 import re
 
-# Define your regular expressions
 patterns = {
     'cln_addblock': {
         'regex': re.compile(r'^.*lightningd:.*Adding block.* (\d+): [0-9a-f]{64}$'),
@@ -37,6 +36,7 @@ def process_consecutive(pattern_key):
     else:
         for line in consecutive:
             sys.stdout.write(line)
+    sys.stdout.flush()
     patterns[pattern_key]['consecutive'] = []
     patterns[pattern_key]['last_height'] = 0
 
@@ -46,8 +46,9 @@ for line in sys.stdin:
         match = pattern_data['regex'].search(line)
         if match:
             height = int(match.group(1))
-            
-            # If currently tracking a different pattern or height difference is more than 1, process its lines first
+
+            # If currently tracking a different pattern or height
+            # difference is more than 1, process its lines first
             if (current_pattern and current_pattern != key) or \
                (current_pattern and height - patterns[current_pattern]['last_height'] != 1):
                 process_consecutive(current_pattern)
@@ -71,3 +72,4 @@ for line in sys.stdin:
 
     if not current_pattern:
         sys.stdout.write(line)
+        sys.stdout.flush()
