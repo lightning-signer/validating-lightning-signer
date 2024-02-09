@@ -112,6 +112,9 @@ pub struct SimplePolicy {
     pub enforce_balance: bool,
     /// Maximum layer-2 fee
     pub max_routing_fee_msat: u64,
+    /// Maximum layer-2 percentage fee, this is setting
+    /// up the max fee percentage to pay for a payment.
+    pub max_feerate_percentage: u8,
     /// Developer flags - DO NOT USE IN PRODUCTION
     pub dev_flags: Option<PolicyDevFlags>,
     /// Policy filter
@@ -1616,6 +1619,15 @@ impl Validator for SimpleValidator {
         Ok(())
     }
 
+    /// When thinking about payment routing and balance, it is
+    /// useful to consider three cases:
+    ///
+    /// 1. When `invoiced_amount_msat` is specified and the `incoming_msat` is 0;
+    /// e.g. we are paying an invoice and there is no loop in the routing through us
+    /// 2. When `invoiced_amount_msat` is specified and the `incoming_msat` is not 0;
+    /// e.g. we are paying an invoice and there is a loop in the routing that includes us
+    /// 3. When no `invoiced_amount_msat` is specified and the `incoming_msat` is not 0;
+    /// e.g forwarding a payment.
     fn validate_payment_balance(
         &self,
         incoming_msat: u64,
@@ -1627,6 +1639,7 @@ impl Validator for SimpleValidator {
         } else {
             0
         };
+
         // this also implicitly implements policy-commitment-payment-invoiced
         if incoming_msat + max_to_invoice_msat < outgoing_msat {
             policy_err!(
@@ -1638,6 +1651,30 @@ impl Validator for SimpleValidator {
                 outgoing_msat
             );
         }
+
+        if let Some(invoiced_amount_msat) = invoiced_amount_msat {
+            // When we are underpaying the invoice or we are not paying fee,
+            // there is no need to check the fee here.
+            if invoiced_amount_msat + incoming_msat > outgoing_msat {
+                return Ok(());
+            }
+
+            // check if the payment is payment an percentage of the fee
+            let fee = outgoing_msat - invoiced_amount_msat - incoming_msat;
+            let actual_fee_percentage = fee
+                .checked_mul(100)
+                .ok_or(policy_error(format!("policy-generic-error: invoice amount too big")))?
+                / invoiced_amount_msat;
+            if actual_fee_percentage > self.policy.max_feerate_percentage.into() {
+                policy_err!(
+                    self,
+                    "policy-htlc-fee-range",
+                    "fee_percentage > max_feerate_percentage: {actual_fee_percentage}% > {}%",
+                    self.policy.max_feerate_percentage
+                );
+            }
+        }
+
         Ok(())
     }
 
@@ -1836,6 +1873,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_feerate_per_kw: 25_000, // equiv to 100 sat/vb
             enforce_balance: false,
             max_routing_fee_msat: 10_000,
+            max_feerate_percentage: 10,
             dev_flags: None,
             filter: PolicyFilter::default(),
             global_velocity_control: VelocityControlSpec::UNLIMITED,
@@ -1857,6 +1895,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_feerate_per_kw: 151_000, // CLN max_feerate 150_000 common
             enforce_balance: false,
             max_routing_fee_msat: 120_000, // CLN test_pay_exclude_node: 101_000
+            max_feerate_percentage: 10,
             dev_flags: None,
             filter: PolicyFilter::default(),
             global_velocity_control: VelocityControlSpec::UNLIMITED,
@@ -1889,6 +1928,7 @@ mod tests {
             use_chain_state: true,
             min_feerate_per_kw: 1000,
             max_feerate_per_kw: 1000 * 1000,
+            max_feerate_percentage: 10,
             enforce_balance: false,
             max_routing_fee_msat: 10000,
             dev_flags: None,
