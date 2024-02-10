@@ -77,11 +77,11 @@ fn main() -> ! {
         RunContext::Normal(normctx) => {
             info!("RunContext::Normal {:?}", normctx);
             let mut signer_id = [0u8; 16];
-            rng.fill_bytes(&mut signer_id);
-            let _persister: Arc<dyn Persist> = Arc::new(FatJsonPersister::new(Arc::clone(
-                &normctx.cmn.setupfs.as_ref().unwrap(),
+            signer_id.fill(1);
+            let _persister: Arc<dyn Persist> = Arc::new(FatJsonPersister::new(
+                Arc::clone(&normctx.cmn.setupfs.as_ref().unwrap()),
                 signer_id,
-            )));
+            ));
             if let Some(setupfs) = normctx.cmn.setupfs.as_ref() {
                 logger::add_also(Box::new(FatLogger::new(
                     TEST_LOG.to_string(),
