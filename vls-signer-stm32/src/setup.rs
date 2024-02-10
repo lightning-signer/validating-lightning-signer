@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
@@ -17,6 +18,7 @@ use fatfs::{self, Read, Write};
 
 use cortex_m::prelude::_embedded_hal_blocking_delay_DelayMs;
 
+use crate::device::heap_bytes_avail;
 use crate::sdcard;
 use crate::DeviceContext;
 
@@ -84,6 +86,7 @@ const PERMISSIVE_FILE: &str = "PERMISSIVE";
 const NETWORK_FILE: &str = "NETWORK";
 const KDSTYLE_FILE: &str = "KDSTYLE";
 const HSMSEED_FILE: &str = "hsm_secret";
+const BALLAST_FILE: &str = "BALLAST";
 
 // These should be managed instead of fixed
 const TESTING_KDSTYLE: KeyDerivationStyle = KeyDerivationStyle::Native;
@@ -135,6 +138,17 @@ impl SetupFS {
             Err(err) => panic!("open {} failed: {:#?}", PERMISSIVE_FILE, err),
             Ok(_) => true,
         };
+
+        // Set aside some memory if there is a BALLAST file
+        let ballast_str =
+            self.read_file_string(&rundir, BALLAST_FILE).unwrap_or_else(|| "0".to_string());
+        let ballast: u32 = ballast_str.parse().unwrap_or(0);
+        info!("withholding {}KB of {}KB heap as ballast", ballast, heap_bytes_avail() / 1024);
+        if ballast > 0 {
+            let ballast_memory = vec![0u8; (ballast as usize) * 1024];
+            let _leaked_memory = Box::leak(Box::new(ballast_memory));
+        }
+        info!("starting with {}KB heap available", heap_bytes_avail() / 1024);
 
         let opt_seed = if is_testing {
             None

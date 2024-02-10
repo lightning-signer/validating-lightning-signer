@@ -140,6 +140,10 @@ pub fn heap_bytes_used() -> usize {
     ALLOCATOR.used()
 }
 
+pub fn heap_bytes_avail() -> usize {
+    HEAP_SIZE - heap_bytes_used()
+}
+
 pub fn make_lcd<PINS: fsmc_lcd::Pins<Lcds = Lcd<B>>, B: SubBank>(
     fsmc: FSMC,
     lcd_pins: PINS,
