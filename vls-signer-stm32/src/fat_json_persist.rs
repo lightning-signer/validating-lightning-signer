@@ -340,8 +340,12 @@ impl Persist for FatJsonPersister {
     ) -> Result<(), persist::Error> {
         let key = Self::chaintracker_key();
         let entry: ChainTrackerEntry = tracker.into();
-        let value = json!(entry).to_string();
-        self.update_value(&Self::chaintracker_bucket_path(), &key, &value).map_err(|err| err.into())
+        let value_bytes =
+            serde_json::to_vec(&entry).map_err(|err| persist::Error::Internal(err.to_string()))?;
+        let value_str = String::from_utf8(value_bytes)
+            .map_err(|err| persist::Error::Internal(err.to_string()))?;
+        self.update_value(&Self::chaintracker_bucket_path(), &key, &value_str)
+            .map_err(|err| err.into())
     }
 
     fn get_tracker(
