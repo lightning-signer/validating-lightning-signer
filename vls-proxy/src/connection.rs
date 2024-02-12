@@ -22,6 +22,10 @@ impl UnixConnection {
         UnixConnection { fd, stream: unsafe { UnixStream::from_raw_fd(fd) } }
     }
 
+    pub fn try_clone(&self) -> SResult<Self> {
+        Ok(UnixConnection { fd: self.fd, stream: self.stream.try_clone()? })
+    }
+
     pub(crate) fn id(&self) -> u64 {
         self.fd as u64
     }
