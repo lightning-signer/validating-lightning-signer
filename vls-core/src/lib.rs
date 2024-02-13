@@ -82,7 +82,7 @@ mod io_extras {
 
 #[cfg(feature = "std")]
 mod io_extras {
-    pub use std::io::{self, sink, Error, Read};
+    pub use std::io::{self, sink, Error};
 }
 
 pub use io_extras::io;
@@ -132,7 +132,7 @@ use prelude::*;
 
 #[cfg(feature = "std")]
 mod sync {
-    pub use ::std::sync::{Arc, Condvar, Mutex, MutexGuard, RwLock, RwLockReadGuard, Weak};
+    pub use ::std::sync::{Arc, Weak};
 }
 
 /// A trait for getting a commitment point for a given commitment number,
