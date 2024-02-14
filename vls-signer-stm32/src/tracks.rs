@@ -129,6 +129,7 @@ fn track_char(msg: &Message) -> char {
 
         Message::SignNodeAnnouncement(_m) => 'n',
         Message::SignChannelAnnouncement(_m) => 'c',
+        Message::SignAnyChannelAnnouncement(_m) => 'c',
         Message::SignChannelUpdate(_m) => 'u',
         Message::SignInvoice(_m) => 'i',
         Message::SignBolt12(_m) => 'i',
@@ -208,6 +209,7 @@ fn track_char(msg: &Message) -> char {
         | Message::CheckPubKeyReply(_)
         | Message::SignChannelUpdateReply(_)
         | Message::SignChannelAnnouncementReply(_)
+        | Message::SignAnyChannelAnnouncementReply(_)
         | Message::SignNodeAnnouncementReply(_)
         | Message::GetPerCommitmentPointReply(_)
         | Message::GetPerCommitmentPoint2Reply(_)
