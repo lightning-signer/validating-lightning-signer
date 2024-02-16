@@ -1664,7 +1664,7 @@ impl Validator for SimpleValidator {
             let actual_fee_percentage = fee
                 .checked_mul(100)
                 .ok_or(policy_error(format!("policy-generic-error: invoice amount too big")))?
-                / invoiced_amount_msat;
+                / core::cmp::max(invoiced_amount_msat, 1);
             if actual_fee_percentage > self.policy.max_feerate_percentage.into() {
                 policy_err!(
                     self,
@@ -2474,5 +2474,12 @@ mod tests {
 
         // can't look forward
         assert_eq!(state.get_previous_counterparty_point(3), None);
+    }
+
+    #[test]
+    fn validate_payment_balance_with_zero_invoiced_amount_test() {
+        let validator = make_test_validator();
+        let result = validator.validate_payment_balance(100, 100, Some(0));
+        assert!(result.is_ok());
     }
 }
