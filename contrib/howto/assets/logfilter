@@ -144,6 +144,7 @@ if $vls; then
     if [[ $level -ge 4 ]]; then
         regex+="${pfx}.*signer got request|"
         regex+="${pfx}.*signer sending reply|"
+        regex+="${pfx}.*adding invoice|"
     fi
 fi
 
