@@ -361,6 +361,24 @@ pub struct SignChannelAnnouncementReply {
     pub bitcoin_signature: Signature,
 }
 
+/// CLN only
+/// Same as [SignChannelAnnouncement] but called from lightningd
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(4)]
+pub struct SignAnyChannelAnnouncement {
+    pub announcement: Octets,
+    pub peer_id: PubKey,
+    pub dbid: u64,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(104)]
+pub struct SignAnyChannelAnnouncementReply {
+    pub node_signature: Signature,
+    pub bitcoin_signature: Signature,
+}
+
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(6)]
@@ -1040,6 +1058,8 @@ pub enum Message {
     SignChannelUpdateReply(SignChannelUpdateReply),
     SignChannelAnnouncement(SignChannelAnnouncement),
     SignChannelAnnouncementReply(SignChannelAnnouncementReply),
+    SignAnyChannelAnnouncement(SignAnyChannelAnnouncement),
+    SignAnyChannelAnnouncementReply(SignAnyChannelAnnouncementReply),
     SignNodeAnnouncement(SignNodeAnnouncement),
     SignNodeAnnouncementReply(SignNodeAnnouncementReply),
     GetPerCommitmentPoint(GetPerCommitmentPoint),
