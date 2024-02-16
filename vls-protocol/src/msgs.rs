@@ -50,6 +50,25 @@ pub trait DeBolt: Debug + Sized + Encodable + Decodable {
     fn from_vec(ser: Vec<u8>) -> Result<Self>;
 }
 
+/// Developer setup for testing
+/// Must preceed `HsmdInit{,2}` message
+/// NOT FOR PRODUCTION USE
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(90)]
+pub struct HsmdDevPreinit {
+    pub derivation_style: u8,
+    pub network_name: WireString,
+    pub seed: Option<DevSecret>,
+    pub allowlist: Array<WireString>,
+}
+
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(190)]
+pub struct HsmdDevPreinitReply {
+    /// The derived nodeid (or generated if none was supplied)
+    pub node_id: PubKey,
+}
+
 /// hsmd Init
 /// CLN only
 #[derive(SerBolt, Debug, Encodable, Decodable)]
@@ -1021,6 +1040,8 @@ pub const UNKNOWN_PLACEHOLDER: UnknownPlaceholder = UnknownPlaceholder {};
 pub enum Message {
     Ping(Ping),
     Pong(Pong),
+    HsmdDevPreinit(HsmdDevPreinit),
+    HsmdDevPreinitReply(HsmdDevPreinitReply),
     HsmdInit(HsmdInit),
     // HsmdInitReplyV1(HsmdInitReplyV1),
     #[allow(deprecated)]

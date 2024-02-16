@@ -118,6 +118,9 @@ One-time setup stuff:
 
 Initial Build of CLN and VLS:
 ```
+# if trouble with "KeyringLocked":
+# export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
+
 cd ~/lightning-signer/vls-hsmd && make build
 cd ~/lightning-signer/vls-hsmd/lightning && poetry run make
 ```

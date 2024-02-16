@@ -161,10 +161,18 @@ if $lightningd; then
         regex+=": Shutting down|"
     fi
     if [[ $level -ge 3 ]]; then
-        regex+="New block at|"
         regex+="Adding block|"
         regex+="Removing stale block|"
         regex+="State changed from|"
+        regex+="plugin-clboss: New block at|"
+	regex+="plugin-clboss: NodeBalanceSwapper|"
+	regex+="plugin-clboss: SwapManager:|"
+	regex+="plugin-clboss: Boltz::Service|"
+	regex+="plugin-clboss: OnchainFundsAnnouncer|"
+	regex+="plugin-clboss: ChannelCreationDecider|"
+	regex+="plugin-clboss: ChannelCreator|"
+	regex+="plugin-clboss: Rpc out: sendrawtransaction|"
+	regex+="plugin-clboss: ChannelCandidateInvestigator|"
     fi
     if [[ $level -ge 4 ]]; then
         regex+="->|"
@@ -273,6 +281,7 @@ if $proxy; then
     vregex+="vls_proxy.*new client|"
 fi
 
+# CAUTION - this filter sees colorized matches from above, regex need to consider
 if $lightningd; then
     vregex+="Ignoring fee limits|"
     vregex+='/swapstatus .* not accessible|'
@@ -280,6 +289,7 @@ if $lightningd; then
     vregex+='error code: -25.*bad-txns-inputs-missingorspent|'
     vregex+='error code: -27.*Transaction already in block chain|'
     vregex+='connectd: dev_report_fds:|'
+    vregex+='no more swaps need addresses|' # clboss
 fi
 
 if $bitcoind; then
@@ -301,17 +311,20 @@ vregex=${vregex%|}
 # ----------------------------------------------------------------
 # Run the filters
 
+# Set line-buffered output
+STDBUFPFX="stdbuf -oL"
+
 # Initialize the command
-cmd="grep -E --text --color=always \"$regex\""
+cmd="$STDBUFPFX grep -E --text --color=always \"$regex\""
 
 # Append the sed command if watches are enabled
 if $watches; then
-    cmd+=" | sed -E 's/(ForwardWatchesReply|ReverseWatchesReply) {.*}/\1 { ... }/'"
+    cmd+=" | $STDBUFPFX sed -E 's/(ForwardWatchesReply|ReverseWatchesReply) {.*}/\1 { ... }/'"
 fi
 
 # Append the final grep command only if vregex has content
 if [[ -n $vregex ]]; then
-    cmd+=" | grep -E -v '$vregex'"
+    cmd+=" | $STDBUFPFX grep -E -v '$vregex'"
 fi
 
 # Add newlines before start heralds
@@ -321,11 +334,11 @@ if $spacers; then
     sregex+="Server started|"
     sregex+="Bitcoin Core version|"
     sregex=${sregex%|}
-    cmd+=" | awk '/'\"$sregex\"'/ {print \"\"; print; next;} {print}'"
+    cmd+=" | $STDBUFPFX awk '/'\"$sregex\"'/ {print \"\"; print; next;} {print}'"
 fi
 
 # Elide consecutive runs of lines
-cmd+=" | $LOGELIDE"
+cmd+=" | $STDBUFPFX $LOGELIDE"
 
 # Execute the constructed command
 eval "$cmd"

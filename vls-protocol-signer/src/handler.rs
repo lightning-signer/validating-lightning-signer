@@ -493,6 +493,23 @@ impl InitHandler {
                     msgs::Pong { id: p.id, message: WireString("pong".as_bytes().to_vec()) };
                 Ok((false, Box::new(reply)))
             }
+            Message::HsmdDevPreinit(m) => {
+                // FIXME - this message should be disabled in production mode
+                let node_id = self.node.get_id().serialize();
+                // the seed is extracted before this handler is called to create the node
+                let allowlist: Vec<_> = m
+                    .allowlist
+                    .iter()
+                    .map(|ws| String::from_utf8(ws.0.clone()).expect("utf8"))
+                    .collect();
+                // FIXME disable in production
+                self.node.add_allowlist(&allowlist)?;
+                self.protocol_version = None;
+                Ok((
+                    false, // HsmdInit{,2} will follow ...
+                    Box::new(msgs::HsmdDevPreinitReply { node_id: PubKey(node_id) }),
+                ))
+            }
             Message::HsmdInit(m) => {
                 let node_id = self.node.get_id().serialize();
                 let bip32 = self.node.get_account_extended_pubkey().encode();

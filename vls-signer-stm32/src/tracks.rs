@@ -121,8 +121,9 @@ impl Tracks {
 
 fn track_char(msg: &Message) -> char {
     match msg {
+        Message::HsmdDevPreinit(_m) => '%',
         Message::HsmdInit(_m) => '@',
-        Message::HsmdInit2(_m) => '%',
+        Message::HsmdInit2(_m) => '@',
         Message::NodeInfo(_m) => '#',
         Message::Ecdh(_m) => 'e',
         Message::CheckPubKey(_m) => '=',
@@ -150,17 +151,23 @@ fn track_char(msg: &Message) -> char {
         Message::CheckOutpoint(_m) => '?',
         Message::LockOutpoint(_m) => '!',
 
-        Message::SignRemoteCommitmentTx(_m) => 's',
-        Message::SignRemoteCommitmentTx2(_m) => 's',
+        Message::SignRemoteCommitmentTx(_m) => '<',
+        Message::SignRemoteCommitmentTx2(_m) => '<',
         Message::SignRemoteHtlcTx(_m) => 'h',
-        Message::ValidateCommitmentTx(_m) => 'v',
-        Message::ValidateCommitmentTx2(_m) => 'v',
-        Message::RevokeCommitmentTx(_m) => 'q',
-        Message::ValidateRevocation(_m) => 'r',
+        Message::ValidateCommitmentTx(_m) => '{',
+        Message::ValidateCommitmentTx2(_m) => '{',
+        Message::RevokeCommitmentTx(_m) => '}',
+        Message::ValidateRevocation(_m) => '>',
         Message::SignMutualCloseTx(_m) => ')',
         Message::SignMutualCloseTx2(_m) => ')',
 
-        Message::SignCommitmentTx(_m) => 'S',
+        Message::SignCommitmentTx(m) => {
+            if m.tx.0.lock_time.0 == 0 {
+                ')' // really a SignMutualCloseTx
+            } else {
+                'S'
+            }
+        }
         Message::SignLocalCommitmentTx2(_m) => 'S',
         Message::SignLocalHtlcTx(_m) => 'L',
         Message::SignAnyLocalHtlcTx(_m) => 'L',
@@ -190,6 +197,7 @@ fn track_char(msg: &Message) -> char {
 
         // we shouldn't see any of these
         Message::Pong(_)
+        | Message::HsmdDevPreinitReply(_)
         | Message::HsmdInitReplyV2(_)
         | Message::HsmdInitReplyV4(_)
         | Message::HsmdInit2Reply(_)

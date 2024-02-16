@@ -51,6 +51,9 @@ clboss-auto-close=true
 ```
 
 ### Install CLN plugins
+
+Note - the summary plugin is "archived" as of 2024-02.
+
 Setup plugins
 ```
 sudo pip3 install pyln-client pyln-testing
@@ -59,12 +62,12 @@ cd /usr/local/src
 git clone --recurse-submodules https://github.com/lightningd/plugins.git && cd plugins
 
 # make sure the summary plugin is ready to go, this should politly demure:
-summary/summary.py
+archived/summary/summary.py
 ```
 
 Add to `~cln/.lightning/testnet-config`:
 ```
-plugin=/usr/local/src/plugins/summary/summary.py
+plugin=/usr/local/src/plugins/archived/summary/summary.py
 ```
 
 ### Start Services Again

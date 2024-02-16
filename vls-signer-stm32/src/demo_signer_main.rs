@@ -34,7 +34,7 @@ use vls_protocol::model::PubKey;
 use vls_protocol::msgs::{self, read_serial_request_header, write_serial_response_header, Message};
 use vls_protocol::serde_bolt::WireString;
 use vls_protocol_signer::approver::{Approve, WarningPositiveApprover};
-use vls_protocol_signer::handler::{Handler, InitHandler, RootHandler, HandlerBuilder};
+use vls_protocol_signer::handler::{Handler, HandlerBuilder, InitHandler, RootHandler};
 use vls_protocol_signer::lightning_signer;
 use vls_protocol_signer::lightning_signer::bitcoin;
 use vls_protocol_signer::vls_protocol;
@@ -137,12 +137,11 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
         let allowlist = vec![]; // TODO - add to NormalContext
         let seed = runctx.seed;
         let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive);
-        let (root_handler, _muts) =
-            HandlerBuilder::new(runctx.cmn.network, 0, services, seed.0)
-                .allowlist(allowlist)
-                .approver(approver)
-                .build()
-                .expect("handler build");
+        let (root_handler, _muts) = HandlerBuilder::new(runctx.cmn.network, 0, services, seed.0)
+            .allowlist(allowlist)
+            .approver(approver)
+            .build()
+            .expect("handler build");
         info!("used {} bytes", heap_bytes_used());
 
         display_intro(
@@ -172,8 +171,7 @@ fn handle_init_requests(arc_devctx: &RefCell<DeviceContext>, init_handler: &mut 
         }
 
         drop(devctx); // Release the DeviceContext during the handler call (Approver needs)
-        let (is_done, reply) =
-            init_handler.handle(message).expect("handle");
+        let (is_done, reply) = init_handler.handle(message).expect("handle");
         let mut devctx = arc_devctx.borrow_mut(); // Reacquire the DeviceContext
 
         write_serial_response_header(&mut devctx.serial, reqhdr.sequence)
@@ -201,19 +199,19 @@ fn start_test_mode(runctx: TestingContext) -> ! {
 
     info!("start_test_mode {:?}", runctx);
 
-    let root_handler = {
+    let mut init_handler = {
         let mut devctx = runctx.cmn.devctx.borrow_mut();
 
         display_intro(&mut devctx, runctx.cmn.network, runctx.cmn.permissive, "test-mode");
 
-        // Receive the HsmdInit2 message to learn the dev_seed (and allowlist)
-        let reqhdr = read_serial_request_header(&mut devctx.serial).expect("read init header");
+        // Receive the HsmdDevPreinit message to learn the test seed (and allowlist)
+        let reqhdr = read_serial_request_header(&mut devctx.serial).expect("read preinit header");
         assert_eq!(reqhdr.sequence, 0);
         assert_eq!(reqhdr.peer_id, [0u8; 33]);
         assert_eq!(reqhdr.dbid, 0);
-        let init: msgs::HsmdInit2 =
-            msgs::read_message(&mut devctx.serial).expect("failed to read init message");
-        info!("init {:?}", init);
+        let preinit: msgs::HsmdDevPreinit =
+            msgs::read_message(&mut devctx.serial).expect("failed to read preinit message");
+        info!("preinit {:?}", preinit);
 
         // Create the test-mode handler
         let validator_factory = make_validator_factory(runctx.cmn.network, runctx.cmn.permissive);
@@ -222,8 +220,9 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
         let clock = Arc::new(ManualClock::new(Duration::ZERO));
         let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
-        let allowlist = init.dev_allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
-        let seed = init.dev_seed.as_ref().map(|s| s.0).expect("no seed");
+        let allowlist = preinit.allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
+        let seed = preinit.seed.as_ref().map(|s| s.0).expect("no seed");
+
         let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive);
         let (mut init_handler, _muts) = HandlerBuilder::new(runctx.cmn.network, 0, services, seed)
             .allowlist(allowlist)
@@ -231,16 +230,18 @@ fn start_test_mode(runctx: TestingContext) -> ! {
             .build()
             .expect("handler build");
         let (is_done, init_reply) =
-            init_handler.handle(Message::HsmdInit2(init)).expect("handle init");
-        assert!(is_done, "init handler not done");
+            init_handler.handle(Message::HsmdDevPreinit(preinit)).expect("handle init");
+        assert!(!is_done, "init handler done");
         write_serial_response_header(&mut devctx.serial, reqhdr.sequence)
-            .expect("write init header");
+            .expect("write preinit header");
         msgs::write_vec(&mut devctx.serial, init_reply.as_vec()).expect("write init reply");
 
         info!("used {} bytes", heap_bytes_used());
-        init_handler.into_root_handler()
+        init_handler
     };
 
+    handle_init_requests(&*runctx.cmn.devctx, &mut init_handler);
+    let root_handler = init_handler.into_root_handler();
     handle_requests(&*runctx.cmn.devctx, root_handler);
 }
 
