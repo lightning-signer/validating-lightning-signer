@@ -55,6 +55,15 @@ The `RUST_LOG` env variable is interpreted by all VLS rust programs.
 
 The `RUST_LOG` environment variable can be set to `trace`, `debug`, `info` ...
 
+#### 'BITCOIND_CLIENT_TIMEOUT_SECS' - Set the bitcoind_client timeout
+
+Setting `BITCOIND_CLIENT_TIMEOUT_SECS=60` will set the timeout used by
+the frontend (in the proxy) when making requests to the bitcoind RPC
+API to 60 seconds.
+
+If not set the bitcoind_client uses the default `SimpleHttpTransport`
+timeout (currently 15 seconds).
+
 #### `RUST_BACKTRACE` - Enable backtraces
 
 The `RUST_BACKTRACE` env variable is interpreted by all VLS rust programs.
