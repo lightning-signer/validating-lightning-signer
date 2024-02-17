@@ -905,11 +905,17 @@ impl Handler for RootHandler {
                 m.option_anchors,
                 m.input,
             ),
-            Message::SignAnyChannelAnnouncement(m) => sign_channel_announcement(
-                &self.node,
-                &Self::channel_id(&m.peer_id, m.dbid),
-                &m.announcement,
-            ),
+            Message::SignAnyChannelAnnouncement(m) => {
+                let (node_signature, bitcoin_signature) = sign_channel_announcement(
+                    &self.node,
+                    &Self::channel_id(&m.peer_id, m.dbid),
+                    &m.announcement,
+                )?;
+                Ok(Box::new(msgs::SignAnyChannelAnnouncementReply {
+                    node_signature,
+                    bitcoin_signature,
+                }))
+            }
             Message::SignAnchorspend(m) => {
                 let mut streamed = m.psbt.0;
                 let utxos = m.utxos;
@@ -1425,8 +1431,14 @@ impl Handler for ChannelHandler {
                 &m.wscript,
                 0,
             ),
-            Message::SignChannelAnnouncement(m) =>
-                sign_channel_announcement(&self.node, &self.channel_id, &m.announcement),
+            Message::SignChannelAnnouncement(m) => {
+                let (node_signature, bitcoin_signature) =
+                    sign_channel_announcement(&self.node, &self.channel_id, &m.announcement)?;
+                Ok(Box::new(msgs::SignChannelAnnouncementReply {
+                    node_signature,
+                    bitcoin_signature,
+                }))
+            }
             Message::Unknown(u) => {
                 unimplemented!("cloop {}: unknown message type {}", self.id, u.message_type)
             }
@@ -1587,16 +1599,13 @@ fn sign_channel_announcement(
     node: &Node,
     channel_id: &ChannelId,
     announcement: &Octets,
-) -> Result<Box<dyn SerBolt>> {
+) -> Result<(Signature, Signature)> {
     let message = announcement[256 + 2..].to_vec();
     let bitcoin_sig = node.with_channel(channel_id, |chan| {
         Ok(chan.sign_channel_announcement_with_funding_key(&message))
     })?;
     let node_sig = node.sign_channel_update(&message)?;
-    Ok(Box::new(msgs::SignAnyChannelAnnouncementReply {
-        node_signature: Signature(node_sig.serialize_compact()),
-        bitcoin_signature: Signature(bitcoin_sig.serialize_compact()),
-    }))
+    Ok((Signature(node_sig.serialize_compact()), Signature(bitcoin_sig.serialize_compact())))
 }
 
 fn extract_pubkey(key: &PubKey) -> PublicKey {
