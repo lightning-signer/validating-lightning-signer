@@ -7,7 +7,7 @@
 
 use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use clap::App;
 #[allow(unused_imports)]
@@ -30,6 +30,7 @@ use util::{
     abort_on_panic, add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, setup_logging,
     vls_network,
 };
+use vls_proxy::grpc::signer_loop::InitMessageCache;
 use vls_proxy::*;
 
 /// Implement hsmd replacement that listens to connections from vlsd2.
@@ -80,7 +81,8 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
     })
     .expect("Error setting Ctrl-C handler");
 
-    let server = HsmdService::new(shutdown_trigger.clone(), shutdown_signal.clone());
+    let init_message_cache = Arc::new(Mutex::new(InitMessageCache::new()));
+    let server = HsmdService::new(shutdown_trigger.clone(), shutdown_signal.clone(), init_message_cache.clone());
 
     let incoming = TcpIncoming::new(addr, false, None).expect("listen incoming"); // new_from_std seems to be infallible
 
@@ -98,11 +100,14 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
 
     // Start the UNIX fd listener loop
     let shutdown_signal_clone = shutdown_signal.clone();
-    spawn_blocking(move || {
-        let mut signer_loop =
-            SignerLoop::new(client, signer_port, shutdown_trigger, shutdown_signal_clone);
-        signer_loop.start()
-    });
+    let mut signer_loop = SignerLoop::new(
+        client,
+        signer_port,
+        shutdown_trigger,
+        shutdown_signal_clone,
+        init_message_cache.clone(),
+    );
+    spawn_blocking(move || signer_loop.start());
 
     // Start the gRPC listener loop - the signer will connect to us
     info!("starting gRPC service on {}", addr);

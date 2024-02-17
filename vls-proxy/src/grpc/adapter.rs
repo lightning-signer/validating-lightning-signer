@@ -14,6 +14,7 @@ use super::hsmd::{
     hsmd_server, HsmRequestContext, PingReply, PingRequest, SignerRequest, SignerResponse,
 };
 use super::incoming::TcpIncoming;
+use crate::grpc::signer_loop::InitMessageCache;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tonic::transport::Error;
 use triggered::{Listener, Trigger};
@@ -23,6 +24,8 @@ struct Requests {
     request_id: AtomicU64,
 }
 
+const DUMMY_REQUEST_ID: u64 = u64::MAX;
+
 /// Adapt the hsmd UNIX socket protocol to gRPC streaming
 #[derive(Clone)]
 pub struct ProtocolAdapter {
@@ -31,6 +34,7 @@ pub struct ProtocolAdapter {
     #[allow(unused)]
     shutdown_trigger: Trigger,
     shutdown_signal: Listener,
+    init_message_cache: Arc<std::sync::Mutex<InitMessageCache>>,
 }
 
 pub type SignerStream =
@@ -41,6 +45,7 @@ impl ProtocolAdapter {
         receiver: Receiver<ChannelRequest>,
         shutdown_trigger: Trigger,
         shutdown_signal: Listener,
+        init_message_cache: Arc<std::sync::Mutex<InitMessageCache>>,
     ) -> Self {
         ProtocolAdapter {
             receiver: Arc::new(Mutex::new(receiver)),
@@ -50,6 +55,7 @@ impl ProtocolAdapter {
             })),
             shutdown_trigger,
             shutdown_signal,
+            init_message_cache,
         }
     }
     // Get requests from the parent process and feed them to gRPC.
@@ -59,7 +65,16 @@ impl ProtocolAdapter {
         let requests = self.requests.clone();
         let shutdown_signal = self.shutdown_signal.clone();
 
+        let cache = self.init_message_cache.lock().unwrap().clone();
+
         let output = async_stream::try_stream! {
+            if let Some(message) = cache.init_message.as_ref() {
+                yield SignerRequest {
+                    request_id: DUMMY_REQUEST_ID,
+                    message: message.clone(),
+                    context: None,
+                };
+            }
             let mut receiver = receiver.lock().await;
             // TODO resend outstanding requests
             // Parent request
@@ -83,7 +98,7 @@ impl ProtocolAdapter {
                             debug!("writer sending request {} to signer", request_id);
                             yield SignerRequest {
                                 request_id,
-                                message: message,
+                                message,
                                 context,
                             };
                         } else {
@@ -127,6 +142,11 @@ impl ProtocolAdapter {
 
                                 if resp.is_temporary_failure {
                                     warn!("signer temporary failure on {}: {}", resp.request_id, resp.error);
+                                }
+
+                                if resp.request_id == DUMMY_REQUEST_ID {
+                                    // TODO do something clever with the init reply message
+                                    continue;
                                 }
 
                                 let mut reqs = requests.lock().await;
@@ -197,10 +217,18 @@ pub struct HsmdService {
 
 impl HsmdService {
     /// Create the service
-    pub fn new(shutdown_trigger: Trigger, shutdown_signal: Listener) -> Self {
+    pub fn new(
+        shutdown_trigger: Trigger,
+        shutdown_signal: Listener,
+        init_message_cache: Arc<std::sync::Mutex<InitMessageCache>>,
+    ) -> Self {
         let (sender, receiver) = mpsc::channel(1000);
-        let adapter =
-            ProtocolAdapter::new(receiver, shutdown_trigger.clone(), shutdown_signal.clone());
+        let adapter = ProtocolAdapter::new(
+            receiver,
+            shutdown_trigger.clone(),
+            shutdown_signal.clone(),
+            init_message_cache,
+        );
 
         HsmdService { shutdown_trigger, adapter, sender }
     }
@@ -236,12 +264,12 @@ impl hsmd_server::Hsmd for HsmdService {
         &self,
         request: Request<Streaming<SignerResponse>>,
     ) -> StdResult<Response<Self::SignerStreamStream>, Status> {
-        let stream = request.into_inner();
+        let request_stream = request.into_inner();
 
-        let stream_reader_task = self.adapter.start_stream_reader(stream);
+        let stream_reader_task = self.adapter.start_stream_reader(request_stream);
 
-        let stream = self.adapter.writer_stream(stream_reader_task).await;
+        let response_stream = self.adapter.writer_stream(stream_reader_task).await;
 
-        Ok(Response::new(stream as Self::SignerStreamStream))
+        Ok(Response::new(response_stream as Self::SignerStreamStream))
     }
 }

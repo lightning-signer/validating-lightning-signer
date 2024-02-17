@@ -5,7 +5,7 @@ use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::time::SystemTime;
 use tokio::sync::{mpsc, oneshot};
@@ -18,7 +18,7 @@ use lightning_signer::bitcoin::hashes::Hash;
 use super::adapter::{ChannelReply, ChannelRequest, ClientId};
 use crate::client::Client;
 use crate::{log_error, log_pretty, log_reply, log_request};
-use vls_protocol::{msgs, msgs::Message, Error as ProtocolError};
+use vls_protocol::{msgs, msgs::SerBolt as _, msgs::DeBolt as _, msgs::Message, Error as ProtocolError};
 use vls_protocol_client::{ClientResult as Result, Error, SignerPort};
 use vls_protocol_signer::vls_protocol;
 
@@ -122,6 +122,20 @@ impl GrpcSignerPort {
     }
 }
 
+/// A cache of the init message from the node, in case the signer reconnects
+#[derive(Clone)]
+pub struct InitMessageCache {
+    /// The HsmdInit or HsmdInit2 message from node
+    pub init_message: Option<Vec<u8>>,
+}
+
+impl InitMessageCache {
+    /// Create a new cache
+    pub fn new() -> Self {
+        Self { init_message: None }
+    }
+}
+
 /// Implement the hsmd UNIX fd protocol.
 /// This doesn't actually perform the signing - the hsmd packets are transported via gRPC to the
 /// real signer.
@@ -133,6 +147,7 @@ pub struct SignerLoop<C: 'static + Client> {
     shutdown_trigger: Option<Trigger>,
     shutdown_signal: Option<Listener>,
     preapproval_cache: LruCache<Sha256Hash, PreapprovalCacheEntry>,
+    init_message_cache: Arc<Mutex<InitMessageCache>>,
 }
 
 impl<C: 'static + Client> SignerLoop<C> {
@@ -142,6 +157,7 @@ impl<C: 'static + Client> SignerLoop<C> {
         signer_port: Arc<GrpcSignerPort>,
         shutdown_trigger: Trigger,
         shutdown_signal: Listener,
+        init_message_cache: Arc<Mutex<InitMessageCache>>,
     ) -> Self {
         let log_prefix = format!("{}/{}/{}", std::process::id(), client.id(), 0);
         let preapproval_cache = LruCache::new(NonZeroUsize::new(PREAPPROVE_CACHE_SIZE).unwrap());
@@ -153,6 +169,7 @@ impl<C: 'static + Client> SignerLoop<C> {
             shutdown_trigger: Some(shutdown_trigger),
             shutdown_signal: Some(shutdown_signal),
             preapproval_cache,
+            init_message_cache,
         }
     }
 
@@ -168,7 +185,17 @@ impl<C: 'static + Client> SignerLoop<C> {
             shutdown_trigger: None,
             shutdown_signal: None,
             preapproval_cache,
+            init_message_cache: Arc::new(Mutex::new(InitMessageCache::new())),
         }
+    }
+
+    fn is_root(&self) -> bool {
+        self.client_id.is_none()
+    }
+
+    /// The init message cache
+    pub fn init_message_cache(&self) -> Arc<Mutex<InitMessageCache>> {
+        self.init_message_cache.clone()
     }
 
     /// Start the read loop
@@ -254,6 +281,66 @@ impl<C: 'static + Client> SignerLoop<C> {
                             },
                         _ => {} // allow future out-of-band reply types
                     }
+                }
+                Message::HsmdInit(mut m) => {
+                    if !self.is_root() {
+                        error!(
+                            "read loop {}: unexpected HsmdInit on non-root connection",
+                            self.log_prefix
+                        );
+                        return Err(Error::Protocol(ProtocolError::UnexpectedType(
+                            msgs::HsmdInit::TYPE,
+                        )));
+                    }
+                    let raw_reply = self.do_proxy_msg(raw_msg)?;
+                    // decode the reply and extract the protocol version
+                    let reply = msgs::from_vec(raw_reply)?;
+                    // we expect a HsmdInitReply
+                    let init_reply = match reply {
+                        Message::HsmdInitReplyV4(m) => m,
+                        x => {
+                            error!(
+                                "read loop {}: unexpected reply to HsmdInit {:?}",
+                                self.log_prefix, x
+                            );
+                            return Err(Error::Protocol(ProtocolError::UnexpectedType(0)));
+                        }
+                    };
+
+                    // We will only accept the version that was negotiated
+                    m.hsm_wire_max_version = init_reply.hsm_version;
+                    m.hsm_wire_min_version = init_reply.hsm_version;
+
+                    let mut init_message_cache = self.init_message_cache.lock().unwrap();
+                    if init_message_cache.init_message.is_some() {
+                        error!("read loop {}: unexpected duplicate HsmdInit", self.log_prefix);
+                        return Err(Error::Protocol(ProtocolError::UnexpectedType(
+                            msgs::HsmdInit::TYPE,
+                        )));
+                    }
+                    init_message_cache.init_message = Some(m.as_vec());
+                }
+                Message::HsmdInit2(m) => {
+                    if !self.is_root() {
+                        error!(
+                            "read loop {}: unexpected HsmdInit on non-root connection",
+                            self.log_prefix
+                        );
+                        return Err(Error::Protocol(ProtocolError::UnexpectedType(
+                            msgs::HsmdInit2::TYPE,
+                        )));
+                    }
+                    self.do_proxy_msg(raw_msg)?;
+
+                    // TODO HsmdInit2 does not have version negotiation
+                    let mut init_message_cache = self.init_message_cache.lock().unwrap();
+                    if init_message_cache.init_message.is_some() {
+                        error!("read loop {}: unexpected duplicate HsmdInit", self.log_prefix);
+                        return Err(Error::Protocol(ProtocolError::UnexpectedType(
+                            msgs::HsmdInit2::TYPE,
+                        )));
+                    }
+                    init_message_cache.init_message = Some(m.as_vec());
                 }
                 _ => {
                     self.do_proxy_msg(raw_msg)?;
