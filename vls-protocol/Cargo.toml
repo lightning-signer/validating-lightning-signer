@@ -15,7 +15,14 @@ bolt-derive = { path = "../bolt-derive", version = "0.2.0" }
 log = "0.4"
 as-any = "0.3"
 hex = { version = "0.4", default-features = false }
-txoo = { version = "0.6.2-beta.1", default-features = false }
+
+[dependencies.txoo]
+version = "0.6.4"
+#git = "https://gitlab.com/lightning-signer/txoo"
+#rev = "afeb58147d6aa1a57ceee0a6128e2dca20fba157"
+#branch = "main"
+#path = "../../txoo"
+default-features = false
 
 [dev-dependencies]
 regex = "1.5"
