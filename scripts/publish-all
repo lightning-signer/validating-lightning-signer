@@ -12,11 +12,12 @@ crates=(
     vls-protocol-client
     vls-frontend
     vls-proxy
+    vls-cli
 )
 
 for crate in "${crates[@]}"; do
-  echo $crate
-  cargo publish -p $crate
+  echo "$crate"
+  cargo publish -p "$crate"
   # crates.io index takes a bit to update
   sleep 10
   cargo update -p $crate
