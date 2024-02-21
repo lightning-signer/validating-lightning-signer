@@ -59,6 +59,10 @@ Run coverage:
 
     ./scripts/run-llvm-cov
 
+Changing linker to `mold` instead of `ld`:
+
+    cp .cargo/config.sample.toml .cargo/config.toml
+
 ## Benchmarks
 
 ### Running Benchmarks

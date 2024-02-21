@@ -16,7 +16,7 @@ On Debian (and Ubuntu):
       libprotobuf-c-dev \
       protobuf-compiler protobuf-compiler-grpc libgrpc++-dev pkg-config \
       curl lowdown \
-      gawk jq
+      gawk jq mold
 
 On Fedora:
 
@@ -41,7 +41,7 @@ On Fedora:
               python3-mako \
               protobuf-compiler protobuf-devel grpc-devel grpc-plugins \
               perl \
-              gawk jq
+              gawk jq mold
 
 On Both:
 
