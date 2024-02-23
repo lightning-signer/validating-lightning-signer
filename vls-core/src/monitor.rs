@@ -14,10 +14,6 @@ use crate::prelude::*;
 use crate::util::transaction_utils::{decode_commitment_number, decode_commitment_tx};
 use crate::{Arc, CommitmentPointProvider};
 
-// As a workaround for vls#435 we wait for a fairly large number of
-// extra blocks to pass before we prune channels that are done.
-const PRUNE_SAFETY_MARGIN: u32 = 2016;
-
 // the depth at which we consider a channel to be done
 const MIN_DEPTH: u32 = 100;
 
@@ -384,34 +380,24 @@ impl State {
         (self.height + 1).saturating_sub(other_height.unwrap_or(self.height + 1))
     }
 
-    fn deep_enough(&self, other_height: Option<u32>) -> bool {
+    fn deep_enough_and_saw_node_forget(&self, other_height: Option<u32>, limit: u32) -> bool {
         // If the event depth is less than MIN_DEPTH we never prune.
         // If the event depth is greater we prune if saw_forget_channel is true.
-        // If the event depth is large enough we prune unconditionally.
         let depth = self.depth_of(other_height);
-        if depth < MIN_DEPTH {
+        if depth < limit {
             // Not deep enough, we aren't done
             false
-        } else if depth < MIN_DEPTH + PRUNE_SAFETY_MARGIN {
-            if self.saw_forget_channel {
-                // Deep enough and the node thinks it's done too
-                true
-            } else {
-                // Deep enough, but we haven't heard from the node
-                warn!(
-                    "expected forget_channel for {} overdue; waiting {} more blocks",
-                    self.channel_id(),
-                    MIN_DEPTH + PRUNE_SAFETY_MARGIN - depth
-                );
-                false
-            }
-        } else {
-            warn!(
-                "pruning {} after {} blocks even though we haven't heard from the node",
-                self.channel_id(),
-                MIN_DEPTH + PRUNE_SAFETY_MARGIN
-            );
+        } else if self.saw_forget_channel {
+            // Deep enough and the node thinks it's done too
             true
+        } else {
+            // Deep enough, but we haven't heard from the node
+            warn!(
+                "expected forget_channel for {} overdue by {} blocks",
+                self.channel_id(),
+                depth - limit
+            );
+            false
         }
     }
 
@@ -425,31 +411,24 @@ impl State {
         // TODO: check 2nd level HTLCs
         // TODO: disregard received HTLCs that we can't claim (we don't have the preimage)
 
-        if self.deep_enough(self.funding_double_spent_height) {
+        if self.deep_enough_and_saw_node_forget(self.funding_double_spent_height, MIN_DEPTH) {
             return true;
         }
 
-        if self.deep_enough(self.mutual_closing_height) {
+        if self.deep_enough_and_saw_node_forget(self.mutual_closing_height, MIN_DEPTH) {
             return true;
         }
 
-        if self.deep_enough(self.closing_swept_height) {
+        if self.deep_enough_and_saw_node_forget(self.closing_swept_height, MIN_DEPTH) {
             return true;
         }
 
         // since we don't yet have the logic to tell which HTLCs we can claim,
         // time out watching them after MAX_CLOSING_DEPTH
-        if self.depth_of(self.our_output_swept_height) >= MAX_CLOSING_DEPTH {
-            {
-                warn!(
-                    "considering {} done, because unilateral closing tx confirmed \
-                       at height {} and our main output was swept",
-                    self.channel_id(),
-                    self.unilateral_closing_height.unwrap_or(0)
-                );
-                return true;
-            }
+        if self.deep_enough_and_saw_node_forget(self.our_output_swept_height, MAX_CLOSING_DEPTH) {
+            return true;
         }
+
         return false;
     }
 
@@ -1214,23 +1193,22 @@ mod tests {
         node.get_heartbeat();
         assert!(node.get_channel(&channel_id).is_ok());
 
-        // wait almost long enough
-        for _ in 0..PRUNE_SAFETY_MARGIN - 1 {
+        // wait a long time
+        for _ in 0..2016 - 1 {
             monitor.on_add_block(&[], &block_hash);
         }
         assert!(!monitor.is_done());
 
-        // final block and we are done w/o forget from node
+        // we still don't forget the channel if the node hasn't said forget
         monitor.on_add_block(&[], &block_hash);
-        assert!(monitor.is_done());
+        assert!(!monitor.is_done());
 
-        // channel should still be there until the heartbeat
+        // channel should still be there
         assert!(node.get_channel(&channel_id).is_ok());
 
-        // channel should be pruned after a heartbeat
+        // channel should not be pruned after a heartbeat
         node.get_heartbeat();
-        assert!(node.get_channel(&channel_id).is_err());
-        assert_eq!(node.get_tracker().listeners.len(), 0);
+        assert!(node.get_channel(&channel_id).is_ok());
     }
 
     #[test]
@@ -1359,9 +1337,7 @@ mod tests {
         }
         assert!(!monitor.is_done());
         monitor.on_add_block(&[], &block_hash);
-        assert!(monitor.is_done());
-        // drop so we don't refer to it by mistake below
-        drop(monitor);
+        assert!(!monitor.is_done());
 
         // TIMELINE 2 - HTLC output swept
         let sweep_htlc_tx = make_tx(vec![make_txin2(closing_txid, htlc_output_index)]);
@@ -1370,6 +1346,12 @@ mod tests {
         for _ in 1..MIN_DEPTH {
             monitor1.on_add_block(&[], &block_hash);
         }
+        // still not done, need forget from node
+        assert!(!monitor1.is_done());
+
+        // once the node forgets we can forget all of the above
+        node.forget_channel(&channel_id).unwrap();
+        assert!(monitor.is_done());
         assert!(monitor1.is_done());
     }
 
