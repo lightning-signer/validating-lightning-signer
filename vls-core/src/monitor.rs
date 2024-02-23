@@ -1135,7 +1135,6 @@ mod tests {
     #[test]
     fn test_mutual_close_with_forget_channel() {
         let block_hash = BlockHash::all_zeros();
-        let mut block_time = BLOCK_TIME_BASE;
         let (node, channel_id, monitor, funding_txid) = setup_funded_channel();
 
         // channel should exist after a heartbeat
@@ -1149,10 +1148,9 @@ mod tests {
             sequence: Default::default(),
             witness: Default::default(),
         }]);
-        monitor.on_add_block(&[close_tx.clone()], &block_hash, block_time);
-        block_time += 600;
+        monitor.on_add_block(&[close_tx.clone()], &block_hash);
         assert_eq!(monitor.closing_depth(), 1);
-        assert!(!monitor.is_done(make_duration(block_time)));
+        assert!(!monitor.is_done());
 
         // channel should exist after a heartbeat
         node.get_heartbeat();
@@ -1160,13 +1158,11 @@ mod tests {
         assert_eq!(node.get_tracker().listeners.len(), 1);
 
         for _ in 1..MIN_DEPTH - 1 {
-            monitor.on_add_block(&[], &block_hash, block_time);
-            block_time += 600;
+            monitor.on_add_block(&[], &block_hash);
         }
-        assert!(!monitor.is_done(make_duration(block_time)));
-        monitor.on_add_block(&[], &block_hash, block_time);
-        block_time += 600;
-        assert!(!monitor.is_done(make_duration(block_time)));
+        assert!(!monitor.is_done());
+        monitor.on_add_block(&[], &block_hash);
+        assert!(!monitor.is_done());
 
         // channel should still be there until the forget_channel
         assert!(node.get_channel(&channel_id).is_ok());
@@ -1182,7 +1178,6 @@ mod tests {
     #[test]
     fn test_mutual_close_with_missing_forget_channel() {
         let block_hash = BlockHash::all_zeros();
-        let mut block_time = BLOCK_TIME_BASE;
         let (node, channel_id, monitor, funding_txid) = setup_funded_channel();
 
         // channel should exist after a heartbeat
@@ -1196,10 +1191,9 @@ mod tests {
             sequence: Default::default(),
             witness: Default::default(),
         }]);
-        monitor.on_add_block(&[close_tx.clone()], &block_hash, block_time);
-        block_time += 600;
+        monitor.on_add_block(&[close_tx.clone()], &block_hash);
         assert_eq!(monitor.closing_depth(), 1);
-        assert!(!monitor.is_done(make_duration(block_time)));
+        assert!(!monitor.is_done());
 
         // channel should exist after a heartbeat
         node.get_heartbeat();
@@ -1207,15 +1201,13 @@ mod tests {
         assert_eq!(node.get_tracker().listeners.len(), 1);
 
         for _ in 1..MIN_DEPTH - 1 {
-            monitor.on_add_block(&[], &block_hash, block_time);
-            block_time += 600;
+            monitor.on_add_block(&[], &block_hash);
         }
-        assert!(!monitor.is_done(make_duration(block_time)));
-        monitor.on_add_block(&[], &block_hash, block_time);
-        block_time += 600;
+        assert!(!monitor.is_done());
+        monitor.on_add_block(&[], &block_hash);
 
         // we're not done because no forget_channel seen
-        assert!(!monitor.is_done(make_duration(block_time)));
+        assert!(!monitor.is_done());
         assert!(node.get_channel(&channel_id).is_ok());
 
         // channel should still be there after heartbeat
@@ -1224,15 +1216,13 @@ mod tests {
 
         // wait almost long enough
         for _ in 0..PRUNE_SAFETY_MARGIN - 1 {
-            monitor.on_add_block(&[], &block_hash, block_time);
-            block_time += 600;
+            monitor.on_add_block(&[], &block_hash);
         }
-        assert!(!monitor.is_done(make_duration(block_time)));
+        assert!(!monitor.is_done());
 
         // final block and we are done w/o forget from node
-        monitor.on_add_block(&[], &block_hash, block_time);
-        block_time += 600;
-        assert!(monitor.is_done(make_duration(block_time)));
+        monitor.on_add_block(&[], &block_hash);
+        assert!(monitor.is_done());
 
         // channel should still be there until the heartbeat
         assert!(node.get_channel(&channel_id).is_ok());
