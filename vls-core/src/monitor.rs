@@ -441,10 +441,12 @@ impl State {
         // time out watching them after MAX_CLOSING_DEPTH
         if self.depth_of(self.our_output_swept_height) >= MAX_CLOSING_DEPTH {
             {
-                warn!("considering {} done, because unilateral closing tx confirmed \
+                warn!(
+                    "considering {} done, because unilateral closing tx confirmed \
                        at height {} and our main output was swept",
-                      self.channel_id(),
-                      self.unilateral_closing_height.unwrap_or(0));
+                    self.channel_id(),
+                    self.unilateral_closing_height.unwrap_or(0)
+                );
                 return true;
             }
         }

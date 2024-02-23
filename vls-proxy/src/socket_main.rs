@@ -82,7 +82,11 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
     .expect("Error setting Ctrl-C handler");
 
     let init_message_cache = Arc::new(Mutex::new(InitMessageCache::new()));
-    let server = HsmdService::new(shutdown_trigger.clone(), shutdown_signal.clone(), init_message_cache.clone());
+    let server = HsmdService::new(
+        shutdown_trigger.clone(),
+        shutdown_signal.clone(),
+        init_message_cache.clone(),
+    );
 
     let incoming = TcpIncoming::new(addr, false, None).expect("listen incoming"); // new_from_std seems to be infallible
 
