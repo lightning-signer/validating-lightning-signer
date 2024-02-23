@@ -2657,7 +2657,7 @@ impl Node {
                 let slot = slot_arc.lock().unwrap();
                 match &*slot {
                     ChannelSlot::Ready(chan) => {
-                        if chan.monitor.is_done(self.clock.now()) {
+                        if chan.monitor.is_done() {
                             Some(key.clone()) // clone the channel_id0 for removal
                         } else {
                             None

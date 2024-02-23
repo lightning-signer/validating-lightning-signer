@@ -1,5 +1,4 @@
 use alloc::collections::BTreeSet as Set;
-use core::time::Duration;
 
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{BlockHash, BlockHeader, OutPoint, PackedLockTime, Transaction, TxIn, TxOut, Txid};
@@ -22,8 +21,8 @@ const PRUNE_SAFETY_MARGIN: u32 = 2016;
 // the depth at which we consider a channel to be done
 const MIN_DEPTH: u32 = 100;
 
-// the maximum time we will watch for HTLC sweeps on closed channels
-const MAX_CLOSING_TIME: Duration = Duration::from_secs(60 * 60 * 24 * 14);
+// the maximum depth we will watch for HTLC sweeps on closed channels
+const MAX_CLOSING_DEPTH: u32 = 2016;
 
 // Keep track of closing transaction outpoints.
 // These include the to-us output (if it exists) and all HTLC outputs.
@@ -104,8 +103,6 @@ pub struct State {
     closing_swept_height: Option<u32>,
     // Our commitment transaction output swept height
     our_output_swept_height: Option<u32>,
-    // Our commitment transaction output swept time
-    our_output_swept_time: Option<Duration>,
     // Whether we saw a block yet - used for sanity check
     #[serde(default)]
     saw_block: bool,
@@ -160,8 +157,6 @@ struct BlockDecodeState {
     closing_tx: Option<Transaction>,
     // The block hash
     block_hash: Option<BlockHash>,
-    // The block time
-    block_time: Option<u32>,
     // A temporary copy of the current state, for keeping track
     // of state changes intra-block, without changing the actual state
     state: State,
@@ -176,12 +171,11 @@ impl BlockDecodeState {
             output_num: 0,
             closing_tx: None,
             block_hash: None,
-            block_time: None,
             state: state.clone(),
         }
     }
 
-    fn new_with_block_hash(state: &State, block_hash: &BlockHash, block_time: u32) -> Self {
+    fn new_with_block_hash(state: &State, block_hash: &BlockHash) -> Self {
         BlockDecodeState {
             changes: Vec::new(),
             version: 0,
@@ -189,7 +183,6 @@ impl BlockDecodeState {
             output_num: 0,
             closing_tx: None,
             block_hash: Some(*block_hash),
-            block_time: Some(block_time),
             state: state.clone(),
         }
     }
@@ -235,7 +228,6 @@ impl<'a> push_decoder::Listener for PushListener<'a> {
         // (which is the lifetime of a block stream)
         assert!(self.decode_state.block_hash.is_none(), "saw more than one on_block_start");
         self.decode_state.block_hash = Some(header.block_hash());
-        self.decode_state.block_time = Some(header.time);
         self.saw_block = true;
     }
 
@@ -392,16 +384,6 @@ impl State {
         (self.height + 1).saturating_sub(other_height.unwrap_or(self.height + 1))
     }
 
-    // remove this when we are entirely upgraded
-    fn maybe_upgrade_our_output_swept(&mut self, now: Duration) {
-        // If we see the deprecated our_output_swept_height and don't have our_output_swept_time
-        // perform a one-time upgrade using the current time.  This will prune this channel later
-        // than the ideal time but this should only happen during transition ...
-        if self.our_output_swept_height.is_some() && self.our_output_swept_time.is_none() {
-            self.our_output_swept_time = Some(now);
-        }
-    }
-
     fn deep_enough(&self, other_height: Option<u32>) -> bool {
         // If the event depth is less than MIN_DEPTH we never prune.
         // If the event depth is greater we prune if saw_forget_channel is true.
@@ -433,7 +415,7 @@ impl State {
         }
     }
 
-    fn is_done(&self, now: Duration) -> bool {
+    fn is_done(&self) -> bool {
         // we are done if:
         // - funding was double spent
         // - mutual closed
@@ -456,15 +438,13 @@ impl State {
         }
 
         // since we don't yet have the logic to tell which HTLCs we can claim,
-        // time out watching them after MAX_CLOSING_TIME
-        if let Some(our_output_swept_time) = self.our_output_swept_time {
-            if now >= our_output_swept_time + MAX_CLOSING_TIME {
-                warn!(
-                    "considering {} done, because unilateral closing tx confirmed \
-                     and our main output was swept at {:?}",
-                    self.channel_id(),
-                    our_output_swept_time
-                );
+        // time out watching them after MAX_CLOSING_DEPTH
+        if self.depth_of(self.our_output_swept_height) >= MAX_CLOSING_DEPTH {
+            {
+                warn!("considering {} done, because unilateral closing tx confirmed \
+                       at height {} and our main output was swept",
+                      self.channel_id(),
+                      self.unilateral_closing_height.unwrap_or(0));
                 return true;
             }
         }
@@ -506,18 +486,12 @@ impl State {
             self.closing_swept_height = Some(self.height);
         }
 
-        assert!(decode_state.block_time.is_some());
-        let now = Duration::from_secs(decode_state.block_time.unwrap() as u64);
-
-        self.maybe_upgrade_our_output_swept(now);
-
         if !our_output_was_swept && our_output_is_swept {
             info!("our output was swept at height {}", self.height);
             self.our_output_swept_height = Some(self.height);
-            self.our_output_swept_time = Some(now);
         }
 
-        if self.is_done(now) {
+        if self.is_done() {
             info!("done at height {}", self.height);
         }
 
@@ -562,7 +536,6 @@ impl State {
         if our_output_was_swept && !our_output_is_swept {
             info!("our output was un-swept at height {}", self.height);
             self.our_output_swept_height = None;
-            self.our_output_swept_time = None;
         }
 
         self.height -= 1;
@@ -737,7 +710,6 @@ impl ChainMonitorBase {
             closing_outpoints: None,
             closing_swept_height: None,
             our_output_swept_height: None,
-            our_output_swept_time: None,
             saw_block: false,
             saw_forget_channel: false,
             channel_id: Some(chan_id.clone()),
@@ -806,10 +778,9 @@ impl ChainMonitorBase {
     }
 
     /// Whether this channel can be forgotten
-    pub fn is_done(&self, now: Duration) -> bool {
-        let mut state = self.state.lock().expect("lock");
-        state.maybe_upgrade_our_output_swept(now);
-        state.is_done(now)
+    pub fn is_done(&self) -> bool {
+        let state = self.state.lock().expect("lock");
+        state.is_done()
     }
 
     /// Called when the node tells us it forgot the channel
@@ -882,26 +853,19 @@ impl ChainMonitor {
     /// - unilateral close is swept
     /// - funding transaction is double-spent
     /// and enough confirmations have passed
-    pub fn is_done(&self, now: Duration) -> bool {
-        let mut state = self.state.lock().expect("lock");
-        state.maybe_upgrade_our_output_swept(now);
-        state.is_done(now)
+    pub fn is_done(&self) -> bool {
+        let state = self.state.lock().expect("lock");
+        state.is_done()
     }
 
     // push compact proof transactions through, simulating a streamed block
-    fn push_transactions(
-        &self,
-        block_hash: &BlockHash,
-        block_time: u32,
-        txs: &[Transaction],
-    ) -> BlockDecodeState {
+    fn push_transactions(&self, block_hash: &BlockHash, txs: &[Transaction]) -> BlockDecodeState {
         let mut state = self.state.lock().expect("lock");
 
         // we are synced if we see a compact proof
         state.saw_block = true;
 
-        let mut decode_state =
-            BlockDecodeState::new_with_block_hash(&*state, block_hash, block_time);
+        let mut decode_state = BlockDecodeState::new_with_block_hash(&*state, block_hash);
 
         let mut listener = PushListener {
             commitment_point_provider: &*self.commitment_point_provider,
@@ -937,10 +901,9 @@ impl ChainListener for ChainMonitor {
         &self,
         txs: &[Transaction],
         block_hash: &BlockHash,
-        block_time: u32,
     ) -> (Vec<OutPoint>, Vec<OutPoint>) {
         debug!("on_add_block for {}", self.funding_outpoint);
-        let mut decode_state = self.push_transactions(block_hash, block_time, txs);
+        let mut decode_state = self.push_transactions(block_hash, txs);
 
         let mut state = self.state.lock().expect("lock");
         state.on_add_block_end(block_hash, &mut decode_state)
@@ -960,10 +923,9 @@ impl ChainListener for ChainMonitor {
         &self,
         txs: &[Transaction],
         block_hash: &BlockHash,
-        block_time: u32,
     ) -> (Vec<OutPoint>, Vec<OutPoint>) {
         debug!("on_remove_block for {}", self.funding_outpoint);
-        let mut decode_state = self.push_transactions(block_hash, block_time, txs);
+        let mut decode_state = self.push_transactions(block_hash, txs);
 
         let mut state = self.state.lock().expect("lock");
         state.on_remove_block_end(block_hash, &mut decode_state)
@@ -1023,13 +985,6 @@ mod tests {
 
     use super::*;
 
-    const CLOSING_TEST_DEPTH: u32 = 2016;
-    const BLOCK_TIME_BASE: u32 = 1577836800; // 2020-01-01
-
-    fn make_duration(tstamp: u32) -> Duration {
-        Duration::from_secs(tstamp as u64)
-    }
-
     #[test]
     fn test_funding() {
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);
@@ -1038,25 +993,18 @@ mod tests {
         let chan_id = ChannelId::new(&[33u8; 32]);
         let monitor = ChainMonitorBase::new(outpoint, 0, &chan_id).as_monitor(cpp);
         let block_hash = BlockHash::all_zeros();
-        let mut block_time = BLOCK_TIME_BASE;
         monitor.add_funding(&tx, 0);
-        monitor.on_add_block(&[], &block_hash, block_time);
-        block_time += 600;
-        monitor.on_add_block(&[tx.clone()], &block_hash, block_time);
-        block_time += 600;
+        monitor.on_add_block(&[], &block_hash);
+        monitor.on_add_block(&[tx.clone()], &block_hash);
         assert_eq!(monitor.funding_depth(), 1);
         assert_eq!(monitor.funding_double_spent_depth(), 0);
-        monitor.on_add_block(&[], &block_hash, block_time);
-        block_time += 600;
+        monitor.on_add_block(&[], &block_hash);
         assert_eq!(monitor.funding_depth(), 2);
-        block_time -= 600;
-        monitor.on_remove_block(&[], &block_hash, block_time);
+        monitor.on_remove_block(&[], &block_hash);
         assert_eq!(monitor.funding_depth(), 1);
-        block_time -= 600;
-        monitor.on_remove_block(&[tx], &block_hash, block_time);
+        monitor.on_remove_block(&[tx], &block_hash);
         assert_eq!(monitor.funding_depth(), 0);
-        block_time -= 600;
-        monitor.on_remove_block(&[], &block_hash, block_time);
+        monitor.on_remove_block(&[], &block_hash);
         assert_eq!(monitor.funding_depth(), 0);
     }
 
@@ -1069,26 +1017,19 @@ mod tests {
         let chan_id = ChannelId::new(&[33u8; 32]);
         let monitor = ChainMonitorBase::new(outpoint, 0, &chan_id).as_monitor(cpp);
         let block_hash = BlockHash::all_zeros();
-        let mut block_time = BLOCK_TIME_BASE;
         monitor.add_funding(&tx, 0);
-        monitor.on_add_block(&[], &block_hash, block_time);
-        block_time += 600;
-        monitor.on_add_block(&[tx2.clone()], &block_hash, block_time);
-        block_time += 600;
+        monitor.on_add_block(&[], &block_hash);
+        monitor.on_add_block(&[tx2.clone()], &block_hash);
         assert_eq!(monitor.funding_depth(), 0);
         assert_eq!(monitor.funding_double_spent_depth(), 1);
-        monitor.on_add_block(&[], &block_hash, block_time);
-        block_time += 600;
+        monitor.on_add_block(&[], &block_hash);
         assert_eq!(monitor.funding_depth(), 0);
         assert_eq!(monitor.funding_double_spent_depth(), 2);
-        block_time -= 600;
-        monitor.on_remove_block(&[], &block_hash, block_time);
+        monitor.on_remove_block(&[], &block_hash);
         assert_eq!(monitor.funding_double_spent_depth(), 1);
-        block_time -= 600;
-        monitor.on_remove_block(&[tx2], &block_hash, block_time);
+        monitor.on_remove_block(&[tx2], &block_hash);
         assert_eq!(monitor.funding_double_spent_depth(), 0);
-        block_time -= 600;
-        monitor.on_remove_block(&[], &block_hash, block_time);
+        monitor.on_remove_block(&[], &block_hash);
         assert_eq!(monitor.funding_double_spent_depth(), 0);
     }
 
@@ -1150,7 +1091,6 @@ mod tests {
     #[test]
     fn test_mutual_close() {
         let block_hash = BlockHash::all_zeros();
-        let mut block_time = BLOCK_TIME_BASE;
         let (node, channel_id, monitor, funding_txid) = setup_funded_channel();
 
         // channel should exist after a heartbeat
@@ -1164,10 +1104,9 @@ mod tests {
             sequence: Default::default(),
             witness: Default::default(),
         }]);
-        monitor.on_add_block(&[close_tx.clone()], &block_hash, block_time);
-        block_time += 600;
+        monitor.on_add_block(&[close_tx.clone()], &block_hash);
         assert_eq!(monitor.closing_depth(), 1);
-        assert!(!monitor.is_done(make_duration(block_time)));
+        assert!(!monitor.is_done());
 
         // channel should exist after a heartbeat
         node.get_heartbeat();
@@ -1175,14 +1114,12 @@ mod tests {
         assert_eq!(node.get_tracker().listeners.len(), 1);
 
         for _ in 1..MIN_DEPTH - 1 {
-            monitor.on_add_block(&[], &block_hash, block_time);
-            block_time += 600;
+            monitor.on_add_block(&[], &block_hash);
         }
-        assert!(!monitor.is_done(make_duration(block_time)));
+        assert!(!monitor.is_done());
         node.forget_channel(&channel_id).unwrap();
-        monitor.on_add_block(&[], &block_hash, block_time);
-        block_time += 600;
-        assert!(monitor.is_done(make_duration(block_time)));
+        monitor.on_add_block(&[], &block_hash);
+        assert!(monitor.is_done());
 
         // channel should still be there until the heartbeat
         assert!(node.get_channel(&channel_id).is_ok());
@@ -1307,7 +1244,6 @@ mod tests {
     #[test]
     fn test_unilateral_holder_close() {
         let block_hash = BlockHash::all_zeros();
-        let mut block_time = BLOCK_TIME_BASE;
         let (node, channel_id, monitor, _funding_txid) = setup_funded_channel();
 
         let commit_num = 23;
@@ -1335,41 +1271,34 @@ mod tests {
         let closing_txid = closing_tx.txid();
         let holder_output_index =
             closing_tx.output.iter().position(|out| out.value == to_holder).unwrap() as u32;
-        monitor.on_add_block(&[closing_tx.clone()], &block_hash, block_time);
-        block_time += 600;
+        monitor.on_add_block(&[closing_tx.clone()], &block_hash);
         assert_eq!(monitor.closing_depth(), 1);
-        assert!(!monitor.is_done(make_duration(block_time)));
+        assert!(!monitor.is_done());
         // we never forget the channel if we didn't sweep our output
-        for _ in 1..CLOSING_TEST_DEPTH {
-            monitor.on_add_block(&[], &block_hash, block_time);
-            block_time += 600;
+        for _ in 1..MAX_CLOSING_DEPTH {
+            monitor.on_add_block(&[], &block_hash);
         }
-        assert!(!monitor.is_done(make_duration(block_time)));
+        assert!(!monitor.is_done());
         let sweep_cp_tx = make_tx(vec![make_txin2(closing_txid, 1 - holder_output_index)]);
-        monitor.on_add_block(&[sweep_cp_tx], &block_hash, block_time);
-        block_time += 600;
+        monitor.on_add_block(&[sweep_cp_tx], &block_hash);
         // we still never forget the channel
-        for _ in 1..CLOSING_TEST_DEPTH {
-            monitor.on_add_block(&[], &block_hash, block_time);
-            block_time += 600;
+        for _ in 1..MAX_CLOSING_DEPTH {
+            monitor.on_add_block(&[], &block_hash);
         }
-        assert!(!monitor.is_done(make_duration(block_time)));
+        assert!(!monitor.is_done());
         let sweep_holder_tx = make_tx(vec![make_txin2(closing_txid, holder_output_index)]);
-        monitor.on_add_block(&[sweep_holder_tx], &block_hash, block_time);
-        block_time += 600;
+        monitor.on_add_block(&[sweep_holder_tx], &block_hash);
         // once we sweep our output, we forget the channel
         for _ in 1..MIN_DEPTH {
-            monitor.on_add_block(&[], &block_hash, block_time);
-            block_time += 600;
+            monitor.on_add_block(&[], &block_hash);
         }
         node.forget_channel(&channel_id).unwrap();
-        assert!(monitor.is_done(make_duration(block_time)));
+        assert!(monitor.is_done());
     }
 
     #[test]
     fn test_unilateral_cp_and_htlcs_close() {
         let block_hash = BlockHash::all_zeros();
-        let mut block_time = BLOCK_TIME_BASE;
         let (node, channel_id, monitor, _funding_txid) = setup_funded_channel();
 
         let commit_num = 23;
@@ -1411,54 +1340,45 @@ mod tests {
             .iter()
             .position(|out| out.value == htlcs[0].amount_msat / 1000)
             .unwrap() as u32;
-        monitor.on_add_block(&[closing_tx.clone()], &block_hash, block_time);
-        block_time += 600;
+        monitor.on_add_block(&[closing_tx.clone()], &block_hash);
         assert_eq!(monitor.closing_depth(), 1);
-        assert!(!monitor.is_done(make_duration(block_time)));
+        assert!(!monitor.is_done());
         // we never forget the channel if we didn't sweep our output
-        for _ in 1..CLOSING_TEST_DEPTH {
-            monitor.on_add_block(&[], &block_hash, block_time);
-            block_time += 600;
+        for _ in 1..MAX_CLOSING_DEPTH {
+            monitor.on_add_block(&[], &block_hash);
         }
-        assert!(!monitor.is_done(make_duration(block_time)));
+        assert!(!monitor.is_done());
         let sweep_cp_tx = make_tx(vec![make_txin2(closing_txid, cp_output_index)]);
-        monitor.on_add_block(&[sweep_cp_tx], &block_hash, block_time);
-        block_time += 600;
+        monitor.on_add_block(&[sweep_cp_tx], &block_hash);
         // we still never forget the channel
-        for _ in 1..CLOSING_TEST_DEPTH {
-            monitor.on_add_block(&[], &block_hash, block_time);
-            block_time += 600;
+        for _ in 1..MAX_CLOSING_DEPTH {
+            monitor.on_add_block(&[], &block_hash);
         }
-        assert!(!monitor.is_done(make_duration(block_time)));
+        assert!(!monitor.is_done());
         let sweep_holder_tx = make_tx(vec![make_txin2(closing_txid, holder_output_index)]);
-        monitor.on_add_block(&[sweep_holder_tx], &block_hash, block_time);
-        block_time += 600;
+        monitor.on_add_block(&[sweep_holder_tx], &block_hash);
 
         let monitor1 = monitor.clone();
 
         // TIMELINE 1 - HTLC output not swept
-        // we forget the channel once we sweep our output and CLOSING_TEST_DEPTH blocks have passed
-        for _ in 1..CLOSING_TEST_DEPTH - 1 {
-            monitor.on_add_block(&[], &block_hash, block_time);
-            block_time += 600;
+        // we forget the channel once we sweep our output and MAX_CLOSING_DEPTH blocks have passed
+        for _ in 1..MAX_CLOSING_DEPTH - 1 {
+            monitor.on_add_block(&[], &block_hash);
         }
-        assert!(!monitor.is_done(make_duration(block_time)));
-        monitor.on_add_block(&[], &block_hash, block_time);
-        block_time += 600;
-        assert!(monitor.is_done(make_duration(block_time)));
+        assert!(!monitor.is_done());
+        monitor.on_add_block(&[], &block_hash);
+        assert!(monitor.is_done());
         // drop so we don't refer to it by mistake below
         drop(monitor);
 
         // TIMELINE 2 - HTLC output swept
         let sweep_htlc_tx = make_tx(vec![make_txin2(closing_txid, htlc_output_index)]);
-        monitor1.on_add_block(&[sweep_htlc_tx], &block_hash, block_time);
-        block_time += 600;
+        monitor1.on_add_block(&[sweep_htlc_tx], &block_hash);
 
         for _ in 1..MIN_DEPTH {
-            monitor1.on_add_block(&[], &block_hash, block_time);
-            block_time += 600;
+            monitor1.on_add_block(&[], &block_hash);
         }
-        assert!(monitor1.is_done(make_duration(block_time)));
+        assert!(monitor1.is_done());
     }
 
     fn setup_funded_channel() -> (Arc<Node>, ChannelId, ChainMonitor, Txid) {
@@ -1474,10 +1394,8 @@ mod tests {
             .with_channel(&channel_id, |chan| Ok(chan.monitor.clone().as_monitor(cpp.clone())))
             .unwrap();
         let block_hash = BlockHash::all_zeros();
-        let mut block_time = BLOCK_TIME_BASE;
-        monitor.on_add_block(&[], &block_hash, block_time);
-        block_time += 600;
-        monitor.on_add_block(&[funding_tx.clone()], &block_hash, block_time);
+        monitor.on_add_block(&[], &block_hash);
+        monitor.on_add_block(&[funding_tx.clone()], &block_hash);
         assert_eq!(monitor.funding_depth(), 1);
         (node, channel_id, monitor, funding_tx.txid())
     }

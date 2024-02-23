@@ -289,7 +289,6 @@ impl<L: ChainListener> ChainTracker<L> {
         }
 
         let tip_block_hash = self.headers[0].0.block_hash();
-        let tip_block_time = self.headers[0].0.time;
         self.maybe_finish_decoding_block(&proof, &tip_block_hash);
 
         let prev_headers = &self.headers[0];
@@ -307,13 +306,10 @@ impl<L: ChainListener> ChainTracker<L> {
             true,
         )?;
         match proof.proof {
-            ProofType::Filter(_, spv_proof) => self.notify_listeners_remove(
-                Some(spv_proof.txs.as_slice()),
-                tip_block_hash,
-                Some(tip_block_time),
-            ),
+            ProofType::Filter(_, spv_proof) =>
+                self.notify_listeners_remove(Some(spv_proof.txs.as_slice()), tip_block_hash),
             ProofType::Block(b) => panic!("non-streamed block not supported {}", b.block_hash()),
-            ProofType::ExternalBlock() => self.notify_listeners_remove(None, tip_block_hash, None),
+            ProofType::ExternalBlock() => self.notify_listeners_remove(None, tip_block_hash),
         };
 
         info!("removed block {}: {}", self.height, &self.tip.0.block_hash());
@@ -331,15 +327,10 @@ impl<L: ChainListener> ChainTracker<L> {
     // Notify listeners of a block remove.
     // If txs is None, this is a streamed block, and the transactions were already
     // provided as push events.
-    fn notify_listeners_remove(
-        &mut self,
-        txs: Option<&[Transaction]>,
-        block_hash: BlockHash,
-        maybe_block_time: Option<u32>,
-    ) {
+    fn notify_listeners_remove(&mut self, txs: Option<&[Transaction]>, block_hash: BlockHash) {
         for (listener, slot) in self.listeners.values_mut() {
             let (adds, removes) = if let Some(txs) = txs {
-                listener.on_remove_block(txs, &block_hash, maybe_block_time.expect("block_time"))
+                listener.on_remove_block(txs, &block_hash)
             } else {
                 listener.on_remove_streamed_block_end(&block_hash)
             };
@@ -423,13 +414,10 @@ impl<L: ChainListener> ChainTracker<L> {
             false,
         )?;
         match proof.proof {
-            ProofType::Filter(_, spv_proof) => self.notify_listeners_add(
-                Some(spv_proof.txs.as_slice()),
-                message_block_hash,
-                Some(header.time),
-            ),
+            ProofType::Filter(_, spv_proof) =>
+                self.notify_listeners_add(Some(spv_proof.txs.as_slice()), message_block_hash),
             ProofType::Block(b) => panic!("non-streamed block not supported {}", b.block_hash()),
-            ProofType::ExternalBlock() => self.notify_listeners_add(None, message_block_hash, None),
+            ProofType::ExternalBlock() => self.notify_listeners_add(None, message_block_hash),
         };
 
         self.headers.truncate(Self::MAX_REORG_SIZE - 1);
@@ -462,15 +450,10 @@ impl<L: ChainListener> ChainTracker<L> {
     // Notify listeners of a block add.
     // If txs is None, this is a streamed block, and the transactions were already
     // provided as push events.
-    fn notify_listeners_add(
-        &mut self,
-        txs: Option<&[Transaction]>,
-        block_hash: BlockHash,
-        maybe_block_time: Option<u32>,
-    ) {
+    fn notify_listeners_add(&mut self, txs: Option<&[Transaction]>, block_hash: BlockHash) {
         for (listener, slot) in self.listeners.values_mut() {
             let (adds, removes) = if let Some(txs) = txs {
-                listener.on_add_block(txs, &block_hash, maybe_block_time.expect("block_time"))
+                listener.on_add_block(txs, &block_hash)
             } else {
                 listener.on_add_streamed_block_end(&block_hash)
             };
@@ -691,7 +674,6 @@ pub trait ChainListener: SendSync {
         &self,
         txs: &[Transaction],
         block_hash: &BlockHash,
-        block_time: u32,
     ) -> (Vec<OutPoint>, Vec<OutPoint>);
 
     /// A block was added via streaming (see `on_block_chunk`).
@@ -706,7 +688,6 @@ pub trait ChainListener: SendSync {
         &self,
         txs: &[Transaction],
         block_hash: &BlockHash,
-        block_time: u32,
     ) -> (Vec<OutPoint>, Vec<OutPoint>);
 
     /// A block was deleted via streaming (see `on_block_chunk`).

@@ -1961,7 +1961,6 @@ impl ChainListener for MockListener {
         &self,
         txs: &[Transaction],
         _block_hash: &BlockHash,
-        _block_time: u32,
     ) -> (Vec<bitcoin::OutPoint>, Vec<bitcoin::OutPoint>) {
         for tx in txs {
             for input in tx.input.iter() {
@@ -1991,9 +1990,8 @@ impl ChainListener for MockListener {
         &self,
         txs: &[Transaction],
         block_hash: &BlockHash,
-        block_time: u32,
     ) -> (Vec<bitcoin::OutPoint>, Vec<bitcoin::OutPoint>) {
-        self.on_add_block(txs, block_hash, block_time)
+        self.on_add_block(txs, block_hash)
     }
 
     fn on_remove_streamed_block_end(
