@@ -62,7 +62,7 @@ pub fn new_tracer() -> Result<Tracer, opentelemetry::trace::TraceError> {
 
 /** create a non blocking tracing file appender with daily rolling */
 pub fn setup_file_appender<P: AsRef<Path>>(datadir: P, who: &str) -> (NonBlocking, WorkerGuard) {
-    let file_appender = rolling::daily(
+    let file_appender = rolling::never(
         datadir.as_ref(),
         format!("{}.log", who),
     );
@@ -123,7 +123,6 @@ impl Drop for OtelGuard {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
-    use chrono::Local;
 
     use opentelemetry::{global::ObjectSafeSpan, trace::{SpanBuilder, Tracer}, Value};
     use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
@@ -166,8 +165,7 @@ mod tests {
         std::env::set_var("RUST_LOG", "info");
 
         let temp_dir = std::env::temp_dir();
-        let date_string = Local::now().format("%Y-%m-%d");
-        let file_path = temp_dir.join(format!("test.log.{}", date_string));
+        let file_path = temp_dir.join(format!("test.log"));
 
         let handle = tokio::spawn(async move {
             let (file_writer, _file_guard) = super::setup_file_appender(temp_dir, "test");
