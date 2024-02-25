@@ -37,7 +37,6 @@ use vls_protocol_signer::approver::{Approve, WarningPositiveApprover};
 use vls_protocol_signer::handler::{Handler, HandlerBuilder, InitHandler, RootHandler};
 use vls_protocol_signer::lightning_signer;
 use vls_protocol_signer::lightning_signer::bitcoin;
-use vls_protocol_signer::vls_protocol;
 
 mod approver;
 mod device;

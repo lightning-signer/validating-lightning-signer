@@ -1,4 +1,3 @@
-use core::convert::TryFrom;
 use core::str::FromStr;
 
 use crate::invoice::*;

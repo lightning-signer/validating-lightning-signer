@@ -1,7 +1,7 @@
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::sighash::SighashCache;
-use bitcoin::{self, EcdsaSighashType, Network, Script, Sighash, Transaction};
+use bitcoin::{EcdsaSighashType, Network, Script, Sighash, Transaction};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, htlc_success_tx_weight, htlc_timeout_tx_weight,
     make_funding_redeemscript, ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys,

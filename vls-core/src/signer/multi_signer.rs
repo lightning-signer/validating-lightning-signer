@@ -1,4 +1,3 @@
-use bitcoin;
 use bitcoin::hashes::hex::ToHex;
 #[cfg(feature = "std")]
 use bitcoin::secp256k1::rand::{rngs::OsRng, RngCore};

@@ -22,7 +22,7 @@ use serde_with::{serde_as, IfIsHumanReadable};
 use serde_with::{DeserializeAs, SerializeAs};
 
 use crate::channel::ChannelId;
-use crate::{io, lightning};
+use crate::io;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct PublicKeyHandler;

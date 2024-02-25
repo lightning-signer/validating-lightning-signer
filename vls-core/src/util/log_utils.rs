@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use anyhow::{anyhow, Result};
-use log;
 
 const LOG_LEVEL_FILTERS: [log::LevelFilter; 6] = [
     log::LevelFilter::Off,

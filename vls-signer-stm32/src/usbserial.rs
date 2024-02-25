@@ -4,10 +4,9 @@ use core::cell::RefCell;
 use core::ops::Deref;
 use cortex_m::interrupt::{free, CriticalSection, Mutex};
 use stm32f4xx_hal::otg_fs::{UsbBus, USB};
-use usb_device::{bus::UsbBusAllocator, device::UsbDevice, prelude::*};
+use usb_device::{bus::UsbBusAllocator, prelude::*};
 use usbd_serial::SerialPort;
 use vls_protocol::serde_bolt::io;
-use vls_protocol_signer::vls_protocol;
 
 use crate::timer::{self, TimerListener};
 #[allow(unused_imports)]

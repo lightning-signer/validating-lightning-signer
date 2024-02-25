@@ -9,7 +9,6 @@ use lightning_signer::invoice::{Invoice, InvoiceAttributes};
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::Node;
 use lightning_signer::policy::error::ValidationErrorKind;
-use lightning_signer::prelude::{Mutex, SendSync};
 use lightning_signer::util::clock::Clock;
 use lightning_signer::util::debug_utils::DebugBytes;
 use lightning_signer::util::status::Status;

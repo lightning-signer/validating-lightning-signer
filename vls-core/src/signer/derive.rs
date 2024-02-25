@@ -1,5 +1,4 @@
 use alloc::boxed::Box;
-use core::convert::{TryFrom, TryInto};
 
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::{Hash, HashEngine};

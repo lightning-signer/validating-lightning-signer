@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use core::cmp;
-use core::convert::TryInto;
 use core::fmt;
 
 use bitcoin::blockdata::opcodes::all::{

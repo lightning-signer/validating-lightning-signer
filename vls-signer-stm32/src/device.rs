@@ -18,7 +18,7 @@ use embedded_graphics::{
 use embedded_hal::digital::v2::OutputPin;
 use log::*;
 use panic_probe as _;
-use rtt_target::{self, rprintln};
+use rtt_target::rprintln;
 use st7789::{Orientation, ST7789};
 #[allow(unused_imports)]
 use stm32f4xx_hal::{

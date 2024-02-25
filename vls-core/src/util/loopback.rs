@@ -1,5 +1,4 @@
 #![allow(missing_docs)]
-use core::convert::TryInto;
 
 use bitcoin::bech32::u5;
 use bitcoin::hash_types::WPubkeyHash;

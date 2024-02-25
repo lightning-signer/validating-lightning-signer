@@ -14,7 +14,7 @@ use rand_core::RngCore;
 
 use log::*;
 
-use fatfs::{self, Read, Write};
+use fatfs::{Read, Write};
 
 use cortex_m::prelude::_embedded_hal_blocking_delay_DelayMs;
 

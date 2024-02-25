@@ -4,7 +4,7 @@ use core::time::Duration;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{BlockHash, BlockHeader, OutPoint, PackedLockTime, Transaction, TxIn, TxOut, Txid};
 use log::*;
-use push_decoder::{self, Listener as _};
+use push_decoder::Listener as _;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
 
