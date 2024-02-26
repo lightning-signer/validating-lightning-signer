@@ -67,7 +67,7 @@ VLS_NETWORK=testnet
 # Alternatively, set up a secure tunnel to the signer.
 # VLS_BIND=0.0.0.0
 BITCOIND_RPC_URL=http://rpcuser:6ffb57ab46aa726@localhost:18332
-GREENLIGHT_VERSION=v0.11.0.1-62-g92cc76a
+VLS_CLN_VERSION=v0.11.0.1-62-g92cc76a
 RUST_LOG=info
 BITCOIND_CLIENT_TIMEOUT_SECS=60
 EOL
@@ -88,8 +88,8 @@ sudo chown -R cln:cln  /home/cln/
 Update `~cln/.lightning/testnet-env` to the installed CLN version:
 ```
 sudo -u cln bash -c 'cd ~cln/.lightning/ && \
-grep -v GREENLIGHT_VERSION testnet-env > testnet-env.new && \
-echo "GREENLIGHT_VERSION=`lightningd --version`" >> testnet-env.new && \
+grep -v VLS_CLN_VERSION testnet-env > testnet-env.new && \
+echo "VLS_CLN_VERSION=`lightningd --version`" >> testnet-env.new && \
 mv testnet-env.new testnet-env'
 ```
 
