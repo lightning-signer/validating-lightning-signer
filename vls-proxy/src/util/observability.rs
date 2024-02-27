@@ -1,32 +1,38 @@
 use std::error::Error;
 use std::path::Path;
-use std::time::Duration;
 
-use opentelemetry::{KeyValue, global};
-use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
-use opentelemetry_sdk::trace::{self, Tracer};
-use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::{runtime, trace::BatchConfig};
-use opentelemetry_semantic_conventions::resource::{
-    DEPLOYMENT_ENVIRONMENT, SERVICE_NAME, SERVICE_VERSION,
-};
-use opentelemetry_semantic_conventions::SCHEMA_URL;
 use tracing::Level;
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_appender::rolling;
-use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::fmt;
 use tracing_subscriber::layer::SubscriberExt;
+
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
+#[cfg(feature = "opentelemetry_protocol")]
+use std::time::Duration;
+#[cfg(feature = "opentelemetry_protocol")]
+use opentelemetry::{KeyValue, global};
+#[cfg(feature = "opentelemetry_protocol")]
+use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
+#[cfg(feature = "opentelemetry_protocol")]
+use opentelemetry_sdk::{runtime, trace::{self, BatchConfig, Tracer}, Resource};
+#[cfg(feature = "opentelemetry_protocol")]
+use opentelemetry_semantic_conventions::{resource::{
+    DEPLOYMENT_ENVIRONMENT, SERVICE_NAME, SERVICE_VERSION,
+}, SCHEMA_URL};
+#[cfg(feature = "opentelemetry_protocol")]
+use tracing_opentelemetry::OpenTelemetryLayer;
+#[cfg(feature = "opentelemetry_protocol")]
 use crate::GIT_DESC;
-
+#[cfg(feature = "opentelemetry_protocol")]
 use super::{deployment_environment, otlp_timeout, otlp_endpoint};
 
 /**
  * Create a Resource that captures information about the entity for which telemetry is recorded.
  */
+#[cfg(feature = "opentelemetry_protocol")]
 pub fn resource() -> Resource {
     Resource::from_schema_url(
         [
@@ -39,7 +45,9 @@ pub fn resource() -> Resource {
 }
 
 /**
- * Create a ExportConfig that contains information about the exporter endpoint, timeout to collector and protocol.*/
+ * Create a ExportConfig that contains information about the exporter endpoint, timeout to collector and protocol
+*/
+#[cfg(feature = "opentelemetry_protocol")]
 pub fn otlp_exporter_config() -> ExportConfig {
     ExportConfig {
         endpoint: otlp_endpoint(),
@@ -49,6 +57,7 @@ pub fn otlp_exporter_config() -> ExportConfig {
 }
 
 /** Initialize a tracer provider with the OTLP exporter and a batch span processor.*/
+#[cfg(feature = "opentelemetry_protocol")]
 pub fn new_tracer() -> Result<Tracer, opentelemetry::trace::TraceError> {
     opentelemetry_otlp::new_pipeline()
         .tracing()
@@ -82,21 +91,33 @@ pub fn env_filter() -> EnvFilter {
  * fmt layer is used to print logs to stdout.
  * OpenTelemetryLayer is used to export logs to the configured OTLP endpoint.
  * fmt layer with custom writer is used to write logs to log file in datadir.
- * */
+*/
 pub fn init_tracing_subscriber<P: AsRef<Path>>(datadir: P, who: &str) -> Result<OtelGuard, Box<dyn Error>> {
+    #[cfg(feature = "opentelemetry_protocol")]
     let tracer = new_tracer()?;
     let (file_writer, file_guard) = setup_file_appender(datadir, who);
 
     let stdout_layer = fmt::layer().with_writer(std::io::stdout);
     let file_layer = fmt::layer().with_writer(file_writer);
     let env_filter = env_filter();
-    let otlp_layer = OpenTelemetryLayer::new(tracer);
 
-    match tracing_subscriber::registry()
+    #[cfg(feature = "opentelemetry_protocol")]
+    let otlp_layer = Some(OpenTelemetryLayer::new(tracer));
+
+    #[cfg(not(feature = "opentelemetry_protocol"))]
+    let default_subscriber = tracing_subscriber::registry()
         .with(stdout_layer)
         .with(file_layer)
-        .with(otlp_layer)
+        .with(env_filter);
+
+    #[cfg(feature = "opentelemetry_protocol")]
+    let default_subscriber = tracing_subscriber::registry()
+        .with(stdout_layer)
+        .with(file_layer)
         .with(env_filter)
+        .with(otlp_layer);
+
+    match default_subscriber
         .try_init() {
             Ok(_) => Ok(OtelGuard::new(file_guard)),
             Err(err) => Err(Box::new(err))
@@ -116,22 +137,25 @@ impl OtelGuard {
 impl Drop for OtelGuard {
     /** Shut down the current tracer provider. This will invoke the shutdown method on all span processors. Span processors should export remaining spans before return. */
     fn drop(&mut self) {
+        #[cfg(feature = "opentelemetry_protocol")]
         global::shutdown_tracer_provider();
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
+    #[cfg(feature = "opentelemetry_protocol")]
     use opentelemetry::{global::ObjectSafeSpan, trace::{SpanBuilder, Tracer}, Value};
+    #[cfg(feature = "opentelemetry_protocol")]
     use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
+
+    use std::time::Duration;
     use tokio::time::sleep;
     use tracing_subscriber::{fmt, layer::SubscriberExt};
-
     use crate::util::observability::env_filter;
 
     #[test]
+    #[cfg(feature = "opentelemetry_protocol")]
     fn test_oltp_export_config() {
         let config = super::otlp_exporter_config();
         assert_eq!(config.endpoint, "http://localhost:4317");
@@ -140,6 +164,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "opentelemetry_protocol")]
     fn test_resource() {
         let resource = super::resource();
         assert_eq!(resource.get(SERVICE_NAME), Some(Value::String(env!("CARGO_PKG_NAME").into())));
@@ -147,6 +172,7 @@ mod tests {
         assert_eq!(resource.get(super::DEPLOYMENT_ENVIRONMENT), Some(Value::String(super::deployment_environment().into())));
     }
 
+    #[cfg(feature = "opentelemetry_protocol")]
     #[tokio::test]
     async fn test_new_tracer() {
         let tracer= super::new_tracer();

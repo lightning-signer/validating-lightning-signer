@@ -18,6 +18,7 @@ log_pretty_print = []
 debug = ["vls-core/debug", "vls-protocol-signer/debug"]
 system-test = ["serde_json", "tempfile", "vls-core/test_utils"]
 heapmon_requests = []
+opentelemetry_protocol = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "opentelemetry-semantic-conventions", "tracing-opentelemetry"]
 
 [dependencies]
 vls-core = { path = "../vls-core", version = "0.11.0", features = ["use_backtrace"] }
@@ -60,12 +61,12 @@ lru = "0.11"
 jsonrpsee = { version = "0.21.0", features = ["server"] }
 tracing = { version = "0.1.40", features = ["attributes"] }
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["tracing-log", "env-filter", "fmt"] }
-opentelemetry = { version = "0.21.0", features = ["trace"] }
-opentelemetry_sdk = { version = "0.21.2", features = ["trace", "rt-tokio"] }
-tracing-opentelemetry = "0.22.0"
-opentelemetry-otlp = "0.14.0"
-opentelemetry-semantic-conventions = "0.13.0"
 tracing-appender = "0.2.3"
+opentelemetry = { version = "0.21.0", features = ["trace"], optional = true }
+opentelemetry_sdk = { version = "0.21.2", features = ["trace", "rt-tokio"], optional = true }
+opentelemetry-otlp = { version = "0.14.0", optional = true }
+opentelemetry-semantic-conventions = { version = "0.13.0", optional = true }
+tracing-opentelemetry = { version = "0.22.0", optional = true }
 
 [dependencies.heapmon]
 version = "0.1"
