@@ -4,22 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [0.11.0-rc.2] - 2024-02-18: "Still Beta3"
+## [0.11.0-rc.3] - 2024-02-18: "Beta3 Begone"
 
 ### Added
 
  - policy: adding the a `policy_generic_error` error
  - policy: policy-routing-balanced specify L2 max fee as %
  - core: Channels are pruned promptly when we know the node has forgotten them. ([#435])
+ - core: Channels are now never pruned until the node calls `ForgetChannel`
  - core: Added explicit activate_initial_commitment call since
    commitment 0 does not have a prior commitment to revoke.
  - signer: Add ValueFormat field to KVVPersister
  - signer: Added json rpc server for administrative purposes
+ - proxy: replay protocol init message on signer reconnect
  - handler: A new message `HsmdDevPreinit` should be used to force developer test parameters.
  - handler: Handling for the new CLN `hsmd_sign_any_cannouncement` was added.
  - handler: Implement version negotiation for the protocol between node and signer
  - handler: Improved logging to show when a SignCommitmentTx is really a SignMutualCloseTx
  - frontend: The bitcoind_client timeout can now be set with the BITCOIND_CLIENT_TIMEOUT_SECS env variable.
+ - build: Added `mold` linker sample config
  - howto: Added utility to summarize logs in integration test trees
  - howto: Added journactl configuration tips
  - howto: Added logcat and logfilter scripts to facilitate searching logging output
@@ -32,14 +35,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 
  - core, persist: optimize de/serialization of u8 sequences for binary formats
- - core: The version of serde_bolt was updated to 0.3.4
  - create `Message::SignerError`
  - prioritize serde::De/Serialize implementations for binary formats
- - replay protocol init message on signer reconnect
  - split revocation from validate_holder_commitment
  - lss: switch to ciborium
  - ci: The nightly toolchain is no longer needed for coverage runs.
- - updated txoo to v0.6.4
+ - core: Updated serde_bolt to v0.3.4
+ - Updated txoo to v0.6.4
+ - Updated ahash to v0.8.4 to avoid yanked version at crates.io.
 
 ### Removed
 
@@ -59,10 +62,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
  - revert change to channel ID endianess
  - set frontend interval MissedTickBehavior to Skip
  - upgrade unsafe-libyaml to correct RUSTSEC-2023-0075 and h2 to correct RUSTSEC-2024-0003
-
-### Workaround
-
- - Add a 2016 block delay safety margin to channel pruning ([#435])
+ - use earliest checkpoint in frontend startup check ([#470])
 
 ## [0.11.0-rc.1] - 2023-06-15: "Beta 3"
 
