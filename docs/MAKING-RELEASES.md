@@ -96,3 +96,22 @@ You may also be interested in:
 - `cargo publish-workspace --target-version 0.10.0-rc.1 --crate-prefix vls --exclude vls-core-test --token XXX`
 
 where XXX is the token from `~/.cargo/credentials`.
+
+## Checklist
+
+- [ ] `export VER=v0.x.y` # ie "v0.11.0-rc3" or "v0.11.0"
+- [ ] `git checkout main && git pull`
+- [ ] `git checkout -b 2024-02-$VER`
+- [ ] `scripts/harvest-changelog <PREVIOUS>..`
+- [ ] string replace the old release w/ the new
+- [ ] `./scripts/build-all`
+- [ ] `cargo test`
+- [ ] `cargo build --release`
+- [ ] `cargo package`
+- [ ] commit changes
+- [ ] push MR
+- [ ] merge MR
+- [ ] `git tag -a -s $VER -m $VER`
+- [ ] `git push --follow-tags`
+- [ ] `cargo login <your_token>`
+- [ ] `./scripts/publish-all`
