@@ -1,7 +1,7 @@
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::util::sighash::SighashCache;
-use bitcoin::{self, EcdsaSighashType, Network, Script, Sighash, Transaction};
+use bitcoin::{EcdsaSighashType, Network, Script, Sighash, Transaction};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, htlc_success_tx_weight, htlc_timeout_tx_weight,
     make_funding_redeemscript, ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys,
@@ -1894,7 +1894,7 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             min_feerate_per_kw: 253,     // testnet/regtest observed
             max_feerate_per_kw: 151_000, // CLN max_feerate 150_000 common
             enforce_balance: false,
-            max_routing_fee_msat: 120_000, // CLN test_pay_exclude_node: 101_000
+            max_routing_fee_msat: 160_000, // CLN test_renepay::test_fees: 153_000
             max_feerate_percentage: 10,
             dev_flags: None,
             filter: PolicyFilter::default(),

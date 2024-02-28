@@ -1,5 +1,5 @@
 use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::{self, EcdsaSighashType, Network, Script, Sighash, Transaction};
+use bitcoin::{EcdsaSighashType, Network, Script, Sighash, Transaction};
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::sign::InMemorySigner;
 

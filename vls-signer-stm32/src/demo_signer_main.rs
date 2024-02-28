@@ -37,7 +37,6 @@ use vls_protocol_signer::approver::{Approve, WarningPositiveApprover};
 use vls_protocol_signer::handler::{Handler, HandlerBuilder, InitHandler, RootHandler};
 use vls_protocol_signer::lightning_signer;
 use vls_protocol_signer::lightning_signer::bitcoin;
-use vls_protocol_signer::vls_protocol;
 
 mod approver;
 mod device;
@@ -281,6 +280,12 @@ fn handle_requests(arc_devctx: &RefCell<DeviceContext>, root_handler: RootHandle
         let heap_free_kb = (HEAP_SIZE - heap_bytes_used()) / 1024;
         info!(" handled {}, {}KB heap free, in {} ms, ", message_d.clone(), heap_free_kb, duration);
 
+        // write the response before updating the display
+        write_serial_response_header(&mut devctx.serial, reqhdr.sequence)
+            .expect("write reply header");
+        msgs::write_vec(&mut devctx.serial, reply.as_vec()).expect("write reply");
+
+        // update the display before the next request
         devctx.disp.clear_screen();
         let balance = root_handler.channel_balance();
         devctx.disp.show_texts(&[
@@ -315,10 +320,6 @@ fn handle_requests(arc_devctx: &RefCell<DeviceContext>, root_handler: RootHandle
             top_tracks[3].clone(),
             top_tracks[4].clone(),
         ]);
-
-        write_serial_response_header(&mut devctx.serial, reqhdr.sequence)
-            .expect("write reply header");
-        msgs::write_vec(&mut devctx.serial, reply.as_vec()).expect("write reply");
     }
 }
 

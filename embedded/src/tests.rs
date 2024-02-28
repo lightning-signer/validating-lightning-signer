@@ -1,7 +1,6 @@
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
-use core::convert::TryInto;
 use core::time::Duration;
 
 use bitcoin::bech32::{u5, FromBase32, ToBase32};
@@ -19,7 +18,7 @@ use lightning_signer::channel::{Channel, ChannelBase, ChannelSetup, CommitmentTy
 use lightning_signer::invoice::Invoice;
 use lightning_signer::lightning;
 use lightning_signer::lightning_invoice::{
-    Currency, InvoiceBuilder, RawDataPart, RawHrp, RawBolt11Invoice,
+    Currency, InvoiceBuilder, RawBolt11Invoice, RawDataPart, RawHrp,
 };
 use lightning_signer::node::{Node, NodeConfig, NodeServices};
 use lightning_signer::persist::{DummyPersister, Persist};

@@ -25,9 +25,11 @@ rustup override set nightly-2022-11-15
 
 rustup target add thumbv7em-none-eabihf
 
-cargo install probe-run
+# Don't build it here because the override above is in effect
+(cd $HOME && cargo install probe-run)
 
 sudo usermod -a -G dialout $USER
+# Need to log out and log back in for group privelege to take effect
 ```
 
 Follow [udev rules setup instructions](https://probe.rs/docs/getting-started/probe-setup/)

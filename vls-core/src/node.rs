@@ -1,15 +1,11 @@
 use alloc::collections::VecDeque;
 use core::borrow::Borrow;
-use core::convert::TryFrom;
-use core::convert::TryInto;
 use core::fmt::{self, Debug, Formatter};
-use core::iter::FromIterator;
 use core::str::FromStr;
 use core::time::Duration;
 
 use scopeguard::defer;
 
-use bitcoin;
 use bitcoin::bech32::{u5, FromBase32};
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;

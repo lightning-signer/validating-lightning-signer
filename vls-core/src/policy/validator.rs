@@ -8,8 +8,8 @@ use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::{
-    self, BlockHash, BlockHeader, EcdsaSighashType, FilterHeader, Network, OutPoint, Script,
-    Sighash, Transaction,
+    BlockHash, BlockHeader, EcdsaSighashType, FilterHeader, Network, OutPoint, Script, Sighash,
+    Transaction,
 };
 use core::time::Duration;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};

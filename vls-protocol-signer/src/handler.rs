@@ -8,7 +8,6 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp::min;
-use core::convert::TryInto;
 use core::str::FromStr;
 
 use bitcoin::bech32::u5;

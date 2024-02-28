@@ -125,26 +125,28 @@ regex=""
 
 # VLS
 if $vls; then
-    pfx="vlsd2/"
     if [[ $level -ge 1 ]]; then
-        regex+="${pfx}.*WARN|"
-        regex+="${pfx}.*ERROR|"
-        regex+="${pfx}.*received error from handler|"
-        regex+="${pfx}.*panicked at|"
+        regex+="WARN|"
+        regex+="ERROR|"
+        regex+="received error from handler|"
+        regex+="panicked at|"
     fi
     if [[ $level -ge 2 ]]; then
-        regex+="${pfx}.*git_desc|"
-        regex+="${pfx}.*setting protocol_version to|"
+        regex+="git_desc|"
+        regex+="setting protocol_version to|"
     fi
     if [[ $level -ge 3 ]]; then
-        regex+="${pfx}.*added block|"
-        regex+="${pfx}.*removed block|"
-        regex+="${pfx}.*forget_channel|"
+        regex+="added block|"
+        regex+="removed block|"
+        regex+="forget_channel|"
+        regex+="NodeState::summary|"
+        regex+="NodeState::pruning|"
+        regex+="new_channel|"		# stm32
     fi
     if [[ $level -ge 4 ]]; then
-        regex+="${pfx}.*signer got request|"
-        regex+="${pfx}.*signer sending reply|"
-        regex+="${pfx}.*adding invoice|"
+        regex+="signer got request|"
+        regex+="signer sending reply|"
+        regex+="adding invoice|"
     fi
 fi
 
@@ -176,22 +178,23 @@ if $lightningd; then
     fi
     if [[ $level -ge 4 ]]; then
         regex+="->|"
+        regex+="lightningd: Sending .* in onion to deliver|"
+        regex+="plugin-pay: .* Initial limit on max HTLCs|"
     fi
 fi
 
 # proxy startup and warns
 if $proxy; then
-    pfx="remote_hsmd_socket/"
     if [[ $level -ge 1 ]]; then
-        regex+="${pfx}.*WARN|"
-        regex+="${pfx}.*ERROR|"
-        regex+="${pfx}.*signer error|"
+        regex+="WARN|"
+        regex+="ERROR|"
+        regex+="signer error|"
     fi
     if [[ $level -ge 2 ]]; then
-        regex+="${pfx}.*git_desc|"
+        regex+="git_desc|"
     fi
     if [[ $level -ge 3 ]]; then
-        regex+="${pfx}.*ForgetChannel\(|"
+        regex+="ForgetChannel\(|"
     fi
     # if [[ $level -ge 4 ]]; then
     # fi
@@ -289,7 +292,21 @@ if $lightningd; then
     vregex+='error code: -25.*bad-txns-inputs-missingorspent|'
     vregex+='error code: -27.*Transaction already in block chain|'
     vregex+='connectd: dev_report_fds:|'
+    vregex+='has only moved gossip .* for probe, giving up on it|'
+    vregex+='Log pruned .* entries|'
+    vregex+='lightningd.* new client|'
+    vregex+='connectd: peer_out WIRE_.*ING|'
+    vregex+='channeld-chan.*: htlc [0-9]+:.*->|' # dup
+    vregex+='channeld-chan.* local [0-9]+ remote [0-9]+|'
     vregex+='no more swaps need addresses|' # clboss
+    vregex+='/swapstatus.*invoice\.expired|' # clboss
+    vregex+='/swapstatus.*swap\.created|' # clboss
+    vregex+='plugin-clboss.*ChannelCandidateInvestigator.*Investigating|'
+    vregex+='plugin-clboss.*ChannelCandidateInvestigator.*is online|'
+    vregex+='plugin-clboss.*ChannelCandidateInvestigator.*Janitor: Rejected|'
+    vregex+='plugin-clboss.*Boltz::Service.*Swaps:|'
+    vregex+='plugin-pay:.*Unable to parse .*waitsendpay.*Payment failure reason unknown|'
+    vregex+='plugin-pay:.*Intermediate node .* reported strange error code|'
 fi
 
 if $bitcoind; then

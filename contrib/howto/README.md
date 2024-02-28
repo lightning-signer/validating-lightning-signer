@@ -7,6 +7,7 @@
 - [Setup CLN+VLS+CLBOSS server using Docker](https://gitlab.com/lightning-signer/vls-container#vls-containers)
 - [Setup testnet CLN+VLS+CLBOSS server using STM32 in `SERIAL` mode](./serial-server.md)
 - [Update CLN+VLS Software](./update.md)
+- [Enable Debugging Logging](./debugging.md)
 
 ## Procedure Components
 

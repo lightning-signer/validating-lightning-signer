@@ -18,7 +18,7 @@ use embedded_graphics::{
 use embedded_hal::digital::v2::OutputPin;
 use log::*;
 use panic_probe as _;
-use rtt_target::{self, rprintln};
+use rtt_target::rprintln;
 use st7789::{Orientation, ST7789};
 #[allow(unused_imports)]
 use stm32f4xx_hal::{
@@ -138,6 +138,10 @@ pub fn init_allocator() {
 
 pub fn heap_bytes_used() -> usize {
     ALLOCATOR.used()
+}
+
+pub fn heap_bytes_avail() -> usize {
+    HEAP_SIZE - heap_bytes_used()
 }
 
 pub fn make_lcd<PINS: fsmc_lcd::Pins<Lcds = Lcd<B>>, B: SubBank>(

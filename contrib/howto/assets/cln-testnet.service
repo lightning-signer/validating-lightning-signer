@@ -10,10 +10,12 @@ PIDFile=/home/cln/.lightning/lightningd-testnet.pid
 User=cln
 Group=cln
 Type=simple
-KillMode=process
-TimeoutSec=180
+KillMode=control-group
+TimeoutStopSec=30
+TimeoutStartSec=180
 Restart=always
 RestartSec=60
+LimitCORE=infinity
 
 [Install]
 WantedBy=multi-user.target

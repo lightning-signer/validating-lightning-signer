@@ -155,7 +155,7 @@ cargo-audit:
   image: rust:latest
   script:
     - rustup component add rustfmt
-    - cargo install cargo-audit
+    - cargo install --locked cargo-audit
     - cargo audit
     - (cd lightning-storage-server && cargo audit)
 
