@@ -1532,7 +1532,7 @@ impl Channel {
         self.monitor.add_funding_inputs(tx);
     }
 
-    /// Mark this channel as forgotten by our node clearing it for pruning on the next heartbeat
+    /// Mark this channel as forgotten by the node allowing it to be pruned
     pub fn forget(&self) -> Result<(), Status> {
         self.monitor.forget_channel();
         self.persist()?;

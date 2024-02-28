@@ -18,7 +18,9 @@ use lightning_signer::bitcoin::hashes::Hash;
 use super::adapter::{ChannelReply, ChannelRequest, ClientId};
 use crate::client::Client;
 use crate::{log_error, log_pretty, log_reply, log_request};
-use vls_protocol::{msgs, msgs::SerBolt as _, msgs::DeBolt as _, msgs::Message, Error as ProtocolError};
+use vls_protocol::{
+    msgs, msgs::DeBolt as _, msgs::Message, msgs::SerBolt as _, Error as ProtocolError,
+};
 use vls_protocol_client::{ClientResult as Result, Error, SignerPort};
 use vls_protocol_signer::vls_protocol;
 
