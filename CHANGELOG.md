@@ -4,7 +4,9 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [0.11.0-rc.3] - 2024-02-18: "Beta3 Begone"
+## [0.11.0] - 2024-02-29: "Auspicious Anubis"
+
+This release named by Jack Ronaldi
 
 ### Added
 
