@@ -11,63 +11,11 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 #[cfg(feature = "opentelemetry_protocol")]
-use std::time::Duration;
-#[cfg(feature = "opentelemetry_protocol")]
-use opentelemetry::{KeyValue, global};
-#[cfg(feature = "opentelemetry_protocol")]
-use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
-#[cfg(feature = "opentelemetry_protocol")]
-use opentelemetry_sdk::{runtime, trace::{self, BatchConfig, Tracer}, Resource};
-#[cfg(feature = "opentelemetry_protocol")]
-use opentelemetry_semantic_conventions::{resource::{
-    DEPLOYMENT_ENVIRONMENT, SERVICE_NAME, SERVICE_VERSION,
-}, SCHEMA_URL};
+use crate::util::otlp::new_tracer;
 #[cfg(feature = "opentelemetry_protocol")]
 use tracing_opentelemetry::OpenTelemetryLayer;
 #[cfg(feature = "opentelemetry_protocol")]
-use crate::GIT_DESC;
-#[cfg(feature = "opentelemetry_protocol")]
-use super::{deployment_environment, otlp_timeout, otlp_endpoint};
-
-/**
- * Create a Resource that captures information about the entity for which telemetry is recorded.
- */
-#[cfg(feature = "opentelemetry_protocol")]
-pub fn resource() -> Resource {
-    Resource::from_schema_url(
-        [
-            KeyValue::new(SERVICE_NAME, env!("CARGO_PKG_NAME")),
-            KeyValue::new(SERVICE_VERSION, GIT_DESC),
-            KeyValue::new(DEPLOYMENT_ENVIRONMENT, deployment_environment()),
-        ],
-        SCHEMA_URL,
-    )
-}
-
-/**
- * Create a ExportConfig that contains information about the exporter endpoint, timeout to collector and protocol
-*/
-#[cfg(feature = "opentelemetry_protocol")]
-pub fn otlp_exporter_config() -> ExportConfig {
-    ExportConfig {
-        endpoint: otlp_endpoint(),
-        timeout: Duration::from_secs(otlp_timeout()),
-        protocol: Protocol::Grpc,
-    }
-}
-
-/** Initialize a tracer provider with the OTLP exporter and a batch span processor.*/
-#[cfg(feature = "opentelemetry_protocol")]
-pub fn new_tracer() -> Result<Tracer, opentelemetry::trace::TraceError> {
-    opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(
-            opentelemetry_otlp::new_exporter().tonic().with_export_config(otlp_exporter_config()),
-        )
-        .with_trace_config(trace::config().with_resource(resource()))
-        .with_batch_config(BatchConfig::default())
-        .install_batch(runtime::Tokio)
-}
+use opentelemetry::global;
 
 /** create a non blocking tracing file appender with daily rolling */
 pub fn setup_file_appender<P: AsRef<Path>>(datadir: P, who: &str) -> (NonBlocking, WorkerGuard) {
@@ -144,47 +92,10 @@ impl Drop for OtelGuard {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "opentelemetry_protocol")]
-    use opentelemetry::{global::ObjectSafeSpan, trace::{SpanBuilder, Tracer}, Value};
-    #[cfg(feature = "opentelemetry_protocol")]
-    use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
-
     use std::time::Duration;
     use tokio::time::sleep;
     use tracing_subscriber::{fmt, layer::SubscriberExt};
     use crate::util::observability::env_filter;
-
-    #[test]
-    #[cfg(feature = "opentelemetry_protocol")]
-    fn test_oltp_export_config() {
-        let config = super::otlp_exporter_config();
-        assert_eq!(config.endpoint, "http://localhost:4317");
-        assert_eq!(config.timeout, std::time::Duration::from_secs(3));
-        assert_eq!(config.protocol, opentelemetry_otlp::Protocol::Grpc);
-    }
-
-    #[test]
-    #[cfg(feature = "opentelemetry_protocol")]
-    fn test_resource() {
-        let resource = super::resource();
-        assert_eq!(resource.get(SERVICE_NAME), Some(Value::String(env!("CARGO_PKG_NAME").into())));
-        assert_eq!(resource.get(SERVICE_VERSION), Some(Value::String(super::GIT_DESC.into())));
-        assert_eq!(resource.get(super::DEPLOYMENT_ENVIRONMENT), Some(Value::String(super::deployment_environment().into())));
-    }
-
-    #[cfg(feature = "opentelemetry_protocol")]
-    #[tokio::test]
-    async fn test_new_tracer() {
-        let tracer= super::new_tracer();
-        match tracer {
-            Ok(tracer) => {
-                let mut _span = tracer.build(SpanBuilder::default());
-                tracing::info!("tracer test");
-                _span.end();
-            },
-            Err(err) => panic!("Failed to create tracer: {}", err)
-        }
-    }
 
     #[tokio::test]
     async fn test_setup_file_appender() {

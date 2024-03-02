@@ -3,6 +3,7 @@ mod r#macro;
 pub mod observability;
 mod testing;
 mod validation;
+mod otlp;
 
 pub use env_var::*;
 pub use r#macro::*;
