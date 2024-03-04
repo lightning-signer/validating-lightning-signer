@@ -68,15 +68,31 @@ macro_rules! log_reply {
     };
 }
 
-pub fn read_allowlist() -> Vec<String> {
-    let allowlist_path_res = env::var("REMOTE_SIGNER_ALLOWLIST");
-    if let Ok(allowlist_path) = allowlist_path_res {
-        let file =
-            File::open(&allowlist_path).expect(format!("open {} failed", &allowlist_path).as_str());
-        BufReader::new(file).lines().map(|l| l.expect("line")).collect()
-    } else {
-        Vec::new()
+pub fn line_filter(line: &str) -> Option<String> {
+    let whitespace_removed = line.trim();
+    if whitespace_removed.is_empty() {
+        return None;
     }
+    let comment_removed = whitespace_removed.split('#').next()?.trim();
+    if comment_removed.is_empty() {
+        return None;
+    }
+    Some(comment_removed.to_string())
+}
+
+pub fn read_allowlist() -> Vec<String> {
+    if let Ok(allowlist_path) = env::var("REMOTE_SIGNER_ALLOWLIST") {
+        return read_allowlist_path(&allowlist_path);
+    }
+    Vec::new()
+}
+
+pub fn read_allowlist_path(path: &str) -> Vec<String> {
+    let file = File::open(path).expect(format!("open {} failed", path).as_str());
+    let allowlist: Vec<String> =
+        BufReader::new(file).lines().filter_map(|l| line_filter(&l.expect("line"))).collect();
+
+    allowlist
 }
 
 pub fn read_integration_test_seed<P: AsRef<Path>>(datadir: P) -> Option<[u8; 32]> {
@@ -291,4 +307,47 @@ pub fn tstamp() -> String {
             "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:3]"
         ))
         .expect("formatted tstamp")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn line_filter_test() {
+        assert_eq!(line_filter("#"), None);
+        assert_eq!(
+            line_filter("tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z # comment"),
+            Some("tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z".to_string())
+        );
+        assert_eq!(line_filter("   "), None);
+        assert_eq!(line_filter("   #   "), None);
+        assert_eq!(
+            line_filter("   tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z   "),
+            Some("tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z".to_string())
+        );
+    }
+
+    #[test]
+    fn read_allowlist_test() {
+        let test_file_content = "\
+        # Sample Allowlist
+        tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z
+        tb1qexampleaddress1234567890123456789012345678
+
+        # Another comment line after blank line
+    ";
+        let mut temp_file = tempfile::NamedTempFile::new().unwrap();
+        write!(temp_file, "{}", test_file_content).unwrap();
+        let allowlist = read_allowlist_path(temp_file.path().to_str().unwrap());
+        assert_eq!(
+            allowlist,
+            vec![
+                "tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z".to_string(),
+                "tb1qexampleaddress1234567890123456789012345678".to_string(),
+            ]
+        );
+        temp_file.close().unwrap();
+    }
 }
