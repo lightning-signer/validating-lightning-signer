@@ -176,7 +176,7 @@ pub fn handle_hsmd_version(matches: &ArgMatches) -> bool {
     if matches.is_present("version") {
         // Pretend to be the right version, given to us by an env var
         let version =
-            env::var("GREENLIGHT_VERSION").expect("set GREENLIGHT_VERSION to match c-lightning");
+            env::var("VLS_CLN_VERSION").expect("set VLS_CLN_VERSION to match c-lightning");
         println!("{}", version);
         true
     } else {

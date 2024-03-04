@@ -92,8 +92,8 @@ sudo make install
 Update `~cln/.lightning/testnet-env` to CLN version:
 ```
 sudo -u cln bash -c 'cd ~cln/.lightning/ && \
-  grep -v GREENLIGHT_VERSION testnet-env > testnet-env.new && \
-  echo "GREENLIGHT_VERSION=`lightningd --version`" >> testnet-env.new && \
+  grep -v VLS_CLN_VERSION testnet-env > testnet-env.new && \
+  echo "VLS_CLN_VERSION=`lightningd --version`" >> testnet-env.new && \
   mv testnet-env.new testnet-env'
 ```
 
