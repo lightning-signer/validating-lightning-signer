@@ -44,8 +44,16 @@ pub trait KeyDerive {
 }
 
 /// CLN compatible derivation
+#[derive(Clone, Debug)]
 pub struct NativeKeyDerive {
     network: Network,
+}
+
+impl NativeKeyDerive {
+    /// network value.
+    pub fn new(network: Network) -> Self {
+        Self { network }
+    }
 }
 
 impl KeyDerive for NativeKeyDerive {
