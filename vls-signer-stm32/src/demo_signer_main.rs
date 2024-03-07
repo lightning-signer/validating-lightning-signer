@@ -30,6 +30,7 @@ use lightning_signer::util::velocity::VelocityControlSpec;
 use lightning_signer::Arc;
 use rand_core::RngCore;
 use random_starting_time::RandomStartingTimeFactory;
+use vls_protocol::model::DevSecret;
 use vls_protocol::model::PubKey;
 use vls_protocol::msgs::{self, read_serial_request_header, write_serial_response_header, Message};
 use vls_protocol::serde_bolt::WireString;
@@ -212,6 +213,25 @@ fn start_test_mode(runctx: TestingContext) -> ! {
             msgs::read_message(&mut devctx.serial).expect("failed to read preinit message");
         info!("preinit {:?}", preinit);
 
+        // Get the seed from preinit. If it's not available, generate a new one.
+        // This needs to be done before the RandomStartingTimeFactory below
+        // takes the rng for itself ...
+        let seed = preinit
+            .seed
+            .as_ref()
+            .map(|s| {
+                info!("using forced seed from HsmdDevPreinit: {:?}", s);
+                s.0
+            })
+            .or_else(|| {
+                let mut seed = [0u8; 32];
+                let rng = devctx.rng.as_mut().unwrap();
+                rng.fill_bytes(&mut seed);
+                info!("generated new random seed: {:?}", DevSecret(seed));
+                Some(seed)
+            })
+            .expect("no seed");
+
         // Create the test-mode handler
         let validator_factory = make_validator_factory(runctx.cmn.network, runctx.cmn.permissive);
         let starting_time_factory =
@@ -220,7 +240,6 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         let clock = Arc::new(ManualClock::new(Duration::ZERO));
         let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
         let allowlist = preinit.allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
-        let seed = preinit.seed.as_ref().map(|s| s.0).expect("no seed");
 
         let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive);
         let (mut init_handler, _muts) = HandlerBuilder::new(runctx.cmn.network, 0, services, seed)
