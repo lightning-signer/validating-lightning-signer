@@ -262,6 +262,8 @@ pub fn make_validator_factory_with_filter_and_velocity(
         }
         info!("!VLS_PERMISSIVE: ALL POLICY ERRORS ARE ENFORCED");
     }
+    // log out policy at startup
+    info!("current policies: {:?}", policy);
 
     let simple_factory = SimpleValidatorFactory::new_with_policy(policy);
 

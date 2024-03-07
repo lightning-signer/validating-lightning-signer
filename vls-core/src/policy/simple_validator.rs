@@ -86,7 +86,7 @@ impl ValidatorFactory for SimpleValidatorFactory {
 }
 
 /// A simple policy to configure a SimpleValidator
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SimplePolicy {
     /// Minimum delay in blocks
     pub min_delay: u16,
@@ -164,7 +164,7 @@ impl Policy for SimplePolicy {
 }
 
 /// Development flags included in SimplePolicy
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PolicyDevFlags {
     /// Allow sending to unknown destinations
     pub disable_beneficial_balance_checks: bool,
