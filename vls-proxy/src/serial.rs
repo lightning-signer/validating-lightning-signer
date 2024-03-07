@@ -87,14 +87,12 @@ pub fn connect(serial_port: String) -> anyhow::Result<SerialWrap> {
     let mut serial = SerialWrap::new(file);
     let allowlist =
         read_allowlist().into_iter().map(|s| WireString(s.as_bytes().to_vec())).collect::<Vec<_>>();
-    // FIXME fixed seed
-    let seed = read_integration_test_seed(".").map(|s| DevSecret(s)).or(Some(DevSecret([1; 32])));
-    // FIXME remove this
-    info!("allowlist {:?} seed {:?}", allowlist, seed);
+    // Check if a testing seed is available, otherwise send None
+    let seed = read_integration_test_seed(".").map(|s| DevSecret(s));
     let preinit = msgs::HsmdDevPreinit {
         derivation_style: 0,
         network_name: WireString(Network::Testnet.to_string().as_bytes().to_vec()),
-        seed: seed,
+        seed,
         allowlist: allowlist.into(),
     };
     let sequence = 0;
