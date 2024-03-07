@@ -600,9 +600,9 @@ impl CommitmentInfo {
         // These are dependent on which side owns this commitment.
         let (to_broadcaster_funding_pubkey, to_countersigner_funding_pubkey) =
             if self.is_counterparty_broadcaster {
-                (keys.counterparty_pubkeys().funding_pubkey, keys.pubkeys().funding_pubkey)
+                (keys.counterparty_pubkeys().unwrap().funding_pubkey, keys.pubkeys().funding_pubkey)
             } else {
-                (keys.pubkeys().funding_pubkey, keys.counterparty_pubkeys().funding_pubkey)
+                (keys.pubkeys().funding_pubkey, keys.counterparty_pubkeys().unwrap().funding_pubkey)
             };
 
         // policy-commitment-anchor-amount

@@ -17,8 +17,8 @@ use bitcoind_client::{bitcoind_client_from_url, BlockSource};
 use lightning_signer::bitcoin::hashes::Hash;
 use lightning_signer::bitcoin::{BlockHash, BlockHeader, FilterHeader};
 use lightning_signer::txoo::filter::BlockSpendFilter;
-use lightning_signer::txoo::{CHECKPOINTS_BITCOIN, CHECKPOINTS_TESTNET, decode_checkpoint};
 use lightning_signer::txoo::proof::{ProofType, TxoProof};
+use lightning_signer::txoo::{decode_checkpoint, CHECKPOINTS_BITCOIN, CHECKPOINTS_TESTNET};
 #[allow(unused_imports)]
 use log::{debug, error, info, trace};
 
@@ -76,24 +76,25 @@ impl ChainFollower {
         let client = bitcoind_client_from_url(rpc_url.clone(), tracker.network()).await;
         let genesis_hash = client.get_block_hash(0).await.unwrap().unwrap();
         let genesis = client.get_block(&genesis_hash).await.unwrap();
-        let txoo_source = if let Some((first_height, (ckp_height, ckp_hash, ckp_filter_header, _))) =
-            get_first_and_last_checkpoint(tracker.network())
-        {
-            // current code can't supply tracker with blocks before or at the earliest checkpoint
-            // so the tip must be at the checkpoint or higher
-            assert!(
-                tracker.tip_info().await.0 >= first_height,
-                "tracker at height {} is < first checkpoint at height {}",
-                tracker.tip_info().await.0,
-                first_height
-            );
-            txoo_source_factory.get_source(ckp_height, ckp_hash, ckp_filter_header)
-        } else {
-            let filter = BlockSpendFilter::from_block(&genesis);
-            let filter_header = filter.filter_header(&FilterHeader::all_zeros());
+        let txoo_source =
+            if let Some((first_height, (ckp_height, ckp_hash, ckp_filter_header, _))) =
+                get_first_and_last_checkpoint(tracker.network())
+            {
+                // current code can't supply tracker with blocks before or at the earliest checkpoint
+                // so the tip must be at the checkpoint or higher
+                assert!(
+                    tracker.tip_info().await.0 >= first_height,
+                    "tracker at height {} is < first checkpoint at height {}",
+                    tracker.tip_info().await.0,
+                    first_height
+                );
+                txoo_source_factory.get_source(ckp_height, ckp_hash, ckp_filter_header)
+            } else {
+                let filter = BlockSpendFilter::from_block(&genesis);
+                let filter_header = filter.filter_header(&FilterHeader::all_zeros());
 
-            txoo_source_factory.get_source(0, genesis.block_hash(), filter_header)
-        };
+                txoo_source_factory.get_source(0, genesis.block_hash(), filter_header)
+            };
         let update_interval = match tracker.network() {
             Network::Regtest => 1000, // poll rapidly, automated testing
             _ => 60 * 1000,
@@ -256,7 +257,6 @@ pub fn get_first_and_last_checkpoint(
     let last = decode_checkpoint(checkpoints[checkpoints.len() - 1]);
     Some((checkpoints[0].0, last))
 }
-
 
 #[async_trait]
 impl Tracker for ChainFollower {

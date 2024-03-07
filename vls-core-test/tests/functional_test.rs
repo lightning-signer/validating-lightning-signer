@@ -699,7 +699,7 @@ macro_rules! check_spendable_outputs {
         let mut all_outputs = Vec::new();
         for event in events.drain(..) {
             match event {
-                Event::SpendableOutputs { mut outputs } => {
+                Event::SpendableOutputs { mut outputs, .. } => {
                     for outp in outputs.drain(..) {
                         txn.push(
                             $keysinterface

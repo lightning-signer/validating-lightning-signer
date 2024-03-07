@@ -439,7 +439,7 @@ impl RootHandler {
                     let ck = self.node.with_channel(&channel_id, |chan| {
                         let revocation_pubkey = per_commitment_point.as_ref().map(|p| {
                             let revocation_basepoint =
-                                chan.keys.counterparty_pubkeys().revocation_basepoint;
+                                chan.counterparty_pubkeys().revocation_basepoint;
                             derive_public_revocation_key(&secp_ctx, p, &revocation_basepoint)
                         });
                         chan.get_unilateral_close_key(&per_commitment_point, &revocation_pubkey)

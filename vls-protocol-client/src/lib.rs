@@ -632,6 +632,20 @@ impl NodeSigner for KeysManagerClient {
         RecoverableSignature::from_compact(sig, rid).map_err(|_| ())
     }
 
+    fn sign_bolt12_invoice(
+        &self,
+        _invoice: &lightning::offers::invoice::UnsignedBolt12Invoice,
+    ) -> Result<bitcoin::secp256k1::schnorr::Signature, ()> {
+        unimplemented!()
+    }
+
+    fn sign_bolt12_invoice_request(
+        &self,
+        _invoice_request: &lightning::offers::invoice_request::UnsignedInvoiceRequest,
+    ) -> Result<bitcoin::secp256k1::schnorr::Signature, ()> {
+        unimplemented!()
+    }
+
     fn sign_gossip_message(&self, msg: UnsignedGossipMessage) -> Result<Signature, ()> {
         let message = SignGossipMessage { message: Octets(msg.encode()) };
         let result: SignGossipMessageReply = self.call(message).expect("sign_gossip_message");

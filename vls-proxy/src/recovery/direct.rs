@@ -75,7 +75,7 @@ impl RecoverySign for DirectRecoverySigner {
 
     fn funding_outpoint(&self) -> OutPoint {
         let mut lock = self.lock();
-        Self::channel(&mut lock).keys.funding_outpoint().clone()
+        Self::channel(&mut lock).keys.funding_outpoint().unwrap().clone()
     }
 
     fn counterparty_selected_contest_delay(&self) -> u16 {

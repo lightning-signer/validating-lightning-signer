@@ -640,6 +640,20 @@ impl NodeSigner for LoopbackSignerKeysInterface {
         self.get_node().sign_invoice(hrp_bytes, invoice_data).map_err(|_| ())
     }
 
+    fn sign_bolt12_invoice(
+        &self,
+        _: &lightning::offers::invoice::UnsignedBolt12Invoice,
+    ) -> Result<bitcoin::secp256k1::schnorr::Signature, ()> {
+        todo!()
+    }
+
+    fn sign_bolt12_invoice_request(
+        &self,
+        _: &lightning::offers::invoice_request::UnsignedInvoiceRequest,
+    ) -> Result<bitcoin::secp256k1::schnorr::Signature, ()> {
+        todo!()
+    }
+
     fn get_inbound_payment_key_material(&self) -> KeyMaterial {
         self.get_node().get_inbound_payment_key_material()
     }
