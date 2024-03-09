@@ -40,12 +40,7 @@ macro_rules! trace_enforcement_state {
         #[cfg(not(feature = "debug_enforcement_state"))]
         {
             #[cfg(not(feature = "log_pretty_print"))]
-            trace!(
-                "{}:\n{:?}\n{:?}",
-                function!(),
-                &$chan.enforcement_state,
-                &$chan.get_chain_state()
-            );
+            trace!("{}:{:?}{:?}", function!(), &$chan.enforcement_state, &$chan.get_chain_state());
             #[cfg(feature = "log_pretty_print")]
             trace!(
                 "{}:\n{:#?}\n{:#?}",
@@ -57,12 +52,7 @@ macro_rules! trace_enforcement_state {
         #[cfg(feature = "debug_enforcement_state")]
         {
             #[cfg(not(feature = "log_pretty_print"))]
-            debug!(
-                "{}:\n{:?}\n{:?}",
-                function!(),
-                &$chan.enforcement_state,
-                &$chan.get_chain_state()
-            );
+            debug!("{}:{:?}{:?}", function!(), &$chan.enforcement_state, &$chan.get_chain_state());
             #[cfg(feature = "log_pretty_print")]
             debug!(
                 "{}:\n{:#?}\n{:#?}",
@@ -82,14 +72,14 @@ macro_rules! trace_node_state {
         #[cfg(not(feature = "debug_node_state"))]
         {
             #[cfg(not(feature = "log_pretty_print"))]
-            trace!("{}:\n{:?}", function!(), &$nodestate);
+            trace!("{}:{:?}", function!(), &$nodestate);
             #[cfg(feature = "log_pretty_print")]
             trace!("{}:\n{#:?}", function!(), &$nodestate);
         }
         #[cfg(feature = "debug_node_state")]
         {
             #[cfg(not(feature = "log_pretty_print"))]
-            debug!("{}:\n{:?}", function!(), &$nodestate);
+            debug!("{}:{:?}", function!(), &$nodestate);
             #[cfg(feature = "log_pretty_print")]
             debug!("{}:\n{:#?}", function!(), &$nodestate);
         }
