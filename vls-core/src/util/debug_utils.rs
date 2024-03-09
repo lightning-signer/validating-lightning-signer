@@ -38,19 +38,39 @@ macro_rules! log_channel_public_keys {
 macro_rules! trace_enforcement_state {
     ($chan: expr) => {
         #[cfg(not(feature = "debug_enforcement_state"))]
-        trace!(
-            "{}:\n{:#?}\n{:#?}",
-            function!(),
-            &$chan.enforcement_state,
-            &$chan.get_chain_state()
-        );
+        {
+            #[cfg(not(feature = "log_pretty_print"))]
+            trace!(
+                "{}:\n{:?}\n{:?}",
+                function!(),
+                &$chan.enforcement_state,
+                &$chan.get_chain_state()
+            );
+            #[cfg(feature = "log_pretty_print")]
+            trace!(
+                "{}:\n{:#?}\n{:#?}",
+                function!(),
+                &$chan.enforcement_state,
+                &$chan.get_chain_state()
+            );
+        }
         #[cfg(feature = "debug_enforcement_state")]
-        debug!(
-            "{}:\n{:#?}\n{:#?}",
-            function!(),
-            &$chan.enforcement_state,
-            &$chan.get_chain_state()
-        );
+        {
+            #[cfg(not(feature = "log_pretty_print"))]
+            debug!(
+                "{}:\n{:?}\n{:?}",
+                function!(),
+                &$chan.enforcement_state,
+                &$chan.get_chain_state()
+            );
+            #[cfg(feature = "log_pretty_print")]
+            debug!(
+                "{}:\n{:#?}\n{:#?}",
+                function!(),
+                &$chan.enforcement_state,
+                &$chan.get_chain_state()
+            );
+        }
     };
 }
 
@@ -60,10 +80,19 @@ macro_rules! trace_enforcement_state {
 macro_rules! trace_node_state {
     ($nodestate: expr) => {
         #[cfg(not(feature = "debug_node_state"))]
-        trace!("{}:\n{:#?}", function!(), &$nodestate);
+        {
+            #[cfg(not(feature = "log_pretty_print"))]
+            trace!("{}:\n{:?}", function!(), &$nodestate);
+            #[cfg(feature = "log_pretty_print")]
+            trace!("{}:\n{#:?}", function!(), &$nodestate);
+        }
         #[cfg(feature = "debug_node_state")]
-        debug!("{}:\n{:#?}", function!(), &$nodestate);
-
+        {
+            #[cfg(not(feature = "log_pretty_print"))]
+            debug!("{}:\n{:?}", function!(), &$nodestate);
+            #[cfg(feature = "log_pretty_print")]
+            debug!("{}:\n{:#?}", function!(), &$nodestate);
+        }
         // log the summary if it changed
         let (summary, changed) = &$nodestate.summary();
         if *changed {
