@@ -3,6 +3,8 @@ mod r#macro;
 pub mod observability;
 mod testing;
 mod validation;
+
+#[cfg(feature = "opentelemetry_protocol")]
 mod otlp;
 
 pub use env_var::*;

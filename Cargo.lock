@@ -3072,7 +3072,6 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
  "prost",
- "rand",
  "serde",
  "serde_json",
  "tempfile",
