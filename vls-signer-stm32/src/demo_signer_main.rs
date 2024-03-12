@@ -38,6 +38,7 @@ use vls_protocol_signer::approver::{Approve, WarningPositiveApprover};
 use vls_protocol_signer::handler::{Handler, HandlerBuilder, InitHandler, RootHandler};
 use vls_protocol_signer::lightning_signer;
 use vls_protocol_signer::lightning_signer::bitcoin;
+use vls_protocol_signer::lightning_signer::channel::ChannelBalance;
 
 mod approver;
 mod device;
@@ -319,8 +320,8 @@ fn handle_requests(arc_devctx: &RefCell<DeviceContext>, root_handler: RootHandle
                 pretty_thousands(balance.received_htlc as i64)
             ),
             format!(
-                "c:{:>3} {:>13}",
-                balance.channel_count,
+                "c:{:<5} {:>11}",
+                channel_count_string(&balance),
                 pretty_thousands(balance.claimable as i64)
             ),
             if balance.offered_htlc > 0 {
@@ -340,6 +341,34 @@ fn handle_requests(arc_devctx: &RefCell<DeviceContext>, root_handler: RootHandle
             top_tracks[4].clone(),
         ]);
     }
+}
+
+fn channel_count_string(balance: &ChannelBalance) -> String {
+    // NOTE - there is not a lot of room on the display, this is contrived ...
+    //
+    // Examples, alignment is designed to match adjacent lines
+    // "1a5z2" - 1 prep, 5 active, 2 eol
+    // "1a8"   - 1 prep, 8 active
+    // " 16"   - 16 active
+    // " 16z2" - 16 active, 2 eol
+    //
+    // To save room combine the stub count with the unconfirmed count.
+    let prep_count = balance.stub_count + balance.unconfirmed_count;
+    let mut buff = String::new();
+    if prep_count > 0 {
+        buff += &format!("{}a", prep_count);
+    } else {
+        buff += &" ";
+        if balance.channel_count < 10 {
+            // only a single digit channel count, pad an extra space
+            buff += &" ";
+        }
+    }
+    buff += &format!("{}", balance.channel_count);
+    if balance.closing_count > 0 {
+        buff += &format!("z{}", balance.closing_count);
+    }
+    buff
 }
 
 fn from_wire_string(s: &WireString) -> String {
