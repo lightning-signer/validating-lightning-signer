@@ -147,6 +147,7 @@ if $vls; then
         regex+="signer got request|"
         regex+="signer sending reply|"
         regex+="adding invoice|"
+        regex+="EnforcementState|"
     fi
 fi
 

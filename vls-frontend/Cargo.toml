@@ -12,7 +12,7 @@ rust-version = "1.66.0"
 [features]
 default = ["debug"]
 test_utils = ["vls-core/test_utils"]
-debug = ["log_pretty_print"]
+debug = []
 log_pretty_print = []
 
 [lib]
