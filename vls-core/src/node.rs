@@ -2720,12 +2720,11 @@ impl NodeMonitor for Node {
         let channels_lock = self.channels.lock().unwrap();
         for (_, slot_arc) in channels_lock.iter() {
             let slot = slot_arc.lock().unwrap();
-            match &*slot {
-                ChannelSlot::Ready(chan) => sum.accumulate(&chan.balance()),
-                ChannelSlot::Stub(_stub) => {
-                    // ignore stubs ...
-                }
-            }
+            let balance = match &*slot {
+                ChannelSlot::Ready(chan) => chan.balance(),
+                ChannelSlot::Stub(_stub) => ChannelBalance::stub(),
+            };
+            sum.accumulate(&balance);
         }
         sum
     }

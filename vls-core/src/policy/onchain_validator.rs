@@ -333,6 +333,10 @@ impl Validator for OnchainValidator {
         self.inner.minimum_initial_balance(holder_value_msat)
     }
 
+    fn is_ready(&self, cstate: &ChainState) -> bool {
+        cstate.funding_depth >= self.policy.min_funding_depth as u32 && cstate.closing_depth == 0
+    }
+
     fn policy(&self) -> Box<&dyn Policy> {
         Box::new(&self.policy)
     }

@@ -119,9 +119,11 @@ mod tests {
             counterparty_points,
         ) = setup_mutual_close_tx(outbound)?;
 
+        // FIXME - wish that `setup_mutual_close_tx` set the monitor state so the
+        // channels appeared ready instead of unconfirmed.
         assert_eq!(
             node.channel_balance(),
-            ChannelBalanceBuilder::new().claimable(2_000_000).channel_count(1).build()
+            ChannelBalanceBuilder::new().claimable(2_000_000).unconfirmed_count(1).build()
         );
 
         let (tx, sig) = node.with_channel(&channel_id, |chan| {

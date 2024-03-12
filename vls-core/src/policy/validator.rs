@@ -224,6 +224,9 @@ pub trait Validator {
     /// The result is in satoshi.
     fn minimum_initial_balance(&self, holder_value_msat: u64) -> u64;
 
+    /// Channel ready for normal operation, funding is buried and not closing
+    fn is_ready(&self, cstate: &ChainState) -> bool;
+
     /// The associated policy
     fn policy(&self) -> Box<&dyn Policy>;
 
@@ -1027,6 +1030,7 @@ impl EnforcementState {
         &self,
         preimage_map: &T,
         channel_setup: &ChannelSetup,
+        is_ready: bool,
     ) -> ChannelBalance {
         debug!("{:#?}", preimage_map);
 
@@ -1066,13 +1070,22 @@ impl EnforcementState {
             };
 
         let (claimable, sweeping) = if self.channel_closed { (0, cur_bal) } else { (cur_bal, 0) };
-
+        let (stub_count, unconfirmed_count, channel_count, closing_count) = if self.channel_closed {
+            (0, 0, 0, 1)
+        } else if is_ready {
+            (0, 0, 1, 0)
+        } else {
+            (0, 1, 0, 0)
+        };
         let balance = ChannelBalance {
             claimable,
             received_htlc,
             offered_htlc,
             sweeping,
-            channel_count: 1,
+            stub_count,
+            unconfirmed_count,
+            channel_count,
+            closing_count,
             received_htlc_count,
             offered_htlc_count,
         };

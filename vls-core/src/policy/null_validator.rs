@@ -232,6 +232,10 @@ impl Validator for NullValidator {
         0
     }
 
+    fn is_ready(&self, _cstate: &ChainState) -> bool {
+        true
+    }
+
     fn policy(&self) -> Box<&dyn Policy> {
         self.0.policy()
     }
