@@ -34,7 +34,7 @@ impl FilterRule {
 
 /// A policy filter.
 /// The default policy is to handle all policies as errors
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PolicyFilter {
     /// The rules, processed in the order they appear in this vector.
     /// The first match stops processing.
