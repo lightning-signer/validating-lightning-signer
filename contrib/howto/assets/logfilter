@@ -168,6 +168,7 @@ if $lightningd; then
         regex+="Adding block|"
         regex+="Removing stale block|"
         regex+="State changed from|"
+        regex+="aborted opening negotiation|"
         regex+="plugin-clboss: New block at|"
 	regex+="plugin-clboss: NodeBalanceSwapper|"
 	regex+="plugin-clboss: SwapManager:|"
@@ -251,6 +252,7 @@ fi
 # CLN dbid
 if [[ -n $dbid ]]; then
     regex+="(dbid:? |chan#)$dbid|"
+    regex+="loop [0-9]+/[0-9]+/$dbid:|"
 fi
 
 # Funding outpoint
