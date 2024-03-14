@@ -461,7 +461,13 @@ pub mod fs {
     }
 
     fn write_seed(path: PathBuf, seed: &[u8]) {
-        fs::write(path, seed.to_hex()).unwrap();
+        fs::write(path.clone(), seed.to_hex()).expect("unable to write the seed to file");
+
+        // Set the read-only permissions
+        let mut permission =
+            fs::metadata(path.to_owned()).expect("unable to get metadata").permissions();
+        permission.set_readonly(true);
+        fs::set_permissions(path, permission).expect("unable to set the permission to file");
     }
 
     fn read_seed(path: PathBuf) -> Option<Vec<u8>> {
