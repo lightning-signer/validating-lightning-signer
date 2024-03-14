@@ -149,6 +149,7 @@ if $vls; then
         regex+="signer sending reply|"
         regex+="adding invoice|"
         regex+="EnforcementState|"
+        regex+="current channel balance:|"
     fi
 fi
 

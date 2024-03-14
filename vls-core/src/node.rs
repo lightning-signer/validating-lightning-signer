@@ -1791,6 +1791,8 @@ impl Node {
         // pruned channels are persisted inside
         self.prune_channels(&mut tracker);
 
+        info!("current channel balance: {:?}", self.channel_balance());
+
         let tip = tracker.tip();
         let current_timestamp = self.clock.now().as_secs() as u32;
         let heartbeat = Heartbeat {
