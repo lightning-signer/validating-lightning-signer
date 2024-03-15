@@ -53,7 +53,8 @@ use vls_protocol::model::{
 };
 use vls_protocol::msgs::{
     DeriveSecretReply, PreapproveInvoiceReply, PreapproveKeysendReply, SerBolt, SignBolt12Reply,
-    DEFAULT_MAX_PROTOCOL_VERSION, MIN_PROTOCOL_VERSION, PROTOCOL_VERSION_REVOKE,
+    DEFAULT_MAX_PROTOCOL_VERSION, MIN_PROTOCOL_VERSION, PROTOCOL_VERSION_NO_SECRET,
+    PROTOCOL_VERSION_REVOKE,
 };
 use vls_protocol::psbt::StreamedPSBT;
 use vls_protocol::serde_bolt;
@@ -1136,8 +1137,10 @@ impl Handler for ChannelHandler {
                 let res: core::result::Result<(PublicKey, Option<SecretKey>), status::Status> =
                     self.node.with_channel_base(&self.channel_id, |base| {
                         let point = base.get_per_commitment_point(commitment_number)?;
-                        let secret = if commitment_number >= 2 {
-                            base.get_per_commitment_secret_or_none(commitment_number - 2)
+                        let secret = if self.protocol_version < PROTOCOL_VERSION_NO_SECRET
+                            && commitment_number >= 2
+                        {
+                            Some(base.get_per_commitment_secret(commitment_number - 2)?)
                         } else {
                             None
                         };
