@@ -195,7 +195,7 @@ async fn handle_init_requests(
                 }
             }
             Err(e) => {
-                error!("error on stream: {}", e);
+                error!("error on init stream: {}", e);
                 return false;
             }
         }
