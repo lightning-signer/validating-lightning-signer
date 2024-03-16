@@ -1791,6 +1791,8 @@ impl Node {
         // pruned channels are persisted inside
         self.prune_channels(&mut tracker);
 
+        info!("current channel balance: {:?}", self.channel_balance());
+
         let tip = tracker.tip();
         let current_timestamp = self.clock.now().as_secs() as u32;
         let heartbeat = Heartbeat {
@@ -2720,12 +2722,11 @@ impl NodeMonitor for Node {
         let channels_lock = self.channels.lock().unwrap();
         for (_, slot_arc) in channels_lock.iter() {
             let slot = slot_arc.lock().unwrap();
-            match &*slot {
-                ChannelSlot::Ready(chan) => sum.accumulate(&chan.balance()),
-                ChannelSlot::Stub(_stub) => {
-                    // ignore stubs ...
-                }
-            }
+            let balance = match &*slot {
+                ChannelSlot::Ready(chan) => chan.balance(),
+                ChannelSlot::Stub(_stub) => ChannelBalance::stub(),
+            };
+            sum.accumulate(&balance);
         }
         sum
     }

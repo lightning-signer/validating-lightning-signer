@@ -230,6 +230,10 @@ impl Validator for MockValidator {
         todo!()
     }
 
+    fn is_ready(&self, _cstate: &ChainState) -> bool {
+        todo!()
+    }
+
     fn policy(&self) -> Box<&dyn Policy> {
         todo!()
     }

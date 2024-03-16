@@ -1884,7 +1884,7 @@ pub struct ChannelBalanceBuilder {
 
 impl ChannelBalanceBuilder {
     pub fn new() -> ChannelBalanceBuilder {
-        ChannelBalanceBuilder { inner: ChannelBalance::new(0, 0, 0, 0, 0, 0, 0) }
+        ChannelBalanceBuilder { inner: ChannelBalance::new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0) }
     }
 
     pub fn claimable(mut self, claimable: u64) -> Self {
@@ -1907,8 +1907,23 @@ impl ChannelBalanceBuilder {
         self
     }
 
+    pub fn stub_count(mut self, stub_count: u32) -> Self {
+        self.inner.stub_count = stub_count;
+        self
+    }
+
+    pub fn unconfirmed_count(mut self, unconfirmed_count: u32) -> Self {
+        self.inner.unconfirmed_count = unconfirmed_count;
+        self
+    }
+
     pub fn channel_count(mut self, channel_count: u32) -> Self {
         self.inner.channel_count = channel_count;
+        self
+    }
+
+    pub fn closing_count(mut self, closing_count: u32) -> Self {
+        self.inner.closing_count = closing_count;
         self
     }
 

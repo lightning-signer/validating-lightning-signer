@@ -477,6 +477,9 @@ impl State {
         }
 
         if changed {
+            #[cfg(not(feature = "log_pretty_print"))]
+            info!("on_add_block_end state changed: {:?}", self);
+            #[cfg(feature = "log_pretty_print")]
             info!("on_add_block_end state changed: {:#?}", self);
         }
 
@@ -522,6 +525,9 @@ impl State {
         self.height -= 1;
 
         if changed {
+            #[cfg(not(feature = "log_pretty_print"))]
+            info!("on_remove_block_end state changed: {:?}", self);
+            #[cfg(feature = "log_pretty_print")]
             info!("on_remove_block_end state changed: {:#?}", self);
         }
 

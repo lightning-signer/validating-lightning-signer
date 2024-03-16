@@ -1686,6 +1686,10 @@ impl Validator for SimpleValidator {
         holder_value_msat / 1000
     }
 
+    fn is_ready(&self, cstate: &ChainState) -> bool {
+        cstate.funding_depth > 0 && cstate.closing_depth == 0
+    }
+
     fn policy(&self) -> Box<&dyn Policy> {
         Box::new(&self.policy)
     }

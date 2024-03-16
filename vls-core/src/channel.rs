@@ -1543,7 +1543,8 @@ impl Channel {
     pub fn balance(&self) -> ChannelBalance {
         let node = self.get_node();
         let state = node.get_state();
-        self.enforcement_state.balance(&*state, &self.setup)
+        let is_ready = self.validator().is_ready(&self.get_chain_state());
+        self.enforcement_state.balance(&*state, &self.setup, is_ready)
     }
 
     /// advance the holder commitment in an arbitrary way for testing
@@ -1675,6 +1676,13 @@ impl Channel {
 
 /// Balances associated with a channel
 /// See: <https://gitlab.com/lightning-signer/docs/-/wikis/Proposed-L1-and-Channel-Balance-Reconciliation>
+///
+/// All channels that VLS knows about are in one of the four categories:
+/// 1. channel stubs: assigned channelid and can generate points, keys, ...
+/// 2. unconfirmed channels: negotiated channels prior to `channel_ready`
+/// 3. channels: active channels in their normal operating mode
+/// 4. closing channels: closed channels being swept or aged prior to pruning
+///
 #[derive(Debug, PartialEq)]
 pub struct ChannelBalance {
     /// Claimable balance on open channel
@@ -1685,8 +1693,14 @@ pub struct ChannelBalance {
     pub offered_htlc: u64,
     /// Sweeping to wallet
     pub sweeping: u64,
-    /// Current number of channels
+    /// Current number of channel stubs
+    pub stub_count: u32,
+    /// Current number of unconfirmed channels
+    pub unconfirmed_count: u32,
+    /// Current number of active channels
     pub channel_count: u32,
+    /// Current number of closing channels
+    pub closing_count: u32,
     /// Current number of received htlcs
     pub received_htlc_count: u32,
     /// Current number of offered htlcs
@@ -1700,7 +1714,10 @@ impl ChannelBalance {
         received_htlc: u64,
         offered_htlc: u64,
         sweeping: u64,
+        stub_count: u32,
+        unconfirmed_count: u32,
         channel_count: u32,
+        closing_count: u32,
         received_htlc_count: u32,
         offered_htlc_count: u32,
     ) -> ChannelBalance {
@@ -1709,7 +1726,10 @@ impl ChannelBalance {
             received_htlc,
             offered_htlc,
             sweeping,
+            stub_count,
+            unconfirmed_count,
             channel_count,
+            closing_count,
             received_htlc_count,
             offered_htlc_count,
         }
@@ -1722,10 +1742,20 @@ impl ChannelBalance {
             received_htlc: 0,
             offered_htlc: 0,
             sweeping: 0,
+            stub_count: 0,
+            unconfirmed_count: 0,
             channel_count: 0,
+            closing_count: 0,
             received_htlc_count: 0,
             offered_htlc_count: 0,
         }
+    }
+
+    /// Create a ChannelBalance for a stub
+    pub fn stub() -> ChannelBalance {
+        let mut bal = ChannelBalance::zero();
+        bal.stub_count = 1;
+        bal
     }
 
     /// Sum channel balances
@@ -1734,7 +1764,10 @@ impl ChannelBalance {
         self.received_htlc += other.received_htlc;
         self.offered_htlc += other.offered_htlc;
         self.sweeping += other.sweeping;
+        self.stub_count += other.stub_count;
+        self.unconfirmed_count += other.unconfirmed_count;
         self.channel_count += other.channel_count;
+        self.closing_count += other.closing_count;
         self.received_htlc_count += other.received_htlc_count;
         self.offered_htlc_count += other.offered_htlc_count;
     }
