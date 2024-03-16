@@ -48,7 +48,7 @@ use crate::chain::tracker::ChainTracker;
 use crate::chain::tracker::Headers;
 use crate::channel::{
     Channel, ChannelBalance, ChannelBase, ChannelCommitmentPointProvider, ChannelId, ChannelSetup,
-    ChannelSlot, ChannelStub,
+    ChannelSlot, ChannelStub, SlotInfo,
 };
 use crate::invoice::{Invoice, InvoiceAttributes};
 use crate::monitor::{ChainMonitor, ChainMonitorBase};
@@ -85,7 +85,7 @@ const INVOICE_PRUNE_TIME: Duration = Duration::from_secs(60 * 60 * 24);
 const KEYSEND_PRUNE_TIME: Duration = Duration::from_secs(0);
 
 /// Number of blocks to wait before removing failed channel stubs
-const CHANNEL_STUB_PRUNE_BLOCKS: u32 = 6;
+pub(crate) const CHANNEL_STUB_PRUNE_BLOCKS: u32 = 6;
 
 /// Node configuration parameters.
 
@@ -2726,6 +2726,17 @@ impl Node {
                 .update_tracker(&self.get_id(), &tracker)
                 .unwrap_or_else(|err| panic!("trouble updating tracker: {:?}", err));
         }
+    }
+
+    /// Log channel information
+    pub fn chaninfo(&self) -> Vec<SlotInfo> {
+        // Gather the entries
+        self.channels
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, slot_arc)| slot_arc.lock().unwrap().chaninfo())
+            .collect()
     }
 }
 

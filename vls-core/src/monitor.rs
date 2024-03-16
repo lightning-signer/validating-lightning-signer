@@ -401,6 +401,24 @@ impl State {
         }
     }
 
+    fn diagnostic(&self, is_closed: bool) -> String {
+        if self.funding_height.is_none() {
+            format!("UNCOMFIRMED hold till funding doublespent + {}", MIN_DEPTH)
+        } else if let Some(height) = self.funding_double_spent_height {
+            format!("AGING_FUNDING_DOUBLESPENT at {} until {}", height, height + MIN_DEPTH)
+        } else if let Some(height) = self.mutual_closing_height {
+            format!("AGING_MUTUALLY_CLOSED at {} until {}", height, height + MIN_DEPTH)
+        } else if let Some(height) = self.closing_swept_height {
+            format!("AGING_CLOSING_SWEPT at {} until {}", height, height + MIN_DEPTH)
+        } else if let Some(height) = self.our_output_swept_height {
+            format!("AGING_OUR_OUTPUT_SWEPT at {} until {}", height, height + MAX_CLOSING_DEPTH)
+        } else if is_closed {
+            "CLOSING".into()
+        } else {
+            "ACTIVE".into()
+        }
+    }
+
     fn is_done(&self) -> bool {
         // we are done if:
         // - funding was double spent
@@ -796,6 +814,22 @@ impl ChainMonitorBase {
     pub fn forget_channel(&self) {
         let mut state = self.state.lock().expect("lock");
         state.saw_forget_channel = true;
+    }
+
+    /// Returns the actual funding outpoint on-chain
+    pub fn funding_outpoint(&self) -> Option<OutPoint> {
+        self.state.lock().expect("lock").funding_outpoint
+    }
+
+    /// Return whether forget_channel was seen
+    pub fn forget_seen(&self) -> bool {
+        self.state.lock().expect("lock").saw_forget_channel
+    }
+
+    /// Return string describing the state
+    pub fn diagnostic(&self, is_closed: bool) -> String {
+        let state = self.state.lock().expect("lock");
+        state.diagnostic(is_closed)
     }
 }
 

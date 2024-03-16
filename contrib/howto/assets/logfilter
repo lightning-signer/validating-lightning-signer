@@ -135,6 +135,7 @@ if $vls; then
         regex+="git_desc|"
         regex+="setting protocol_version to|"
         regex+="current policies: |"
+        regex+="chaninfo: |"
     fi
     if [[ $level -ge 3 ]]; then
         regex+="added block|"
