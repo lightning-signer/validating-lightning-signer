@@ -140,8 +140,10 @@ if $vls; then
         regex+="added block|"
         regex+="removed block|"
         regex+="forget_channel|"
-        regex+="NodeState::summary|"
-        regex+="NodeState::pruning|"
+        regex+="is_done because|"
+        regex+="was swept at height|"
+        regex+="done at height|"
+        regex+="pruning channel|"
         regex+="new_channel|"		# stm32
     fi
     if [[ $level -ge 4 ]]; then
@@ -150,6 +152,7 @@ if $vls; then
         regex+="adding invoice|"
         regex+="EnforcementState|"
         regex+="current channel balance:|"
+        regex+="INFO.*NodeState::summary|"
     fi
 fi
 
