@@ -892,6 +892,15 @@ impl Channel {
                 &info2,
             )
             .map_err(|ve| {
+                #[cfg(not(feature = "log_pretty_print"))]
+                warn!(
+                    "VALIDATION FAILED: {} setup={:?} state={:?} info={:?}",
+                    ve,
+                    &self.setup,
+                    &self.get_chain_state(),
+                    &info2,
+                );
+                #[cfg(feature = "log_pretty_print")]
                 warn!(
                     "VALIDATION FAILED: {}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
                     ve,
@@ -1866,6 +1875,16 @@ impl Channel {
                 &info2,
             )
             .map_err(|ve| {
+                #[cfg(not(feature = "log_pretty_print"))]
+                debug!(
+                    "VALIDATION FAILED: {} tx={:?} setup={:?} cstate={:?} info={:?}",
+                    ve,
+                    &tx,
+                    &self.setup,
+                    &self.get_chain_state(),
+                    &info2,
+                );
+                #[cfg(feature = "log_pretty_print")]
                 debug!(
                     "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\ncstate={:#?}\ninfo={:#?}",
                     ve,
@@ -1890,8 +1909,22 @@ impl Channel {
         );
 
         if recomposed_tx.trust().built_transaction().transaction != *tx {
-            debug!("ORIGINAL_TX={:#?}", &tx);
-            debug!("RECOMPOSED_TX={:#?}", &recomposed_tx.trust().built_transaction().transaction);
+            #[cfg(not(feature = "log_pretty_print"))]
+            {
+                debug!("ORIGINAL_TX={:?}", &tx);
+                debug!(
+                    "RECOMPOSED_TX={:?}",
+                    &recomposed_tx.trust().built_transaction().transaction
+                );
+            }
+            #[cfg(feature = "log_pretty_print")]
+            {
+                debug!("ORIGINAL_TX={:#?}", &tx);
+                debug!(
+                    "RECOMPOSED_TX={:#?}",
+                    &recomposed_tx.trust().built_transaction().transaction
+                );
+            }
             policy_err!(validator, "policy-commitment", "recomposed tx mismatch");
         }
 
@@ -2023,6 +2056,16 @@ impl Channel {
                 &info2,
             )
             .map_err(|ve| {
+                #[cfg(not(feature = "log_pretty_print"))]
+                warn!(
+                    "VALIDATION FAILED: {} tx={:?} setup={:?} state={:?} info={:?}",
+                    ve,
+                    &tx,
+                    &self.setup,
+                    &self.get_chain_state(),
+                    &info2,
+                );
+                #[cfg(feature = "log_pretty_print")]
                 warn!(
                     "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
                     ve,
@@ -2057,9 +2100,21 @@ impl Channel {
                 &offered_htlcs,
                 &received_htlcs
             );
-            warn!("RECOMPOSITION FAILED");
-            warn!("ORIGINAL_TX={:#?}", &tx);
-            warn!("RECOMPOSED_TX={:#?}", &recomposed_tx.trust().built_transaction().transaction);
+            #[cfg(not(feature = "log_pretty_print"))]
+            {
+                warn!("RECOMPOSITION FAILED");
+                warn!("ORIGINAL_TX={:?}", &tx);
+                warn!("RECOMPOSED_TX={:?}", &recomposed_tx.trust().built_transaction().transaction);
+            }
+            #[cfg(feature = "log_pretty_print")]
+            {
+                warn!("RECOMPOSITION FAILED");
+                warn!("ORIGINAL_TX={:#?}", &tx);
+                warn!(
+                    "RECOMPOSED_TX={:#?}",
+                    &recomposed_tx.trust().built_transaction().transaction
+                );
+            }
             policy_err!(validator, "policy-commitment", "recomposed tx mismatch");
         }
 
@@ -2346,6 +2401,19 @@ impl Channel {
                 feerate_per_kw,
             )
             .map_err(|ve| {
+                #[cfg(not(feature = "log_pretty_print"))]
+                debug!(
+                    "VALIDATION FAILED: {} setup={:?} state={:?} is_counterparty={} \
+                     tx={:?} htlc={:?} feerate_per_kw={}",
+                    ve,
+                    &self.setup,
+                    &self.get_chain_state(),
+                    is_counterparty,
+                    &tx,
+                    DebugHTLCOutputInCommitment(&htlc),
+                    feerate_per_kw,
+                );
+                #[cfg(feature = "log_pretty_print")]
                 debug!(
                     "VALIDATION FAILED: {}\n\
                      setup={:#?}\n\

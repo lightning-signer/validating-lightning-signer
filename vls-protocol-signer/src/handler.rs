@@ -133,6 +133,9 @@ pub trait Handler {
                 // There must be no mutated state when a temporary error is returned
                 let muts = persister.prepare();
                 if !muts.is_empty() {
+                    #[cfg(not(feature = "log_pretty_print"))]
+                    debug!("stranded mutations: {:?}", &muts);
+                    #[cfg(feature = "log_pretty_print")]
                     debug!("stranded mutations: {:#?}", &muts);
                     panic!("temporary error with stranded mutations");
                 }
@@ -179,6 +182,9 @@ pub trait Handler {
             Ok(()) => Ok(muts),
             Err(e) => {
                 if !muts.is_empty() {
+                    #[cfg(not(feature = "log_pretty_print"))]
+                    debug!("stranded mutations: {:?}", &muts);
+                    #[cfg(feature = "log_pretty_print")]
                     debug!("stranded mutations: {:#?}", &muts);
                     panic!("failed operation with stranded mutations");
                 }
@@ -678,6 +684,9 @@ impl Handler for RootHandler {
                 let mut streamed = m.psbt.0;
                 let utxos = m.utxos;
 
+                #[cfg(not(feature = "log_pretty_print"))]
+                debug!("SignWithdrawal psbt {:?}", streamed);
+                #[cfg(feature = "log_pretty_print")]
                 debug!("SignWithdrawal psbt {:#?}", streamed);
 
                 self.sign_withdrawal(&mut streamed, utxos)?;
@@ -706,6 +715,9 @@ impl Handler for RootHandler {
                 let mut streamed = m.psbt.0;
                 let utxos = m.utxos;
 
+                #[cfg(not(feature = "log_pretty_print"))]
+                debug!("SignHtlcTxMingle psbt {:?}", streamed);
+                #[cfg(feature = "log_pretty_print")]
                 debug!("SignHtlcTxMingle psbt {:#?}", streamed);
 
                 self.sign_withdrawal(&mut streamed, utxos)?;
@@ -919,6 +931,9 @@ impl Handler for RootHandler {
                 let mut streamed = m.psbt.0;
                 let utxos = m.utxos;
 
+                #[cfg(not(feature = "log_pretty_print"))]
+                debug!("SignAnchorspend psbt {:?}", streamed);
+                #[cfg(feature = "log_pretty_print")]
                 debug!("SignAnchorspend psbt {:#?}", streamed);
 
                 let channel_id = Self::channel_id(&m.peer_id, m.dbid);

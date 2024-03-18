@@ -458,14 +458,34 @@ impl NodeState {
                     // TODO #331 - workaround for an uninvoiced existing payment
                     // is allowed to go out of balance because LDK does not
                     // provide the preimage in time and removes the incoming HTLC first.
+                    #[cfg(not(feature = "log_pretty_print"))]
                     warn!(
-                        "unbalanced routed payment on channel {} for hash {:?} payment state {:#?}: {:}",
+                        "unbalanced routed payment on channel {} for hash {:?} \
+                         payment state {:?}: {:}",
+                        channel_id,
+                        DebugBytes(&hash.0),
+                        payment,
+                        err,
+                    );
+                    #[cfg(feature = "log_pretty_print")]
+                    warn!(
+                        "unbalanced routed payment on channel {} for hash {:?} \
+                         payment state {:#?}: {:}",
                         channel_id,
                         DebugBytes(&hash.0),
                         payment,
                         err,
                     );
                 } else {
+                    #[cfg(not(feature = "log_pretty_print"))]
+                    error!(
+                        "unbalanced payment on channel {} for hash {:?} payment state {:?}: {:}",
+                        channel_id,
+                        DebugBytes(&hash.0),
+                        payment,
+                        err
+                    );
+                    #[cfg(feature = "log_pretty_print")]
                     error!(
                         "unbalanced payment on channel {} for hash {:?} payment state {:#?}: {:}",
                         channel_id,
