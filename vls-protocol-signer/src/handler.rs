@@ -1046,7 +1046,7 @@ impl Handler for ChannelHandler {
                     self.node.with_channel_base(&self.channel_id, |base| {
                         let point = base.get_per_commitment_point(commitment_number)?;
                         let secret = if commitment_number >= 2 {
-                            Some(base.get_per_commitment_secret(commitment_number - 2)?)
+                            base.get_per_commitment_secret_or_none(commitment_number - 2)
                         } else {
                             None
                         };
