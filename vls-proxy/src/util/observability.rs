@@ -10,11 +10,11 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
-#[cfg(feature = "opentelemetry_protocol")]
+#[cfg(feature = "otlp")]
 use crate::util::otlp::new_tracer;
-#[cfg(feature = "opentelemetry_protocol")]
+#[cfg(feature = "otlp")]
 use opentelemetry::global;
-#[cfg(feature = "opentelemetry_protocol")]
+#[cfg(feature = "otlp")]
 use tracing_opentelemetry::OpenTelemetryLayer;
 
 /** create a non blocking tracing file appender with daily rolling */
@@ -48,7 +48,7 @@ pub fn init_tracing_subscriber<P: AsRef<Path>>(
     let default_subscriber =
         tracing_subscriber::registry().with(stdout_layer).with(file_layer).with(env_filter);
 
-    #[cfg(feature = "opentelemetry_protocol")]
+    #[cfg(feature = "otlp")]
     let default_subscriber = {
         let tracer = new_tracer()?;
         let otlp_layer = Some(OpenTelemetryLayer::new(tracer));
@@ -75,7 +75,7 @@ impl OtelGuard {
 impl Drop for OtelGuard {
     /** Shut down the current tracer provider. This will invoke the shutdown method on all span processors. Span processors should export remaining spans before return. */
     fn drop(&mut self) {
-        #[cfg(feature = "opentelemetry_protocol")]
+        #[cfg(feature = "otlp")]
         global::shutdown_tracer_provider();
     }
 }

@@ -18,7 +18,7 @@ log_pretty_print = []
 debug = ["vls-core/debug", "vls-protocol-signer/debug"]
 system-test = ["serde_json", "tempfile", "vls-core/test_utils"]
 heapmon_requests = []
-opentelemetry_protocol = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "opentelemetry-semantic-conventions", "tracing-opentelemetry"]
+otlp = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "opentelemetry-semantic-conventions", "tracing-opentelemetry"]
 
 [dependencies]
 vls-core = { path = "../vls-core", version = "0.11.0", features = ["use_backtrace"] }
