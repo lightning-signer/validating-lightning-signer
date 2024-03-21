@@ -1,72 +1,27 @@
+mod env_var;
+mod r#macro;
+pub mod observability;
+mod testing;
+mod validation;
+
+#[cfg(feature = "otlp")]
+mod otlp;
+
+pub use env_var::*;
+pub use r#macro::*;
+pub use testing::*;
+pub use validation::*;
+
 use clap::{arg, AppSettings};
 #[cfg(feature = "main")]
 use clap::{App, Arg, ArgMatches};
 use log::*;
-use std::convert::TryInto;
+use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
-use std::{env, fs};
-use time::macros::format_description;
-use time::OffsetDateTime;
+use std::path::Path;
+use time::{macros::format_description, OffsetDateTime};
 use tokio::runtime::{self, Runtime};
-
-use lightning_signer::bitcoin::Network;
-use lightning_signer::policy::filter::PolicyFilter;
-use lightning_signer::policy::onchain_validator::OnchainValidatorFactory;
-use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
-use lightning_signer::policy::validator::ValidatorFactory;
-use lightning_signer::policy::DEFAULT_FEE_VELOCITY_CONTROL;
-use lightning_signer::util::crypto_utils::generate_seed;
-use lightning_signer::util::velocity::VelocityControlSpec;
-use lightning_signer::Arc;
-
-#[macro_export]
-macro_rules! log_pretty {
-    ($level:ident, $err:expr) => {
-        #[cfg(not(feature = "log_pretty_print"))]
-        $level!("{:?}", $err);
-        #[cfg(feature = "log_pretty_print")]
-        $level!("{:#?}", $err);
-    };
-
-    ($level:ident, $err:expr, $self:expr) => {
-        #[cfg(not(feature = "log_pretty_print"))]
-        $level!("{:?}: {:?}", $self.client_id, $err);
-        #[cfg(feature = "log_pretty_print")]
-        $level!("{:?}: {:#?}", $self.client_id, $err);
-    };
-}
-
-#[macro_export]
-macro_rules! log_error {
-    ($($arg:tt)+) => {
-        log_pretty!(error, $($arg)+);
-    };
-}
-
-#[macro_export]
-macro_rules! log_request {
-    ($($arg:tt)+) => {
-        log_pretty!(debug, $($arg)+);
-    };
-}
-
-#[macro_export]
-macro_rules! log_reply {
-    ($reply_bytes:expr) => {
-        if log::log_enabled!(log::Level::Debug) {
-            let reply = msgs::from_vec($reply_bytes.clone()).expect("parse reply failed");
-            log_pretty!(debug, reply);
-        }
-    };
-    ($reply_bytes:expr, $self:expr) => {
-        if log::log_enabled!(log::Level::Debug) {
-            let reply = msgs::from_vec($reply_bytes.clone()).expect("parse reply failed");
-            log_pretty!(debug, reply, $self);
-        }
-    };
-}
 
 pub fn line_filter(line: &str) -> Option<String> {
     let whitespace_removed = line.trim();
@@ -93,36 +48,6 @@ pub fn read_allowlist_path(path: &str) -> Vec<String> {
         BufReader::new(file).lines().filter_map(|l| line_filter(&l.expect("line"))).collect();
 
     allowlist
-}
-
-pub fn read_integration_test_seed<P: AsRef<Path>>(datadir: P) -> Option<[u8; 32]> {
-    let path = PathBuf::from(datadir.as_ref()).join("hsm_secret");
-    warn!("reading integration hsm_secret from {:?}", path);
-    let result = fs::read(path);
-    if let Ok(data) = result {
-        Some(data.as_slice().try_into().expect("hsm_secret wrong length"))
-    } else {
-        None
-    }
-}
-
-fn write_integration_test_seed<P: AsRef<Path>>(datadir: P, seed: &[u8; 32]) {
-    let path = PathBuf::from(datadir.as_ref()).join("hsm_secret");
-    warn!("writing integration hsm_secret to {:?}", path);
-    fs::write(path, seed).expect("writing hsm_secret");
-}
-
-/// Read integration test seed, and generate/persist it if it's missing
-pub fn integration_test_seed_or_generate(seeddir: Option<PathBuf>) -> [u8; 32] {
-    let seeddir = seeddir.unwrap_or(PathBuf::from("."));
-    match read_integration_test_seed(&seeddir) {
-        None => {
-            let seed = generate_seed();
-            write_integration_test_seed(&seeddir, &seed);
-            seed
-        }
-        Some(seed) => seed,
-    }
 }
 
 #[cfg(feature = "main")]
@@ -191,21 +116,12 @@ pub fn add_hsmd_args(app: App) -> App {
 pub fn handle_hsmd_version(matches: &ArgMatches) -> bool {
     if matches.is_present("version") {
         // Pretend to be the right version, given to us by an env var
-        let version =
-            env::var("VLS_CLN_VERSION").expect("set VLS_CLN_VERSION to match c-lightning");
+        let version = vls_cln_version();
         println!("{}", version);
         true
     } else {
         false
     }
-}
-
-pub fn bitcoind_rpc_url() -> String {
-    env::var("BITCOIND_RPC_URL").expect("env var BITCOIND_RPC_URL")
-}
-
-pub fn vls_network() -> String {
-    env::var("VLS_NETWORK").expect("env var VLS_NETWORK")
 }
 
 pub fn create_runtime(thread_name: &str) -> Runtime {
@@ -222,72 +138,20 @@ pub fn create_runtime(thread_name: &str) -> Runtime {
     .expect("runtime")
 }
 
-/// Make a standard validation factory, allowing VLS_PERMISSIVE env var to override
-pub fn make_validator_factory(network: Network) -> Arc<dyn ValidatorFactory> {
-    make_validator_factory_with_filter(network, None)
-}
-
-/// Make a standard validation factory, with an optional filter specification,
-/// allowing VLS_PERMISSIVE env var to override
-pub fn make_validator_factory_with_filter(
-    network: Network,
-    filter_opt: Option<PolicyFilter>,
-) -> Arc<dyn ValidatorFactory> {
-    make_validator_factory_with_filter_and_velocity(
-        network,
-        filter_opt,
-        VelocityControlSpec::UNLIMITED,
-        DEFAULT_FEE_VELOCITY_CONTROL,
-    )
-}
-
-/// Make a standard validation factory, with an optional filter specification,
-/// allowing VLS_PERMISSIVE env var to override, and a global velocity control
-pub fn make_validator_factory_with_filter_and_velocity(
-    network: Network,
-    filter_opt: Option<PolicyFilter>,
-    velocity_spec: VelocityControlSpec,
-    fee_velocity_control_spec: VelocityControlSpec,
-) -> Arc<dyn ValidatorFactory> {
-    let mut policy = make_simple_policy(network);
-    policy.global_velocity_control = velocity_spec;
-    policy.fee_velocity_control = fee_velocity_control_spec;
-
-    if env::var("VLS_PERMISSIVE") == Ok("1".to_string()) {
-        warn!("VLS_PERMISSIVE: ALL POLICY ERRORS ARE REPORTED AS WARNINGS");
-        policy.filter = PolicyFilter::new_permissive();
-    } else {
-        if let Some(f) = filter_opt {
-            policy.filter.merge(f);
-        }
-        info!("!VLS_PERMISSIVE: ALL POLICY ERRORS ARE ENFORCED");
-    }
-    // log out policy at startup
-    info!("current policies: {:?}", policy);
-
-    let simple_factory = SimpleValidatorFactory::new_with_policy(policy);
-
-    if env::var("VLS_ONCHAIN_VALIDATION_DISABLE") == Ok("1".to_string()) {
-        warn!("VLS_ONCHAIN_VALIDATION_DISABLE: onchain validation disabled");
-        Arc::new(simple_factory)
-    } else {
-        info!("VLS_ONCHAIN_VALIDATION: onchain validation enabled");
-        Arc::new(OnchainValidatorFactory::new_with_simple_factory(simple_factory))
-    }
-}
-
 /// Determine if we should auto approve payments
 pub fn should_auto_approve() -> bool {
-    if env::var("VLS_PERMISSIVE") == Ok("1".to_string()) {
+    if compare_env_var("VLS_PERMISSIVE", "1") {
         warn!("VLS_PERMISSIVE: ALL INVOICES, KEYSENDS, AND PAYMENTS AUTOMATICALLY APPROVED");
-        true
-    } else if env::var("VLS_AUTOAPPROVE") == Ok("1".to_string()) {
-        warn!("VLS_AUTOAPPROVE: ALL INVOICES, KEYSENDS, AND PAYMENTS AUTOMATICALLY APPROVED");
-        true
-    } else {
-        info!("VLS_ENFORCING: ALL INVOICES, KEYSENDS, AND PAYMENTS REQUIRE APPROVAL");
-        false
+        return true;
     }
+
+    if compare_env_var("VLS_AUTOAPPROVE", "1") {
+        warn!("VLS_AUTOAPPROVE: ALL INVOICES, KEYSENDS, AND PAYMENTS AUTOMATICALLY APPROVED");
+        return true;
+    }
+
+    info!("VLS_ENFORCING: ALL INVOICES, KEYSENDS, AND PAYMENTS REQUIRE APPROVAL");
+    false
 }
 
 /// Abort on panic.

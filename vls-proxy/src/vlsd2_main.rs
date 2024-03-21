@@ -1,16 +1,14 @@
 use bitcoind_client::BlockExplorerType;
 use clap::{CommandFactory, ErrorKind, Parser};
-use http::Uri;
-use lightning_signer::bitcoin::Network;
-use log::*;
-use std::fs;
-
+use config::{parse_args_and_config, HasSignerArgs, SignerArgs};
 use grpc::signer::make_handler;
 use grpc::signer::start_signer;
+use http::Uri;
+use lightning_signer::bitcoin::Network;
 use recovery::{direct::DirectRecoveryKeys, recover_close, recover_l1};
+use std::fs;
 use util::abort_on_panic;
-use util::setup_logging;
-use vls_proxy::config::{parse_args_and_config, HasSignerArgs, SignerArgs};
+use util::observability::init_tracing_subscriber;
 use vls_proxy::*;
 
 #[derive(Parser, Debug)]
@@ -35,7 +33,8 @@ impl HasSignerArgs for Args {
     }
 }
 
-pub fn main() {
+#[tokio::main(worker_threads = 2)]
+pub async fn main() {
     abort_on_panic();
     let bin_name = "vlsd2";
     let our_args: Args = parse_args_and_config(bin_name);
@@ -46,8 +45,10 @@ pub fn main() {
     let datadir = args.datadir.clone();
     let datapath = format!("{}/{}", datadir, network.to_string());
     fs::create_dir_all(&datapath).expect("mkdir datapath");
-    setup_logging(&datapath, &bin_name, &args.log_level);
-    info!("{} git_desc={} starting", bin_name, GIT_DESC);
+
+    let _tracing_guard = init_tracing_subscriber(&datapath, &bin_name).expect("failed to initalize tracing subscriber");
+
+    tracing::info!("{} git_desc={} starting", bin_name, GIT_DESC);
 
     if let Some(ref address) = args.recover_to {
         let recover_type = match args.recover_type.as_str() {
@@ -79,5 +80,5 @@ pub fn main() {
     if network == Network::Bitcoin && args.integration_test {
         panic!("integration-test mode not supported on mainnet");
     }
-    start_signer(&datadir, uri, &args);
+    start_signer(&datadir, uri, &args).await;
 }

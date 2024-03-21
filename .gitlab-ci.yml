@@ -53,6 +53,8 @@ rust-latest:
     - cargo test
     # ensure vls-persist builds with no-std
     - cargo build -p vls-persist --no-default-features --features no-std,kvv
+    # run tests for otlp and observability crate
+    - cargo test --package vls-proxy --lib --all-features -- util
     # ensure benches build
     - cargo bench --no-run
 
