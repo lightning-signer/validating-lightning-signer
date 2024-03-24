@@ -21,7 +21,7 @@ secp-lowmemory = ["bitcoin/secp-lowmemory"]
 # if you use tonic, this is convenient for auto-conversion of MySigner Status to tonic::Status
 grpc = ["tonic"]
 
-test_utils = ["use_backtrace", "lightning/_test_utils", "lightning/unsafe_revoked_tx_signing", "bitcoin/bitcoinconsensus", "txoo/test-utils"]
+test_utils = ["use_backtrace", "lightning/_test_utils", "lightning/unsafe_revoked_tx_signing", "bitcoin/bitcoinconsensus", "txoo/test-utils", "serde_bolt/test_utils"]
 
 debug = ["debug_enforcement_state", "debug_node_state"]
 
@@ -48,7 +48,6 @@ path = "src/lib.rs"
 [dependencies]
 serde = { version = "1.0", default_features = false, features = ["alloc"] }
 serde_derive = { version = "1.0" }
-serde_bolt = { version = "0.3.4", default-features = false }
 bitcoin-consensus-derive = { version = "0.1.0" }
 serde_with = { version = "3.6", default-features = false, features = ["hex", "macros"] }
 bolt-derive = { path = "../bolt-derive", version = "0.2.0" }
@@ -72,6 +71,13 @@ tonic = { version = "0.9", optional = true, default-features = false }
 
 hashbrown = "0.8" # match hashbrown dependency version via lightning
 itertools = { version = "0.10", default-features = false }
+
+[dependencies.serde_bolt]
+version = "0.3.5"
+#git = "https://gitlab.com/lightning-signer/serde-bolt"
+#rev = "6d3d873492d19edb09dc2764a3d4c4c23caaa28f"
+#path = "../../../serde-bolt"
+default-features = false
 
 [dependencies.bitcoin-push-decoder]
 version = "0.2.2"

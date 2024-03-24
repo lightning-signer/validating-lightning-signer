@@ -1,8 +1,14 @@
 use alloc::format;
+use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::Txid;
 use bitcoin_consensus_derive::{Decodable, Encodable};
 use core::fmt::{self, Debug, Formatter};
+use lightning_signer::lightning;
+use lightning_signer::lightning::io::{self, Read, Write};
+use lightning_signer::lightning::ln::msgs::DecodeError;
+use lightning_signer::lightning::util::ser::{Readable, Writeable, Writer};
 use serde_bolt::bitcoin;
+use serde_bolt::bitcoin::consensus::encode::Error as BitcoinError;
 use serde_bolt::Octets;
 
 macro_rules! secret_array_impl {
@@ -26,6 +32,7 @@ macro_rules! secret_array_impl {
 macro_rules! array_impl {
     ($ty:ident, $len:tt) => {
         #[derive(Clone, Encodable, Decodable)]
+        #[cfg_attr(test, derive(PartialEq))]
         pub struct $ty(pub [u8; $len]);
 
         impl Debug for $ty {
@@ -33,7 +40,75 @@ macro_rules! array_impl {
                 write!(f, "{}", hex::encode(&self.0))
             }
         }
+
+        impl Readable for $ty {
+            fn read<R: Read>(reader: &mut R) -> Result<Self, lightning::ln::msgs::DecodeError> {
+                Ok($ty::consensus_decode(reader)
+                    .map_err(|_| lightning::ln::msgs::DecodeError::InvalidValue)?)
+            }
+        }
+
+        impl Writeable for $ty {
+            fn write<W: Writer>(&self, writer: &mut W) -> Result<(), io::Error> {
+                self.consensus_encode(&mut LdkWriterWriteAdaptor(writer)).map_err(|_e| {
+                    io::Error::new(io::ErrorKind::Other, "Error during consensus encoding")
+                })?;
+                Ok(())
+            }
+        }
     };
+}
+
+/// A wrapper that allows consensus_encode to use Writer.
+// cribbed from rust-lightning/lightning/src/util/ser.rs
+pub struct LdkWriterWriteAdaptor<'a, W: Writer + 'a>(pub &'a mut W);
+impl<'a, W: Writer + 'a> Write for LdkWriterWriteAdaptor<'a, W> {
+    #[inline]
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), io::Error> {
+        self.0.write_all(buf)
+    }
+    #[inline]
+    fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+        self.0.write_all(buf)?;
+        Ok(buf.len())
+    }
+    #[inline]
+    fn flush(&mut self) -> Result<(), io::Error> {
+        Ok(())
+    }
+}
+
+/// Another wrapper
+pub struct SerBoltTlvWriteWrap<T: Encodable>(pub T);
+
+impl<T: Encodable> Writeable for SerBoltTlvWriteWrap<T> {
+    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), io::Error> {
+        self.0.consensus_encode(&mut LdkWriterWriteAdaptor(writer)).map_err(|_e| {
+            io::Error::new(io::ErrorKind::Other, "Error during consensus encoding")
+        })?;
+        Ok(())
+    }
+}
+
+impl<T: Encodable> From<T> for SerBoltTlvWriteWrap<T> {
+    fn from(t: T) -> Self {
+        SerBoltTlvWriteWrap(t)
+    }
+}
+
+pub struct SerBoltTlvReadWrap<T: Decodable>(pub T);
+
+impl<T: Decodable> Decodable for SerBoltTlvReadWrap<T> {
+    fn consensus_decode<D: Read + ?Sized>(d: &mut D) -> Result<Self, BitcoinError> {
+        T::consensus_decode(d).map(|t| SerBoltTlvReadWrap(t))
+    }
+}
+
+impl<T: Decodable> Readable for SerBoltTlvReadWrap<T> {
+    fn read<R: io::Read>(reader: &mut R) -> Result<Self, DecodeError> {
+        Ok(SerBoltTlvReadWrap::<T>::consensus_decode(reader)
+            .map_err(|_| lightning::ln::msgs::DecodeError::InvalidValue)?)
+    }
 }
 
 #[derive(Encodable, Decodable)]
