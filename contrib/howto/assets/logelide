@@ -10,7 +10,7 @@ patterns = {
         'last_height': 0
     },
     'vls_addblock': {
-        'regex': re.compile(r'^.*vlsd2.*added block.* (\d+): [0-9a-f]{64}$'),
+        'regex': re.compile(r'^.*added block.* (\d+): [0-9a-f]{64}.*$'),
         'consecutive': [],
         'last_height': 0
     },

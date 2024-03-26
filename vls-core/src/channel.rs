@@ -210,6 +210,8 @@ pub trait ChannelBase: Any {
     /// Get the per-commitment secret for a holder commitment transaction
     // TODO leaking secret
     fn get_per_commitment_secret(&self, commitment_number: u64) -> Result<SecretKey, Status>;
+    /// Get the per-commitment secret or None if the arg is out of range
+    fn get_per_commitment_secret_or_none(&self, commitment_number: u64) -> Option<SecretKey>;
     /// Check a future secret to support `option_data_loss_protect`
     fn check_future_secret(&self, commit_num: u64, suggested: &SecretKey) -> Result<bool, Status>;
     /// Returns the validator for this channel
@@ -307,6 +309,10 @@ impl ChannelBase for ChannelStub {
     fn get_per_commitment_secret(&self, _commitment_number: u64) -> Result<SecretKey, Status> {
         // We can't release a commitment_secret from a ChannelStub ever.
         Err(policy_error(format!("channel stub cannot release commitment secret")).into())
+    }
+
+    fn get_per_commitment_secret_or_none(&self, _commitment_number: u64) -> Option<SecretKey> {
+        None
     }
 
     fn check_future_secret(
@@ -423,6 +429,29 @@ impl ChannelBase for Channel {
         let secret =
             self.keys.release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
         Ok(SecretKey::from_slice(&secret).unwrap())
+    }
+
+    // Like get_per_commitment_secret but just returns None instead of a
+    // policy error if the request is out of range
+    fn get_per_commitment_secret_or_none(&self, commitment_number: u64) -> Option<SecretKey> {
+        let next_holder_commit_num = self.enforcement_state.next_holder_commit_num;
+        if commitment_number + 2 > next_holder_commit_num {
+            warn!(
+                "get_per_commitment_secret_or_none: called past current revoked holder commitment \
+                 implied by next_holder_commit_num: {} + 2 > {}",
+                commitment_number, next_holder_commit_num
+            );
+            None
+        } else {
+            Some(
+                SecretKey::from_slice(
+                    &self
+                        .keys
+                        .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number),
+                )
+                .unwrap(),
+            )
+        }
     }
 
     fn check_future_secret(

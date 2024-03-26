@@ -152,6 +152,9 @@ mod tests {
                 "policy failure: channel stub cannot release commitment secret"
             );
 
+            // get_per_commitment_secret_or_none always returns None for a stub
+            assert_eq!(base.get_per_commitment_secret_or_none(0), None);
+
             Ok(())
         });
 

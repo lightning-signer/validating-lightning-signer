@@ -3617,6 +3617,10 @@ mod tests {
                 chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num + 2);
                 let point = chan.get_per_commitment_point(commit_num)?;
                 let secret = chan.get_per_commitment_secret(commit_num)?;
+
+                assert_eq!(chan.get_per_commitment_secret_or_none(commit_num), Some(secret));
+                assert_eq!(chan.get_per_commitment_secret_or_none(commit_num + 1), None);
+
                 Ok((point, secret))
             })
             .expect("point");
