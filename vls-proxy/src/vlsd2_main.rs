@@ -9,6 +9,7 @@ use recovery::{direct::DirectRecoveryKeys, recover_close, recover_l1};
 use std::fs;
 use util::abort_on_panic;
 use util::observability::init_tracing_subscriber;
+use vls_proxy::config::DEFAULT_DIR;
 use vls_proxy::*;
 
 #[derive(Parser, Debug)]
@@ -42,7 +43,10 @@ pub async fn main() {
     let args = our_args.signer_args;
 
     let network = args.network;
-    let datadir = args.datadir.clone();
+    let datadir = args.datadir.clone().unwrap_or(format!(
+        "{}/{DEFAULT_DIR}",
+        dirs::home_dir().expect("Home directory not found").to_str().unwrap()
+    ));
     let datapath = format!("{}/{}", datadir, network.to_string());
     fs::create_dir_all(&datapath).expect("mkdir datapath");
 

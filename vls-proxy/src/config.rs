@@ -21,7 +21,7 @@ pub const CLAP_NETWORK_URL_MAPPING: &[(&str, Option<&str>, Option<&str>)] = &[
     ("network", Some("signet"), Some("http://user:pass@127.0.0.1:18443")),
 ];
 
-const DEFAULT_DIR: &str = ".lightning-signer";
+pub const DEFAULT_DIR: &str = ".lightning-signer";
 pub const RPC_SERVER_PORT: u16 = 8011;
 pub const RPC_SERVER_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 pub const RPC_SERVER_ENDPOINT: &'static str = "http://127.0.0.1:8011";
@@ -64,8 +64,8 @@ pub struct SignerArgs {
     )]
     pub log_level: String,
 
-    #[clap(short, long, value_parser, default_value = DEFAULT_DIR, help = "data directory", value_name = "DIR")]
-    pub datadir: String,
+    #[clap(short, long, value_parser, help = "data directory", value_name = "DIR")]
+    pub datadir: Option<String>,
 
     #[clap(short, long, value_parser,
         value_name = "NETWORK",
@@ -367,7 +367,7 @@ mod tests {
         .map(|s| s.to_string())
         .collect();
         let args: SignerArgs = parse_args_and_config_from("", &env_args).unwrap();
-        assert_eq!(args.datadir, "/tmp/vlsd2");
+        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd2");
         assert_eq!(args.policy_filter.len(), 1);
         assert!(args.velocity_control.is_some());
         assert_eq!(args.network, Network::Regtest);
@@ -397,7 +397,7 @@ mod tests {
                 .map(|s| s.to_string())
                 .collect();
         let args: SignerArgs = parse_args_and_config_from("", &env_args).unwrap();
-        assert_eq!(args.datadir, "/tmp/vlsd2");
+        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd2");
         assert!(args.velocity_control.is_some());
         // command line args override config file
         assert_eq!(args.network, Network::Bitcoin);
@@ -408,7 +408,7 @@ mod tests {
                 .map(|s| s.to_string())
                 .collect();
         let args: SignerArgs = parse_args_and_config_from("", &env_args).unwrap();
-        assert_eq!(args.datadir, "/tmp/vlsd2");
+        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd2");
         assert!(args.velocity_control.is_some());
         // config file overrides command line because it comes last
         assert_eq!(args.network, Network::Regtest);

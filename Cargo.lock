@@ -3056,6 +3056,7 @@ dependencies = [
  "backoff",
  "clap",
  "ctrlc",
+ "dirs",
  "fern",
  "futures",
  "heapmon",
