@@ -26,10 +26,11 @@ use serde_derive::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as, Bytes, IfIsHumanReadable};
 
 use crate::monitor::ChainMonitorBase;
-use crate::node::{Node, RoutedPayment};
+use crate::node::{Node, RoutedPayment, CHANNEL_STUB_PRUNE_BLOCKS};
 use crate::policy::error::policy_error;
 use crate::policy::validator::{ChainState, CommitmentSignatures, EnforcementState, Validator};
 use crate::prelude::*;
+use crate::signer::derive::KeyDerivationStyle;
 use crate::tx::script::ANCHOR_OUTPUT_VALUE_SATOSHI;
 use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
 use crate::util::crypto_utils::derive_public_key;
@@ -201,6 +202,38 @@ impl ChannelSetup {
     }
 }
 
+#[derive(Debug)]
+/// Channel slot information for stubs and channels.
+pub enum SlotInfoVariant {
+    /// Information for stubs
+    StubInfo {
+        /// The blockheight that the stub will be pruned
+        pruneheight: u32,
+    },
+    /// Information for channels
+    ChannelInfo {
+        /// The channel's funding outpoint
+        funding: Option<OutPoint>,
+        /// The channel balance
+        balance: ChannelBalance,
+        /// Has the node has forgotten this channel?
+        forget_seen: bool,
+        /// Description of the state of this channel
+        diagnostic: String,
+    },
+}
+
+#[derive(Debug)]
+/// Per-channel-slot summary information for system monitoring
+pub struct SlotInfo {
+    /// An ordinal identifier
+    pub oid: u64,
+    /// The channel id
+    pub id: ChannelId,
+    /// Stub and Channel specific data
+    pub slot: SlotInfoVariant,
+}
+
 /// A trait implemented by both channel states.  See [ChannelSlot]
 pub trait ChannelBase: Any {
     /// Get the channel basepoints and public keys
@@ -216,6 +249,8 @@ pub trait ChannelBase: Any {
     fn check_future_secret(&self, commit_num: u64, suggested: &SecretKey) -> Result<bool, Status>;
     /// Returns the validator for this channel
     fn validator(&self) -> Arc<dyn Validator>;
+    /// Channel information for logging
+    fn chaninfo(&self) -> SlotInfo;
 
     // TODO remove when LDK workaround is removed in LoopbackSigner
     #[allow(missing_docs)]
@@ -259,6 +294,14 @@ impl ChannelSlot {
         match self {
             ChannelSlot::Stub(stub) => stub,
             ChannelSlot::Ready(_) => panic!("unwrap_stub called on ChannelSlot::Ready"),
+        }
+    }
+
+    /// Log channel information
+    pub fn chaninfo(&self) -> SlotInfo {
+        match self {
+            ChannelSlot::Stub(stub) => stub.chaninfo(),
+            ChannelSlot::Ready(chan) => chan.chaninfo(),
         }
     }
 }
@@ -334,6 +377,26 @@ impl ChannelBase for ChannelStub {
         );
         v
     }
+
+    fn chaninfo(&self) -> SlotInfo {
+        SlotInfo {
+            oid: self.oid(),
+            id: self.id0.clone(),
+            slot: SlotInfoVariant::StubInfo {
+                pruneheight: self.blockheight + CHANNEL_STUB_PRUNE_BLOCKS,
+            },
+        }
+    }
+}
+
+fn oid_from_native_channelid(cid: &ChannelId) -> u64 {
+    // The CLN dbid is encoded in little-endian in the last 8 bytes of the ChannelId
+    let chanidvec = &cid.0;
+    assert!(chanidvec.len() >= 8);
+    let bytes_slice = &chanidvec[chanidvec.len() - 8..];
+    let mut bytes_array = [0u8; 8];
+    bytes_array.copy_from_slice(bytes_slice);
+    u64::from_le_bytes(bytes_array)
 }
 
 impl ChannelStub {
@@ -352,6 +415,15 @@ impl ChannelStub {
             keys.channel_keys_id(),
             keys.get_secure_random_bytes(),
         )
+    }
+
+    // KeyDerivationStyle dependent identifier
+    fn oid(&self) -> u64 {
+        match self.node.upgrade().unwrap().node_config.key_derivation_style {
+            KeyDerivationStyle::Native => oid_from_native_channelid(&self.id0),
+            // add other derivation styles here
+            _ => 0,
+        }
     }
 }
 
@@ -473,12 +545,34 @@ impl ChannelBase for Channel {
         );
         v
     }
+
+    fn chaninfo(&self) -> SlotInfo {
+        SlotInfo {
+            oid: self.oid(),
+            id: self.id(),
+            slot: SlotInfoVariant::ChannelInfo {
+                funding: self.monitor.funding_outpoint(),
+                balance: self.balance(),
+                forget_seen: self.monitor.forget_seen(),
+                diagnostic: self.monitor.diagnostic(self.enforcement_state.channel_closed),
+            },
+        }
+    }
 }
 
 impl Channel {
     /// The channel ID
     pub fn id(&self) -> ChannelId {
         self.id.clone().unwrap_or(self.id0.clone())
+    }
+
+    // KeyDerivationStyle dependent identifier
+    fn oid(&self) -> u64 {
+        match self.node.upgrade().unwrap().node_config.key_derivation_style {
+            KeyDerivationStyle::Native => oid_from_native_channelid(&self.id0),
+            // add other derivation styles here
+            _ => 0,
+        }
     }
 
     #[allow(missing_docs)]
@@ -921,6 +1015,15 @@ impl Channel {
                 &info2,
             )
             .map_err(|ve| {
+                #[cfg(not(feature = "log_pretty_print"))]
+                warn!(
+                    "VALIDATION FAILED: {} setup={:?} state={:?} info={:?}",
+                    ve,
+                    &self.setup,
+                    &self.get_chain_state(),
+                    &info2,
+                );
+                #[cfg(feature = "log_pretty_print")]
                 warn!(
                     "VALIDATION FAILED: {}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
                     ve,
@@ -1895,6 +1998,16 @@ impl Channel {
                 &info2,
             )
             .map_err(|ve| {
+                #[cfg(not(feature = "log_pretty_print"))]
+                debug!(
+                    "VALIDATION FAILED: {} tx={:?} setup={:?} cstate={:?} info={:?}",
+                    ve,
+                    &tx,
+                    &self.setup,
+                    &self.get_chain_state(),
+                    &info2,
+                );
+                #[cfg(feature = "log_pretty_print")]
                 debug!(
                     "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\ncstate={:#?}\ninfo={:#?}",
                     ve,
@@ -1919,8 +2032,22 @@ impl Channel {
         );
 
         if recomposed_tx.trust().built_transaction().transaction != *tx {
-            debug!("ORIGINAL_TX={:#?}", &tx);
-            debug!("RECOMPOSED_TX={:#?}", &recomposed_tx.trust().built_transaction().transaction);
+            #[cfg(not(feature = "log_pretty_print"))]
+            {
+                debug!("ORIGINAL_TX={:?}", &tx);
+                debug!(
+                    "RECOMPOSED_TX={:?}",
+                    &recomposed_tx.trust().built_transaction().transaction
+                );
+            }
+            #[cfg(feature = "log_pretty_print")]
+            {
+                debug!("ORIGINAL_TX={:#?}", &tx);
+                debug!(
+                    "RECOMPOSED_TX={:#?}",
+                    &recomposed_tx.trust().built_transaction().transaction
+                );
+            }
             policy_err!(validator, "policy-commitment", "recomposed tx mismatch");
         }
 
@@ -2052,6 +2179,16 @@ impl Channel {
                 &info2,
             )
             .map_err(|ve| {
+                #[cfg(not(feature = "log_pretty_print"))]
+                warn!(
+                    "VALIDATION FAILED: {} tx={:?} setup={:?} state={:?} info={:?}",
+                    ve,
+                    &tx,
+                    &self.setup,
+                    &self.get_chain_state(),
+                    &info2,
+                );
+                #[cfg(feature = "log_pretty_print")]
                 warn!(
                     "VALIDATION FAILED: {}\ntx={:#?}\nsetup={:#?}\nstate={:#?}\ninfo={:#?}",
                     ve,
@@ -2086,9 +2223,21 @@ impl Channel {
                 &offered_htlcs,
                 &received_htlcs
             );
-            warn!("RECOMPOSITION FAILED");
-            warn!("ORIGINAL_TX={:#?}", &tx);
-            warn!("RECOMPOSED_TX={:#?}", &recomposed_tx.trust().built_transaction().transaction);
+            #[cfg(not(feature = "log_pretty_print"))]
+            {
+                warn!("RECOMPOSITION FAILED");
+                warn!("ORIGINAL_TX={:?}", &tx);
+                warn!("RECOMPOSED_TX={:?}", &recomposed_tx.trust().built_transaction().transaction);
+            }
+            #[cfg(feature = "log_pretty_print")]
+            {
+                warn!("RECOMPOSITION FAILED");
+                warn!("ORIGINAL_TX={:#?}", &tx);
+                warn!(
+                    "RECOMPOSED_TX={:#?}",
+                    &recomposed_tx.trust().built_transaction().transaction
+                );
+            }
             policy_err!(validator, "policy-commitment", "recomposed tx mismatch");
         }
 
@@ -2375,6 +2524,19 @@ impl Channel {
                 feerate_per_kw,
             )
             .map_err(|ve| {
+                #[cfg(not(feature = "log_pretty_print"))]
+                debug!(
+                    "VALIDATION FAILED: {} setup={:?} state={:?} is_counterparty={} \
+                     tx={:?} htlc={:?} feerate_per_kw={}",
+                    ve,
+                    &self.setup,
+                    &self.get_chain_state(),
+                    is_counterparty,
+                    &tx,
+                    DebugHTLCOutputInCommitment(&htlc),
+                    feerate_per_kw,
+                );
+                #[cfg(feature = "log_pretty_print")]
                 debug!(
                     "VALIDATION FAILED: {}\n\
                      setup={:#?}\n\

@@ -23,7 +23,7 @@ use bitcoin::{Address, EcdsaSighashType, Network, Script};
 use bitcoin::{OutPoint, Transaction, Witness, XOnlyPublicKey};
 use lightning_signer::bitcoin;
 use lightning_signer::channel::{
-    ChannelBalance, ChannelBase, ChannelId, ChannelSetup, TypedSignature,
+    ChannelBalance, ChannelBase, ChannelId, ChannelSetup, SlotInfo, SlotInfoVariant, TypedSignature,
 };
 use lightning_signer::dbgvals;
 use lightning_signer::invoice::Invoice;
@@ -133,6 +133,9 @@ pub trait Handler {
                 // There must be no mutated state when a temporary error is returned
                 let muts = persister.prepare();
                 if !muts.is_empty() {
+                    #[cfg(not(feature = "log_pretty_print"))]
+                    debug!("stranded mutations: {:?}", &muts);
+                    #[cfg(feature = "log_pretty_print")]
                     debug!("stranded mutations: {:#?}", &muts);
                     panic!("temporary error with stranded mutations");
                 }
@@ -179,6 +182,9 @@ pub trait Handler {
             Ok(()) => Ok(muts),
             Err(e) => {
                 if !muts.is_empty() {
+                    #[cfg(not(feature = "log_pretty_print"))]
+                    debug!("stranded mutations: {:?}", &muts);
+                    #[cfg(feature = "log_pretty_print")]
                     debug!("stranded mutations: {:#?}", &muts);
                     panic!("failed operation with stranded mutations");
                 }
@@ -207,6 +213,48 @@ fn log_reply(reply: &Box<dyn SerBolt>) {
     debug!("{:?}", reply);
     #[cfg(feature = "log_pretty_print")]
     debug!("{:#?}", reply);
+}
+
+// Log the channel slot information
+fn log_chaninfo(mut slotinfo: Vec<SlotInfo>) {
+    // log header
+    info!("chaninfo:  oid channel_id                                                                         funding_outpoint                                                   claimable  received   offered  sweeping f state");
+    // sample record:   1 0266e4598d1d3c415f572a8488830b60f7e744ed9235eb0b1ba93283b315c035180100000000000000 beef1bf6c17657470880bf85819c775a8938c7f2dfb7e936b2d07c13fa813639:0         0      0  0      0  0    100000 1 MUTUALLY_CLOSED at 109, age till 209
+
+    // Sort by oid
+    slotinfo.sort_by_key(|k| k.oid);
+
+    for slot in slotinfo {
+        let oid = slot.oid;
+        let id = slot.id;
+
+        match slot.slot {
+            SlotInfoVariant::StubInfo { pruneheight } => info!(
+                "chaninfo: {:>4} {} prune after {}",
+                oid,
+                id,
+                pruneheight // this comment makes the indentation awesome
+            ),
+            SlotInfoVariant::ChannelInfo { funding, balance, forget_seen, diagnostic } => info!(
+                "chaninfo: {:>4} {} {:<67} {:>9} {:>6} {:>2} {:>6} {:>2} {:>9} {} {}",
+                oid,
+                id,
+                funding.unwrap_or_else(|| {
+                    let mut ph = OutPoint::default();
+                    ph.vout = 0; // the default vout is much too large for our format
+                    ph
+                }),
+                balance.claimable,
+                balance.received_htlc,
+                balance.received_htlc_count,
+                balance.offered_htlc,
+                balance.offered_htlc_count,
+                balance.sweeping,
+                if forget_seen { 1 } else { 0 },
+                diagnostic,
+            ),
+        }
+    }
 }
 
 /// Initial protocol handler, for negotiating the protocol version
@@ -343,6 +391,11 @@ impl RootHandler {
         channel_id
     }
 
+    /// Log channel information
+    pub fn log_chaninfo(&self) {
+        log_chaninfo(self.node.chaninfo());
+    }
+
     /// Get the channel balances
     pub fn channel_balance(&self) -> ChannelBalance {
         self.node.channel_balance()
@@ -466,6 +519,11 @@ impl InitHandler {
     pub fn into_root_handler(self) -> RootHandler {
         let protocol_version = self.protocol_version.expect("initial negotiation not complete");
         RootHandler { id: self.id, node: self.node, approver: self.approver, protocol_version }
+    }
+
+    /// Log channel information
+    pub fn log_chaninfo(&self) {
+        log_chaninfo(self.node.chaninfo());
     }
 
     /// Handle a request message, returning a boolean indicating whether the initial negotiation is complete
@@ -678,6 +736,9 @@ impl Handler for RootHandler {
                 let mut streamed = m.psbt.0;
                 let utxos = m.utxos;
 
+                #[cfg(not(feature = "log_pretty_print"))]
+                debug!("SignWithdrawal psbt {:?}", streamed);
+                #[cfg(feature = "log_pretty_print")]
                 debug!("SignWithdrawal psbt {:#?}", streamed);
 
                 self.sign_withdrawal(&mut streamed, utxos)?;
@@ -706,6 +767,9 @@ impl Handler for RootHandler {
                 let mut streamed = m.psbt.0;
                 let utxos = m.utxos;
 
+                #[cfg(not(feature = "log_pretty_print"))]
+                debug!("SignHtlcTxMingle psbt {:?}", streamed);
+                #[cfg(feature = "log_pretty_print")]
                 debug!("SignHtlcTxMingle psbt {:#?}", streamed);
 
                 self.sign_withdrawal(&mut streamed, utxos)?;
@@ -919,6 +983,9 @@ impl Handler for RootHandler {
                 let mut streamed = m.psbt.0;
                 let utxos = m.utxos;
 
+                #[cfg(not(feature = "log_pretty_print"))]
+                debug!("SignAnchorspend psbt {:?}", streamed);
+                #[cfg(feature = "log_pretty_print")]
                 debug!("SignAnchorspend psbt {:#?}", streamed);
 
                 let channel_id = Self::channel_id(&m.peer_id, m.dbid);

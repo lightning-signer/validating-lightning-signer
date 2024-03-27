@@ -148,6 +148,8 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
 
     reset_allowlist(&*node, &read_allowlist());
 
+    init_handler.log_chaninfo();
+
     let (addr, join_rpc_server) =
         start_rpc_server(node, args.rpc_server_address, args.rpc_server_port)
             .await
@@ -193,7 +195,7 @@ async fn handle_init_requests(
                 }
             }
             Err(e) => {
-                error!("error on stream: {}", e);
+                error!("error on init stream: {}", e);
                 return false;
             }
         }
@@ -281,6 +283,9 @@ async fn handle_requests(
             }
         }
     }
+
+    // log channel information on shutdown
+    root_handler.log_chaninfo();
 }
 
 // returns true if there stream was closed

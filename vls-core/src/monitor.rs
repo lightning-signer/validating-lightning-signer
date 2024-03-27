@@ -401,6 +401,24 @@ impl State {
         }
     }
 
+    fn diagnostic(&self, is_closed: bool) -> String {
+        if self.funding_height.is_none() {
+            format!("UNCOMFIRMED hold till funding doublespent + {}", MIN_DEPTH)
+        } else if let Some(height) = self.funding_double_spent_height {
+            format!("AGING_FUNDING_DOUBLESPENT at {} until {}", height, height + MIN_DEPTH)
+        } else if let Some(height) = self.mutual_closing_height {
+            format!("AGING_MUTUALLY_CLOSED at {} until {}", height, height + MIN_DEPTH)
+        } else if let Some(height) = self.closing_swept_height {
+            format!("AGING_CLOSING_SWEPT at {} until {}", height, height + MIN_DEPTH)
+        } else if let Some(height) = self.our_output_swept_height {
+            format!("AGING_OUR_OUTPUT_SWEPT at {} until {}", height, height + MAX_CLOSING_DEPTH)
+        } else if is_closed {
+            "CLOSING".into()
+        } else {
+            "ACTIVE".into()
+        }
+    }
+
     fn is_done(&self) -> bool {
         // we are done if:
         // - funding was double spent
@@ -412,20 +430,32 @@ impl State {
         // TODO: disregard received HTLCs that we can't claim (we don't have the preimage)
 
         if self.deep_enough_and_saw_node_forget(self.funding_double_spent_height, MIN_DEPTH) {
+            debug!(
+                "{} is_done because funding double spent {} blocks ago",
+                self.channel_id(),
+                MIN_DEPTH
+            );
             return true;
         }
 
         if self.deep_enough_and_saw_node_forget(self.mutual_closing_height, MIN_DEPTH) {
+            debug!("{} is_done because mutual closed {} blocks ago", self.channel_id(), MIN_DEPTH);
             return true;
         }
 
         if self.deep_enough_and_saw_node_forget(self.closing_swept_height, MIN_DEPTH) {
+            debug!("{} is_done because closing swept {} blocks ago", self.channel_id(), MIN_DEPTH);
             return true;
         }
 
         // since we don't yet have the logic to tell which HTLCs we can claim,
         // time out watching them after MAX_CLOSING_DEPTH
         if self.deep_enough_and_saw_node_forget(self.our_output_swept_height, MAX_CLOSING_DEPTH) {
+            debug!(
+                "{} is_done because closing output swept {} blocks ago",
+                self.channel_id(),
+                MAX_CLOSING_DEPTH
+            );
             return true;
         }
 
@@ -451,7 +481,12 @@ impl State {
         let changed = !decode_state.changes.is_empty();
 
         if changed {
-            debug!("detected add-changes at height {}: {:?}", self.height, decode_state.changes);
+            debug!(
+                "{} detected add-changes at height {}: {:?}",
+                self.channel_id(),
+                self.height,
+                decode_state.changes
+            );
         }
 
         // apply changes
@@ -463,17 +498,17 @@ impl State {
         let our_output_is_swept = self.is_our_output_swept();
 
         if !closing_was_swept && closing_is_swept {
-            info!("closing tx was swept at height {}", self.height);
+            info!("{} closing tx was swept at height {}", self.channel_id(), self.height);
             self.closing_swept_height = Some(self.height);
         }
 
         if !our_output_was_swept && our_output_is_swept {
-            info!("our output was swept at height {}", self.height);
+            info!("{} our output was swept at height {}", self.channel_id(), self.height);
             self.our_output_swept_height = Some(self.height);
         }
 
         if self.is_done() {
-            info!("done at height {}", self.height);
+            info!("{} done at height {}", self.channel_id(), self.height);
         }
 
         if changed {
@@ -502,7 +537,12 @@ impl State {
         let changed = !decode_state.changes.is_empty();
 
         if changed {
-            debug!("detected remove-changes at height {}: {:?}", self.height, decode_state.changes);
+            debug!(
+                "{} detected remove-changes at height {}: {:?}",
+                self.channel_id(),
+                self.height,
+                decode_state.changes
+            );
         }
 
         for change in decode_state.changes.drain(..) {
@@ -513,12 +553,12 @@ impl State {
         let our_output_is_swept = self.is_our_output_swept();
 
         if closing_was_swept && !closing_is_swept {
-            info!("closing tx was un-swept at height {}", self.height);
+            info!("{} closing tx was un-swept at height {}", self.channel_id(), self.height);
             self.closing_swept_height = None;
         }
 
         if our_output_was_swept && !our_output_is_swept {
-            info!("our output was un-swept at height {}", self.height);
+            info!("{} our output was un-swept at height {}", self.channel_id(), self.height);
             self.our_output_swept_height = None;
         }
 
@@ -774,6 +814,22 @@ impl ChainMonitorBase {
     pub fn forget_channel(&self) {
         let mut state = self.state.lock().expect("lock");
         state.saw_forget_channel = true;
+    }
+
+    /// Returns the actual funding outpoint on-chain
+    pub fn funding_outpoint(&self) -> Option<OutPoint> {
+        self.state.lock().expect("lock").funding_outpoint
+    }
+
+    /// Return whether forget_channel was seen
+    pub fn forget_seen(&self) -> bool {
+        self.state.lock().expect("lock").saw_forget_channel
+    }
+
+    /// Return string describing the state
+    pub fn diagnostic(&self, is_closed: bool) -> String {
+        let state = self.state.lock().expect("lock");
+        state.diagnostic(is_closed)
     }
 }
 
