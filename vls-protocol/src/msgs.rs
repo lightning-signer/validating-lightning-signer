@@ -83,6 +83,11 @@ pub struct HsmdDevPreinit2 {
 #[derive(SerBoltTlvOptions, Default, Debug)]
 pub struct HsmdDevPreinit2Options {
     // CLN: allocates from 1 ascending
+    #[tlv_tag = 1]
+    pub fail_preapprove: Option<bool>,
+    #[tlv_tag = 3]
+    pub no_preapprove_check: Option<bool>,
+
     // VLS: allocates from 252 descending (largest single byte tag value is 252)
     #[tlv_tag = 252]
     pub derivation_style: Option<u8>,
