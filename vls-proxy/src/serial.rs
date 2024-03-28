@@ -23,6 +23,7 @@ use secp256k1::PublicKey;
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::secp256k1;
 use vls_protocol::model::DevSecret;
+use vls_protocol::msgs::HsmdDevPreinit2Options;
 use vls_protocol::{msgs, msgs::Message, msgs::SerialRequestHeader, serde_bolt::WireString, Error};
 use vls_protocol_client::Error as ClientError;
 use vls_protocol_client::{ClientResult as Result, SignerPort};
@@ -90,12 +91,12 @@ pub fn connect(serial_port: String) -> anyhow::Result<SerialWrap> {
         read_allowlist().into_iter().map(|s| WireString(s.as_bytes().to_vec())).collect::<Vec<_>>();
     // Check if a testing seed is available, otherwise send None
     let seed = read_integration_test_seed(".").map(|s| DevSecret(s));
-    let preinit = msgs::HsmdDevPreinit {
-        derivation_style: 0,
-        network_name: WireString(Network::Testnet.to_string().as_bytes().to_vec()),
-        seed,
-        allowlist: allowlist.into(),
-    };
+    let mut options = HsmdDevPreinit2Options::default();
+    options.derivation_style = Some(0);
+    options.network_name = Some(WireString(Network::Testnet.to_string().as_bytes().to_vec()));
+    options.seed = seed;
+    options.allowlist = Some(allowlist.into());
+    let preinit2 = msgs::HsmdDevPreinit2 { options };
     let sequence = 0;
     let peer_id = [0; 33];
     let dbid = 0;
@@ -103,10 +104,7 @@ pub fn connect(serial_port: String) -> anyhow::Result<SerialWrap> {
         &mut serial,
         &SerialRequestHeader { sequence, peer_id, dbid },
     )?;
-    msgs::write(&mut serial, preinit)?;
-    msgs::read_serial_response_header(&mut serial, sequence)?;
-    let preinit_reply: msgs::HsmdDevPreinitReply = msgs::read_message(&mut serial)?;
-    info!("preinit reply {:?}", preinit_reply);
+    msgs::write(&mut serial, preinit2)?;
     Ok(serial)
 }
 

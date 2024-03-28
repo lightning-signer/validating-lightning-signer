@@ -212,7 +212,7 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         assert_eq!(reqhdr.sequence, 0);
         assert_eq!(reqhdr.peer_id, [0u8; 33]);
         assert_eq!(reqhdr.dbid, 0);
-        let preinit: msgs::HsmdDevPreinit =
+        let preinit: msgs::HsmdDevPreinit2 =
             msgs::read_message(&mut devctx.serial).expect("failed to read preinit message");
         info!("preinit {:?}", preinit);
 
@@ -220,10 +220,11 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         // This needs to be done before the RandomStartingTimeFactory below
         // takes the rng for itself ...
         let seed = preinit
+            .options
             .seed
             .as_ref()
             .map(|s| {
-                info!("using forced seed from HsmdDevPreinit: {:?}", s);
+                info!("using forced seed from HsmdDevPreinit2Options: {:?}", s);
                 s.0
             })
             .or_else(|| {
@@ -242,7 +243,11 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
         let clock = Arc::new(ManualClock::new(Duration::ZERO));
         let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
-        let allowlist = preinit.allowlist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>();
+        let allowlist = if let Some(ref alist) = preinit.options.allowlist {
+            alist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>()
+        } else {
+            vec![]
+        };
 
         let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive);
         let (mut init_handler, _muts) = HandlerBuilder::new(runctx.cmn.network, 0, services, seed)
@@ -250,12 +255,11 @@ fn start_test_mode(runctx: TestingContext) -> ! {
             .approver(approver)
             .build()
             .expect("handler build");
-        let (is_done, init_reply) =
-            init_handler.handle(Message::HsmdDevPreinit(preinit)).expect("handle init");
+        let (is_done, _init_reply) =
+            init_handler.handle(Message::HsmdDevPreinit2(preinit)).expect("handle HsmdDevPreinit2");
         assert!(!is_done, "init handler done");
-        write_serial_response_header(&mut devctx.serial, reqhdr.sequence)
-            .expect("write preinit header");
-        msgs::write_vec(&mut devctx.serial, init_reply.as_vec()).expect("write init reply");
+
+        // HsmdDevPreinit2 does not send a response, ignore the placeholder init_reply ...
 
         info!("used {} bytes", heap_bytes_used());
         init_handler
