@@ -27,30 +27,29 @@ The Boot Menu key is F10 if you are already running something else.
 #### Partition the onboard disk:
 
 1. Choose "Minimal Installation", no third-party drivers
-1. "Erase disk and install Ubuntu"
-1. "Advanced Partitioning Tool"
+1. "Something else" (manual partitioning below)
 
 Format the onboard SSD ("mmcblk0"), create a single primary partition using all
 available space. Set the `Use as:` to "do not use the partition" (it will be
 modified later when we setup the mirror).  Note the size of this
-created partition, it will be used in the next step.
+created partition, it will be used in the next step (eg 62610MB).
 
 #### Partition the SSD ("nvme0"):
 
 | Partition| Size |
 | -------- | -------- |
 | Reserved BIOS boot area | 1 MB |
-| EFI | 1 GB |
-| swap | 64G |
+| EFI System Partition | 1024 MB |
+| swap area | 65536 MB |
 | explicit-unused | same-size-as-onboard-unused-above |
-| / | remaining-space |
+| Ext4 journaling filesystem, mount on / | remaining-space |
 
-Install Desktop [mininal, I think]
+Choose "Install Now"
 
 Create a user named `user`
 
 [lots missing here, getting on local network, etc]
-    
+
 ### Setup System
 
 Update `/etc/sudoers` so you don't need passwd:
@@ -94,7 +93,7 @@ sudo nmcli radio wifi off
 sudo nmcli connection modify 'Your ESSID' connection.autoconnect no
 ```
 
-Consider disabling X windows (optional0:
+Consider disabling X windows (optional):
 ```
 sudo systemctl stop display-manager
 sudo systemctl disable display-manager
