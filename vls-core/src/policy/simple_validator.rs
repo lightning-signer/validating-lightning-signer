@@ -762,6 +762,15 @@ impl Validator for SimpleValidator {
             // The CommitmentInfo2 must be the same as previously
             let prev_commit_info = estate.get_previous_counterparty_commit_info(commit_num);
             if Some(info2) != prev_commit_info.as_ref() {
+                #[cfg(not(feature = "log_pretty_print"))]
+                policy_log!(
+                    self,
+                    "policy-commitment-retry-same",
+                    "info2 != prev_commit_info\n{:?}\n{:?}",
+                    info2,
+                    prev_commit_info
+                );
+                #[cfg(feature = "log_pretty_print")]
                 policy_log!(
                     self,
                     "policy-commitment-retry-same",
@@ -1164,6 +1173,9 @@ impl Validator for SimpleValidator {
         //
         let holder_value = estate.minimum_to_holder_value(self.policy.epsilon_sat);
         let cparty_value = estate.minimum_to_counterparty_value(self.policy.epsilon_sat);
+        #[cfg(not(feature = "log_pretty_print"))]
+        debug!("holder_value={:?}, cparty_value={:?}", holder_value, cparty_value);
+        #[cfg(feature = "log_pretty_print")]
         debug!("holder_value={:#?}, cparty_value={:#?}", holder_value, cparty_value);
         let holder_value_is_larger = holder_value > cparty_value;
         debug!("holder_value_is_larger={}", holder_value_is_larger);
@@ -1220,6 +1232,9 @@ impl Validator for SimpleValidator {
             }
         };
 
+        #[cfg(not(feature = "log_pretty_print"))]
+        debug!("{}: trying likely args: {:?}", short_function!(), &likely_args);
+        #[cfg(feature = "log_pretty_print")]
         debug!("{}: trying likely args: {:#?}", short_function!(), &likely_args);
         let likely_rv = self.validate_mutual_close_tx(
             wallet,

@@ -1032,6 +1032,9 @@ impl EnforcementState {
         channel_setup: &ChannelSetup,
         is_ready: bool,
     ) -> ChannelBalance {
+        #[cfg(not(feature = "log_pretty_print"))]
+        debug!("{:?}", preimage_map);
+        #[cfg(feature = "log_pretty_print")]
         debug!("{:#?}", preimage_map);
 
         // If either of commitments is missing, return 0.
