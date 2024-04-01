@@ -8,7 +8,7 @@
 # ~bitcoin/.bitcoin/bitcoin.conf
 
 [Unit]
-Description=Bitcoin daemon
+Description=Testnet Bitcoin daemon
 After=network.target
 
 [Service]

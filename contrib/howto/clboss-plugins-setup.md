@@ -32,9 +32,9 @@ On Both:
 ```
 sudo chown -R $USER:$USER /usr/local/src
 cd /usr/local/src
-git clone --recurse-submodules https://github.com/ksedgwic/clboss.git
+git clone --recurse-submodules https://github.com/ZmnSCPxj/clboss.git
 cd clboss
-git checkout vls-testnet-mods
+git checkout master
 autoreconf -i
 ./configure
 make -j `nproc`
