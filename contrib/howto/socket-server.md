@@ -19,3 +19,4 @@ Steps:
 5. [Setup VLS testnet Service](./vls-testnet-service.md)
 6. [Setup CLBOSS and CLN Plugins](./clboss-plugins-setup.md)
 7. [Update CLN+VLS Software](./update.md)
+8. [Configure journalctl](./journalctl.md)
