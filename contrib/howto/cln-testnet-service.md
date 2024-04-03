@@ -27,6 +27,7 @@ bitcoin-rpcconnect=127.0.0.1
 bitcoin-rpcport=18332
 max-locktime-blocks=576
 experimental-anchors
+experimental-offers
 EOL
 EOF
 ```
