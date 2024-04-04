@@ -2,6 +2,8 @@ use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::cell::RefCell;
 use core::mem;
+#[cfg(feature = "timeless_workaround")]
+use core::time::Duration;
 
 use bitcoin::blockdata::constants::{genesis_block, DIFFCHANGE_INTERVAL};
 use bitcoin::consensus::{Decodable, Encodable};
@@ -269,6 +271,14 @@ impl<L: ChainListener> ChainTracker<L> {
     /// Height of current chain tip
     pub fn height(&self) -> u32 {
         self.height
+    }
+
+    #[cfg(feature = "timeless_workaround")]
+    // WORKAROUND for #206, #339, #235 - If our implementation has no clock use the
+    // latest BlockHeader timestamp.
+    /// Header timestamp of current chain tip
+    pub fn tip_time(&self) -> Duration {
+        Duration::from_secs(if self.headers.is_empty() { 0 } else { self.headers[0].0.time as u64 })
     }
 
     /// Remove block at tip due to reorg

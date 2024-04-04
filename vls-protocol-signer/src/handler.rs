@@ -866,13 +866,9 @@ impl Handler for RootHandler {
                 #[cfg(feature = "timeless_workaround")]
                 {
                     // WORKAROUND for #206, #339, #235 - If our implementation has no clock use the
-                    // BlockHeader timestamp.
-                    use crate::handler::bitcoin::BlockHeader;
-                    use core::time::Duration;
-                    let header: BlockHeader =
-                        deserialize(m.header.0.as_slice()).expect("header again");
+                    // latest BlockHeader timestamp.
                     let old_now = self.node.get_clock().now();
-                    let new_now = Duration::from_secs(header.time as u64);
+                    let new_now = tracker.tip_time();
                     // Don't allow retrograde time updates ...
                     if new_now > old_now {
                         self.node.get_clock().set_workaround_time(new_now);
