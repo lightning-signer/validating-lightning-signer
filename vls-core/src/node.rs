@@ -1308,6 +1308,15 @@ impl Node {
             log_prefix.to_string(),
         ));
 
+        #[cfg(feature = "timeless_workaround")]
+        {
+            // WORKAROUND for #206, #339, #235 - If our implementation has no clock use the
+            // latest BlockHeader timestamp.
+            assert_eq!(clock.now(), Duration::from_secs(0));
+            let new_now = tracker.tip_time();
+            clock.set_workaround_time(new_now);
+        }
+
         Node {
             secp_ctx,
             keys_manager,
