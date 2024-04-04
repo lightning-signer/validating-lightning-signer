@@ -468,7 +468,7 @@ pub fn manage_node(
         .push(format!("{: ^19}", if is_permissive { "Make Enforcing" } else { "Make Permissive" }));
     lines.push(format!(""));
     if runpath != TESTDIR_PATH {
-        lines.push(format!("{: ^19}", "Delete"));
+        lines.push(format!("{: ^19}", "Delete [+blue]"));
     } else {
         lines.push(format!(""));
     }
@@ -496,7 +496,7 @@ pub fn manage_node(
                 setupfs.write_file_string(&rundir, PERMISSIVE_FILE, &"".to_string());
             }
             return false;
-        } else if row == 6 && runpath != TESTDIR_PATH {
+        } else if row == 6 && runpath != TESTDIR_PATH && devctx.button.is_high() {
             info!("delete {} selected", runpath);
             {
                 let rootdir = setupfs.fs.root_dir();
