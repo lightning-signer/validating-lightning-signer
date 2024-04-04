@@ -1,0 +1,12 @@
+/home/user/vls-probe/testnet/vls-probe-testnet.log {
+    rotate 1000000
+    monthly
+    maxsize 1G
+    missingok
+    compress
+    delaycompress
+    notifempty
+    copytruncate
+    dateext
+    create 640 user user
+}

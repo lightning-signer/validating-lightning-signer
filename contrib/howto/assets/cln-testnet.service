@@ -1,11 +1,10 @@
 [Unit]
 Description=Testnet Core Lightning Daemon
-Requires=bitcoind-testnet.service
-After=bitcoind-testnet.service
+Requires=bitcoind-testnet.service vls-probe-testnet.service
+After=bitcoind-testnet.service vls-probe-testnet.service
 
 [Service]
-EnvironmentFile=/home/cln/.lightning/testnet-env
-ExecStart=/usr/local/bin/lightningd --conf=/home/cln/.lightning/testnet-config --testnet --log-file=- --log-file=/home/cln/.lightning/testnet/lightning.log --pid-file=/home/cln/.lightning/testnet/lightningd-testnet.pid
+ExecStart=/bin/bash -c 'source  /home/cln/.lightning/testnet-setenv; exec /usr/local/bin/lightningd --conf=/home/cln/.lightning/testnet-config --testnet --log-file=- --log-file=/home/cln/.lightning/testnet/lightning.log --pid-file=/home/cln/.lightning/testnet/lightningd-testnet.pid'
 PIDFile=/home/cln/.lightning/testnet/lightningd-testnet.pid
 User=cln
 Group=cln

@@ -1,0 +1,15 @@
+#!/bin/bash
+
+VLS_PORT=17701
+VLS_SERIAL_PORT=/dev/vls-stm32
+VLS_NETWORK=testnet
+# If your SOCKET signer is remote, have the proxy listen to all interfaces.
+# Alternatively, set up a secure tunnel to the signer.
+# VLS_BIND=0.0.0.0
+BITCOIND_RPC_URL=http://rpcuser:6ffb57ab46aa726@localhost:18332
+RUST_LOG=debug
+BITCOIND_CLIENT_TIMEOUT_SECS=60
+# Dynamically set VLS_CLN_VERSION
+VLS_CLN_VERSION=$(/usr/local/bin/lightningd --version)
+
+export VLS_PORT VLS_SERIAL_PORT VLS_NETWORK BITCOIND_RPC_URL RUST_LOG BITCOIND_CLIENT_TIMEOUT_SECS VLS_CLN_VERSION
