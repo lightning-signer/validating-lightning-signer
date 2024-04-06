@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 use crate::GIT_DESC;
 
 use super::InfoModel;
-use tracing::{error, info, instrument, trace};
+use tracing::*;
 
 #[derive(Debug)]
 pub enum RpcMethods {
@@ -36,7 +36,6 @@ impl RpcMethods {
     }
 }
 
-#[instrument]
 pub async fn start_rpc_server(
     node: Arc<Node>,
     ip: IpAddr,
@@ -103,7 +102,7 @@ pub async fn start_rpc_server(
 
     let addr = server.local_addr()?;
     let handle = server.start(module);
-    info!("rpc_server: listening on {}", addr);
+    info!("rpc_server: listening on {} on port {}", addr, port);
 
     let join_handle = tokio::spawn(handle.stopped());
 
