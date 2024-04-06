@@ -42,8 +42,7 @@ async fn main() -> anyhow::Result<()> {
             let params = rpc_params![];
             let response =
                 send_rpc_request(&args.rpc_uri, RpcMethods::Info.as_str(), params).await?;
-            let info: InfoModel = serde_json::from_value(response)?;
-            println!("{:?}", info);
+            println!("{}", serde_json::to_string_pretty(&response)?);
         }
     }
 
@@ -56,10 +55,8 @@ async fn send_rpc_request(
     params: ArrayParams,
 ) -> anyhow::Result<serde_json::Value> {
     let client = HttpClientBuilder::default().build(uri.to_string())?;
-    let response: Result<serde_json::Value, _> = client.request(method, params).await;
-    info!("{:?}", response);
-
-    Ok(response?)
+    let response: serde_json::Value = client.request(method, params).await?;
+    Ok(response)
 }
 
 #[cfg(test)]
