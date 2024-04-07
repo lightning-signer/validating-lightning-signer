@@ -86,13 +86,33 @@ impl Tracks {
         msg: &Message,
         num_top: usize,
     ) -> Vec<String> {
-        // Ensure the track for this dbid exists
-        self.tracks.entry(dbid).or_insert(Track::new());
+        // Some master messages (dbid=0) are actually completely on behalf of a
+        // specific channel.
+        let applied_dbid = if dbid == 0 {
+            match msg {
+                Message::NewChannel(m) => m.dbid,
+                Message::ForgetChannel(m) => m.dbid,
+                Message::GetChannelBasepoints(m) => m.dbid,
+                Message::SignCommitmentTx(m) => m.dbid,
+                Message::SignAnyDelayedPaymentToUs(m) => m.dbid,
+                Message::SignAnyRemoteHtlcToUs(m) => m.dbid,
+                Message::SignAnyPenaltyToUs(m) => m.dbid,
+                Message::SignAnyLocalHtlcTx(m) => m.dbid,
+                Message::SignAnyChannelAnnouncement(m) => m.dbid,
+                Message::SignAnchorspend(m) => m.dbid,
+                _ => dbid,
+            }
+        } else {
+            dbid
+        };
+
+        // Ensure the track for this applied_dbid exists
+        self.tracks.entry(applied_dbid).or_insert(Track::new());
 
         // Update the target track, maybe shift everything
-        if self.tracks.get_mut(&dbid).unwrap().update(seq, track_char(msg)) {
+        if self.tracks.get_mut(&applied_dbid).unwrap().update(seq, track_char(msg)) {
             for (id, track) in self.tracks.iter_mut() {
-                if id != &dbid {
+                if id != &applied_dbid {
                     track.shift();
                 }
             }
@@ -103,7 +123,7 @@ impl Tracks {
         top.sort_by_key(|item| u64::MAX - item.1.latest);
         top.truncate(num_top);
 
-        // Sort by dbid so display is more "stable"
+        // Sort by applied_dbid so display is more "stable"
         top.sort_by_key(|item| item.0);
 
         // Format the output strings
