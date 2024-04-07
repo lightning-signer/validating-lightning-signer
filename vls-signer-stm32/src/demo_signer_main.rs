@@ -318,6 +318,11 @@ fn handle_requests(arc_devctx: &RefCell<DeviceContext>, root_handler: RootHandle
         // update the display before the next request
         devctx.disp.clear_screen();
         let balance = root_handler.channel_balance();
+        let chan_count_str = channel_count_string(&balance);
+        let chan_bal_str = pretty_thousands(balance.claimable as i64);
+        let chan_field_len = chan_count_str.len() + chan_bal_str.len();
+        let chan_pad =
+            if chan_field_len < 17 { " ".repeat(17 - chan_field_len) } else { "".to_string() };
         devctx.disp.show_texts(&[
             format!(
                 "h:  {:<9}{:>4}KB",
@@ -325,23 +330,19 @@ fn handle_requests(arc_devctx: &RefCell<DeviceContext>, root_handler: RootHandle
                 heap_free_kb
             ),
             format!(
-                "r:{:>3} {:>+13}",
+                "r:{:>4} {:>+12}",
                 balance.received_htlc_count,
                 pretty_thousands(balance.received_htlc as i64)
             ),
-            format!(
-                "c:{:<5} {:>11}",
-                channel_count_string(&balance),
-                pretty_thousands(balance.claimable as i64)
-            ),
+            format!("c:{}{}{}", chan_count_str, chan_pad, chan_bal_str),
             if balance.offered_htlc > 0 {
                 format!(
-                    "o:{:>3} {:>+13}",
+                    "o:{:>4} {:>+12}",
                     balance.offered_htlc_count,
                     pretty_thousands(0 - balance.offered_htlc as i64),
                 )
             } else {
-                format!("o:{:>3} {:>13}", balance.offered_htlc_count, "-0")
+                format!("o:{:>4} {:>12}", balance.offered_htlc_count, "-0")
             },
             format!(""),
             top_tracks[0].clone(),
@@ -357,28 +358,28 @@ fn channel_count_string(balance: &ChannelBalance) -> String {
     // NOTE - there is not a lot of room on the display, this is contrived ...
     //
     // Examples, alignment is designed to match adjacent lines
-    // "1a5z2" - 1 prep, 5 active, 2 eol
-    // "1a8"   - 1 prep, 8 active
-    // " 16"   - 16 active
-    // " 16z2" - 16 active, 2 eol
+    // " 1a5z2" - 1 prep, 5 active, 2 eol
+    // "3a17"
+    // " 1a8"   - 1 prep, 8 active
+    // "  16"   - 16 active
+    // "  16z2" - 16 active, 2 eol
     //
     // To save room combine the stub count with the unconfirmed count.
-    let prep_count = balance.stub_count + balance.unconfirmed_count;
-    let mut buff = String::new();
-    if prep_count > 0 {
-        buff += &format!("{}a", prep_count);
-    } else {
-        buff += &" ";
-        if balance.channel_count < 10 {
-            // only a single digit channel count, pad an extra space
-            buff += &" ";
-        }
-    }
-    buff += &format!("{}", balance.channel_count);
-    if balance.closing_count > 0 {
-        buff += &format!("z{}", balance.closing_count);
-    }
-    buff
+    let npre = balance.stub_count + balance.unconfirmed_count;
+    let nact = balance.channel_count;
+    let ncls = balance.closing_count;
+
+    // Format the string components
+    let pre_str = if npre > 0 { format!("{}a", npre) } else { "".to_string() };
+    let act_str = format!("{}", nact);
+    let cls_str = if ncls > 0 { format!("z{}", ncls) } else { "".to_string() };
+
+    // Pad to line up the nact field w/ the surrounding lines
+    let align = 4;
+    let len = pre_str.len() + act_str.len();
+    let pad_str = if len < align { " ".repeat(align - len) } else { "".to_string() };
+
+    format!("{}{}{}{}", &pad_str, &pre_str, &act_str, &cls_str)
 }
 
 fn from_wire_string(s: &WireString) -> String {
