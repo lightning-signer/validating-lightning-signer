@@ -26,7 +26,6 @@ fugit = "0.3"
 vls-protocol-signer = { path = "../vls-protocol-signer", default-features = false, features = ["no-std", "secp-lowmemory", "tracker_size_workaround", "timeless_workaround"] }
 vls-persist = { path = "../vls-persist", default-features = false, features = ["no-std"] }
 vls-protocol = { path = "../vls-protocol", default-features = false, features = ["no-std"] }
-serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 hex = { version = "0.4", default-features = false }
 
 # ft6x06 = "0.1.2"
@@ -46,6 +45,14 @@ features = [
 [dependencies.stm32f4xx-hal]
 version = "0.13"
 features = ["fsmc_lcd", "fsmc", "sdio", "sdio-host", "otg-fs", "usb_fs"]
+
+[dependencies.serde_json]
+git = "https://github.com/ksedgwic/json.git"
+rev = "4636761f6df368e0f571e420beaa646a86a58bbf"
+#path = "../../../json"
+version = "1.0"
+default-features = false
+features = ["alloc"]
 
 [features]
 default = ["stm32f413"]

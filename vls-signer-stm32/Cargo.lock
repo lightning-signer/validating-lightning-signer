@@ -744,6 +744,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_json"
+version = "1.0.115"
+source = "git+https://github.com/ksedgwic/json.git?rev=4636761f6df368e0f571e420beaa646a86a58bbf#4636761f6df368e0f571e420beaa646a86a58bbf"
+dependencies = [
+ "itoa",
+ "ryu",
+ "serde",
+]
+
+[[package]]
 name = "serde_with"
 version = "3.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -753,7 +763,7 @@ dependencies = [
  "chrono",
  "hex",
  "serde",
- "serde_json",
+ "serde_json 1.0.113",
  "serde_with_macros",
  "time",
 ]
@@ -1022,7 +1032,7 @@ dependencies = [
  "profont",
  "rand_core",
  "rtt-target",
- "serde_json",
+ "serde_json 1.0.115",
  "st7789",
  "stm32f4",
  "stm32f4xx-hal",

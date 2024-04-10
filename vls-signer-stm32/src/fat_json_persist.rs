@@ -3,9 +3,9 @@ use alloc::sync::Arc;
 use core::cell::RefCell;
 use core::str::FromStr;
 
-use serde_json::json;
+use serde_json::{self, io::Write as _, json, Value};
 
-use fatfs::{Read, Write};
+use fatfs::{self, Read};
 
 use log::*;
 
@@ -64,6 +64,29 @@ impl From<serde_json::Error> for Error {
 impl Into<persist::Error> for Error {
     fn into(self) -> persist::Error {
         self.0
+    }
+}
+
+pub struct YetAnotherWriteAdapter<'a, W: fatfs::Write> {
+    pub writer: &'a mut W,
+}
+
+impl From<serde_json::io::Error> for Error {
+    fn from(err: serde_json::io::Error) -> Self {
+        Error(persist::Error::Internal(format!("serde_json::io::Error: {}", err)))
+    }
+}
+
+impl<'a, W: fatfs::Write> serde_json::io::Write for YetAnotherWriteAdapter<'a, W> {
+    fn write(&mut self, buf: &[u8]) -> serde_json::io::Result<usize> {
+        // serde_json::io::Error is not accessible
+        self.writer.write_all(buf).expect("fatfs write failed");
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> serde_json::io::Result<()> {
+        // serde_json::io::Error is not accessible
+        Ok(self.writer.flush().expect("fatfs flush failed"))
     }
 }
 
@@ -152,7 +175,7 @@ impl FatJsonPersister {
     }
 
     // Update or create a value in a bucket
-    fn upsert_value(&self, bucket: &str, key: &str, value: &str) -> Result<(), Error> {
+    fn upsert_value(&self, bucket: &str, key: &str, value: &Value) -> Result<(), Error> {
         self.write_new_file(bucket, key, value)?;
         self.retire_cur_file(bucket, key).ok(); // ok if it's not there
         self.replace_file(bucket, key)?;
@@ -161,14 +184,14 @@ impl FatJsonPersister {
     }
 
     // Create a value in a bucket, fail if AlreadyExists
-    fn insert_value(&self, bucket: &str, key: &str, value: &str) -> Result<(), Error> {
+    fn insert_value(&self, bucket: &str, key: &str, value: &Value) -> Result<(), Error> {
         self.write_new_file(bucket, key, value)?;
         self.replace_file(bucket, key)?;
         Ok(())
     }
 
     // Update a value in a bucket, fail if NotFound
-    fn update_value(&self, bucket: &str, key: &str, value: &str) -> Result<(), Error> {
+    fn update_value(&self, bucket: &str, key: &str, value: &Value) -> Result<(), Error> {
         self.write_new_file(bucket, key, value)?;
         self.retire_cur_file(bucket, key)?;
         self.replace_file(bucket, key)?;
@@ -229,12 +252,13 @@ impl FatJsonPersister {
         }
     }
 
-    fn write_new_file(&self, bucket: &str, key: &str, value: &str) -> Result<(), Error> {
+    fn write_new_file(&self, bucket: &str, key: &str, value: &Value) -> Result<(), Error> {
         let setupfs = self.setupfs.borrow();
         let mut new_file =
             setupfs.rundir().create_file(&Self::file_path(bucket, &Self::new_file_rel(key)))?;
-        new_file.write_all(value.as_bytes())?;
-        new_file.flush()?;
+        let mut adapter = YetAnotherWriteAdapter { writer: &mut new_file };
+        serde_json::to_writer(&mut adapter, value)?;
+        adapter.flush()?;
         Ok(())
     }
 
@@ -286,15 +310,14 @@ impl Persist for FatJsonPersister {
                 key_derivation_style: config.key_derivation_style as u8,
                 network: config.network.to_string(),
             };
-            let value = json!(entry).to_string();
-            self.insert_value(&Self::node_bucket_path(), &key, &value).map_err(|err| err.into())?;
+            self.insert_value(&Self::node_bucket_path(), &key, &json!(entry))
+                .map_err(|err| err.into())?;
         }
 
         {
             let key = Self::nodestate_key();
             let state_entry: NodeStateEntry = state.into();
-            let state_value = json!(state_entry).to_string();
-            self.upsert_value(&Self::nodestate_bucket_path(), &key, &state_value)
+            self.upsert_value(&Self::nodestate_bucket_path(), &key, &json!(state_entry))
                 .map_err(|err| err.into())?;
         }
 
@@ -309,10 +332,8 @@ impl Persist for FatJsonPersister {
     ) -> Result<(), persist::Error> {
         let key = Self::nodestate_key();
         let state_entry: NodeStateEntry = state.into();
-        let state_value = json!(state_entry).to_string();
-        self.update_value(&Self::nodestate_bucket_path(), &key, &state_value)
-            .map_err(|err| err.into())?;
-        Ok(())
+        self.update_value(&Self::nodestate_bucket_path(), &key, &json!(state_entry))
+            .map_err(|err| err.into())
     }
 
     #[allow(unused)]
@@ -327,8 +348,8 @@ impl Persist for FatJsonPersister {
     ) -> Result<(), persist::Error> {
         let key = Self::chaintracker_key();
         let entry: ChainTrackerEntry = tracker.into();
-        let value = json!(entry).to_string();
-        self.upsert_value(&Self::chaintracker_bucket_path(), &key, &value).map_err(|err| err.into())
+        self.upsert_value(&Self::chaintracker_bucket_path(), &key, &json!(entry))
+            .map_err(|err| err.into())
     }
 
     fn update_tracker(
@@ -338,11 +359,7 @@ impl Persist for FatJsonPersister {
     ) -> Result<(), persist::Error> {
         let key = Self::chaintracker_key();
         let entry: ChainTrackerEntry = tracker.into();
-        let value_bytes =
-            serde_json::to_vec(&entry).map_err(|err| persist::Error::Internal(err.to_string()))?;
-        let value_str = String::from_utf8(value_bytes)
-            .map_err(|err| persist::Error::Internal(err.to_string()))?;
-        self.update_value(&Self::chaintracker_bucket_path(), &key, &value_str)
+        self.update_value(&Self::chaintracker_bucket_path(), &key, &json!(entry))
             .map_err(|err| err.into())
     }
 
@@ -370,8 +387,8 @@ impl Persist for FatJsonPersister {
             enforcement_state: EnforcementState::new(0),
             blockheight: Some(stub.blockheight),
         };
-        let value = json!(entry).to_string();
-        self.insert_value(&Self::channel_bucket_path(), &key, &value).map_err(|err| err.into())
+        self.insert_value(&Self::channel_bucket_path(), &key, &json!(entry))
+            .map_err(|err| err.into())
     }
 
     fn delete_channel(
@@ -399,8 +416,8 @@ impl Persist for FatJsonPersister {
             enforcement_state: channel.enforcement_state.clone(),
             blockheight: None,
         };
-        let value = json!(entry).to_string();
-        self.update_value(&Self::channel_bucket_path(), &key, &value).map_err(|err| err.into())
+        self.update_value(&Self::channel_bucket_path(), &key, &json!(entry))
+            .map_err(|err| err.into())
     }
 
     #[allow(unused)]
@@ -444,8 +461,8 @@ impl Persist for FatJsonPersister {
     ) -> Result<(), persist::Error> {
         let key = Self::allowlist_key();
         let entry = AllowlistItemEntry { allowlist };
-        let value = json!(entry).to_string();
-        self.upsert_value(&Self::allowlist_bucket_path(), &key, &value).map_err(|err| err.into())
+        self.upsert_value(&Self::allowlist_bucket_path(), &key, &json!(entry))
+            .map_err(|err| err.into())
     }
 
     fn get_node_allowlist(&self, _node_id: &PublicKey) -> Result<Vec<String>, persist::Error> {
