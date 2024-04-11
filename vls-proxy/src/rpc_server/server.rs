@@ -12,7 +12,7 @@ use tokio::task::JoinHandle;
 use crate::GIT_DESC;
 
 use super::InfoModel;
-use tracing::{event, Level, instrument};
+use tracing::{event, instrument, Level};
 
 pub enum RpcMethods {
     Info,
