@@ -4,9 +4,11 @@ version = "0.11.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "A CLI for interacting with the vlsd2 JSON-RPC API"
-authors = ["Lakshya Singh <lakshaysingh1108@gmail.com>"]
+authors = ["Lakshya Singh <lakshay.singh1108@gmail.com>"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+system-test = []
 
 [dependencies]
 clap = { version = "3.2", features = ["derive"] }
@@ -19,7 +21,13 @@ serde_json = { version = "1" }
 tracing-subscriber = "0.3"
 vls-proxy = { path = "../vls-proxy", version = "0.11.0" }
 http = { version = "0.2.9" }
+base64 = "0.21.7"
 
 [[bin]]
 name = "vls-cli"
 path = "src/main.rs"
+
+[[test]]
+name = "rpc_server_system_test"
+path = "tests/rpc_server_system_test.rs"
+required-features = ["system-test"]
