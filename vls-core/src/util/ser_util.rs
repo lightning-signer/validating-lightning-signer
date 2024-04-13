@@ -10,7 +10,6 @@ use core::fmt;
 use core::fmt::Formatter;
 use core::time::Duration;
 
-use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{OutPoint, Script, Txid};
 use lightning::ln::chan_utils::ChannelPublicKeys;
@@ -116,33 +115,10 @@ impl Writer for VecWriter {
     }
 }
 
-pub struct TxidDef;
-
-impl SerializeAs<Txid> for TxidDef {
-    fn serialize_as<S>(value: &Txid, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(hex::encode(value.to_vec()).as_str())
-    }
-}
-
-impl<'de> DeserializeAs<'de, Txid> for TxidDef {
-    fn deserialize_as<D>(deserializer: D) -> Result<Txid, <D as Deserializer<'de>>::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let res = <Cow<'de, str> as Deserialize<'de>>::deserialize(deserializer).unwrap();
-        let txid = Txid::from_slice(hex::decode(&*res).unwrap().as_slice()).unwrap();
-        Ok(txid)
-    }
-}
-
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "OutPoint")]
 pub struct OutPointDef {
-    #[serde_as(as = "TxidDef")]
     pub txid: Txid,
     pub vout: u32,
 }
@@ -241,4 +217,67 @@ impl<'de> DeserializeAs<'de, Duration> for DurationHandler {
     {
         deserializer.deserialize_seq(DurationVisitor)
     }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use alloc::borrow::Cow;
+    use bitcoin::{OutPoint, Script};
+    use bitcoin::{Txid, hashes::Hash};
+    use serde::Deserialize;
+    use serde::Deserializer;
+    use serde::Serializer;
+    use serde_with::DeserializeAs;
+    use serde_with::SerializeAs;
+    use serde_with::serde_as;
+    use serde::Serialize;
+
+    struct TxidDef;
+
+    impl SerializeAs<Txid> for TxidDef {
+        fn serialize_as<S>(value: &Txid, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.serialize_str(hex::encode(value.to_vec()).as_str())
+        }
+    }
+
+    impl<'de> DeserializeAs<'de, Txid> for TxidDef {
+        fn deserialize_as<D>(deserializer: D) -> Result<Txid, <D as Deserializer<'de>>::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let res = <Cow<'de, str> as Deserialize<'de>>::deserialize(deserializer).unwrap();
+            let txid = Txid::from_slice(hex::decode(&*res).unwrap().as_slice()).unwrap();
+            Ok(txid)
+        }
+    }
+
+    #[test]
+    fn compare_serialize_txidef() {
+
+        #[serde_as]
+        #[derive(Serialize, Deserialize)]
+        struct TxidWrapperAsDef {
+            #[serde_as(as = "TxidDef")]
+            txid: Txid,
+        }
+
+        #[derive(Serialize, Deserialize)]
+        struct TxidWrapper {
+            txid: Txid,
+        }
+        let txid = Txid::from_slice(&[1; 32]).unwrap();
+
+        let txid_wrapper = TxidWrapper { txid };
+        let txid_wrapper_def = TxidWrapperAsDef { txid };
+
+        let txid_json = serde_json::to_string(&txid_wrapper).unwrap();
+        let txid_def_json = serde_json::to_string(&txid_wrapper_def).unwrap();
+
+        assert_eq!(txid_json, txid_def_json);
+    }
+
 }

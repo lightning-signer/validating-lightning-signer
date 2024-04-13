@@ -142,3 +142,6 @@ features = ["serde", "bitcoinconsensus"]
 [dev-dependencies.vls-core]
 features = ["test_utils"]
 path = "."
+
+[dev-dependencies.serde_json]
+version = "1.0"
