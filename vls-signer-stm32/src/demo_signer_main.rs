@@ -160,6 +160,7 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
 
     init_handler.log_chaninfo();
 
+    info!("ready for requests");
     handle_init_requests(&*runctx.cmn.devctx, &mut init_handler);
     let root_handler = init_handler.into_root_handler();
     handle_requests(&*runctx.cmn.devctx, root_handler);
