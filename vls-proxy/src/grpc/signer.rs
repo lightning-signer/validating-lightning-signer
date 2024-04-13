@@ -31,6 +31,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
@@ -140,22 +141,17 @@ fn reset_allowlist(node: &Node, allowlist: &Vec<String>) {
 }
 
 async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
-    let mut client = do_connect(uri).await;
     let (sender, receiver) = mpsc::channel(1);
     let response_stream = ReceiverStream::new(receiver);
     let mut init_handler = make_handler(datadir, args);
     let node = Arc::clone(init_handler.node());
 
     reset_allowlist(&*node, &read_allowlist());
-
     init_handler.log_chaninfo();
 
-    let (addr, join_rpc_server) =
-        start_rpc_server(node, args.rpc_server_address, args.rpc_server_port)
-            .await
-            .expect("start_rpc_server");
-    info!("rpc server running on {}", addr);
+    let join_handle = start_rpc_server_with_auth(Arc::clone(&node), &args).await;
 
+    let mut client = do_connect(uri).await;
     let mut request_stream = client.signer_stream(response_stream).await.unwrap().into_inner();
 
     let is_success = handle_init_requests(&sender, &mut request_stream, &mut init_handler).await;
@@ -165,9 +161,11 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
         handle_requests(&sender, &mut request_stream, &root_handler).await;
     }
 
-    let join_result = join_rpc_server.await;
-    if let Err(e) = join_result {
-        error!("rpc server error: {:?}", e);
+    if let Some(join_rpc_server) = join_handle {
+        let join_result = join_rpc_server.await;
+        if let Err(e) = join_result {
+            error!("rpc server error: {:?}", e);
+        }
     }
 }
 
@@ -422,4 +420,23 @@ fn handle_request(
         error: String::new(),
         is_temporary_failure: false,
     })
+}
+
+async fn start_rpc_server_with_auth(node: Arc<Node>, args: &SignerArgs) -> Option<JoinHandle<()>> {
+    if let Some(username) = &args.rpc_user {
+        if let Some(password) = &args.rpc_pass {
+            let (addr, join_rpc_server) =
+                start_rpc_server(node, args.rpc_server_address, args.rpc_server_port, username, password)
+                    .await
+                    .expect("start_rpc_server");
+            info!("rpc server running on {}", addr);
+            Some(join_rpc_server)
+        } else {
+            warn!("rpc server not started as no password provided");
+            None
+        }
+    } else {
+        warn!("rpc server not started as no username provided");
+        None
+    }
 }

@@ -11,9 +11,12 @@ sudo /usr/sbin/useradd -g vls -c "Validating Lightning Signer" -m vls
 ```
 
 Setup config files:
-```
-sudo touch /home/vls/.lightning-signer/ALLOWLIST
-sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/vlsd2.toml /home/vls/.lightning-signer/vlsd2.toml
+```bash
+# become root user
+touch /home/vls/.lightning-signer/ALLOWLIST
+cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/vlsd2.toml /home/vls/.lightning-signer/vlsd2.toml
+echo "rpc_user = <ADMIN_USER>" >> /home/vls/.lightning-signer/vlsd2.toml
+echo "rpc_pass = <ADMIN_SERVER_PASSWORD>" >> /home/vls/.lightning-signer/vlsd2.toml
 ```
 
 Create `~vls/.lightning-signer/testnet-env`:

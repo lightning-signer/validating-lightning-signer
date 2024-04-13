@@ -41,9 +41,9 @@ pub async fn start_rpc_server(
     node: Arc<Node>,
     ip: IpAddr,
     port: u16,
+    username: &str,
+    password: &str,
 ) -> anyhow::Result<(SocketAddr, JoinHandle<()>)> {
-    let server = Server::builder().build(SocketAddr::new(ip, port)).await?;
-
     let mut module = RpcModule::new(node);
     module.register_method(RpcMethods::Info.as_str(), |_, context| {
         info!("rpc_server: info");
@@ -92,6 +92,15 @@ pub async fn start_rpc_server(
             }
         }
     })?;
+
+    let auth_middleware = tower::ServiceBuilder::new()
+        .layer(tower_http::auth::AddAuthorizationLayer::basic(username, password));
+
+    let server = Server::builder()
+        .set_http_middleware(auth_middleware)
+        .build(SocketAddr::new(ip, port))
+        .await?;
+
     let addr = server.local_addr()?;
     let handle = server.start(module);
     info!("rpc_server: listening on {}", addr);
@@ -134,8 +143,14 @@ mod tests {
         let signer_args = SignerArgs::parse_from(&args);
 
         let root_handler = make_handler(datadir, &signer_args);
-        match start_rpc_server(Arc::clone(root_handler.node()), RPC_SERVER_ADDRESS, RPC_SERVER_PORT)
-            .await
+        match start_rpc_server(
+            Arc::clone(root_handler.node()),
+            signer_args.rpc_server_address,
+            signer_args.rpc_server_port,
+            "user",
+            "password",
+        )
+        .await
         {
             Ok((addr, join_handle)) => {
                 println!("rpc server started at {}", addr);
