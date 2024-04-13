@@ -15,6 +15,7 @@ pub trait TimerListener {
 
 static mut TIMER_LISTENERS: Vec<Box<dyn TimerListener>> = Vec::new();
 
+#[allow(unused)]
 pub fn start_tim2_interrupt(timer: CounterUs<TIM2>) {
     unsafe {
         TIMER_TIM2 = Some(timer);
