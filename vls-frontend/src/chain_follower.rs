@@ -70,7 +70,7 @@ macro_rules! abbrev {
 impl ChainFollower {
     pub async fn new(
         tracker: Arc<dyn ChainTrack>,
-        txoo_source_factory: &SourceFactory,
+        txoo_source_factory: &dyn SourceFactory,
         rpc_url: &Url,
     ) -> Arc<ChainFollower> {
         let client = bitcoind_client_from_url(rpc_url.clone(), tracker.network()).await;
@@ -88,12 +88,12 @@ impl ChainFollower {
                     tracker.tip_info().await.0,
                     first_height
                 );
-                txoo_source_factory.get_source(ckp_height, ckp_hash, ckp_filter_header)
+                txoo_source_factory.get_source(ckp_height, ckp_hash, ckp_filter_header).await
             } else {
                 let filter = BlockSpendFilter::from_block(&genesis);
                 let filter_header = filter.filter_header(&FilterHeader::all_zeros());
 
-                txoo_source_factory.get_source(0, genesis.block_hash(), filter_header)
+                txoo_source_factory.get_source(0, genesis_hash, filter_header).await
             };
         let update_interval = match tracker.network() {
             Network::Regtest => 1000, // poll rapidly, automated testing

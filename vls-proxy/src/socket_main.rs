@@ -17,7 +17,7 @@ use url::Url;
 
 use lightning_signer::bitcoin::Network;
 
-use vls_frontend::frontend::SourceFactory;
+use vls_frontend::frontend::DummySourceFactory;
 use vls_frontend::Frontend;
 
 use client::UnixClient;
@@ -93,7 +93,7 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
     let network = vls_network().parse::<Network>().expect("malformed vls network");
     let sender = server.sender();
     let signer_port = Arc::new(GrpcSignerPort::new(sender.clone()));
-    let source_factory = Arc::new(SourceFactory::new(".", network));
+    let source_factory = Arc::new(DummySourceFactory::new(".", network));
     let frontend = Frontend::new(
         Arc::new(SignerPortFront::new(signer_port.clone(), network)),
         source_factory,

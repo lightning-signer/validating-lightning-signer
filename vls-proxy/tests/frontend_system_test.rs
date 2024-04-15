@@ -28,7 +28,7 @@ use std::time::Duration;
 use tempfile::TempDir;
 use tokio::time::sleep;
 use url::Url;
-use vls_frontend::frontend::SourceFactory;
+use vls_frontend::frontend::DummySourceFactory;
 use vls_frontend::Frontend;
 use vls_protocol::model;
 use vls_protocol::msgs;
@@ -204,7 +204,7 @@ async fn run_with_network(tmpdir: TempDir, network: Network, url: Url) -> Result
     let client = BitcoindClient::new(url.clone()).await;
     let info = get_info(&client).await?;
     let signer_port = Arc::new(DummySignerPort::new(network));
-    let source_factory = Arc::new(SourceFactory::new(tmpdir.path(), network));
+    let source_factory = Arc::new(DummySourceFactory::new(tmpdir.path(), network));
     let frontend = Frontend::new(
         Arc::new(SignerPortFront::new(signer_port.clone(), network)),
         source_factory,
@@ -241,7 +241,7 @@ async fn run_regtest(tmpdir: TempDir) -> Result<()> {
 
     let (_shutdown_trigger, shutdown_signal) = triggered::trigger();
     let signer_port = Arc::new(DummySignerPort::new(network));
-    let source_factory = Arc::new(SourceFactory::new(tmpdir.path(), network));
+    let source_factory = Arc::new(DummySourceFactory::new(tmpdir.path(), network));
     let frontend = Frontend::new(
         Arc::new(SignerPortFront::new(signer_port.clone(), network)),
         source_factory,
