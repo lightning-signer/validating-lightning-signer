@@ -137,7 +137,7 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
         let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
         let allowlist = vec![]; // TODO - add to NormalContext
         let seed = runctx.seed;
-        let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive);
+        let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive, runctx.cmn.network);
         let (root_handler, _muts) = HandlerBuilder::new(runctx.cmn.network, 0, services, seed.0)
             .allowlist(allowlist)
             .approver(approver)
@@ -251,7 +251,7 @@ fn start_test_mode(runctx: TestingContext) -> ! {
             vec![]
         };
 
-        let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive);
+        let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive, runctx.cmn.network);
         let (mut init_handler, _muts) = HandlerBuilder::new(runctx.cmn.network, 0, services, seed)
             .allowlist(allowlist)
             .approver(approver)
@@ -423,12 +423,16 @@ fn make_validator_factory(network: Network, permissive: bool) -> Arc<SimpleValid
     Arc::new(SimpleValidatorFactory::new_with_policy(policy))
 }
 
-fn make_approver(devctx: &Arc<RefCell<DeviceContext>>, permissive: bool) -> Arc<dyn Approve> {
+fn make_approver(
+    devctx: &Arc<RefCell<DeviceContext>>,
+    permissive: bool,
+    network: Network,
+) -> Arc<dyn Approve> {
     if permissive {
         info!("VLS_PERMISSIVE: ALL INVOICES AND KEYSENDS AUTOMATICALLY APPROVED");
         Arc::new(WarningPositiveApprover())
     } else {
         info!("VLS_ENFORCING: INVOICES AND KEYSENDS REQUIRE APPROVAL");
-        Arc::new(ScreenApprover::new(Arc::clone(devctx)))
+        Arc::new(ScreenApprover::new(Arc::clone(devctx), network))
     }
 }
