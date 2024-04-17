@@ -68,6 +68,9 @@ opentelemetry-otlp = { version = "0.14.0", optional = true }
 opentelemetry-semantic-conventions = { version = "0.13.0", optional = true }
 tracing-opentelemetry = { version = "0.22.0", optional = true }
 dirs = "4"
+tower = { version = "0.4.13" }
+tower-http = { version = "0.4.0", features = ["auth"] }
+base64 = "0.21.7"
 
 [dependencies.heapmon]
 version = "0.1"
