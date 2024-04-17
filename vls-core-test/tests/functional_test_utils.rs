@@ -23,6 +23,7 @@ use lightning::chain;
 use lightning::chain::{Confirm, Listen, chaininterface};
 use lightning::sign::EntropySource;
 use lightning::ln;
+use lightning::ln::ChannelId;
 use lightning::ln::channelmanager::{RecipientOnionFields, ChainParameters, MIN_FINAL_CLTV_EXPIRY_DELTA, PaymentId};
 use lightning::chain::BestBlock;
 use lightning::ln::functional_test_utils::{ConnectStyle, test_default_channel_config};
@@ -237,7 +238,7 @@ pub fn create_chan_between_nodes<'a, 'b, 'c, 'd>(
     msgs::ChannelAnnouncement,
     msgs::ChannelUpdate,
     msgs::ChannelUpdate,
-    [u8; 32],
+    ChannelId,
     Transaction,
 ) {
     create_chan_between_nodes_with_value(node_a, node_b, 100000, 10001)
@@ -252,7 +253,7 @@ pub fn create_chan_between_nodes_with_value<'a, 'b, 'c, 'd>(
     msgs::ChannelAnnouncement,
     msgs::ChannelUpdate,
     msgs::ChannelUpdate,
-    [u8; 32],
+    ChannelId,
     Transaction,
 ) {
     let (funding_locked, channel_id, tx) = create_chan_between_nodes_with_value_a(
@@ -390,7 +391,7 @@ macro_rules! check_added_monitors {
     }};
 }
 
-pub fn create_funding_transaction<'a, 'b, 'c>(node: &Node<'a, 'b, 'c>, expected_chan_value: u64, expected_user_chan_id: u64) -> ([u8; 32], Transaction, OutPoint) {
+pub fn create_funding_transaction<'a, 'b, 'c>(node: &Node<'a, 'b, 'c>, expected_chan_value: u64, expected_user_chan_id: u64) -> (ChannelId, Transaction, OutPoint) {
     let chan_id = *node.network_chan_count.borrow();
 
     let events = node.node.get_and_clear_pending_events();
@@ -404,7 +405,7 @@ pub fn create_funding_transaction<'a, 'b, 'c>(node: &Node<'a, 'b, 'c>, expected_
                 value: *channel_value_satoshis, script_pubkey: output_script.clone(),
             }]};
             let funding_outpoint = OutPoint { txid: tx.txid(), index: 0 };
-            (*temporary_channel_id, tx, funding_outpoint)
+            (temporary_channel_id.clone(), tx, funding_outpoint)
         },
         _ => panic!("Unexpected event"),
     }
@@ -449,13 +450,13 @@ pub fn create_chan_between_nodes_with_value_init<'a, 'b, 'c>(node_a: &Node<'a, '
     tx
 }
 
-pub fn create_chan_between_nodes_with_value_confirm_first<'a, 'b, 'c, 'd>(node_recv: &'a Node<'b, 'c, 'c>, node_conf: &'a Node<'b, 'c, 'd>, tx: &Transaction, conf_height: u32) {
+pub fn create_chan_between_nodes_with_value_confirm_first<'a, 'b, 'c, 'd>(node_recv: &'a Node<'b, 'c, 'd>, node_conf: &'a Node<'b, 'c, 'd>, tx: &Transaction, conf_height: u32) {
     confirm_transaction_at(node_conf, tx, conf_height);
     connect_blocks(node_conf, CHAN_CONFIRM_DEPTH - 1);
     node_recv.node.handle_channel_ready(&node_conf.node.get_our_node_id(), &get_event_msg!(node_conf, MessageSendEvent::SendChannelReady, node_recv.node.get_our_node_id()));
 }
 
-pub fn create_chan_between_nodes_with_value_confirm_second<'a, 'b, 'c>(node_recv: &Node<'a, 'b, 'c>, node_conf: &Node<'a, 'b, 'c>) -> ((msgs::ChannelReady, msgs::AnnouncementSignatures), [u8; 32]) {
+pub fn create_chan_between_nodes_with_value_confirm_second<'a, 'b, 'c>(node_recv: &Node<'a, 'b, 'c>, node_conf: &Node<'a, 'b, 'c>) -> ((msgs::ChannelReady, msgs::AnnouncementSignatures), ChannelId) {
     let channel_id;
     let events_6 = node_conf.node.get_and_clear_pending_msg_events();
     assert_eq!(events_6.len(), 3);
@@ -475,7 +476,7 @@ pub fn create_chan_between_nodes_with_value_confirm_second<'a, 'b, 'c>(node_recv
     }), channel_id)
 }
 
-pub fn create_chan_between_nodes_with_value_confirm<'a, 'b, 'c, 'd>(node_a: &'a Node<'b, 'c, 'd>, node_b: &'a Node<'b, 'c, 'd>, tx: &Transaction) -> ((msgs::ChannelReady, msgs::AnnouncementSignatures), [u8; 32]) {
+pub fn create_chan_between_nodes_with_value_confirm<'a, 'b, 'c, 'd>(node_a: &'a Node<'b, 'c, 'd>, node_b: &'a Node<'b, 'c, 'd>, tx: &Transaction) -> ((msgs::ChannelReady, msgs::AnnouncementSignatures), ChannelId) {
     let conf_height = cmp::max(node_a.best_block_info().1 + 1, node_b.best_block_info().1 + 1);
     create_chan_between_nodes_with_value_confirm_first(node_a, node_b, tx, conf_height);
     confirm_transaction_at(node_a, tx, conf_height);
@@ -484,7 +485,7 @@ pub fn create_chan_between_nodes_with_value_confirm<'a, 'b, 'c, 'd>(node_a: &'a 
     create_chan_between_nodes_with_value_confirm_second(node_b, node_a)
 }
 
-pub fn create_chan_between_nodes_with_value_a<'a, 'b, 'c, 'd>(node_a: &'a Node<'b, 'c, 'd>, node_b: &'a Node<'b, 'c, 'd>, channel_value: u64, push_msat: u64) -> ((msgs::ChannelReady, msgs::AnnouncementSignatures), [u8; 32], Transaction) {
+pub fn create_chan_between_nodes_with_value_a<'a, 'b, 'c, 'd>(node_a: &'a Node<'b, 'c, 'd>, node_b: &'a Node<'b, 'c, 'd>, channel_value: u64, push_msat: u64) -> ((msgs::ChannelReady, msgs::AnnouncementSignatures), ChannelId, Transaction) {
     let tx = create_chan_between_nodes_with_value_init(node_a, node_b, channel_value, push_msat);
     let (msgs, chan_id) = create_chan_between_nodes_with_value_confirm(node_a, node_b, &tx);
     (msgs, chan_id, tx)
@@ -523,7 +524,7 @@ pub fn create_chan_between_nodes_with_value_b<'a, 'b, 'c>(node_a: &Node<'a, 'b, 
     ((*announcement).clone(), as_update, bs_update)
 }
 
-pub fn create_announced_chan_between_nodes<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'b, 'c, 'd>>, a: usize, b: usize) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, [u8; 32], Transaction) {
+pub fn create_announced_chan_between_nodes<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'b, 'c, 'd>>, a: usize, b: usize) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, ChannelId, Transaction) {
     create_announced_chan_between_nodes_with_value(nodes, a, b, 100000, 0)
 }
 
@@ -549,7 +550,7 @@ pub fn expect_channel_ready_event<'a, 'b, 'c, 'd>(node: &'a Node<'b, 'c, 'd>, ex
     }
 }
 
-pub fn create_announced_chan_between_nodes_with_value<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'b, 'c, 'd>>, a: usize, b: usize, channel_value: u64, push_msat: u64) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, [u8; 32], Transaction) {
+pub fn create_announced_chan_between_nodes_with_value<'a, 'b, 'c, 'd>(nodes: &'a Vec<Node<'b, 'c, 'd>>, a: usize, b: usize, channel_value: u64, push_msat: u64) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, ChannelId, Transaction) {
     let chan_announcement = create_chan_between_nodes_with_value(&nodes[a], &nodes[b], channel_value, push_msat);
     update_nodes_with_chan_announce(nodes, a, b, &chan_announcement.0, &chan_announcement.1, &chan_announcement.2);
     expect_channel_ready_event(&nodes[b], &nodes[a].node.get_our_node_id());
@@ -654,7 +655,7 @@ macro_rules! check_closed_event {
 	}}
 }
 
-pub fn close_channel<'a, 'b, 'c>(outbound_node: &Node<'a, 'b, 'c>, inbound_node: &Node<'a, 'b, 'c>, channel_id: &[u8; 32], funding_tx: Transaction, close_inbound_first: bool) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, Transaction) {
+pub fn close_channel<'a, 'b, 'c>(outbound_node: &Node<'a, 'b, 'c>, inbound_node: &Node<'a, 'b, 'c>, channel_id: &ChannelId, funding_tx: Transaction, close_inbound_first: bool) -> (msgs::ChannelUpdate, msgs::ChannelUpdate, Transaction) {
     let (node_a, broadcaster_a, struct_a) = if close_inbound_first { (&inbound_node.node, &inbound_node.tx_broadcaster, inbound_node) } else { (&outbound_node.node, &outbound_node.tx_broadcaster, outbound_node) };
     let (node_b, broadcaster_b, struct_b) = if close_inbound_first { (&outbound_node.node, &outbound_node.tx_broadcaster, outbound_node) } else { (&inbound_node.node, &inbound_node.tx_broadcaster, inbound_node) };
     let (tx_a, tx_b);
@@ -853,6 +854,8 @@ macro_rules! get_route {
         let params = RouteParameters {
             payment_params: $payment_params,
             final_value_msat: $recv_value,
+            // FIXME: check the correct value here for now it is just a fake value
+            max_total_routing_fee_msat: None,
         };
 		let scorer = lightning::util::test_utils::TestScorer::new();
 		let keys_manager = lightning::util::test_utils::TestKeysInterface::new(&[0u8; 32], bitcoin::network::constants::Network::Testnet);

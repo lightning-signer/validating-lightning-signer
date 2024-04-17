@@ -566,7 +566,7 @@ impl Validator for SimpleValidator {
 
                         let funding_redeemscript = make_funding_redeemscript(
                             &chan.keys.pubkeys().funding_pubkey,
-                            &chan.keys.counterparty_pubkeys().funding_pubkey,
+                            &chan.counterparty_pubkeys().funding_pubkey,
                         );
                         let script_pubkey =
                             payload_for_p2wsh(&funding_redeemscript).script_pubkey();

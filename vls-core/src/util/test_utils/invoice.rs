@@ -5,12 +5,13 @@ use core::convert::Infallible;
 use bitcoin::secp256k1::rand::rngs::OsRng;
 use bitcoin::secp256k1::rand::RngCore;
 use bitcoin::secp256k1::KeyPair;
-use bitcoin::secp256k1::{schnorr, Message, PublicKey, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{schnorr, PublicKey, Secp256k1, SecretKey};
 use lightning::blinded_path::BlindedPath;
 
 use lightning::ln::features::BlindedHopFeatures;
 use lightning::ln::PaymentHash;
 use lightning::offers::invoice::BlindedPayInfo;
+use lightning::offers::merkle::TaggedHash;
 use lightning::offers::offer::OfferBuilder;
 use lightning::sign::EntropySource;
 
@@ -31,10 +32,10 @@ fn payer_keys() -> KeyPair {
     KeyPair::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[42; 32]).unwrap())
 }
 
-fn payer_sign(digest: &Message) -> Result<schnorr::Signature, Infallible> {
+pub fn payer_sign<T: AsRef<TaggedHash>>(message: &T) -> Result<schnorr::Signature, Infallible> {
     let secp_ctx = Secp256k1::new();
     let keys = KeyPair::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[42; 32]).unwrap());
-    Ok(secp_ctx.sign_schnorr_no_aux_rand(digest, &keys))
+    Ok(secp_ctx.sign_schnorr_no_aux_rand(message.as_ref().as_digest(), &keys))
 }
 
 fn payer_pubkey() -> PublicKey {
@@ -46,10 +47,10 @@ fn recipient_keys() -> KeyPair {
     KeyPair::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[43; 32]).unwrap())
 }
 
-fn recipient_sign(digest: &Message) -> Result<schnorr::Signature, Infallible> {
+pub fn recipient_sign<T: AsRef<TaggedHash>>(message: &T) -> Result<schnorr::Signature, Infallible> {
     let secp_ctx = Secp256k1::new();
     let keys = KeyPair::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[43; 32]).unwrap());
-    Ok(secp_ctx.sign_schnorr_no_aux_rand(digest, &keys))
+    Ok(secp_ctx.sign_schnorr_no_aux_rand(message.as_ref().as_digest(), &keys))
 }
 
 fn recipient_pubkey() -> PublicKey {

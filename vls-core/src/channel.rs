@@ -595,6 +595,20 @@ impl Channel {
         self.monitor.as_chain_state()
     }
 
+    /// A wrapper function around `self.keys.get_channel_parameters()`. In
+    /// recent versions of ldk, the function `get_channel_parameters()` returns an
+    /// optional value. This wrapper helps avoid calling `unwrap()` each time.
+    pub fn get_channel_parameters(&self) -> &ChannelTransactionParameters {
+        self.keys.get_channel_parameters().expect("get_channel_parameters")
+    }
+
+    /// A wrapper function around `self.keys.counterparty_pubkeys()`. In
+    /// recent versions of ldk, the function `counterparty_pubkeys()` returns an
+    /// optional value. This wrapper helps avoid calling `unwrap()` each time.
+    pub fn counterparty_pubkeys(&self) -> &ChannelPublicKeys {
+        self.keys.counterparty_pubkeys().expect("counterparty_pubkeys")
+    }
+
     fn get_per_commitment_point_unchecked(&self, commitment_number: u64) -> PublicKey {
         self.keys
             .get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - commitment_number, &self.secp_ctx)
@@ -649,7 +663,7 @@ impl Channel {
     ) -> Result<TxCreationKeys, Status> {
         let holder_points = self.keys.pubkeys();
 
-        let counterparty_points = self.keys.counterparty_pubkeys();
+        let counterparty_points = self.keys.counterparty_pubkeys().expect("counterparty_pubkeys");
 
         Ok(self.make_tx_keys(per_commitment_point, counterparty_points, holder_points))
     }
@@ -660,7 +674,7 @@ impl Channel {
     ) -> Result<TxCreationKeys, Status> {
         let holder_points = self.keys.pubkeys();
 
-        let counterparty_points = self.keys.counterparty_pubkeys();
+        let counterparty_points = self.keys.counterparty_pubkeys().expect("counterparty_pubkeys");
 
         Ok(self.make_tx_keys(per_commitment_point, holder_points, counterparty_points))
     }
@@ -811,7 +825,7 @@ impl Channel {
             INITIAL_COMMITMENT_NUMBER - commitment_number,
             to_counterparty_value_sat,
             to_holder_value_sat,
-            self.keys.counterparty_pubkeys().funding_pubkey,
+            self.counterparty_pubkeys().funding_pubkey,
             self.keys.pubkeys().funding_pubkey,
             keys,
             feerate_per_kw,
@@ -882,7 +896,7 @@ impl Channel {
         let htlc_pubkey = derive_public_key(
             &self.secp_ctx,
             &per_commitment_point,
-            &self.keys.counterparty_pubkeys().htlc_basepoint,
+            &self.counterparty_pubkeys().htlc_basepoint,
         )
         .map_err(|err| internal_error(format!("derive_public_key failed: {}", err)))?;
 
@@ -1184,7 +1198,7 @@ impl Channel {
             Self::dummy_sig(),
             htlc_dummy_sigs,
             &self.keys.pubkeys().funding_pubkey,
-            &self.keys.counterparty_pubkeys().funding_pubkey,
+            &self.counterparty_pubkeys().funding_pubkey,
         );
 
         // Sign the recomposed commitment.
@@ -1249,7 +1263,7 @@ impl Channel {
             Self::dummy_sig(),
             htlc_dummy_sigs,
             &self.keys.pubkeys().funding_pubkey,
-            &self.keys.counterparty_pubkeys().funding_pubkey,
+            &self.counterparty_pubkeys().funding_pubkey,
         );
 
         // Sign the recomposed commitment.
@@ -1262,7 +1276,7 @@ impl Channel {
         let holder_tx = recomposed_holder_tx.trust();
         let mut tx = holder_tx.built_transaction().transaction.clone();
         let holder_funding_key = self.keys.pubkeys().funding_pubkey;
-        let counterparty_funding_key = self.keys.counterparty_pubkeys().funding_pubkey;
+        let counterparty_funding_key = self.counterparty_pubkeys().funding_pubkey;
 
         let tx_keys = holder_tx.keys();
         let revocable_redeemscript = chan_utils::get_revokeable_redeemscript(
@@ -1275,7 +1289,7 @@ impl Channel {
         self.enforcement_state.channel_closed = true;
         trace_enforcement_state!(self);
 
-        let revocation_basepoint = self.keys.counterparty_pubkeys().revocation_basepoint;
+        let revocation_basepoint = self.counterparty_pubkeys().revocation_basepoint;
         let revocation_pubkey = derive_public_revocation_key(
             &self.secp_ctx,
             &per_commitment_point,
@@ -1348,7 +1362,7 @@ impl Channel {
             Self::dummy_sig(),
             htlc_dummy_sigs,
             &self.keys.pubkeys().funding_pubkey,
-            &self.keys.counterparty_pubkeys().funding_pubkey,
+            &self.counterparty_pubkeys().funding_pubkey,
         );
 
         let (sig, htlc_sigs) = self
@@ -1379,7 +1393,7 @@ impl Channel {
             to_holder_value_sat,
             to_counterparty_value_sat,
             self.keys.pubkeys().funding_pubkey,
-            self.keys.counterparty_pubkeys().funding_pubkey,
+            self.counterparty_pubkeys().funding_pubkey,
             keys.clone(),
             feerate_per_kw,
             &mut htlcs_with_aux,
@@ -1692,7 +1706,7 @@ impl Channel {
         let feerate = 1000;
         let funding_redeemscript = make_funding_redeemscript(
             &self.keys.pubkeys().funding_pubkey,
-            &self.keys.counterparty_pubkeys().funding_pubkey,
+            &self.counterparty_pubkeys().funding_pubkey,
         );
         let per_commitment_point = self.get_per_commitment_point(commit_num)?;
         let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();

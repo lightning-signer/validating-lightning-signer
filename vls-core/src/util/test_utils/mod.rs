@@ -201,13 +201,13 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
         &self,
         funding_txo: OutPoint,
         monitor: channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
-    ) -> chain::ChannelMonitorUpdateStatus {
+    ) -> Result<chain::ChannelMonitorUpdateStatus, ()> {
         self.latest_monitor_update_id
             .lock()
             .unwrap()
-            .insert(funding_txo.to_channel_id(), (funding_txo, monitor.get_latest_update_id()));
+            .insert(funding_txo.to_channel_id().0, (funding_txo, monitor.get_latest_update_id()));
         self.added_monitors.lock().unwrap().push((funding_txo, ()));
-        let watch_res = self.chain_monitor.watch_channel(funding_txo, monitor);
+        let watch_res = self.chain_monitor.watch_channel(funding_txo, monitor)?;
 
         let ret = self.update_ret.lock().unwrap().clone();
         if let Some(next_ret) = self.next_update_ret.lock().unwrap().take() {
@@ -215,9 +215,9 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
         }
         if ret.is_some() {
             assert_eq!(watch_res, chain::ChannelMonitorUpdateStatus::Completed);
-            return ret.unwrap();
+            return Ok(ret.unwrap());
         }
-        watch_res
+        Ok(watch_res)
     }
 
     fn update_channel(
@@ -228,7 +228,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
         self.latest_monitor_update_id
             .lock()
             .unwrap()
-            .insert(funding_txo.to_channel_id(), (funding_txo, update.update_id));
+            .insert(funding_txo.to_channel_id().0, (funding_txo, update.update_id));
         let update_res = self.chain_monitor.update_channel(funding_txo, update);
         self.added_monitors.lock().unwrap().push((funding_txo, ()));
 
@@ -1167,7 +1167,7 @@ pub fn counterparty_sign_holder_commitment(
         .with_channel(&chan_ctx.channel_id, |chan| {
             let funding_redeemscript = make_funding_redeemscript(
                 &chan.keys.pubkeys().funding_pubkey,
-                &chan.keys.counterparty_pubkeys().funding_pubkey,
+                &chan.counterparty_pubkeys().funding_pubkey,
             );
             let tx = commit_tx_ctx.tx.as_ref().unwrap();
             let trusted_tx = tx.trust();

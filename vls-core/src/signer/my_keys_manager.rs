@@ -23,7 +23,7 @@ use lightning::ln::msgs::{DecodeError, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
 use lightning::sign::{
     DelayedPaymentOutputDescriptor, EntropySource, InMemorySigner, KeyMaterial, NodeSigner,
-    Recipient, SignerProvider, SpendableOutputDescriptor, StaticPaymentOutputDescriptor,
+    Recipient, SignerProvider, SpendableOutputDescriptor,
 };
 use lightning::util::ser::Writeable;
 
@@ -373,7 +373,7 @@ impl MyKeysManager {
                         sequence: Sequence::ZERO,
                         witness: Witness::default(),
                     });
-                    witness_weight += StaticPaymentOutputDescriptor::MAX_WITNESS_LENGTH;
+                    witness_weight += descriptor.max_witness_length();
                     input_value += descriptor.output.value;
                     if !output_set.insert(descriptor.outpoint) {
                         return Err(());
@@ -633,6 +633,20 @@ impl NodeSigner for MyKeysManager {
 
     fn get_inbound_payment_key_material(&self) -> KeyMaterial {
         self.inbound_payment_key
+    }
+
+    fn sign_bolt12_invoice(
+        &self,
+        _: &lightning::offers::invoice::UnsignedBolt12Invoice,
+    ) -> Result<schnorr::Signature, ()> {
+        todo!()
+    }
+
+    fn sign_bolt12_invoice_request(
+        &self,
+        _: &lightning::offers::invoice_request::UnsignedInvoiceRequest,
+    ) -> Result<schnorr::Signature, ()> {
+        todo!()
     }
 }
 
