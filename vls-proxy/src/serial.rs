@@ -27,9 +27,10 @@ use vls_protocol::{msgs, msgs::Message, msgs::SerialRequestHeader, serde_bolt::W
 use vls_protocol_client::Error as ClientError;
 use vls_protocol_client::{ClientResult as Result, SignerPort};
 use vls_protocol_signer::vls_protocol;
-use vls_proxy::client::Client;
-use vls_proxy::util::{read_allowlist, read_integration_test_seed};
-use vls_proxy::{log_error, log_pretty, log_reply, log_request};
+
+use crate::client::Client;
+use crate::util::{read_allowlist, read_integration_test_seed};
+use crate::*;
 
 pub struct SerialWrap {
     inner: File,

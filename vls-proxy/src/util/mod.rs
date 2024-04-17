@@ -8,7 +8,6 @@ mod validation;
 mod otlp;
 
 pub use env_var::*;
-pub use r#macro::*;
 pub use testing::*;
 pub use validation::*;
 

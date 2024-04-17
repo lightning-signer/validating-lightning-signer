@@ -50,7 +50,8 @@ pub async fn main() {
     let datapath = format!("{}/{}", datadir, network.to_string());
     fs::create_dir_all(&datapath).expect("mkdir datapath");
 
-    let _tracing_guard = init_tracing_subscriber(&datapath, &bin_name).expect("failed to initalize tracing subscriber");
+    let _tracing_guard = init_tracing_subscriber(&datapath, &bin_name)
+        .expect("failed to initalize tracing subscriber");
 
     tracing::info!("{} git_desc={} starting", bin_name, GIT_DESC);
 

@@ -16,13 +16,14 @@ use lightning_signer::bitcoin::hashes::sha256::Hash as Sha256Hash;
 use lightning_signer::bitcoin::hashes::Hash;
 
 use super::adapter::{ChannelReply, ChannelRequest, ClientId};
-use crate::client::Client;
-use crate::{log_error, log_pretty, log_reply, log_request};
 use vls_protocol::{
     msgs, msgs::DeBolt as _, msgs::Message, msgs::SerBolt as _, Error as ProtocolError,
 };
 use vls_protocol_client::{ClientResult as Result, Error, SignerPort};
 use vls_protocol_signer::vls_protocol;
+
+use crate::client::Client;
+use crate::*;
 
 const PREAPPROVE_CACHE_TTL: Duration = Duration::from_secs(60);
 const PREAPPROVE_CACHE_SIZE: usize = 6;

@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use lightning_signer::util::velocity::VelocityControlSpec;
-use lightning_signer::policy::DEFAULT_FEE_VELOCITY_CONTROL;
-use lightning_signer::policy::validator::ValidatorFactory;
-use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
-use lightning_signer::policy::onchain_validator::OnchainValidatorFactory;
-use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::bitcoin::Network;
+use lightning_signer::policy::filter::PolicyFilter;
+use lightning_signer::policy::onchain_validator::OnchainValidatorFactory;
+use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
+use lightning_signer::policy::validator::ValidatorFactory;
+use lightning_signer::policy::DEFAULT_FEE_VELOCITY_CONTROL;
+use lightning_signer::util::velocity::VelocityControlSpec;
 use tracing::{info, warn};
 
 use crate::util::compare_env_var;

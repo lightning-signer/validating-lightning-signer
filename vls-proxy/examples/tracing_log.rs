@@ -12,7 +12,7 @@ async fn main() {
     let _guard: Option<OtelGuard>;
     match tracing_result {
         Ok(otel_guard) => _guard = Some(otel_guard),
-        Err(e) => error!("error during tracing init {}", e)
+        Err(e) => error!("error during tracing init {}", e),
     }
 
     tracing::event!(tracing::Level::INFO, "Hello");
