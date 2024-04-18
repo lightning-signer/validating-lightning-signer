@@ -16,7 +16,7 @@ echo $$ > "${PIDFILE}"
 
 trap 'rm -f "${PIDFILE}"; exit' INT TERM EXIT
 
-probe-run --chip STM32F413ZHTx --no-flash --backtrace-limit=200 /usr/local/lib/demo_signer 2>&1 | \
+probe-run --chip STM32F413ZHTx --no-flash --backtrace-limit=200 /usr/local/vls-hsmd-testnet/lib/demo_signer 2>&1 | \
     tee -a "${RUNDIR}/vls-probe-${CHAIN}.log"
 
 # PIDFILE removal is handled by trap
