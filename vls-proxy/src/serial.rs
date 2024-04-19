@@ -293,6 +293,7 @@ impl<C: 'static + Client> SignerLoop<C> {
         let serial = &mut *serial_guard;
         let peer_id = self.client_id.as_ref().map(|c| c.peer_id.serialize()).unwrap_or([0u8; 33]);
         let dbid = self.client_id.as_ref().map(|c| c.dbid).unwrap_or(0);
+        info!("handle_message {}: sending req {}", self.log_prefix, hex::encode(&message));
         msgs::write_serial_request_header(
             serial,
             &SerialRequestHeader { sequence: serial.sequence, peer_id, dbid },
