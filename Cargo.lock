@@ -2980,6 +2980,7 @@ dependencies = [
  "test-log",
  "tokio",
  "tonic",
+ "tracing",
  "txoo",
  "txoo-bitcoind-client",
  "vls-core",

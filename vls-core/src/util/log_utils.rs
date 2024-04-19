@@ -43,7 +43,7 @@ macro_rules! catch_panic {
                 } else {
                     "Unknown panic message".to_string()
                 };
-                log::error!($fmt, details, $($arg)*);
+                ::log::error!($fmt, details, $($arg)*);
                 return Err(crate::util::status::Status::internal(format!($fmt, details, $($arg)*)))
             }
         }
