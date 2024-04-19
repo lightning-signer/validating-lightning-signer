@@ -3028,6 +3028,7 @@ dependencies = [
  "serde_with",
  "tempfile",
  "test-log",
+ "tracing",
  "uuid",
  "vls-core",
 ]

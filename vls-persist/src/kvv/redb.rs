@@ -1,8 +1,8 @@
 use super::{KVVStore, KVV};
 use lightning_signer::persist::{Error, SignerId};
 use lightning_signer::SendSync;
-use log::error;
 use redb::{Database, ReadableTable, TableDefinition};
+use tracing::*;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::fs;
@@ -106,6 +106,7 @@ impl KVVStore for RedbKVVStore {
         self.put_with_version(key, version, value)
     }
 
+    #[instrument(skip(self, value))]
     fn put_with_version(&self, key: &str, version: u64, value: Vec<u8>) -> Result<(), Error> {
         let vv = Self::encode_vv(version, value);
         let mut versions = self.versions.lock().unwrap();
@@ -180,6 +181,12 @@ impl KVVStore for RedbKVVStore {
         Ok(())
     }
 
+    #[instrument(
+        skip(self),
+        fields(
+            key = key,
+        )
+    )]
     fn get(&self, key: &str) -> Result<Option<(u64, Vec<u8>)>, Error> {
         let tx = self.db.begin_read().unwrap();
         let table = tx.open_table(TABLE).unwrap();
