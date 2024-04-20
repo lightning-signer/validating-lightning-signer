@@ -79,6 +79,10 @@ fn main() -> ! {
     }
 }
 
+fn heap_free_kb() -> usize {
+    (HEAP_SIZE - heap_bytes_used()) / 1024
+}
+
 fn display_intro(devctx: &mut DeviceContext, network: Network, permissive: bool, path: &str) {
     // we have limited horizontal display room
     let mut abbrev_path = path.to_string();
@@ -91,9 +95,9 @@ fn display_intro(devctx: &mut DeviceContext, network: Network, permissive: bool,
         intro.push(format!("{: ^19}", verpart));
     }
     intro.push(format!("{: ^19}", if permissive { "PERMISSIVE" } else { "ENFORCING" }));
-    intro.push("".to_string());
-    intro.push(format!("{: ^19}", "waiting for node"));
     intro.push(format!(" {: >7}:{: <9}", network.to_string(), abbrev_path));
+    intro.push(format!("{: ^19}", format!("{}KB heap avail", heap_free_kb())));
+    intro.push(format!("{: ^19}", "waiting for node"));
     intro.push("".to_string());
     intro.push(format!("{: ^19}", "blue+reset to setup"));
 
@@ -291,8 +295,7 @@ fn handle_requests(arc_devctx: &RefCell<DeviceContext>, root_handler: RootHandle
         let mut message_d = format!("dbid: {:>3}, {:<24}", reqhdr.dbid, message.inner().name());
         message_d.truncate(35);
 
-        let heap_free_kb = (HEAP_SIZE - heap_bytes_used()) / 1024;
-        info!("starting {}, {}KB heap free", message_d.clone(), heap_free_kb);
+        info!("starting {}, {}KB heap free", message_d.clone(), heap_free_kb());
 
         let start = devctx.timer1.now();
         drop(devctx); // Release the DeviceContext during the handler call (Approver needs)
