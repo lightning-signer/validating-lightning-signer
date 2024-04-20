@@ -417,6 +417,8 @@ fn make_validator_factory(network: Network, permissive: bool) -> Arc<SimpleValid
             rules: vec![
                 FilterRule::new_warn("policy-channel-safe-type-anchors"), // TODO(236)
                 FilterRule::new_warn("policy-commitment-retry-same"),     // TODO(491)
+                FilterRule::new_warn("policy-commitment-htlc-routing-balance"), // TODO(313)
+                FilterRule::new_warn("policy-commitment-fee-range"),      // TODO(313)
             ],
         });
 
