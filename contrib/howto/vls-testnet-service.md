@@ -15,8 +15,8 @@ Setup config files:
 # become root user
 touch /home/vls/.lightning-signer/ALLOWLIST
 cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/vlsd2.toml /home/vls/.lightning-signer/vlsd2.toml
-echo "rpc_user = <ADMIN_USER>" >> /home/vls/.lightning-signer/vlsd2.toml
-echo "rpc_pass = <ADMIN_SERVER_PASSWORD>" >> /home/vls/.lightning-signer/vlsd2.toml
+echo "rpc-user = <ADMIN_USER>" >> /home/vls/.lightning-signer/vlsd2.toml
+echo "rpc-pass = <ADMIN_SERVER_PASSWORD>" >> /home/vls/.lightning-signer/vlsd2.toml
 ```
 
 Create `~vls/.lightning-signer/testnet-env`:
