@@ -414,8 +414,11 @@ fn make_validator_factory(network: Network, permissive: bool) -> Arc<SimpleValid
     } else {
         // TODO - from config
         let filter_opt = Some(PolicyFilter {
-            rules: vec![FilterRule::new_warn("policy-channel-safe-type-anchors")],
-        }); // TODO(236)
+            rules: vec![
+                FilterRule::new_warn("policy-channel-safe-type-anchors"), // TODO(236)
+                FilterRule::new_warn("policy-commitment-retry-same"),     // TODO(491)
+            ],
+        });
 
         if let Some(f) = filter_opt {
             policy.filter.merge(f);
