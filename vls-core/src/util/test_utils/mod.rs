@@ -34,10 +34,10 @@ use lightning::ln::chan_utils::{
     DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
 use lightning::ln::features::ChannelTypeFeatures;
-use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage, PaymentSecret};
+use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage};
 use lightning::sign::{ChannelSigner, InMemorySigner};
 use lightning::util::test_utils;
-use lightning_invoice::{Currency, InvoiceBuilder};
+use lightning_invoice::{Currency, InvoiceBuilder, PaymentSecret};
 use push_decoder::Listener;
 use txoo::proof::TxoProof;
 

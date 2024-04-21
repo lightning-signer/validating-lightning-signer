@@ -16,7 +16,7 @@ use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::util::psbt::PartiallySignedTransaction;
 use bitcoin::{EcdsaSighashType, Script, WPubkeyHash};
 use bitcoin::{Transaction, TxOut};
-use lightning::events::bump_transaction::HTLCDescriptor;
+use lightning::sign::HTLCDescriptor;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction,
@@ -233,30 +233,30 @@ impl EcdsaChannelSigner for SignerClient {
         Ok(())
     }
 
-    fn sign_holder_commitment_and_htlcs(
+    fn sign_holder_commitment(
         &self,
         commitment_tx: &HolderCommitmentTransaction,
         _secp_ctx: &Secp256k1<All>,
-    ) -> Result<(Signature, Vec<Signature>), ()> {
+    ) -> Result<Signature, ()> {
         let message = SignLocalCommitmentTx2 {
             commitment_number: INITIAL_COMMITMENT_NUMBER - commitment_tx.commitment_number(),
         };
         let result: SignCommitmentTxWithHtlcsReply = self.call(message).map_err(|_| ())?;
         let signature = Signature::from_compact(&result.signature.signature.0).map_err(|_| ())?;
-        let htlc_signatures = result
+        let _htlc_signatures = result
             .htlc_signatures
             .iter()
             .map(|s| Signature::from_compact(&s.signature.0))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| ())?;
-        Ok((signature, htlc_signatures))
+        Ok(signature)
     }
 
-    fn unsafe_sign_holder_commitment_and_htlcs(
+    fn unsafe_sign_holder_commitment(
         &self,
         _commitment_tx: &HolderCommitmentTransaction,
         _secp_ctx: &Secp256k1<All>,
-    ) -> Result<(Signature, Vec<Signature>), ()> {
+    ) -> Result<Signature, ()> {
         unimplemented!()
     }
 

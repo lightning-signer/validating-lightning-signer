@@ -300,21 +300,6 @@ mod tests {
             chan_ctx.setup.channel_value_sat,
             &channel_funding_redeemscript,
         );
-
-        let htlc_pubkey =
-            get_channel_htlc_pubkey(&node_ctx.node, &chan_ctx.channel_id, &per_commitment_point);
-
-        for (ndx, htlc) in htlcs.into_iter().enumerate() {
-            check_signature(
-                &htlc_txs[ndx],
-                0,
-                TypedSignature::all(htlc_sigs[ndx].clone()),
-                &htlc_pubkey,
-                htlc.amount_msat / 1000,
-                &htlc_redeemscripts[ndx],
-            );
-        }
-
         Ok(())
     }
 

@@ -8,7 +8,7 @@ use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
 use bitcoin::secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey};
 use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::{Script, Transaction, TxOut};
-use lightning::events::bump_transaction::HTLCDescriptor;
+use lightning::sign::HTLCDescriptor;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys,
@@ -354,26 +354,28 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         Ok(())
     }
 
-    fn sign_holder_commitment_and_htlcs(
+    fn sign_holder_commitment(
         &self,
         hct: &HolderCommitmentTransaction,
         _secp_ctx: &Secp256k1<All>,
-    ) -> Result<(Signature, Vec<Signature>), ()> {
-        Ok(self.sign_holder_commitment_and_htlcs(hct)?)
+    ) -> Result<Signature, ()> {
+        let (signature, _) = self.sign_holder_commitment_and_htlcs(hct)?;
+        Ok(signature)
     }
 
-    fn unsafe_sign_holder_commitment_and_htlcs(
+    fn unsafe_sign_holder_commitment(
         &self,
         hct: &HolderCommitmentTransaction,
         secp_ctx: &Secp256k1<All>,
-    ) -> Result<(Signature, Vec<Signature>), ()> {
-        self.signer
+    ) -> Result<Signature, ()> {
+        let signature = self.signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
                 chan.keys
-                    .unsafe_sign_holder_commitment_and_htlcs(hct, secp_ctx)
+                    .unsafe_sign_holder_commitment(hct, secp_ctx)
                     .map_err(|_| Status::internal("could not unsafe-sign"))
             })
-            .map_err(|_s| ())
+            .map_err(|_s| ())?;
+        Ok(signature)
     }
 
     fn sign_justice_revoked_output(

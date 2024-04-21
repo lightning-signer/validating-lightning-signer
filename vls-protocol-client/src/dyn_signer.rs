@@ -5,7 +5,7 @@ use delegate::delegate;
 
 use bitcoin::bech32::u5;
 use bitcoin::{secp256k1, Script, Transaction, TxOut};
-use lightning::events::bump_transaction::HTLCDescriptor;
+use lightning::sign::HTLCDescriptor;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction,
@@ -77,17 +77,17 @@ impl EcdsaChannelSigner for DynSigner {
             fn validate_counterparty_revocation(
                 &self, idx: u64, secret: &SecretKey) -> Result<(), ()>;
 
-            fn sign_holder_commitment_and_htlcs(
+            fn sign_holder_commitment(
                 &self,
                 commitment_tx: &HolderCommitmentTransaction,
                 secp_ctx: &Secp256k1<secp256k1::All>,
-            ) -> Result<(Signature, Vec<Signature>), ()>;
+            ) -> Result<Signature, ()>;
 
-            fn unsafe_sign_holder_commitment_and_htlcs(
+            fn unsafe_sign_holder_commitment(
                 &self,
                 commitment_tx: &HolderCommitmentTransaction,
                 secp_ctx: &Secp256k1<secp256k1::All>,
-            ) -> Result<(Signature, Vec<Signature>), ()>;
+            ) -> Result<Signature, ()>;
 
             fn sign_justice_revoked_output(
                 &self,
