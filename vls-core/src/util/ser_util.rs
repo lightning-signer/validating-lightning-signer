@@ -204,15 +204,40 @@ impl From<ScriptDef> for Script {
     }
 }
 
-#[derive(Deserialize)]
-struct ScriptHelper(#[serde(with = "ScriptDef")] Script);
-
 impl SerializeAs<Script> for ScriptDef {
     fn serialize_as<S>(value: &Script, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        ScriptDef::serialize(value, serializer)
+        Script::serialize(value, serializer)
+    }
+}
+
+struct ScriptVisitor;
+
+impl<'de> serde::de::Visitor<'de> for ScriptVisitor {
+    type Value = Script;
+
+    fn expecting(&self, formatter: &mut alloc::fmt::Formatter) -> alloc::fmt::Result {
+        formatter.write_str("expecting a byte array or a hex string")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error, {
+        let decoded_bytes = hex::decode(v).expect("hex string");
+        Ok(Script::from(decoded_bytes))
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut bytes = Vec::new();
+        while let Some(byte) = seq.next_element()? {
+            bytes.push(byte);
+        }
+        Ok(Script::from(bytes))
     }
 }
 
@@ -221,7 +246,7 @@ impl<'de> DeserializeAs<'de, Script> for ScriptDef {
     where
         D: Deserializer<'de>,
     {
-        ScriptHelper::deserialize(deserializer).map(|h| h.0)
+        deserializer.deserialize_any(ScriptVisitor)
     }
 }
 
@@ -283,7 +308,7 @@ mod tests {
     use serde_with::serde_as;
     use serde::Serialize;
 
-    use super::OutPointVisitor;
+    use super::{OutPointVisitor, ScriptVisitor};
 
     struct TxidDef;
 
@@ -389,4 +414,63 @@ mod tests {
         assert_eq!(deserialized_outpoint_wrapper.outpoint, deserialized_outpoint_def_wrapper.outpoint);
     }
 
+    #[derive(Serialize, Deserialize)]
+    #[serde(remote = "Script")]
+    pub struct ScriptDef(#[serde(getter = "Script::to_bytes")] Vec<u8>);
+
+    impl From<ScriptDef> for Script {
+        fn from(s: ScriptDef) -> Self {
+            Script::from(s.0)
+        }
+    }
+
+    impl SerializeAs<Script> for ScriptDef {
+        fn serialize_as<S>(value: &Script, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            ScriptDef::serialize(value, serializer)
+        }
+    }
+
+    impl<'de> DeserializeAs<'de, Script> for ScriptDef {
+        fn deserialize_as<D>(deserializer: D) -> Result<Script, <D as Deserializer<'de>>::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            deserializer.deserialize_any(ScriptVisitor)
+        }
+    }
+
+
+    #[serde_as]
+    #[derive(Serialize, Deserialize)]
+    struct ScriptWrapperDef {
+        #[serde_as(as = "ScriptDef")]
+        script: Script
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct ScriptWrapper {
+        script: Script
+    }
+
+
+    #[test]
+    fn compare_serialize_scriptdef() {
+
+        let script = Script::from(vec![0x6a, 0x14, 0x00, 0x90, 0x51, 0x1a, 0x0c, 0x0f, 0x2b, 0x6e, 0x1f, 0x2b, 0x6e, 0x1f, 0x2b, 0x6e, 0x1f, 0x2b, 0x6e, 0x1f]);
+        let script_def = script.clone();
+
+        let script_wrapper = ScriptWrapper{script};
+        let script_wrapper_def = ScriptWrapperDef{script: script_def};
+
+        let script_json = serde_json::to_string(&script_wrapper).unwrap();
+        let script_def_json = serde_json::to_string(&script_wrapper_def).unwrap();
+
+        let deserialized_script_def: ScriptWrapperDef = serde_json::from_str(&script_def_json).unwrap();
+        let deserialized_script: ScriptWrapperDef = serde_json::from_str(&script_json).unwrap();
+
+        assert_eq!(deserialized_script.script, deserialized_script_def.script);
+    }
 }
