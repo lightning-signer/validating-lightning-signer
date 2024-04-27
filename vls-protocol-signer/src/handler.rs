@@ -292,7 +292,7 @@ pub struct HandlerBuilder {
 }
 
 impl HandlerBuilder {
-    /// Create a RootHandlerBuilder
+    /// Create a InitHandlerBuilder
     pub fn new(
         network: Network,
         id: u64,
@@ -567,6 +567,24 @@ impl InitHandler {
                     Box::new(msgs::HsmdDevPreinitReply { node_id: PubKey(node_id) }),
                 ))
             }
+            Message::HsmdDevPreinit2(m) => {
+                assert_ne!(self.node.network(), Network::Bitcoin);
+                let node_id = self.node.get_id().serialize();
+                // the seed is extracted before this handler is called to create the node
+                let allowlist = if let Some(ref alist) = m.options.allowlist {
+                    alist.iter().map(|ws| String::from_utf8(ws.0.clone()).expect("utf8")).collect()
+                } else {
+                    vec![]
+                };
+                // FIXME disable in production
+                self.node.add_allowlist(&allowlist)?;
+                self.protocol_version = None;
+                Ok((
+                    false, // HsmdInit{,2} will follow ...
+                    // There is no HsmdDevPreinit2 reply, use this as a placeholder ...
+                    Box::new(msgs::HsmdDevPreinitReply { node_id: PubKey(node_id) }),
+                ))
+            }
             Message::HsmdInit(m) => {
                 let node_id = self.node.get_id().serialize();
                 let bip32 = self.node.get_account_extended_pubkey().encode();
@@ -750,9 +768,8 @@ impl Handler for RootHandler {
                 let hrp_bytes = hrp.as_bytes();
                 let data: Vec<_> = m
                     .u5bytes
-                    .clone()
-                    .into_iter()
-                    .map(|b| u5::try_from_u8(b).expect("invoice not base32"))
+                    .iter()
+                    .map(|b| u5::try_from_u8(*b).expect("invoice not base32"))
                     .collect();
                 let sig = self.node.sign_invoice(hrp_bytes, &data)?;
                 let (rid, ser) = sig.serialize_compact();

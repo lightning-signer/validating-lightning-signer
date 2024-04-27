@@ -122,6 +122,7 @@ impl Tracks {
 fn track_char(msg: &Message) -> char {
     match msg {
         Message::HsmdDevPreinit(_m) => '%',
+        Message::HsmdDevPreinit2(_m) => '%',
         Message::HsmdInit(_m) => '@',
         Message::HsmdInit2(_m) => '@',
         Message::NodeInfo(_m) => '#',

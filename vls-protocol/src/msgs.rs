@@ -15,7 +15,8 @@ use crate::error::{Error, Result};
 use crate::model::*;
 use crate::psbt::StreamedPSBT;
 use bitcoin_consensus_derive::{Decodable, Encodable};
-use bolt_derive::{ReadMessage, SerBolt};
+use bolt_derive::{ReadMessage, SerBolt, SerBoltTlvOptions};
+use lightning_signer::lightning;
 use serde_bolt::{
     io, io::Read, io::Write, take::Take, to_vec, Array, ArrayBE, LargeOctets, Octets, WireString,
     WithSize,
@@ -68,6 +69,37 @@ pub struct HsmdDevPreinitReply {
     /// The derived nodeid (or generated if none was supplied)
     pub node_id: PubKey,
 }
+
+/// Developer setup for testing
+/// Must preceed `HsmdInit{,2}` message
+/// NOT FOR PRODUCTION USE
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(99)]
+pub struct HsmdDevPreinit2 {
+    pub options: HsmdDevPreinit2Options,
+}
+
+/// TLV encoded options for HsmdDevPreinit2
+#[derive(SerBoltTlvOptions, Default, Debug)]
+pub struct HsmdDevPreinit2Options {
+    // CLN: allocates from 1 ascending
+    #[tlv_tag = 1]
+    pub fail_preapprove: Option<bool>,
+    #[tlv_tag = 3]
+    pub no_preapprove_check: Option<bool>,
+
+    // VLS: allocates from 252 descending (largest single byte tag value is 252)
+    #[tlv_tag = 252]
+    pub derivation_style: Option<u8>,
+    #[tlv_tag = 251]
+    pub network_name: Option<WireString>,
+    #[tlv_tag = 250]
+    pub seed: Option<DevSecret>,
+    #[tlv_tag = 249]
+    pub allowlist: Option<Array<WireString>>,
+}
+
+/// HsmdDevPreinit2 does not return a reply
 
 /// hsmd Init
 /// CLN only
@@ -1041,6 +1073,7 @@ pub enum Message {
     Ping(Ping),
     Pong(Pong),
     HsmdDevPreinit(HsmdDevPreinit),
+    HsmdDevPreinit2(HsmdDevPreinit2),
     HsmdDevPreinitReply(HsmdDevPreinitReply),
     HsmdInit(HsmdInit),
     // HsmdInitReplyV1(HsmdInitReplyV1),
@@ -1306,6 +1339,7 @@ pub fn read_serial_response_header<R: Read>(reader: &mut R, expected_sequence: u
 #[cfg(test)]
 mod tests {
     use crate::msgs::Message;
+    use test_log::test;
 
     use super::*;
 
@@ -1333,5 +1367,134 @@ mod tests {
             Message::Unknown(Unknown { message_type: 0 }).inner().name(),
             "UnknownPlaceholder"
         );
+    }
+
+    #[test]
+    fn tlv_roundtrip_test() {
+        // Create an options struct, set some fields, others are not set
+        let mut options = HsmdDevPreinit2Options::default();
+        options.network_name = Some(WireString("testnet".as_bytes().to_vec()));
+        options.seed = Some(DevSecret([42u8; 32]));
+        let msg = HsmdDevPreinit2 { options };
+        let ser = msg.as_vec();
+
+        // Make sure the encoded version doesn't change
+        assert_eq!(hex::encode(&ser), "0063fa202a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2afb08746573746e657400");
+
+        // Decode the options struct, check that fields are correct
+        let dmsg = from_vec(ser).unwrap();
+        if let Message::HsmdDevPreinit2(dmsg) = dmsg {
+            assert_eq!(dmsg.options.derivation_style, None);
+            assert_eq!(dmsg.options.network_name, Some(WireString("testnet".as_bytes().to_vec())));
+            assert_eq!(dmsg.options.seed, Some(DevSecret([42u8; 32])));
+            assert_eq!(dmsg.options.allowlist, None);
+        } else {
+            panic!("bad deser type")
+        }
+    }
+
+    #[derive(SerBolt, Debug, Encodable, Decodable)]
+    #[message_id(9999)]
+    pub struct TestTlvWithDupTags {
+        pub options: TestTlvOptionsWithDupTags,
+    }
+
+    // duplicate tag val!  This should fail
+    #[derive(SerBoltTlvOptions, Default, Debug)]
+    pub struct TestTlvOptionsWithDupTags {
+        #[tlv_tag = 9]
+        pub field1: Option<bool>,
+        #[tlv_tag = 10]
+        pub field2: Option<bool>,
+        #[tlv_tag = 10]
+        pub field3: Option<bool>,
+        #[tlv_tag = 12]
+        pub field4: Option<bool>,
+    }
+
+    #[test]
+    #[should_panic(expected = "assertion failed: t < 10u64")]
+    fn ser_bolt_tlv_options_dup_tags_test() {
+        let mut options = TestTlvOptionsWithDupTags::default();
+        options.field3 = Some(true);
+        options.field2 = Some(false);
+        let msg = TestTlvWithDupTags { options };
+        let _ser = msg.as_vec();
+    }
+
+    #[derive(SerBolt, Debug, Encodable, Decodable)]
+    #[message_id(9999)]
+    pub struct TestTlvWithDescTags {
+        pub options: TestTlvOptionsWithDescTags,
+    }
+
+    // descending tag order! This should be reordered internally and should work
+    #[derive(SerBoltTlvOptions, Default, Debug)]
+    pub struct TestTlvOptionsWithDescTags {
+        #[tlv_tag = 12]
+        pub field1: Option<bool>,
+        #[tlv_tag = 11]
+        pub field2: Option<bool>,
+        #[tlv_tag = 10]
+        pub field3: Option<bool>,
+    }
+
+    #[test]
+    fn ser_bolt_tlv_options_desc_tags_test() {
+        let mut options = TestTlvOptionsWithDescTags::default();
+        options.field3 = Some(true);
+        options.field2 = Some(false);
+        let msg = TestTlvWithDescTags { options };
+        let _ser = msg.as_vec();
+    }
+
+    // Test sending an even tag when the receiver doesn't know it
+
+    #[derive(SerBoltTlvOptions, Default, Debug)]
+    pub struct TestTlvOptionsEvenSender {
+        #[tlv_tag = 12]
+        pub field1: Option<bool>,
+        #[tlv_tag = 11]
+        pub field2: Option<bool>,
+        #[tlv_tag = 10]
+        pub field3: Option<bool>,
+        #[tlv_tag = 42]
+        pub mandatory: Option<bool>,
+    }
+
+    #[derive(SerBoltTlvOptions, Default, Debug)]
+    pub struct TestTlvOptionsOddOnlyReceiver {
+        #[tlv_tag = 12]
+        pub field1: Option<bool>,
+        #[tlv_tag = 11]
+        pub field2: Option<bool>,
+        #[tlv_tag = 10]
+        pub field3: Option<bool>,
+    }
+
+    #[test]
+    fn ser_bolt_tlv_even_is_mandatory_test() {
+        // it's ok if you don't send the even tag
+        let mut options = TestTlvOptionsEvenSender::default();
+        options.field1 = Some(true);
+        let tlvdata = crate::msgs::bitcoin::consensus::serialize(&options);
+        let dmsg: TestTlvOptionsOddOnlyReceiver =
+            crate::msgs::bitcoin::consensus::deserialize(&tlvdata).unwrap();
+        assert_eq!(dmsg.field1, Some(true));
+        assert_eq!(dmsg.field2, None);
+
+        // but if the sender turns on an even tag ...
+        options.mandatory = Some(true);
+        let tlvdata = crate::msgs::bitcoin::consensus::serialize(&options);
+        let rv =
+            crate::msgs::bitcoin::consensus::deserialize::<TestTlvOptionsOddOnlyReceiver>(&tlvdata);
+        match rv {
+            Ok(_) => panic!("Expected an error, but got Ok"),
+            Err(e) => match e {
+                bitcoin::consensus::encode::Error::ParseFailed(expected_msg) =>
+                    assert_eq!(expected_msg, "decode_tlv_stream failed"),
+                _ => panic!("Unexpected error type"),
+            },
+        }
     }
 }

@@ -9,12 +9,19 @@ homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 
 [dependencies]
-serde_bolt = { version = "0.3.1", default-features = false }
 bitcoin-consensus-derive = { version = "0.1.0" }
 bolt-derive = { path = "../bolt-derive", version = "0.2.0" }
 log = "0.4"
 as-any = "0.3"
 hex = { version = "0.4", default-features = false }
+vls-core = { path = "../vls-core", version = "0.11.0", default-features = false }
+
+[dependencies.serde_bolt]
+version = "0.3.5"
+#git = "https://gitlab.com/lightning-signer/serde-bolt"
+#rev = "6d3d873492d19edb09dc2764a3d4c4c23caaa28f"
+#path = "../../../serde-bolt"
+default-features = false
 
 [dependencies.txoo]
 version = "0.6.4"
@@ -26,11 +33,15 @@ default-features = false
 
 [dev-dependencies]
 regex = "1.5"
+# For logging in unit tests
+env_logger = "0.9"
+test-log = "0.2.8"
 
 [features]
 default = ["std"]
-std = ["serde_bolt/std", "txoo/std"]
-no-std = ["serde_bolt/no-std", "txoo/no-std"]
+std = ["serde_bolt/std", "txoo/std", "vls-core/std"]
+no-std = ["serde_bolt/no-std", "txoo/no-std", "vls-core/no-std"]
+test_utils = ["serde_bolt/test_utils"]
 
 # dangerous, only for testing
 log-secrets = []

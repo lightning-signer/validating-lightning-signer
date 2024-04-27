@@ -2201,9 +2201,9 @@ dependencies = [
 
 [[package]]
 name = "serde_bolt"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54f634eeb988ab754b0711815e13e6ad983bfc52f76e0af342d492c6cad4f681"
+checksum = "b06b8577e0fd88c67c88e08139a7ecb7b6ab9b8800dfe1290d3de66d2a2601f2"
 dependencies = [
  "bitcoin",
  "bitcoin-consensus-derive",
@@ -3039,11 +3039,14 @@ dependencies = [
  "as-any",
  "bitcoin-consensus-derive",
  "bolt-derive",
+ "env_logger",
  "hex",
  "log",
  "regex",
  "serde_bolt",
+ "test-log",
  "txoo",
+ "vls-core",
 ]
 
 [[package]]
