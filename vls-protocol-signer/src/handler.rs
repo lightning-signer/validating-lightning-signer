@@ -41,7 +41,7 @@ use lightning_signer::{function, trace_node_state};
 use log::*;
 use secp256k1::{ecdsa, PublicKey, Secp256k1};
 
-use lightning_signer::chain::tracker::Error as TrackerError;
+use lightning_signer::chain::tracker::{Error as TrackerError, Headers};
 use lightning_signer::util::crypto_utils::signature_to_bitcoin_vec;
 use lightning_signer::util::debug_utils::DebugUnilateralCloseInfo;
 use lightning_signer::util::status::{Code, Status};
@@ -892,7 +892,8 @@ impl Handler for RootHandler {
                     .unspent_proof
                     .map(|prf| deserialize(prf.0.as_slice()).expect("deserialize TxoProof"))
                     .ok_or(Status::invalid_argument("could not deserialize proof"))?;
-                tracker.remove_block(proof).expect("remove_block");
+                let prev_headers = Headers(m.prev_block_header, m.prev_filter_header);
+                tracker.remove_block(proof, prev_headers).expect("remove_block");
                 self.node
                     .get_persister()
                     .update_tracker(&self.node.get_id(), &tracker)

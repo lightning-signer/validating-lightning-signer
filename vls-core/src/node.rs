@@ -97,15 +97,21 @@ pub struct NodeConfig {
     pub key_derivation_style: KeyDerivationStyle,
     /// Whether to use checkpoints for the tracker
     pub use_checkpoints: bool,
+    /// Whether to allow deep reorgs
+    ///
+    /// This may be unsafe in the Lightning security model.
+    pub allow_deep_reorgs: bool,
 }
 
 impl NodeConfig {
     /// Create a new node config with native key derivation
     pub fn new(network: Network) -> NodeConfig {
+        let allow_deep_reorgs = if network == Network::Testnet { true } else { false };
         NodeConfig {
             network,
             key_derivation_style: KeyDerivationStyle::Native,
             use_checkpoints: true,
+            allow_deep_reorgs,
         }
     }
 }
@@ -959,6 +965,7 @@ impl SignedHeartbeat {
 ///     network: Network::Testnet,
 ///     key_derivation_style: KeyDerivationStyle::Native,
 ///     use_checkpoints: true,
+///     allow_deep_reorgs: true, // not for production
 /// };
 /// let validator_factory = Arc::new(SimpleValidatorFactory::new());
 /// let starting_time_factory = ClockStartingTimeFactory::new();
@@ -1131,7 +1138,7 @@ impl Node {
         let state = NodeState::new(global_velocity_control, fee_velocity_control);
 
         let (keys_manager, node_id) = Self::make_keys_manager(&node_config, seed, &services);
-        let tracker = if node_config.use_checkpoints {
+        let mut tracker = if node_config.use_checkpoints {
             ChainTracker::for_network(
                 node_config.network,
                 node_id.clone(),
@@ -1146,6 +1153,8 @@ impl Node {
                 services.trusted_oracle_pubkeys.clone(),
             )
         };
+
+        tracker.set_allow_deep_reorgs(node_config.allow_deep_reorgs);
 
         Self::new_full(node_config, allowlist, services, state, keys_manager, node_id, tracker)
     }
@@ -1192,6 +1201,8 @@ impl Node {
             .get_tracker(node_id.clone(), services.validator_factory.clone())
             .expect("get tracker from persister");
         tracker.trusted_oracle_pubkeys = services.trusted_oracle_pubkeys.clone();
+
+        tracker.set_allow_deep_reorgs(node_config.allow_deep_reorgs);
 
         let persister = services.persister.clone();
 
@@ -1580,11 +1591,13 @@ impl Node {
         services: NodeServices,
     ) -> Result<Arc<Node>, Status> {
         let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
+        let allow_deep_reorgs = if network == Network::Testnet { true } else { false };
         let config = NodeConfig {
             network,
             key_derivation_style: KeyDerivationStyle::try_from(node_entry.key_derivation_style)
                 .unwrap(),
             use_checkpoints: true,
+            allow_deep_reorgs,
         };
 
         let persister = services.persister.clone();

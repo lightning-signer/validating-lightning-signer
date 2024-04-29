@@ -147,6 +147,7 @@ pub struct ChainTracker<L: ChainListener> {
     decode_state: Option<RefCell<BlockDecodeState>>,
     /// public keys of trusted TXO oracle
     pub trusted_oracle_pubkeys: Vec<PublicKey>,
+    allow_deep_reorgs: bool,
 }
 
 impl<L: ChainListener> ChainTracker<L> {
@@ -183,7 +184,13 @@ impl<L: ChainListener> ChainTracker<L> {
             validator_factory,
             decode_state: None,
             trusted_oracle_pubkeys,
+            allow_deep_reorgs: false,
         })
+    }
+
+    /// Set whether deep reorgs are allowed
+    pub fn set_allow_deep_reorgs(&mut self, allow: bool) {
+        self.allow_deep_reorgs = allow;
     }
 
     /// Restore a tracker
@@ -207,6 +214,7 @@ impl<L: ChainListener> ChainTracker<L> {
             validator_factory,
             decode_state: None,
             trusted_oracle_pubkeys,
+            allow_deep_reorgs: false,
         }
     }
 
@@ -293,7 +301,16 @@ impl<L: ChainListener> ChainTracker<L> {
     }
 
     /// Remove block at tip due to reorg
-    pub fn remove_block(&mut self, proof: TxoProof) -> Result<BlockHeader, Error> {
+    ///
+    /// The previous block and filter headers are provided in case the reorg
+    /// is too deep for our local memory of headers.  However, this should
+    /// only be used on testnet, since a deep reorg may be incompatible
+    /// with the Lightning security model.
+    pub fn remove_block(
+        &mut self,
+        proof: TxoProof,
+        supplied_prev_headers: Headers,
+    ) -> Result<BlockHeader, Error> {
         // there are four block hashes in play here:
         // - the block hash in the BlockChunk messages
         // - our idea of the tip's block hash (`tip_block_hash`)
@@ -306,13 +323,39 @@ impl<L: ChainListener> ChainTracker<L> {
         // - `validate_block` checks 2 vs 4
 
         if self.headers.is_empty() {
-            return Err(Error::ReorgTooDeep);
+            if self.allow_deep_reorgs {
+                warn!("reorg too deep, but allowed by flag");
+            } else {
+                return Err(Error::ReorgTooDeep);
+            }
         }
 
-        let tip_block_hash = self.headers[0].0.block_hash();
-        self.maybe_finish_decoding_block(&proof, &tip_block_hash);
+        // If we have headers (i.e. not a deep reorg), check the prev header
+        // matches what we were given as an argument and pop it off.  Otherwise,
+        // we assume the prev header is correct and use it.
+        if !self.headers.is_empty() {
+            if supplied_prev_headers.0 != self.headers[0].0 {
+                return Err(error_invalid_chain!(
+                    "supplied prev block header {:?} != self.headers {:?}",
+                    supplied_prev_headers.0,
+                    self.headers[0].0
+                ));
+            }
+            if supplied_prev_headers.1 != self.headers[0].1 {
+                return Err(error_invalid_chain!(
+                    "supplied prev filter header {} != self.headers[0].1 {} for prev block hash {}",
+                    supplied_prev_headers.1.to_hex(),
+                    self.headers[0].1.to_hex(),
+                    supplied_prev_headers.0.block_hash().to_hex()
+                ));
+            }
+            self.headers.pop_front();
+        };
 
-        let prev_headers = &self.headers[0];
+        let mut prev_headers = supplied_prev_headers;
+
+        let tip_block_hash = prev_headers.0.block_hash();
+        self.maybe_finish_decoding_block(&proof, &tip_block_hash);
 
         // we assume here that the external block hash and the tip block hash are the same
         // this is actually validated below in notify_listeners_remove
@@ -321,7 +364,7 @@ impl<L: ChainListener> ChainTracker<L> {
         self.validate_block(
             self.height - 1,
             expected_external_block_hash,
-            prev_headers,
+            &prev_headers,
             &self.tip,
             &proof,
             true,
@@ -334,10 +377,9 @@ impl<L: ChainListener> ChainTracker<L> {
         };
 
         info!("removed block {}: {}", self.height, &self.tip.0.block_hash());
-        let mut headers = self.headers.pop_front().expect("already checked");
-        mem::swap(&mut self.tip, &mut headers);
+        mem::swap(&mut self.tip, &mut prev_headers);
         self.height -= 1;
-        Ok(headers.0)
+        Ok(prev_headers.0)
     }
 
     /// Restore a listener
@@ -780,7 +822,8 @@ mod tests {
         let (_, filter_header) = source.get(0, &genesis).await.unwrap();
         let proof = TxoProof::prove_unchecked(&genesis, &filter_header, 0);
 
-        assert_eq!(tracker.remove_block(proof).err(), Some(Error::ReorgTooDeep));
+        let prev_headers = Headers(header0, FilterHeader::all_zeros());
+        assert_eq!(tracker.remove_block(proof, prev_headers).err(), Some(Error::ReorgTooDeep));
         Ok(())
     }
 
@@ -981,8 +1024,10 @@ mod tests {
         let (_attestation, filter_header) = source.get(height, &block).await.unwrap();
         let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
 
-        let header = tracker.remove_block(proof)?;
-        Ok(header)
+        let prev_filter_header = tracker.headers[0].1;
+        let prev_headers = Headers(*prev_header, prev_filter_header);
+        let removed_header = tracker.remove_block(proof, prev_headers)?;
+        Ok(removed_header)
     }
 
     fn txs_with_coinbase(txs: &[Transaction]) -> Vec<Transaction> {

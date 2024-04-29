@@ -17,6 +17,7 @@ use vls_protocol::msgs::{self, DebugTxoProof, Message, SerBolt};
 use vls_protocol::serde_bolt::{self, LargeOctets, Octets};
 use vls_protocol_client::SignerPort;
 
+use lightning_signer::chain::tracker::Headers;
 use lightning_signer::node::SignedHeartbeat;
 use lightning_signer::txoo::proof::TxoProof;
 use log::*;
@@ -240,12 +241,16 @@ impl ChainTrack for NodePortFront {
         }
     }
 
-    async fn remove_block(&self, proof: TxoProof) {
+    async fn remove_block(&self, proof: TxoProof, prev_headers: Headers) {
         self.wait_ready().await;
 
         let proof = self.maybe_stream_block(proof).await;
 
-        let req = msgs::RemoveBlock { unspent_proof: Some(LargeOctets(serialize(&proof))) };
+        let req = msgs::RemoveBlock {
+            unspent_proof: Some(LargeOctets(serialize(&proof))),
+            prev_block_header: prev_headers.0,
+            prev_filter_header: prev_headers.1,
+        };
         let reply =
             self.signer_port.handle_message(req.as_vec()).await.expect("RemoveBlock failed");
         if let Ok(Message::RemoveBlockReply(_)) = msgs::from_vec(reply) {

@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use as_any::AsAny;
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::psbt::PartiallySignedTransaction;
-use bitcoin::{BlockHash, OutPoint, Transaction, Txid};
+use bitcoin::{BlockHash, BlockHeader, FilterHeader, OutPoint, Transaction, Txid};
 use core::fmt::{Debug, Formatter};
 use core::ops::Deref;
 use serde_bolt::{bitcoin, ReadBigEndian};
@@ -1007,6 +1007,8 @@ pub struct RemoveBlock {
     /// Bitcoin consensus encoded TXOO TxoProof
     // FIXME do we need the option?
     pub unspent_proof: Option<LargeOctets>,
+    pub prev_block_header: BlockHeader,
+    pub prev_filter_header: FilterHeader,
 }
 
 ///
