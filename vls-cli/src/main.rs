@@ -4,7 +4,7 @@ use http::{HeaderMap, HeaderValue, Uri};
 use jsonrpsee::core::{client::ClientT, params::ArrayParams};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use jsonrpsee::rpc_params;
-use tracing::info;
+use tracing::*;
 
 use clap::{Args, Parser, Subcommand};
 
@@ -80,7 +80,6 @@ impl RpcRequestClient {
         Self { client: client }
     }
 
-    #[tracing::instrument(skip(self))]
     pub async fn request(
         self,
         method: RpcMethods,

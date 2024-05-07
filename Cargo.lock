@@ -2981,6 +2981,7 @@ dependencies = [
  "test-log",
  "tokio",
  "tonic",
+ "tracing",
  "txoo",
  "txoo-bitcoind-client",
  "vls-core",
@@ -3029,6 +3030,7 @@ dependencies = [
  "serde_with",
  "tempfile",
  "test-log",
+ "tracing",
  "uuid",
  "vls-core",
 ]

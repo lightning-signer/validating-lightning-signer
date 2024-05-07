@@ -21,7 +21,7 @@ use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage};
 use lightning::sign::{
     ChannelSigner, EcdsaChannelSigner, EntropySource, InMemorySigner, SignerProvider,
 };
-use log::*;
+use tracing::*;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as, Bytes, IfIsHumanReadable};
 
@@ -697,6 +697,7 @@ impl Channel {
 
     /// Sign a counterparty commitment transaction after rebuilding it
     /// from the supplied arguments.
+    #[instrument(skip(self))]
     pub fn sign_counterparty_commitment_tx_phase2(
         &mut self,
         remote_per_commitment_point: &PublicKey,
@@ -856,6 +857,7 @@ impl Channel {
         )
     }
 
+    #[instrument(skip(self))]
     fn check_holder_tx_signatures(
         &self,
         per_commitment_point: &PublicKey,

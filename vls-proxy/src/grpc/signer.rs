@@ -20,7 +20,7 @@ use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::crypto_utils::generate_seed;
 use lightning_signer::util::status::Status;
 use lightning_signer::util::velocity::VelocityControlSpec;
-use log::*;
+use tracing::*;
 use std::convert::TryInto;
 use std::env;
 use std::error::Error as _;
@@ -140,6 +140,7 @@ fn reset_allowlist(node: &Node, allowlist: &Vec<String>) {
     info!("allowlist={:?}", node.allowlist().expect("allowlist"));
 }
 
+#[instrument(skip(args))]
 async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
     let (sender, receiver) = mpsc::channel(1);
     let response_stream = ReceiverStream::new(receiver);
@@ -201,12 +202,22 @@ async fn handle_init_requests(
     false
 }
 
+#[instrument(
+    name = "handle_init_request",
+    skip(init_handler, request),
+    fields(
+        message_name
+    ),
+    err(Debug)
+)]
 fn handle_init_request(
     init_handler: &mut InitHandler,
     request: SignerRequest,
     request_id: u64,
 ) -> StdResult<(bool, SignerResponse), Error> {
     let msg = msgs::from_vec(request.message)?;
+    Span::current().record("message_name", msg.inner().name());
+
     let reply = init_handler.handle(msg);
 
     let (is_done, response) = match reply {
@@ -382,11 +393,22 @@ fn get_or_generate_seed(
     }
 }
 
+#[instrument(
+    name = "handle_request",
+    skip(request, root_handler),
+    fields(
+        request_id = %request.request_id,
+        message_name
+    ),
+    parent = None,
+    err(Debug)
+)]
 fn handle_request(
     request: SignerRequest,
     root_handler: &RootHandler,
 ) -> StdResult<SignerResponse, Error> {
     let msg = msgs::from_vec(request.message)?;
+    Span::current().record("message_name", msg.inner().name());
 
     info!(
         "signer got request {} dbid {} - {:?}",
