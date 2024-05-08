@@ -8,7 +8,6 @@ use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
 use bitcoin::secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey};
 use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::{Script, Transaction, TxOut};
-use lightning::sign::HTLCDescriptor;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys,
@@ -17,6 +16,7 @@ use lightning::ln::features::ChannelTypeFeatures;
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
 use lightning::ln::{chan_utils, PaymentPreimage};
+use lightning::sign::HTLCDescriptor;
 use lightning::sign::{
     ChannelSigner, EcdsaChannelSigner, EntropySource, KeyMaterial, NodeSigner, Recipient,
     SignerProvider, SpendableOutputDescriptor, WriteableEcdsaChannelSigner,
@@ -368,7 +368,8 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         hct: &HolderCommitmentTransaction,
         secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
-        let signature = self.signer
+        let signature = self
+            .signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
                 chan.keys
                     .unsafe_sign_holder_commitment(hct, secp_ctx)
@@ -456,12 +457,36 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
 
     fn sign_holder_htlc_transaction(
         &self,
-        _htlc_tx: &Transaction,
+        htlc_tx: &Transaction,
         _input: usize,
-        _htlc_descriptor: &HTLCDescriptor,
-        _secp_ctx: &Secp256k1<All>,
+        htlc_descriptor: &HTLCDescriptor,
+        secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
-        todo!("sign_holder_htlc_transaction - #381")
+        let signature = self
+            .signer
+            .with_channel(&self.node_id, &self.channel_id, |channel| {
+                let per_commitment_point = &htlc_descriptor.per_commitment_point;
+                let chan_keys = channel.make_holder_tx_keys(per_commitment_point)
+                                       .expect("channel.make_holder_tx_keys");
+                let witness_script = htlc_descriptor.witness_script(secp_ctx);
+                let redeem_script = chan_utils::get_htlc_redeemscript(
+                    &htlc_descriptor.htlc,
+                    &self.features(),
+                    &chan_keys,
+                );
+                // FIXME the redmee script is not the witness script
+                channel.sign_htlc_tx(
+                    htlc_tx,
+                    per_commitment_point,
+                    &redeem_script,
+                    htlc_descriptor.htlc.amount_msat / 1000,
+                    &witness_script,
+                    false,
+                    chan_keys.clone(),
+                )
+            })
+            .expect("sign_htlc_tx");
+        Ok(signature.sig)
     }
 
     fn sign_counterparty_htlc_transaction(
