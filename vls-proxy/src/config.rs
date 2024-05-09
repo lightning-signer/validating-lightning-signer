@@ -141,19 +141,11 @@ pub struct SignerArgs {
     )]
     pub rpc_server_port: u16,
 
-    #[clap(
-        long,
-        help = "rpc server admin username",
-        value_parser,
-    )]
+    #[clap(long, help = "rpc server admin username", value_parser)]
     pub rpc_user: Option<String>,
 
-    #[clap(
-        long,
-        help = "rpc server admin password",
-        value_parser,
-    )]
-    pub rpc_pass: Option<String>
+    #[clap(long, help = "rpc server admin password", value_parser)]
+    pub rpc_pass: Option<String>,
 }
 
 impl HasSignerArgs for SignerArgs {

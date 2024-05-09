@@ -21,9 +21,9 @@ use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage};
 use lightning::sign::{
     ChannelSigner, EcdsaChannelSigner, EntropySource, InMemorySigner, SignerProvider,
 };
-use tracing::*;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as, Bytes, IfIsHumanReadable};
+use tracing::*;
 
 use crate::monitor::ChainMonitorBase;
 use crate::node::{Node, RoutedPayment, CHANNEL_STUB_PRUNE_BLOCKS};

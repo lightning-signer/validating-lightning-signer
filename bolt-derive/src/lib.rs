@@ -88,7 +88,8 @@ pub fn derive_ser_bolt_tlv(input: TokenStream) -> TokenStream {
                                         (#tlv_tag, #var_name, option),
                                     },
                                 ));
-                                let inner_type = unwrap_option(field_type).expect("Option type expected");
+                                let inner_type =
+                                    unwrap_option(field_type).expect("Option type expected");
                                 decode_temp_declarations.push(quote! {
                                     let mut #var_name: Option<crate::model::SerBoltTlvReadWrap<#inner_type>> = None;
                                 });
@@ -155,7 +156,7 @@ fn unwrap_option(field_type: &Type) -> Option<&Type> {
         if path.segments.len() == 1 && path.segments[0].ident == "Option" {
             if let syn::PathArguments::AngleBracketed(args) = &path.segments[0].arguments {
                 if let Some(syn::GenericArgument::Type(ty)) = args.args.first() {
-                    return Some(ty)
+                    return Some(ty);
                 }
             }
         }

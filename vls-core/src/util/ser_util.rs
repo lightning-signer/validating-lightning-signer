@@ -144,8 +144,9 @@ impl<'de> Visitor<'de> for OutPointVisitor {
     }
 
     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error, {
+    where
+        E: serde::de::Error,
+    {
         let parts: Vec<&str> = v.split(':').collect();
         if parts.len() == 2 {
             let txid = Txid::from_slice(&hex::decode(parts[0]).unwrap()).unwrap();
@@ -157,8 +158,9 @@ impl<'de> Visitor<'de> for OutPointVisitor {
     }
 
     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where
-            A: serde::de::MapAccess<'de>, {
+    where
+        A: serde::de::MapAccess<'de>,
+    {
         let mut txid: Option<Txid> = None;
         let mut vout: Option<u32> = None;
 
@@ -178,10 +180,7 @@ impl<'de> Visitor<'de> for OutPointVisitor {
             }
         }
 
-        Ok(OutPoint {
-            txid: txid.expect("txid is None"),
-            vout: vout.expect("vout is None")
-        })
+        Ok(OutPoint { txid: txid.expect("txid is None"), vout: vout.expect("vout is None") })
     }
 }
 
@@ -223,8 +222,9 @@ impl<'de> serde::de::Visitor<'de> for ScriptVisitor {
     }
 
     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error, {
+    where
+        E: serde::de::Error,
+    {
         let decoded_bytes = hex::decode(v).expect("hex string");
         Ok(Script::from(decoded_bytes))
     }
@@ -294,19 +294,18 @@ impl<'de> DeserializeAs<'de, Duration> for DurationHandler {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use alloc::borrow::Cow;
+    use bitcoin::{hashes::Hash, Txid};
     use bitcoin::{OutPoint, Script};
-    use bitcoin::{Txid, hashes::Hash};
     use serde::Deserialize;
     use serde::Deserializer;
+    use serde::Serialize;
     use serde::Serializer;
+    use serde_with::serde_as;
     use serde_with::DeserializeAs;
     use serde_with::SerializeAs;
-    use serde_with::serde_as;
-    use serde::Serialize;
 
     use super::{OutPointVisitor, ScriptVisitor};
 
@@ -334,7 +333,6 @@ mod tests {
 
     #[test]
     fn compare_serialize_txidef() {
-
         #[serde_as]
         #[derive(Serialize, Deserialize)]
         struct TxidWrapperAsDef {
@@ -367,8 +365,8 @@ mod tests {
 
     impl SerializeAs<OutPoint> for OutPointDef {
         fn serialize_as<S>(value: &OutPoint, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer,
+        where
+            S: Serializer,
         {
             OutPointDef::serialize(value, serializer)
         }
@@ -387,31 +385,32 @@ mod tests {
     #[derive(Serialize, Deserialize)]
     pub struct OutPointDefWrapper {
         #[serde_as(as = "OutPointDef")]
-        outpoint: OutPoint
+        outpoint: OutPoint,
     }
 
     #[derive(Serialize, Deserialize)]
     pub struct OutPointWrapper {
-        outpoint: OutPoint
+        outpoint: OutPoint,
     }
 
     #[test]
     fn compare_serialize_outpointdef() {
         let outpoint = OutPoint::new(Txid::from_slice(&[1; 32]).unwrap(), 0);
-        let outpoint_wrapper = OutPointWrapper {
-            outpoint
-        };
+        let outpoint_wrapper = OutPointWrapper { outpoint };
 
-        let outpoint_def_wrapper = OutPointDefWrapper {
-            outpoint: outpoint.clone()
-        };
+        let outpoint_def_wrapper = OutPointDefWrapper { outpoint: outpoint.clone() };
 
         let serialized_outpoint_wrapper = serde_json::to_string(&outpoint_wrapper).unwrap();
         let serialized_outpoint_def_wrapper = serde_json::to_string(&outpoint_def_wrapper).unwrap();
 
-        let deserialized_outpoint_wrapper: OutPointDefWrapper = serde_json::from_str(&serialized_outpoint_wrapper).unwrap();
-        let deserialized_outpoint_def_wrapper: OutPointDefWrapper = serde_json::from_str(&serialized_outpoint_def_wrapper).unwrap();
-        assert_eq!(deserialized_outpoint_wrapper.outpoint, deserialized_outpoint_def_wrapper.outpoint);
+        let deserialized_outpoint_wrapper: OutPointDefWrapper =
+            serde_json::from_str(&serialized_outpoint_wrapper).unwrap();
+        let deserialized_outpoint_def_wrapper: OutPointDefWrapper =
+            serde_json::from_str(&serialized_outpoint_def_wrapper).unwrap();
+        assert_eq!(
+            deserialized_outpoint_wrapper.outpoint,
+            deserialized_outpoint_def_wrapper.outpoint
+        );
     }
 
     #[derive(Serialize, Deserialize)]
@@ -442,33 +441,34 @@ mod tests {
         }
     }
 
-
     #[serde_as]
     #[derive(Serialize, Deserialize)]
     struct ScriptWrapperDef {
         #[serde_as(as = "ScriptDef")]
-        script: Script
+        script: Script,
     }
 
     #[derive(Serialize, Deserialize)]
     struct ScriptWrapper {
-        script: Script
+        script: Script,
     }
-
 
     #[test]
     fn compare_serialize_scriptdef() {
-
-        let script = Script::from(vec![0x6a, 0x14, 0x00, 0x90, 0x51, 0x1a, 0x0c, 0x0f, 0x2b, 0x6e, 0x1f, 0x2b, 0x6e, 0x1f, 0x2b, 0x6e, 0x1f, 0x2b, 0x6e, 0x1f]);
+        let script = Script::from(vec![
+            0x6a, 0x14, 0x00, 0x90, 0x51, 0x1a, 0x0c, 0x0f, 0x2b, 0x6e, 0x1f, 0x2b, 0x6e, 0x1f,
+            0x2b, 0x6e, 0x1f, 0x2b, 0x6e, 0x1f,
+        ]);
         let script_def = script.clone();
 
-        let script_wrapper = ScriptWrapper{script};
-        let script_wrapper_def = ScriptWrapperDef{script: script_def};
+        let script_wrapper = ScriptWrapper { script };
+        let script_wrapper_def = ScriptWrapperDef { script: script_def };
 
         let script_json = serde_json::to_string(&script_wrapper).unwrap();
         let script_def_json = serde_json::to_string(&script_wrapper_def).unwrap();
 
-        let deserialized_script_def: ScriptWrapperDef = serde_json::from_str(&script_def_json).unwrap();
+        let deserialized_script_def: ScriptWrapperDef =
+            serde_json::from_str(&script_def_json).unwrap();
         let deserialized_script: ScriptWrapperDef = serde_json::from_str(&script_json).unwrap();
 
         assert_eq!(deserialized_script.script, deserialized_script_def.script);
