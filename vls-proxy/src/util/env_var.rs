@@ -27,6 +27,10 @@ pub fn otlp_timeout() -> u64 {
         .expect("OLTP Exporter timeout value needs to be a positive number")
 }
 
+pub fn txoo_source_url() -> Option<String> {
+    env::var("TXOO_SOURCE_URL").ok()
+}
+
 pub fn compare_env_var(key: &str, value: &str) -> bool {
     match env::var(key) {
         Ok(val) => val == value,
