@@ -20,7 +20,6 @@ use lightning_signer::util::clock::StandardClock;
 use lightning_signer::util::crypto_utils::generate_seed;
 use lightning_signer::util::status::Status;
 use lightning_signer::util::velocity::VelocityControlSpec;
-use tracing::*;
 use std::convert::TryInto;
 use std::env;
 use std::error::Error as _;
@@ -35,6 +34,7 @@ use tokio::task::JoinHandle;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
+use tracing::*;
 use vls_persist::kvv::{redb::RedbKVVStore, JsonFormat, KVVPersister};
 use vls_protocol_signer::approver::WarningPositiveApprover;
 use vls_protocol_signer::handler::{Error, Handler, HandlerBuilder, InitHandler, RootHandler};
@@ -205,9 +205,7 @@ async fn handle_init_requests(
 #[instrument(
     name = "handle_init_request",
     skip(init_handler, request),
-    fields(
-        message_name
-    ),
+    fields(message_name),
     err(Debug)
 )]
 fn handle_init_request(
@@ -447,10 +445,15 @@ fn handle_request(
 async fn start_rpc_server_with_auth(node: Arc<Node>, args: &SignerArgs) -> Option<JoinHandle<()>> {
     if let Some(username) = &args.rpc_user {
         if let Some(password) = &args.rpc_pass {
-            let (addr, join_rpc_server) =
-                start_rpc_server(node, args.rpc_server_address, args.rpc_server_port, username, password)
-                    .await
-                    .expect("start_rpc_server");
+            let (addr, join_rpc_server) = start_rpc_server(
+                node,
+                args.rpc_server_address,
+                args.rpc_server_port,
+                username,
+                password,
+            )
+            .await
+            .expect("start_rpc_server");
             info!("rpc server running on {}", addr);
             Some(join_rpc_server)
         } else {

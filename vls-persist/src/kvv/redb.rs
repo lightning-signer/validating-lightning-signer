@@ -2,12 +2,12 @@ use super::{KVVStore, KVV};
 use lightning_signer::persist::{Error, SignerId};
 use lightning_signer::SendSync;
 use redb::{Database, ReadableTable, TableDefinition};
-use tracing::*;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
+use tracing::*;
 
 const TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("kv");
 const META_TABLE: TableDefinition<&str, &SignerId> = TableDefinition::new("meta");
