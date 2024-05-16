@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.11.1] - 2024-05-16: "Auspicious Anubis"
+
+This release named by Jack Ronaldi
+
+### Fixed
+
+- core: Added a compilation fix for dependency `serde_bolt v0.3.5` which broke API compatibility.
+- security: Minimum `rustls`, `h2`, and `mio` versions now specified to mitigate issues reported by`cargo audit`.
+
 ## [0.11.0] - 2024-02-29: "Auspicious Anubis"
 
 This release named by Jack Ronaldi
