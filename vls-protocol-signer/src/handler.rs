@@ -196,23 +196,23 @@ pub trait Handler {
 
 fn log_request(msg: &Message) {
     #[cfg(not(feature = "log_pretty_print"))]
-    debug!("{:?}", msg);
+    debug!("handler request: {:?}", msg);
     #[cfg(feature = "log_pretty_print")]
-    debug!("{:#?}", msg);
+    debug!("handler request: {:#?}", msg);
 }
 
 fn log_error(err: &Error) {
     #[cfg(not(feature = "log_pretty_print"))]
-    error!("{:?}", err);
+    error!("handler error: {:?}", err);
     #[cfg(feature = "log_pretty_print")]
-    error!("{:#?}", err);
+    error!("handler error: {:#?}", err);
 }
 
 fn log_reply(reply: &Box<dyn SerBolt>) {
     #[cfg(not(feature = "log_pretty_print"))]
-    debug!("{:?}", reply);
+    debug!("handler reply: {:?}", reply);
     #[cfg(feature = "log_pretty_print")]
-    debug!("{:#?}", reply);
+    debug!("handler reply: {:#?}", reply);
 }
 
 // Log the channel slot information
