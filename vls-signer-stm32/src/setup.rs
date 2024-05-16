@@ -71,6 +71,7 @@ pub enum RunContext {
 pub struct SetupFS {
     fs: sdcard::FS,
     runpath: Option<String>,
+    currlogsz: RefCell<usize>,
 }
 
 impl fmt::Debug for SetupFS {
@@ -78,6 +79,8 @@ impl fmt::Debug for SetupFS {
         f.debug_struct("SetupFS").field("runpath", &self.runpath).finish()
     }
 }
+
+const LOGROLLSZ: usize = 4 * 1024 * 1024;
 
 const RUNPATH_PATH: &str = "RUNPATH";
 const TESTDIR_PATH: &str = "test-mode";
@@ -87,6 +90,8 @@ const NETWORK_FILE: &str = "NETWORK";
 const KDSTYLE_FILE: &str = "KDSTYLE";
 const HSMSEED_FILE: &str = "hsm_secret";
 const BALLAST_FILE: &str = "BALLAST";
+const LOGARCH_PATH: &str = "ARCHIVE";
+const LOGNEXT_FILE: &str = "LOGNEXT";
 
 // These should be managed instead of fixed
 const TESTING_KDSTYLE: KeyDerivationStyle = KeyDerivationStyle::Native;
@@ -232,6 +237,8 @@ impl SetupFS {
                 } else {
                     self.write_file_string(&rundir, TESTING_FILE, &"".to_string());
                 }
+                let logarchdir = rundir.create_dir(LOGARCH_PATH).expect("logarch dir");
+                self.write_file_string(&logarchdir, LOGNEXT_FILE, &"0".to_string());
             }
             Err(err) => panic!("create_dir {} failed: {:#?}", dirpath, err),
         };
@@ -305,6 +312,23 @@ impl SetupFS {
         file.truncate().unwrap_or_else(|err| panic!("truncate {} failed: {:#?}", path, err));
         file.write(seed).unwrap_or_else(|err| panic!("write {} failed: {:#?}", path, err));
         file.flush().unwrap_or_else(|err| panic!("flush {} failed: {:#?}", path, err));
+    }
+
+    // Consider the log size and roll if too large
+    pub fn log_grew(&self, logpath: &str, added: usize) {
+        let mut currlogsz = self.currlogsz.borrow_mut();
+        *currlogsz += added;
+        if *currlogsz > LOGROLLSZ {
+            // create archive and next file if missing
+            let logarchdir = self.rundir().create_dir(LOGARCH_PATH).expect("logarch dir");
+            let lognext_str =
+                self.read_file_string(&logarchdir, LOGNEXT_FILE).unwrap_or_else(|| "0".to_string());
+            let lognext: u32 = lognext_str.parse().unwrap_or(0);
+            self.write_file_string(&logarchdir, LOGNEXT_FILE, &format!("{}", lognext + 1));
+            let rollpath = format!("{}-{:04}", logpath, lognext);
+            self.rundir().rename(logpath, &logarchdir, &rollpath).expect("rolled log");
+            *currlogsz = 0;
+        }
     }
 }
 
@@ -541,7 +565,7 @@ fn init_setupfs(devctx: &mut DeviceContext) -> Option<Arc<RefCell<SetupFS>>> {
         false => None,
         true => {
             let fs = sdcard::open(sdio).unwrap();
-            Some(Arc::new(RefCell::new(SetupFS { fs, runpath: None })))
+            Some(Arc::new(RefCell::new(SetupFS { fs, runpath: None, currlogsz: RefCell::new(0) })))
         }
     };
 

@@ -38,10 +38,14 @@ impl log::Log for FatLogger {
         if self.enabled(record.metadata()) {
             let buffer = format!("{} {} - {}\n", record.target(), record.level(), record.args());
             let setupfs = self.setupfs.borrow();
-            let mut log_file = setupfs.rundir().create_file(&self.logpath).expect("log file");
-            log_file.seek(SeekFrom::End(0)).expect("seek end");
-            log_file.write_all(buffer.as_bytes()).expect("write bytes");
-            log_file.flush().expect("flush");
+            {
+                // scope the log_file so it is closed below where we might roll it
+                let mut log_file = setupfs.rundir().create_file(&self.logpath).expect("log file");
+                log_file.seek(SeekFrom::End(0)).expect("seek end");
+                log_file.write_all(buffer.as_bytes()).expect("write bytes");
+                log_file.flush().expect("flush");
+            }
+            setupfs.log_grew(&self.logpath, buffer.len());
         }
     }
 
