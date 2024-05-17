@@ -945,7 +945,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "vls-core"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "anyhow",
  "bitcoin",
@@ -969,7 +969,7 @@ dependencies = [
 
 [[package]]
 name = "vls-persist"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "hex",
  "log",
@@ -980,7 +980,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "as-any",
  "bitcoin-consensus-derive",
@@ -993,7 +993,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol-signer"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "bit-vec",
  "log",

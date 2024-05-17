@@ -689,9 +689,8 @@ impl Handler for RootHandler {
                 let hrp_bytes = hrp.as_bytes();
                 let data: Vec<_> = m
                     .u5bytes
-                    .clone()
-                    .into_iter()
-                    .map(|b| u5::try_from_u8(b).expect("invoice not base32"))
+                    .iter()
+                    .map(|b| u5::try_from_u8(*b).expect("invoice not base32"))
                     .collect();
                 let sig = self.node.sign_invoice(hrp_bytes, &data)?;
                 let (rid, ser) = sig.serialize_compact();
