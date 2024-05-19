@@ -43,6 +43,7 @@ impl HeartbeatMonitor {
             Network::Testnet => (60, 3600),
             Network::Regtest => (5, 5),
             Network::Signet => (5, 5),
+            _ => unreachable!(),
         };
         Self {
             pubkey,

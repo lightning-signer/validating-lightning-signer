@@ -47,7 +47,7 @@ impl InvoiceAttributes for Invoice {
 
     fn payment_hash(&self) -> PaymentHash {
         match self {
-            Invoice::Bolt11(bolt11) => PaymentHash(bolt11.payment_hash().as_inner().clone()),
+            Invoice::Bolt11(bolt11) => PaymentHash(bolt11.payment_hash().to_byte_array()),
             Invoice::Bolt12(bolt12) => bolt12.payment_hash(),
         }
     }
@@ -98,8 +98,6 @@ impl InvoiceAttributes for Invoice {
 mod tests {
     use core::str::FromStr;
 
-    use bitcoin::hashes::hex::ToHex;
-
     use crate::invoice::{Invoice, InvoiceAttributes};
     use crate::util::status::Code;
 
@@ -113,7 +111,7 @@ mod tests {
         let invoice = Invoice::from_str("lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq9qrsgq357wnc5r2ueh7ck6q93dj32dlqnls087fxdwk8qakdyafkq3yap9us6v52vjjsrvywa6rt52cm9r9zqt8r2t7mlcwspyetp5h2tztugp9lfyql").expect("invoice");
         assert_eq!(invoice.amount_milli_satoshis(), 0);
         assert_eq!(
-            invoice.payment_hash().0.to_hex(),
+            hex::encode(invoice.payment_hash().0),
             "0001020304050607080900010203040506070809000102030405060708090102"
         );
         assert_eq!(
@@ -129,7 +127,7 @@ mod tests {
         let invoice = Invoice::from_str("lni1qqgf8ene6trt4n9mmrejx50c6v30cq3qqc3xu3s3rg94nj40zfsy866mhu5vxne6tcej5878k2mneuvgjy8ssqgzpg9hx6tdwpkx2gr5v4ehg93pqdwjkyvjm7apxnssu4qgwhfkd67ghs6n6k48v6uqczgt88p6tky965pqqc3xu3s3rg94nj40zfsy866mhu5vxne6tcej5878k2mneuvgjy84sggravpsmwr0rxjdwzvj3ltcg95eklxftgfw8njx2dd3v9eat2k8q8g6pxqrt543ryklhgf5uy89gzr46dnwhj9ux5744fmxhqxqjzeecwja3pwsxz392f64zmwkh5p9hygu8gvt3lpfrn7ehs53d6ylasgcyppwdr6pqypde4glecqn4h2ydg7e56xq3n0p0jxzpw9v89qw7n9encppxqt037qqx2s4d5007pqgecutjv9x6gr793gqsc2svc9a2k3l62klfcny8ca8z60eptrhahvy9aypymralep23vvvkw3pcqqqqqqqqqqqqqqq2qqqqqqqqqqqqqwjfvkl43fqqqqqqzjqgepvjh02sg8u5wx8nat9vgux9cvr8fe9c337706k08xrnl03dmwaglxr46yglz4qzq4syyp462c3jt0m5y6wzrj5pp6axehtez7r20265antsrqfpvuu8fwcsh0sgzm7pttfeuz5snjhmks67afze5klpew503kn98x4zt24dcsurm9wch699ucgw9sh5ww85gu2fy598hdne0gp5msx0shu4kqqc9z6hhk7").expect("invoice");
         assert_eq!(invoice.amount_milli_satoshis(), 2);
         assert_eq!(
-            invoice.payment_hash().0.to_hex(),
+            hex::encode(invoice.payment_hash().0),
             "fca38c79f565623862e1833a725c463ef3f5679cc39fdf16eddd47cc3ae888f8"
         );
         assert_eq!(

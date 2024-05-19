@@ -1,6 +1,6 @@
 use super::{Error, ExternalPersist, Info};
 use async_trait::async_trait;
-use bitcoin::secp256k1::PublicKey;
+use bitcoin::PublicKey;
 use lightning_signer::bitcoin;
 use lightning_signer::persist::Mutations;
 use lightning_storage_server::client::{Auth as LssAuth, Client as LssClient, ClientError};
@@ -54,7 +54,8 @@ impl Client {
     ///
     /// In a production system, this should be verified and cached.
     pub async fn get_server_pubkey(uri: &str) -> Result<PublicKey, Error> {
-        Ok(LssClient::get_info(uri).await?.0)
+        let pubkey = LssClient::get_info(uri).await?.0;
+        Ok(PublicKey::new(pubkey))
     }
 
     /// Create a new client.
@@ -71,7 +72,7 @@ impl Client {
     ) -> Result<Self, Error> {
         let (pubkey, _version) = LssClient::get_info(uri).await?;
 
-        assert_eq!(pubkey, *server_public_key, "server public key mismatch");
+        assert_eq!(pubkey, server_public_key.inner, "server public key mismatch");
         let client = LssClient::new(uri, auth).await?;
         Ok(Self {
             client: Mutex::new(client),
@@ -104,7 +105,7 @@ impl ExternalPersist for Client {
 
     async fn info(&self) -> Result<Info, Error> {
         let (server_public_key, version) = LssClient::get_info(&self.uri).await?;
-        assert_eq!(self.server_public_key, server_public_key, "server public key mismatch");
+        assert_eq!(self.server_public_key.inner, server_public_key, "server public key mismatch");
 
         Ok(Info { version, pubkey: server_public_key.clone() })
     }

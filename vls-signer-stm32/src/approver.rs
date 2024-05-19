@@ -14,7 +14,6 @@ use lightning_signer::bitcoin::Transaction;
 use vls_protocol_signer::approver::Approve;
 use vls_protocol_signer::lightning_signer::{
     self,
-    bitcoin::hashes::hex::ToHex,
     bitcoin::secp256k1::PublicKey,
     bitcoin::TxOut,
     invoice::{Invoice, InvoiceAttributes},
@@ -167,7 +166,7 @@ fn format_expiration(expiry: u64) -> String {
 
 fn format_payment_hash(payment_hash: &PaymentHash) -> String {
     // Return value should be exactly 17 chars wide
-    let hashstr = payment_hash.0.to_hex();
+    let hashstr: String = hex::encode(payment_hash.0);
     let part0 = &hashstr[0..8];
     let part1 = &hashstr[hashstr.len() - 7..hashstr.len()];
     format!("{}..{}", part0, part1)

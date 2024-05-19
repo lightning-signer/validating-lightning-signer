@@ -1,9 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use bitcoin::absolute::{Height, LockTime};
     use bitcoin::secp256k1::{PublicKey, Secp256k1};
-    use bitcoin::{
-        self, OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
-    };
+    use bitcoin::{self, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness};
     use lightning::ln::chan_utils::get_htlc_redeemscript;
     use test_log::test;
 
@@ -25,15 +24,15 @@ mod tests {
         txid: Txid,
         vout: u32,
         is_anchors: bool,
-        script_pubkey: Script,
+        script_pubkey: ScriptBuf,
         amount_sat: u64,
     ) -> Transaction {
         Transaction {
             version: 2,
-            lock_time: PackedLockTime::ZERO,
+            lock_time: LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid, vout },
-                script_sig: Script::new(),
+                script_sig: ScriptBuf::new(),
                 sequence: Sequence(if is_anchors { 1 } else { 0 }),
                 witness: Witness::default(),
             }],
@@ -46,15 +45,15 @@ mod tests {
         txid: Txid,
         vout: u32,
         is_anchors: bool,
-        script_pubkey: Script,
+        script_pubkey: ScriptBuf,
         amount_sat: u64,
     ) -> Transaction {
         Transaction {
             version: 2,
-            lock_time: PackedLockTime(lock_time),
+            lock_time: LockTime::Blocks(Height::from_consensus(lock_time).unwrap()),
             input: vec![TxIn {
                 previous_output: OutPoint { txid, vout },
-                script_sig: Script::new(),
+                script_sig: ScriptBuf::new(),
                 sequence: Sequence(if is_anchors { 1 } else { 0 }),
                 witness: Witness::default(),
             }],
@@ -68,14 +67,14 @@ mod tests {
         mutate_signing_input: InputMutator,
     ) -> Result<(), Status>
     where
-        MakeDestination: Fn(&TestNodeContext) -> (Script, Vec<u32>),
+        MakeDestination: Fn(&TestNodeContext) -> (ScriptBuf, Vec<u32>),
         InputMutator: Fn(
             &mut Channel,
             &mut ChainState,
             &mut Transaction,
             &mut usize,
             &mut PublicKey,
-            &mut Script,
+            &mut ScriptBuf,
             &mut u64,
         ),
     {
@@ -281,7 +280,7 @@ mod tests {
                 OfferedHTLC,
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.lock_time = PackedLockTime(1_000_000);
+                    tx.lock_time = LockTime::Blocks(Height::from_consensus(1_000_000).unwrap());
                 },
             ),
             "transaction format: validate_counterparty_htlc_sweep: \

@@ -188,7 +188,7 @@ fn track_char(msg: &Message) -> char {
         Message::SignMutualCloseTx2(_m) => ')',
 
         Message::SignCommitmentTx(m) => {
-            if m.tx.0.lock_time.0 == 0 {
+            if m.tx.0.lock_time.to_consensus_u32() == 0 {
                 ')' // really a SignMutualCloseTx
             } else {
                 'S'

@@ -17,17 +17,18 @@ hex = { version = "0.4", default-features = false }
 vls-core = { path = "../vls-core", version = "0.12.0", default-features = false }
 
 [dependencies.serde_bolt]
-version = "0.3.5"
-#git = "https://gitlab.com/lightning-signer/serde-bolt"
-#rev = "6d3d873492d19edb09dc2764a3d4c4c23caaa28f"
+version = "0.4.1"
+#git = "https://gitlab.com/lightning-signer/serde-bolt.git"
+#rev = "9b1c851981337cdd748cf0fdf3342ea9b51e8cce"
+#branch = "pr13"
 #path = "../../../serde-bolt"
 default-features = false
 
 [dependencies.txoo]
-version = "0.7.1"
-#git = "https://gitlab.com/lightning-signer/txoo"
-#rev = "d49b25283a5f1db675db20a19b313e5ca7456410"
-#branch = "main"
+version = "0.8"
+#git = "https://gitlab.com/vincenzopalazzo/txoo"
+#rev = "94ba28c5cd86a6591b4ebd9832bd45c880624dc9"
+#branch = "macros/upgrade-bitcoin"
 #path = "../../txoo"
 default-features = false
 
@@ -42,7 +43,6 @@ serde_bolt = { version = "0.3.5", features = ["test_utils"] }
 default = ["std"]
 std = ["serde_bolt/std", "txoo/std", "vls-core/std"]
 no-std = ["serde_bolt/no-std", "txoo/no-std", "vls-core/no-std"]
-test_utils = ["serde_bolt/test_utils"]
 
 # dangerous, only for testing
 log-secrets = []

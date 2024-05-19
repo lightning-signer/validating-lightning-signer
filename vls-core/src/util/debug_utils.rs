@@ -1,10 +1,9 @@
 use crate::node::{PaymentState, RoutedPayment};
 use crate::prelude::*;
-use bitcoin::hashes::hex;
-use bitcoin::hashes::hex::ToHex;
+use bitcoin::address::Payload;
 use bitcoin::secp256k1::SecretKey;
-use bitcoin::util::address::Payload;
-use bitcoin::{Address, Network, Script};
+use bitcoin::{Address, Network, ScriptBuf};
+use hex::ToHex;
 use lightning::ln::chan_utils::{
     BuiltCommitmentTransaction, ChannelPublicKeys, CommitmentTransaction, HTLCOutputInCommitment,
     TxCreationKeys,
@@ -96,13 +95,16 @@ pub struct DebugPayload<'a>(pub &'a Payload);
 impl<'a> core::fmt::Debug for DebugPayload<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
         match *self.0 {
-            Payload::PubkeyHash(ref hash) => hex::format_hex(hash, f),
-            Payload::ScriptHash(ref hash) => hex::format_hex(hash, f),
-            Payload::WitnessProgram { version: ver, program: ref prog } => f
+            Payload::PubkeyHash(ref hash) =>
+                f.debug_struct("PubkeyHash").field("hash", &hex::encode(hash)).finish(),
+            Payload::ScriptHash(ref hash) =>
+                f.debug_struct("ScriptHash").field("hash", &hex::encode(hash)).finish(),
+            Payload::WitnessProgram(ref program) => f
                 .debug_struct("WitnessProgram")
-                .field("version", &ver)
-                .field("program", &prog.to_hex())
+                .field("version", &program.version())
+                .field("program", &program.program().encode_hex::<String>())
                 .finish(),
+            _ => unreachable!(),
         }
     }
 }
@@ -115,7 +117,7 @@ impl<'a> core::fmt::Debug for DebugHTLCOutputInCommitment<'a> {
             .field("offered", &self.0.offered)
             .field("amount_msat", &self.0.amount_msat)
             .field("cltv_expiry", &self.0.cltv_expiry)
-            .field("payment_hash", &self.0.payment_hash.0[..].to_hex())
+            .field("payment_hash", &self.0.payment_hash.0.encode_hex::<String>())
             .field("transaction_output_index", &self.0.transaction_output_index)
             .finish()
     }
@@ -270,10 +272,10 @@ impl<'a> core::fmt::Debug for DebugMapPaymentSummary<'a> {
 }
 
 /// Return a debug string for a bitcoin::Script
-pub fn script_debug(script: &Script, network: Network) -> String {
+pub fn script_debug(script: &ScriptBuf, network: Network) -> String {
     format!(
         "script={} {}={}",
-        script.to_hex(),
+        script.encode_hex::<String>(),
         network,
         match Address::from_script(script, network) {
             Ok(addr) => addr.to_string(),

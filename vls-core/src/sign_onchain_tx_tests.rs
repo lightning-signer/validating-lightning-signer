@@ -1,16 +1,16 @@
 #[cfg(test)]
 mod tests {
+    use bitcoin::absolute::LockTime;
     use bitcoin::hashes::hash160::Hash as Hash160;
 
+    use bitcoin::address::Payload;
     use bitcoin::blockdata::opcodes;
     use bitcoin::blockdata::script::Builder;
     use bitcoin::hashes::Hash;
+    use bitcoin::script::PushBytesBuf;
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-    use bitcoin::util::address::Payload;
-    use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::{
-        self, Address, OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid,
-        Witness,
+        self, Address, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
     };
 
     use test_log::test;
@@ -30,7 +30,7 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let destination = node.get_native_address(&[0]).unwrap();
         let (tx, opaths) = make_large_tx(&destination, 1050);
-        let txo = TxOut { value: 0, script_pubkey: Script::new() };
+        let txo = TxOut { value: 0, script_pubkey: ScriptBuf::new() };
         node.check_onchain_tx(&tx, &vec![], &[txo.clone()], &[None], &opaths)
             .expect("should have been under size limit");
         let (tx, opaths) = make_large_tx(&destination, 1060);
@@ -47,10 +47,10 @@ mod tests {
         let opaths: Vec<_> = output.iter().map(|_| vec![0]).collect();
         let tx = Transaction {
             version: 2,
-            lock_time: PackedLockTime::ZERO,
+            lock_time: LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 },
-                script_sig: Script::new(),
+                script_sig: ScriptBuf::new(),
                 sequence: Sequence::ZERO,
                 witness: Witness::default(),
             }],
@@ -64,17 +64,17 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let tx = Transaction {
             version: 2,
-            lock_time: PackedLockTime::ZERO,
+            lock_time: LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 },
-                script_sig: Script::new(),
+                script_sig: ScriptBuf::new(),
                 sequence: Sequence::ZERO,
                 witness: Witness::default(),
             }],
             output: vec![],
         };
 
-        let txo = TxOut { value: 20000, script_pubkey: Script::new() };
+        let txo = TxOut { value: 20000, script_pubkey: ScriptBuf::new() };
         for i in 0..50 {
             println!("i = {}", i);
             node.check_onchain_tx(&tx, &vec![], &[txo.clone()], &[None], &[vec![]])
@@ -98,14 +98,14 @@ mod tests {
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
 
         let input2 = TxIn {
             previous_output: OutPoint { txid, vout: 1 },
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
@@ -121,8 +121,8 @@ mod tests {
             .expect("good sigs");
         assert_eq!(witvec.len(), 2);
 
-        tx.input[0].witness = Witness::from_vec(witvec[0].clone());
-        tx.input[1].witness = Witness::from_vec(witvec[1].clone());
+        tx.input[0].witness = Witness::from_slice(&witvec[0]);
+        tx.input[1].witness = Witness::from_slice(&witvec[1]);
 
         let verify_result = tx.verify(|p| Some(previous_tx.output[p.vout as usize].clone()));
 
@@ -141,14 +141,14 @@ mod tests {
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
 
         let input2 = TxIn {
             previous_output: OutPoint { txid, vout: 1 },
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
@@ -170,8 +170,8 @@ mod tests {
             .expect("good sigs");
         assert_eq!(witvec.len(), 2);
 
-        tx.input[0].witness = Witness::from_vec(witvec[0].clone());
-        tx.input[1].witness = Witness::from_vec(witvec[1].clone());
+        tx.input[0].witness = Witness::from_slice(&witvec[0].clone());
+        tx.input[1].witness = Witness::from_slice(&witvec[1].clone());
 
         let verify_result = tx.verify(|p| Some(previous_tx.output[p.vout as usize].clone()));
 
@@ -190,7 +190,7 @@ mod tests {
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
@@ -206,7 +206,7 @@ mod tests {
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
-        tx.input[0].witness = Witness::from_vec(witvec[0].clone());
+        tx.input[0].witness = Witness::from_slice(&witvec[0].clone());
 
         let verify_result = tx.verify(|p| Some(previous_tx.output[p.vout as usize].clone()));
         assert!(verify_result.is_ok());
@@ -226,7 +226,7 @@ mod tests {
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
@@ -268,10 +268,10 @@ mod tests {
 
         let previous_tx = Transaction {
             version: 2,
-            lock_time: PackedLockTime::ZERO,
+            lock_time: LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 },
-                script_sig: Script::new(),
+                script_sig: ScriptBuf::new(),
                 sequence: Sequence::ZERO,
                 witness: Witness::default(),
             }],
@@ -283,7 +283,7 @@ mod tests {
 
         let input1 = TxIn {
             previous_output: OutPoint { txid: previous_tx.txid(), vout: 0 },
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
@@ -294,7 +294,8 @@ mod tests {
             &PublicKey::from_secret_key(&secp_ctx, &uniclose_key).serialize()[..],
         )
         .unwrap();
-        let uniclosekeys = vec![Some((uniclose_key, vec![uniclosepubkey.serialize()]))];
+        let uniclosekeys =
+            vec![Some((uniclose_key, vec![uniclosepubkey.inner.serialize().to_vec()]))];
         let txos = previous_tx.output.clone();
 
         let witvec = node
@@ -302,9 +303,9 @@ mod tests {
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
-        assert_eq!(witvec[0][1], uniclosepubkey.serialize());
+        assert_eq!(witvec[0][1], uniclosepubkey.inner.serialize());
 
-        tx.input[0].witness = Witness::from_vec(witvec[0].clone());
+        tx.input[0].witness = Witness::from_slice(&witvec[0].clone());
         let verify_result = tx.verify(|p| Some(txos[p.vout as usize].clone()));
 
         assert!(verify_result.is_ok());
@@ -321,7 +322,7 @@ mod tests {
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
@@ -345,10 +346,13 @@ mod tests {
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
-        tx.input[0].script_sig = Builder::new()
-            .push_slice(witvec[0][0].as_slice())
-            .push_slice(witvec[0][1].as_slice())
-            .into_script();
+        let mut push_bytes_0 = PushBytesBuf::new();
+        push_bytes_0.extend_from_slice(witvec[0][0].as_slice()).unwrap();
+        let mut push_bytes_1 = PushBytesBuf::new();
+        push_bytes_1.extend_from_slice(witvec[0][1].as_slice()).unwrap();
+
+        tx.input[0].script_sig =
+            Builder::new().push_slice(push_bytes_0).push_slice(push_bytes_1).into_script();
 
         let verify_result = tx.verify(|p| Some(previous_tx.output[p.vout as usize].clone()));
         assert!(verify_result.is_ok());
@@ -365,7 +369,7 @@ mod tests {
 
         let input1 = TxIn {
             previous_output: OutPoint { txid, vout: 0 },
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence::ZERO,
             witness: Witness::default(),
         };
@@ -391,17 +395,17 @@ mod tests {
         assert_eq!(witvec.len(), 1);
 
         let pubkey = &node.get_wallet_pubkey(&ipaths[0]).unwrap();
-        let keyhash = Hash160::hash(&pubkey.serialize()[..]);
-        tx.input[0].script_sig = Builder::new()
-            .push_slice(
-                Builder::new()
-                    .push_opcode(opcodes::all::OP_PUSHBYTES_0)
-                    .push_slice(&keyhash.into_inner())
-                    .into_script()
-                    .as_bytes(),
-            )
+        let keyhash = Hash160::hash(&pubkey.inner.serialize()[..]);
+
+        let script = Builder::new()
+            .push_opcode(opcodes::all::OP_PUSHBYTES_0)
+            .push_slice(&keyhash.to_byte_array())
             .into_script();
-        tx.input[0].witness = Witness::from_vec(witvec[0].clone());
+        let mut push_bytes = PushBytesBuf::new();
+        push_bytes.extend_from_slice(script.as_bytes()).unwrap();
+
+        tx.input[0].script_sig = Builder::new().push_slice(push_bytes).into_script();
+        tx.input[0].witness = Witness::from_slice(&witvec[0].clone());
 
         let verify_result = tx.verify(|p| Some(previous_tx.output[p.vout as usize].clone()));
         assert!(verify_result.is_ok());
@@ -426,19 +430,19 @@ mod tests {
         let inputs = vec![
             TxIn {
                 previous_output: OutPoint { txid: txids[0], vout: 0 },
-                script_sig: Script::new(),
+                script_sig: ScriptBuf::new(),
                 sequence: Sequence::ZERO,
                 witness: Witness::default(),
             },
             TxIn {
                 previous_output: OutPoint { txid: txids[1], vout: 0 },
-                script_sig: Script::new(),
+                script_sig: ScriptBuf::new(),
                 sequence: Sequence::ZERO,
                 witness: Witness::default(),
             },
             TxIn {
                 previous_output: OutPoint { txid: txids[2], vout: 0 },
-                script_sig: Script::new(),
+                script_sig: ScriptBuf::new(),
                 sequence: Sequence::ZERO,
                 witness: Witness::default(),
             },
@@ -696,7 +700,7 @@ mod tests {
                 tx_ctx.validate_sig(&node_ctx, &mut tx, &witvec);
 
                 // weight_lower_bound from node debug is: 612 and 608
-                assert_eq!(tx.weight(), 610);
+                assert_eq!(tx.weight().to_wu(), 610);
             }
             _ => panic!("unexpected spendtype"),
         }
@@ -746,7 +750,7 @@ mod tests {
         tx_ctx.validate_sig(&node_ctx, &mut tx, &witvec);
 
         // weight_lower_bound from node debug is 880
-        assert_eq!(tx.weight(), 881);
+        assert_eq!(tx.weight().to_wu(), 881);
     }
 
     #[test]
@@ -1201,7 +1205,7 @@ mod tests {
 
         assert_failed_precondition_err!(
             tx_ctx.sign(&node_ctx, &tx),
-            "policy failure: validate_onchain_tx: funding script_pubkey mismatch w/ channel: Script(OP_0 OP_PUSHBYTES_32 1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b) != Script(OP_0 OP_PUSHBYTES_32 738b77057fb1636913da743e18f0510a261dca80dd61e2852852e62e9aa334d9)"
+            "policy failure: validate_onchain_tx: funding script_pubkey mismatch w/ channel: OP_0 OP_PUSHBYTES_32 1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b != OP_0 OP_PUSHBYTES_32 738b77057fb1636913da743e18f0510a261dca80dd61e2852852e62e9aa334d9"
         );
     }
 

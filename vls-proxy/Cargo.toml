@@ -79,10 +79,10 @@ version = "0.1"
 #rev = "a374805e55fa0bd089ff1db18a836e330219bc62"
 
 [dependencies.txoo-bitcoind-client]
-version = "0.7.1"
-#git = "https://gitlab.com/lightning-signer/txoo"
-#rev = "d49b25283a5f1db675db20a19b313e5ca7456410"
-#branch = "main"
+version = "0.8"
+#git = "https://gitlab.com/vincenzopalazzo/txoo"
+#rev = "94ba28c5cd86a6591b4ebd9832bd45c880624dc9"
+#branch = "macros/upgrade-bitcoin"
 #path = "../../txoo/bitcoind-client"
 
 [dev-dependencies]

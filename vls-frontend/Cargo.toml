@@ -29,10 +29,10 @@ lightning-storage-server = { path = "../lightning-storage-server", version = "0.
 triggered = "0.1"
 
 [dependencies.txoo-bitcoind-client]
-version = "0.7.1"
-#git = "https://gitlab.com/lightning-signer/txoo"
-#rev = "d49b25283a5f1db675db20a19b313e5ca7456410"
-#branch = "main"
+version = "0.8"
+#git = "https://gitlab.com/vincenzopalazzo/txoo"
+#rev = "94ba28c5cd86a6591b4ebd9832bd45c880624dc9"
+#branch = "macros/upgrade-bitcoin"
 #path = "../../txoo/bitcoind-client"
 
 [dev-dependencies]

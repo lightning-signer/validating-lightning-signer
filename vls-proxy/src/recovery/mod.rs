@@ -2,15 +2,17 @@
 pub mod direct;
 
 use crate::tx_util::create_spending_transaction;
-use bitcoin::hashes::hex::ToHex;
-use bitcoin::psbt::serialize::Serialize;
+use bitcoin::absolute::LockTime;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::{Address, Network, Script, Transaction, Witness};
+use bitcoin::{Address, Network, ScriptBuf, Transaction, Witness};
 use bitcoind_client::esplora_client::EsploraClient;
 use bitcoind_client::{explorer_from_url, BlockExplorerType, Explorer};
 use lightning::chain::transaction::OutPoint;
 use lightning::sign::DelayedPaymentOutputDescriptor;
-use lightning_signer::bitcoin::{PackedLockTime, Sequence, TxOut, Txid};
+use lightning_signer::bitcoin::address::{NetworkChecked, NetworkUnchecked};
+use lightning_signer::bitcoin::consensus::encode::serialize_hex;
+use lightning_signer::bitcoin::{Sequence, TxOut, Txid};
+use lightning_signer::lightning::ln::channel_keys::RevocationKey;
 use lightning_signer::node::{Allowable, ToStringForNetwork};
 use lightning_signer::util::status::Status;
 use lightning_signer::{bitcoin, lightning};
@@ -59,7 +61,10 @@ pub trait RecoveryKeys {
 pub trait RecoverySign {
     fn sign_holder_commitment_tx_for_recovery(
         &self,
-    ) -> Result<(Transaction, Vec<Transaction>, Script, (SecretKey, Vec<Vec<u8>>), PublicKey), Status>;
+    ) -> Result<
+        (Transaction, Vec<Transaction>, ScriptBuf, (SecretKey, Vec<Vec<u8>>), PublicKey),
+        Status,
+    >;
     fn funding_outpoint(&self) -> OutPoint;
     fn counterparty_selected_contest_delay(&self) -> u16;
     fn get_per_commitment_point(&self) -> Result<PublicKey, Status>;
@@ -87,7 +92,7 @@ pub async fn recover_l1<R: RecoveryKeys>(
     let mut utxos = Vec::new();
     for index in 0..max_index {
         let address = keys.wallet_address_native(index).expect("address");
-        let script_pubkey = address.script_pubkey();
+        let script_pubkey = address.payload.script_pubkey();
         utxos.append(
             &mut get_utxos(&esplora, address)
                 .await
@@ -98,7 +103,7 @@ pub async fn recover_l1<R: RecoveryKeys>(
         );
 
         let taproot_address = keys.wallet_address_taproot(index).expect("address");
-        let taproot_script_pubkey = taproot_address.script_pubkey();
+        let taproot_script_pubkey = taproot_address.payload.script_pubkey();
         utxos.append(
             &mut get_utxos(&esplora, taproot_address)
                 .await
@@ -113,13 +118,14 @@ pub async fn recover_l1<R: RecoveryKeys>(
         info!("no destination specified, only printing txs");
     }
 
-    let destination_address: Address =
+    let destination_address: Address<NetworkUnchecked> =
         destination.parse().expect("destination address must be valid");
     assert!(
         destination_address.is_valid_for_network(network),
         "destination address must be valid for network"
     );
 
+    let destination_address = destination_address.assume_checked();
     let feerate_per_kw = get_feerate(&esplora).await.expect("get feerate");
 
     for chunk in utxos.chunks(10) {
@@ -135,33 +141,33 @@ pub async fn recover_l1<R: RecoveryKeys>(
 // chunk is a list of (derivation-index, utxo)
 fn make_l1_sweep<R: RecoveryKeys>(
     keys: &R,
-    destination_address: &Address,
-    chunk: &[(u32, UtxoResponse, Script)],
+    destination_address: &Address<NetworkChecked>,
+    chunk: &[(u32, UtxoResponse, ScriptBuf)],
     feerate_per_kw: u64,
 ) -> Option<Transaction> {
     let value = chunk.iter().map(|(_, u, _)| u.value).sum::<u64>();
 
     let mut tx = Transaction {
         version: 2,
-        lock_time: PackedLockTime::ZERO,
+        lock_time: LockTime::ZERO,
         input: chunk
             .iter()
             .map(|(_, u, _)| bitcoin::TxIn {
                 previous_output: bitcoin::OutPoint { txid: u.txid, vout: u.vout },
                 sequence: Sequence::ZERO,
                 witness: Witness::default(),
-                script_sig: Script::new(),
+                script_sig: ScriptBuf::new(),
             })
             .collect(),
-        output: vec![TxOut { value, script_pubkey: destination_address.script_pubkey() }],
+        output: vec![TxOut { value, script_pubkey: destination_address.payload.script_pubkey() }],
     };
-    let total_fee = feerate_per_kw * tx.weight() as u64 / 1000;
+    let total_fee = feerate_per_kw * tx.weight().to_wu() / 1000;
     if total_fee > value - 1000 {
         warn!("not enough value to pay fee {:?}", tx);
         return None;
     }
     tx.output[0].value -= total_fee;
-    info!("sending tx {} - {}", tx.txid().to_hex(), tx.serialize().to_hex());
+    info!("sending tx {} - {}", tx.txid().to_string(), serialize_hex(&tx));
 
     let ipaths = chunk.iter().map(|(i, _, _)| vec![*i]).collect::<Vec<_>>();
     let prev_outs = chunk
@@ -176,7 +182,7 @@ fn make_l1_sweep<R: RecoveryKeys>(
         .expect("sign tx");
 
     for (i, witness) in witnesses.into_iter().enumerate() {
-        tx.input[i].witness = Witness::from_vec(witness);
+        tx.input[i].witness = Witness::from_slice(&witness);
     }
     Some(tx)
 }
@@ -260,7 +266,7 @@ pub async fn recover_close<R: RecoveryKeys>(
                                         .expect("commitment point"),
                                     to_self_delay,
                                     output: tx.output[idx].clone(),
-                                    revocation_pubkey,
+                                    revocation_pubkey: RevocationKey(revocation_pubkey),
                                     channel_keys_id: [0; 32], // unused
                                     channel_value_satoshis: 0,
                                 };
@@ -278,7 +284,7 @@ pub async fn recover_close<R: RecoveryKeys>(
                 }
             }
         } else {
-            info!("tx: {}", tx.serialize().to_hex());
+            info!("tx: {}", serialize_hex(&tx));
             for htlc_tx in htlc_txs {
                 info!("HTLC tx: {}", htlc_tx.txid());
             }
@@ -316,7 +322,7 @@ fn spend_delayed_outputs<R: RecoveryKeys>(
     keys: &R,
     descriptors: &[DelayedPaymentOutputDescriptor],
     unilateral_close_key: (SecretKey, Vec<Vec<u8>>),
-    output_script: Script,
+    output_script: ScriptBuf,
     opath: Vec<u32>,
     feerate_sat_per_1000_weight: u32,
 ) -> Transaction {
@@ -332,7 +338,7 @@ fn spend_delayed_outputs<R: RecoveryKeys>(
         .expect("sign");
     assert_eq!(witnesses.len(), tx.input.len());
     for (idx, w) in witnesses.into_iter().enumerate() {
-        tx.input[idx].witness = Witness::from_vec(w);
+        tx.input[idx].witness = Witness::from_slice(&w);
     }
     tx
 }
@@ -352,7 +358,9 @@ mod tests {
     #[tokio::test]
     async fn esplora_utxo_test() {
         fern::Dispatch::new().level(LevelFilter::Info).chain(std::io::stdout()).apply().unwrap();
-        let address: Address = "19XBuBAa78zccvfFrNWKB6PhnA1mMRASeT".parse().unwrap();
+        let address: Address<NetworkUnchecked> =
+            "19XBuBAa78zccvfFrNWKB6PhnA1mMRASeT".parse().unwrap();
+        let address = address.assume_checked();
         let esplora = EsploraClient::new("https://blockstream.info/api".parse().unwrap()).await;
 
         let fees: BTreeMap<String, f64> =

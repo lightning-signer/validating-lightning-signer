@@ -3,14 +3,15 @@ extern crate scopeguard;
 use core::cmp::{max, min};
 use core::fmt::{self, Debug, Formatter};
 
+use bitcoin::blockdata::block::Header as BlockHeader;
+use bitcoin::blockdata::script::ScriptBuf;
+use bitcoin::hash_types::FilterHeader;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-use bitcoin::{
-    BlockHash, BlockHeader, EcdsaSighashType, FilterHeader, Network, OutPoint, Script, Sighash,
-    Transaction,
-};
+use bitcoin::sighash::{EcdsaSighashType, SegwitV0Sighash};
+use bitcoin::{BlockHash, Network, OutPoint, Transaction};
 use core::time::Duration;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::ln::PaymentHash;
@@ -124,10 +125,10 @@ pub trait Validator {
         setup: &ChannelSetup,
         txkeys: &TxCreationKeys,
         tx: &Transaction,
-        redeemscript: &Script,
+        redeemscript: &ScriptBuf,
         htlc_amount_sat: u64,
-        output_witscript: &Script,
-    ) -> Result<(u32, HTLCOutputInCommitment, Sighash, EcdsaSighashType), ValidationError>;
+        output_witscript: &ScriptBuf,
+    ) -> Result<(u32, HTLCOutputInCommitment, SegwitV0Sighash, EcdsaSighashType), ValidationError>;
 
     /// Phase 2 validation of 2nd level HTLC tx
     fn validate_htlc_tx(
@@ -157,8 +158,8 @@ pub trait Validator {
         state: &EnforcementState,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
-        holder_shutdown_script: &Option<Script>,
-        counterparty_shutdown_script: &Option<Script>,
+        holder_shutdown_script: &Option<ScriptBuf>,
+        counterparty_shutdown_script: &Option<ScriptBuf>,
         holder_wallet_path_hint: &[u32],
     ) -> Result<(), ValidationError>;
 
@@ -182,7 +183,7 @@ pub trait Validator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         tx: &Transaction,
-        redeemscript: &Script,
+        redeemscript: &ScriptBuf,
         input: usize,
         amount_sat: u64,
         key_path: &[u32],
@@ -610,7 +611,7 @@ impl CounterpartyCommitmentSecrets {
             let bitpos = bits - 1 - i;
             if idx & (1 << bitpos) == (1 << bitpos) {
                 res[(bitpos / 8) as usize] ^= 1 << (bitpos & 7);
-                res = Sha256::hash(&res).into_inner();
+                res = Sha256::hash(&res).to_byte_array();
             }
         }
         res

@@ -1,5 +1,6 @@
 use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::{self, EcdsaSighashType, Network, Script, Sighash, Transaction};
+use bitcoin::sighash::{EcdsaSighashType, SegwitV0Sighash};
+use bitcoin::{self, Network, ScriptBuf, Transaction};
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::sign::InMemorySigner;
 
@@ -126,10 +127,11 @@ impl Validator for NullValidator {
         setup: &ChannelSetup,
         txkeys: &TxCreationKeys,
         tx: &Transaction,
-        redeemscript: &Script,
+        redeemscript: &ScriptBuf,
         htlc_amount_sat: u64,
-        output_witscript: &Script,
-    ) -> Result<(u32, HTLCOutputInCommitment, Sighash, EcdsaSighashType), ValidationError> {
+        output_witscript: &ScriptBuf,
+    ) -> Result<(u32, HTLCOutputInCommitment, SegwitV0Sighash, EcdsaSighashType), ValidationError>
+    {
         // Delegate to SimplePolicy
         self.0.decode_and_validate_htlc_tx(
             is_counterparty,
@@ -172,8 +174,8 @@ impl Validator for NullValidator {
         _estate: &EnforcementState,
         _to_holder_value_sat: u64,
         _to_counterparty_value_sat: u64,
-        _holder_script: &Option<Script>,
-        _counterparty_script: &Option<Script>,
+        _holder_script: &Option<ScriptBuf>,
+        _counterparty_script: &Option<ScriptBuf>,
         _holder_wallet_path_hint: &[u32],
     ) -> Result<(), ValidationError> {
         Ok(())
@@ -198,7 +200,7 @@ impl Validator for NullValidator {
         _setup: &ChannelSetup,
         _cstate: &ChainState,
         _tx: &Transaction,
-        _redeemscript: &Script,
+        _redeemscript: &ScriptBuf,
         _input: usize,
         _amount_sat: u64,
         _wallet_path: &[u32],

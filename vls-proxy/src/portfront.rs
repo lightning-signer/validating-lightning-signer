@@ -6,10 +6,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
+use bitcoin::bip32::ExtendedPubKey;
+use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::consensus::serialize;
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::util::bip32::ExtendedPubKey;
-use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
+use bitcoin::{BlockHash, Network, OutPoint, Txid};
 use lightning_signer::bitcoin;
 
 use vls_frontend::{ChainTrack, ChainTrackDirectory};

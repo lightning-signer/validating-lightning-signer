@@ -2,9 +2,9 @@
 mod tests {
     use crate::channel::ChannelId;
     use bitcoin;
-    use bitcoin::hashes::hex::{FromHex, ToHex};
+    use bitcoin::hashes::hex::FromHex;
     use bitcoin::secp256k1::SecretKey;
-    use bitcoin::Script;
+    use bitcoin::ScriptBuf;
     use lightning::ln::chan_utils::ChannelPublicKeys;
     use test_log::test;
 
@@ -12,18 +12,18 @@ mod tests {
     use crate::util::test_utils::*;
 
     macro_rules! hex (($hex:expr) => (Vec::from_hex($hex).unwrap()));
-    macro_rules! hex_script (($hex:expr) => (Script::from(hex!($hex))));
+    macro_rules! hex_script (($hex:expr) => (ScriptBuf::from(hex!($hex))));
 
     fn check_basepoints(basepoints: &ChannelPublicKeys) {
         let points = [
             basepoints.funding_pubkey,
-            basepoints.revocation_basepoint,
+            basepoints.revocation_basepoint.to_public_key(),
             basepoints.payment_point,
-            basepoints.delayed_payment_basepoint,
-            basepoints.htlc_basepoint,
+            basepoints.delayed_payment_basepoint.to_public_key(),
+            basepoints.htlc_basepoint.to_public_key(),
         ]
         .iter()
-        .map(|p| p.serialize().to_vec().to_hex())
+        .map(|p| hex::encode(p.serialize().to_vec()))
         .collect::<Vec<_>>();
 
         assert_eq!(

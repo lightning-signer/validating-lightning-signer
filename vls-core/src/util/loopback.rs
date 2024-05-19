@@ -6,20 +6,21 @@ use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
 use bitcoin::secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey};
-use bitcoin::util::psbt::serialize::Serialize;
-use bitcoin::{Script, Transaction, TxOut};
+use bitcoin::{ScriptBuf, Transaction, TxOut};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction,
 };
+use lightning::ln::channel_keys::{DelayedPaymentKey, RevocationKey};
 use lightning::ln::features::ChannelTypeFeatures;
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
 use lightning::ln::{chan_utils, PaymentPreimage};
+use lightning::sign::ecdsa::{EcdsaChannelSigner, WriteableEcdsaChannelSigner};
 use lightning::sign::HTLCDescriptor;
 use lightning::sign::{
-    ChannelSigner, EcdsaChannelSigner, EntropySource, KeyMaterial, NodeSigner, Recipient,
-    SignerProvider, SpendableOutputDescriptor, WriteableEcdsaChannelSigner,
+    ChannelSigner, EntropySource, KeyMaterial, NodeSigner, Recipient, SignerProvider,
+    SpendableOutputDescriptor,
 };
 use lightning::util::ser::{Readable, Writeable, Writer};
 
@@ -36,6 +37,8 @@ use crate::util::crypto_utils::derive_public_key;
 use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::Arc;
+
+use super::crypto_utils;
 
 /// Adapt MySigner to NodeSigner
 pub struct LoopbackSignerKeysInterface {
@@ -56,7 +59,7 @@ impl LoopbackSignerKeysInterface {
         &self,
         descriptors: &[&SpendableOutputDescriptor],
         outputs: Vec<TxOut>,
-        change_destination_script: Script,
+        change_destination_script: ScriptBuf,
         feerate_sat_per_1000_weight: u32,
     ) -> Result<Transaction, ()> {
         self.get_node().spend_spendable_outputs(
@@ -155,6 +158,17 @@ impl Writeable for LoopbackChannelSigner {
 }
 
 impl ChannelSigner for LoopbackChannelSigner {
+    fn validate_counterparty_revocation(&self, idx: u64, secret: &SecretKey) -> Result<(), ()> {
+        let forward_idx = INITIAL_COMMITMENT_NUMBER - idx;
+        self.signer
+            .with_channel(&self.node_id, &self.channel_id, |chan| {
+                chan.validate_counterparty_revocation(forward_idx, secret)
+            })
+            .map_err(|s| self.bad_status(s))?;
+
+        Ok(())
+    }
+
     fn get_per_commitment_point(&self, idx: u64, _secp_ctx: &Secp256k1<All>) -> PublicKey {
         // signer layer expect forward counting commitment number, but
         // we are passed a backwards counting one
@@ -251,7 +265,8 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
     fn sign_counterparty_commitment(
         &self,
         commitment_tx: &CommitmentTransaction,
-        preimages: Vec<PaymentPreimage>,
+        inbound_htlc_preimages: Vec<PaymentPreimage>,
+        outbound_htlc_preimages: Vec<PaymentPreimage>,
         _secp_ctx: &Secp256k1<All>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
         let trusted_tx = commitment_tx.trust();
@@ -276,7 +291,8 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         let (commitment_sig, htlc_sigs) = self
             .signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
-                chan.htlcs_fulfilled(preimages.clone());
+                chan.htlcs_fulfilled(inbound_htlc_preimages.clone());
+                chan.htlcs_fulfilled(outbound_htlc_preimages.clone());
                 chan.sign_counterparty_commitment_tx_phase2(
                     &per_commitment_point,
                     commitment_number,
@@ -289,17 +305,6 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
             })
             .map_err(|s| self.bad_status(s))?;
         Ok((commitment_sig, htlc_sigs))
-    }
-
-    fn validate_counterparty_revocation(&self, idx: u64, secret: &SecretKey) -> Result<(), ()> {
-        let forward_idx = INITIAL_COMMITMENT_NUMBER - idx;
-        self.signer
-            .with_channel(&self.node_id, &self.channel_id, |chan| {
-                chan.validate_counterparty_revocation(forward_idx, secret)
-            })
-            .map_err(|s| self.bad_status(s))?;
-
-        Ok(())
     }
 
     fn sign_holder_commitment(
@@ -371,9 +376,9 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
             &self.pubkeys,
         )?;
         let redeem_script = chan_utils::get_revokeable_redeemscript(
-            &revocation_key,
+            &RevocationKey(revocation_key),
             setup.holder_selected_contest_delay,
-            &delayed_payment_key,
+            &DelayedPaymentKey(delayed_payment_key),
         );
 
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
@@ -513,8 +518,8 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
                 chan.sign_mutual_close_tx_phase2(
                     closing_tx.to_holder_value_sat(),
                     closing_tx.to_counterparty_value_sat(),
-                    &Some(closing_tx.to_holder_script().clone()),
-                    &Some(closing_tx.to_counterparty_script().clone()),
+                    &Some(closing_tx.to_holder_script().into()),
+                    &Some(closing_tx.to_counterparty_script().into()),
                     &holder_wallet_path_hint,
                 )
             })
@@ -548,12 +553,13 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
 impl WriteableEcdsaChannelSigner for LoopbackChannelSigner {}
 
 impl SignerProvider for LoopbackSignerKeysInterface {
-    type Signer = LoopbackChannelSigner;
+    type EcdsaSigner = LoopbackChannelSigner;
 
-    fn get_destination_script(&self) -> Result<Script, ()> {
+    // FIXME: see how to use the channel_keys_id
+    fn get_destination_script(&self, _channel_keys_id: [u8; 32]) -> Result<ScriptBuf, ()> {
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
         let pubkey = self.get_node().get_wallet_pubkey(&wallet_path).expect("pubkey");
-        Ok(Script::new_v0_p2wpkh(&WPubkeyHash::hash(&pubkey.serialize())))
+        Ok(ScriptBuf::new_v0_p2wpkh(&WPubkeyHash::hash(&pubkey.inner.serialize())))
     }
 
     fn get_shutdown_scriptpubkey(&self) -> Result<ShutdownScript, ()> {
@@ -576,7 +582,7 @@ impl SignerProvider for LoopbackSignerKeysInterface {
         &self,
         channel_value_satoshis: u64,
         channel_keys_id: [u8; 32],
-    ) -> Self::Signer {
+    ) -> Self::EcdsaSigner {
         let channel_id = ChannelId::new(&channel_keys_id);
         LoopbackChannelSigner::new(
             &self.node_id,
@@ -586,7 +592,7 @@ impl SignerProvider for LoopbackSignerKeysInterface {
         )
     }
 
-    fn read_chan_signer(&self, mut reader: &[u8]) -> Result<Self::Signer, DecodeError> {
+    fn read_chan_signer(&self, mut reader: &[u8]) -> Result<Self::EcdsaSigner, DecodeError> {
         let channel_id = ChannelId::new(&Vec::read(&mut reader)?);
         let channel_value_sat = Readable::read(&mut reader)?;
         Ok(LoopbackChannelSigner::new(
@@ -668,13 +674,13 @@ fn get_delayed_payment_keys(
     a_pubkeys: &ChannelPublicKeys,
     b_pubkeys: &ChannelPublicKeys,
 ) -> Result<(PublicKey, PublicKey), ()> {
-    let revocation_key = chan_utils::derive_public_revocation_key(
+    let revocation_key = crypto_utils::derive_public_revocation_key(
         secp_ctx,
         &per_commitment_point,
         &b_pubkeys.revocation_basepoint,
-    );
+    )?;
     let delayed_payment_key =
-        derive_public_key(secp_ctx, &per_commitment_point, &a_pubkeys.delayed_payment_basepoint)
+        derive_public_key(secp_ctx, &per_commitment_point, &a_pubkeys.delayed_payment_basepoint.0)
             .map_err(|_| ())?;
-    Ok((revocation_key, delayed_payment_key))
+    Ok((revocation_key.0, delayed_payment_key))
 }

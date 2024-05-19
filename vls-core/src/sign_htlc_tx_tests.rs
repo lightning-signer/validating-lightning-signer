@@ -1,13 +1,15 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin::hashes::hex::ToHex;
+    use bitcoin::absolute::{Height, LockTime};
     use bitcoin::hashes::Hash;
-    use bitcoin::{self, EcdsaSighashType, Transaction};
-    use bitcoin::{PackedLockTime, Sequence};
+    use bitcoin::sighash::EcdsaSighashType;
+    use bitcoin::Sequence;
+    use bitcoin::{self, Transaction};
     use lightning::ln::chan_utils::{
         build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
         ChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
     };
+    use lightning::ln::channel_keys::{DelayedPaymentKey, RevocationKey};
     use lightning::ln::PaymentHash;
     use test_log::test;
 
@@ -226,7 +228,7 @@ mod tests {
         } else {
             panic!("unknown commitment_type");
         };
-        assert_eq!(htlc_tx.txid().to_hex(), expected_txid);
+        assert_eq!(htlc_tx.txid().to_string(), expected_txid);
 
         let htlc_pubkey = get_channel_htlc_pubkey(&node, &channel_id, &remote_per_commitment_point);
 
@@ -344,7 +346,7 @@ mod tests {
         } else {
             panic!("unknown commitment_type");
         };
-        assert_eq!(htlc_tx.txid().to_hex(), expected_txid);
+        assert_eq!(htlc_tx.txid().to_string(), expected_txid);
 
         let htlc_pubkey = get_channel_htlc_pubkey(&node, &channel_id, &per_commitment_point);
 
@@ -617,7 +619,9 @@ mod tests {
         bad_locktime,
         |tms| {
             // offered must have non-zero, received must have zero
-            tms.tx.lock_time = PackedLockTime(if tms.is_offered { 0 } else { 42 });
+            tms.tx.lock_time = LockTime::Blocks(
+                Height::from_consensus(if tms.is_offered { 0 } else { 42 }).unwrap(),
+            );
         },
         |ectx: ErrMsgContext| {
             if ectx.is_offered {
@@ -653,14 +657,14 @@ mod tests {
     // policy-htlc-revocation-pubkey
     generate_failed_precondition_error_with_mutated_keys!(
         bad_revpubkey,
-        |kms| kms.keys.revocation_key = make_test_pubkey(42),
+        |kms| kms.keys.revocation_key = RevocationKey(make_test_pubkey(42)),
         |_| "policy failure: sighash mismatch"
     );
 
     // policy-htlc-delayed-pubkey
     generate_failed_precondition_error_with_mutated_keys!(
         bad_delayedpubkey,
-        |kms| kms.keys.broadcaster_delayed_payment_key = make_test_pubkey(42),
+        |kms| kms.keys.broadcaster_delayed_payment_key = DelayedPaymentKey(make_test_pubkey(42)),
         |_| "policy failure: sighash mismatch"
     );
 

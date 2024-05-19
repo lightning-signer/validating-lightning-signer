@@ -33,7 +33,7 @@ impl TestLogger {
 }
 
 impl Logger for TestLogger {
-    fn log(&self, record: &Record) {
+    fn log(&self, record: Record) {
         *self
             .lines
             .lock()

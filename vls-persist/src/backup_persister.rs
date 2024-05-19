@@ -199,7 +199,6 @@ impl<M: Persist, B: Persist> Persist for BackupPersister<M, B> {
 mod tests {
     use super::*;
     use crate::model::{ChainTrackerEntry, NodeEntry, NodeStateEntry};
-    use lightning_signer::bitcoin::hashes::hex::ToHex;
     use lightning_signer::node::Node;
     use lightning_signer::persist::SignerId;
     use lightning_signer::util::test_utils::{
@@ -231,7 +230,7 @@ mod tests {
         ) -> Result<(), Error> {
             self.update_node(node_id, node_state)?;
             let mut state = self.state.lock().unwrap();
-            let key = format!("node/entry/{}", &node_id.serialize().to_hex());
+            let key = format!("node/entry/{}", &node_id.to_string());
             let entry = NodeEntry {
                 key_derivation_style: config.key_derivation_style as u8,
                 network: config.network.to_string(),
@@ -243,7 +242,7 @@ mod tests {
 
         fn update_node(&self, node_id: &PublicKey, node_state: &NodeState) -> Result<(), Error> {
             let mut state = self.state.lock().unwrap();
-            let key = format!("node/state/{}", &node_id.serialize().to_hex());
+            let key = format!("node/state/{}", &node_id.to_string());
             let state_entry: NodeStateEntry = node_state.into();
             let state_value = to_vec(&state_entry).unwrap();
             state.insert(key, state_value);
@@ -268,7 +267,7 @@ mod tests {
             tracker: &ChainTracker<ChainMonitor>,
         ) -> Result<(), Error> {
             let mut state = self.state.lock().unwrap();
-            let key = format!("node/tracker/{}", &node_id.serialize().to_hex());
+            let key = format!("node/tracker/{}", &node_id.to_string());
             let model: ChainTrackerEntry = tracker.into();
             let value = to_vec(&model).unwrap();
             state.insert(key, value);
@@ -289,7 +288,7 @@ mod tests {
             validator_factory: Arc<dyn ValidatorFactory>,
         ) -> Result<(ChainTracker<ChainMonitor>, Vec<ChainTrackerListenerEntry>), Error> {
             let state = self.state.lock().unwrap();
-            let key = format!("node/tracker/{}", &node_id.serialize().to_hex());
+            let key = format!("node/tracker/{}", &node_id.to_string());
             let value = state.get(&key).unwrap();
             let model: ChainTrackerEntry = from_slice(&value).unwrap();
             Ok(model.into_tracker(node_id.clone(), validator_factory))

@@ -6,7 +6,7 @@ use bitcoin::blockdata::script::{read_scriptint, Builder, Instruction, Instructi
 use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::{blockdata, Script};
+use bitcoin::{blockdata, ScriptBuf};
 
 use crate::policy::error::{mismatch_error, ValidationError};
 
@@ -42,7 +42,7 @@ pub(crate) fn expect_number(iter: &mut Instructions) -> Result<i64, ValidationEr
                 _ => Err(mismatch_error(format!("expected PushNum, saw {:?}", cls))),
             }
         }
-        blockdata::script::Instruction::PushBytes(d) => read_scriptint(&d)
+        blockdata::script::Instruction::PushBytes(d) => read_scriptint(d.as_bytes())
             .map_err(|err| mismatch_error(format!("read_scriptint failed: {:?}", err))),
     }
 }
@@ -61,7 +61,7 @@ pub(crate) fn expect_script_end(iter: &mut Instructions) -> Result<(), Validatio
 pub(crate) fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, ValidationError> {
     let ins = expect_next(iter)?;
     match ins {
-        blockdata::script::Instruction::PushBytes(d) => Ok(d.to_vec()),
+        blockdata::script::Instruction::PushBytes(d) => Ok(d.as_bytes().to_vec()),
         _ => Err(mismatch_error(format!("expected data, saw {:?}", ins))),
     }
 }
@@ -73,9 +73,9 @@ pub const ANCHOR_OUTPUT_VALUE_SATOSHI: u64 = 330;
 /// Gets the redeemscript for the to_remote output when anchors are enabled.
 // TODO - Should use the one in chan_utils, need relaxed visibility
 #[inline]
-pub fn get_to_countersignatory_with_anchors_redeemscript(payment_point: &PublicKey) -> Script {
+pub fn get_to_countersignatory_with_anchors_redeemscript(payment_point: &PublicKey) -> ScriptBuf {
     Builder::new()
-        .push_slice(&payment_point.serialize()[..])
+        .push_slice(&payment_point.serialize())
         .push_opcode(opcodes::all::OP_CHECKSIGVERIFY)
         .push_int(1)
         .push_opcode(opcodes::all::OP_CSV)
@@ -84,10 +84,10 @@ pub fn get_to_countersignatory_with_anchors_redeemscript(payment_point: &PublicK
 
 /// Get the p2wpkh redeemscript
 // TODO - Should use the one in chan_utils, need relaxed visibility
-pub fn get_p2wpkh_redeemscript(key: &PublicKey) -> Script {
+pub fn get_p2wpkh_redeemscript(key: &PublicKey) -> ScriptBuf {
     Builder::new()
         .push_opcode(opcodes::all::OP_PUSHBYTES_0)
-        .push_slice(&WPubkeyHash::hash(&key.serialize())[..])
+        .push_slice(&WPubkeyHash::hash(&key.serialize()))
         .into_script()
 }
 

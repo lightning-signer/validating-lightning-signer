@@ -14,8 +14,10 @@ use bitcoind_client::follower::{Error, Tracker};
 use bitcoind_client::txoo_follower::{FollowWithProofAction, SourceWithTxooProofFollower};
 use bitcoind_client::{bitcoind_client_from_url, BlockSource};
 
+use lightning_signer::bitcoin::blockdata::block::Header as BlockHeader;
+use lightning_signer::bitcoin::hash_types::FilterHeader;
 use lightning_signer::bitcoin::hashes::Hash;
-use lightning_signer::bitcoin::{BlockHash, BlockHeader, FilterHeader};
+use lightning_signer::bitcoin::BlockHash;
 use lightning_signer::chain::tracker::Headers;
 use lightning_signer::txoo::proof::{ProofType, TxoProof};
 use lightning_signer::txoo::{decode_checkpoint, CHECKPOINTS_BITCOIN, CHECKPOINTS_TESTNET};

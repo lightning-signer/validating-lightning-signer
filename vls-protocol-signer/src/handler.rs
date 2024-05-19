@@ -10,27 +10,30 @@ use alloc::vec::Vec;
 use core::cmp::min;
 use core::fmt::{Debug, Display, Formatter};
 use core::str::FromStr;
+use lightning_signer::bitcoin::script::PushBytesBuf;
+use lightning_signer::bitcoin::ScriptBuf;
+use lightning_signer::lightning::ln::channel_keys::RevocationKey;
+use vls_protocol::psbt::PsbtWrapper;
 
 use bitcoin::bech32::u5;
+use bitcoin::bip32::{DerivationPath, KeySource};
 use bitcoin::blockdata::script;
 use bitcoin::consensus::deserialize;
+use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::SecretKey;
-use bitcoin::util::bip32::{DerivationPath, KeySource};
-use bitcoin::util::psbt::serialize::Deserialize;
-use bitcoin::util::psbt::PartiallySignedTransaction;
-use bitcoin::util::taproot::TapLeafHash;
-use bitcoin::{Address, EcdsaSighashType, Network, Script};
-use bitcoin::{OutPoint, Transaction, Witness, XOnlyPublicKey};
+use bitcoin::taproot::TapLeafHash;
+use bitcoin::{Address, Network};
+use bitcoin::{OutPoint, Transaction, Witness};
 use lightning_signer::bitcoin;
+use lightning_signer::bitcoin::key::XOnlyPublicKey;
+use lightning_signer::bitcoin::sighash::EcdsaSighashType;
 use lightning_signer::channel::{
     ChannelBalance, ChannelBase, ChannelId, ChannelSetup, SlotInfo, SlotInfoVariant, TypedSignature,
 };
 use lightning_signer::dbgvals;
 use lightning_signer::invoice::Invoice;
-use lightning_signer::lightning::ln::chan_utils::{
-    derive_public_revocation_key, ChannelPublicKeys,
-};
+use lightning_signer::lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::{Node, NodeConfig, NodeMonitor, NodeServices};
 use lightning_signer::persist::{Mutations, Persist};
@@ -111,11 +114,11 @@ fn typed_to_bitcoin_sig(sig: TypedSignature) -> BitcoinSignature {
     BitcoinSignature { signature: Signature(sig.sig.serialize_compact()), sighash: sig.typ as u8 }
 }
 
-fn to_script(bytes: &Vec<u8>) -> Option<Script> {
+fn to_script(bytes: &Vec<u8>) -> Option<ScriptBuf> {
     if bytes.is_empty() {
         None
     } else {
-        Some(Script::from(bytes.clone()))
+        Some(ScriptBuf::from(bytes.clone()))
     }
 }
 
@@ -390,7 +393,7 @@ impl RootHandler {
 
     // sign any inputs that are ours, modifying the PSBT in place
     fn sign_withdrawal(&self, streamed: &mut StreamedPSBT, utxos: Array<Utxo>) -> Result<()> {
-        let psbt = &mut streamed.psbt;
+        let psbt = &mut streamed.psbt.inner;
         let opaths = extract_psbt_output_paths(&psbt);
 
         let tx = &mut psbt.unsigned_tx;
@@ -422,7 +425,7 @@ impl RootHandler {
                         let revocation_pubkey = per_commitment_point.as_ref().map(|p| {
                             let revocation_basepoint =
                                 chan.counterparty_pubkeys().revocation_basepoint;
-                            derive_public_revocation_key(&secp_ctx, p, &revocation_basepoint)
+                            RevocationKey::from_basepoint(&secp_ctx, &revocation_basepoint, p)
                         });
                         chan.get_unilateral_close_key(&per_commitment_point, &revocation_pubkey)
                     })?;
@@ -441,7 +444,11 @@ impl RootHandler {
             if let Some(script) = psbt_in.redeem_script.as_ref() {
                 assert!(psbt_in.final_script_sig.is_none());
                 assert!(tx_in.script_sig.is_empty());
-                let script_sig = script::Builder::new().push_slice(script.as_bytes()).into_script();
+                let mut push_bytes = PushBytesBuf::new();
+                push_bytes
+                    .extend_from_slice(script.as_bytes())
+                    .expect("push_bytes.extend_from_slice failed");
+                let script_sig = script::Builder::new().push_slice(&push_bytes).into_script();
                 psbt_in.final_script_sig = Some(script_sig);
             }
         }
@@ -727,10 +734,10 @@ impl Handler for RootHandler {
                     .with_channel_base(&channel_id, |base| Ok(base.get_channel_basepoints()))?;
 
                 let basepoints = Basepoints {
-                    revocation: PubKey(bps.revocation_basepoint.serialize()),
+                    revocation: PubKey(bps.revocation_basepoint.0.serialize()),
                     payment: PubKey(bps.payment_point.serialize()),
-                    htlc: PubKey(bps.htlc_basepoint.serialize()),
-                    delayed_payment: PubKey(bps.delayed_payment_basepoint.serialize()),
+                    htlc: PubKey(bps.htlc_basepoint.0.serialize()),
+                    delayed_payment: PubKey(bps.delayed_payment_basepoint.0.serialize()),
                 };
                 let funding = PubKey(bps.funding_pubkey.serialize());
 
@@ -790,8 +797,8 @@ impl Handler for RootHandler {
                 // WORKAROUND - sometimes c-lightning calls handle_sign_commitment_tx
                 // with mutual close transactions.  We can tell the difference because
                 // the locktime field will be set to 0 for a mutual close.
-                let sig = if tx.lock_time.0 == 0 {
-                    let opaths = extract_psbt_output_paths(&m.psbt.0);
+                let sig = if tx.lock_time.to_consensus_u32() == 0 {
+                    let opaths = extract_psbt_output_paths(&m.psbt.0.inner);
                     self.node
                         .with_channel(&channel_id, |chan| chan.sign_mutual_close_tx(&tx, &opaths))?
                 } else {
@@ -852,7 +859,11 @@ impl Handler for RootHandler {
                 #[cfg(feature = "timeless_workaround")]
                 {
                     // WORKAROUND for #206, #339, #235 - If our implementation has no clock use the
-                    // latest BlockHeader timestamp.
+                    // BlockHeader timestamp.
+                    use crate::handler::bitcoin::blockdata::block::Header as BlockHeader;
+                    use core::time::Duration;
+                    let header: BlockHeader =
+                        deserialize(m.header.0.as_slice()).expect("header again");
                     let old_now = self.node.get_clock().now();
                     let new_now = tracker.tip_time();
                     // Don't allow retrograde time updates ...
@@ -935,7 +946,7 @@ impl Handler for RootHandler {
                 &Self::channel_id(&m.peer_id, m.dbid),
                 m.commitment_number,
                 &m.tx,
-                &m.psbt,
+                &m.psbt.inner,
                 &m.wscript,
                 m.input,
             ),
@@ -944,7 +955,7 @@ impl Handler for RootHandler {
                 &Self::channel_id(&m.peer_id, m.dbid),
                 &m.remote_per_commitment_point,
                 &m.tx,
-                &m.psbt,
+                &m.psbt.inner,
                 &m.wscript,
                 m.option_anchors,
                 m.input,
@@ -954,7 +965,7 @@ impl Handler for RootHandler {
                 &Self::channel_id(&m.peer_id, m.dbid),
                 &m.revocation_secret,
                 &m.tx,
-                &m.psbt,
+                &m.psbt.inner,
                 &m.wscript,
                 m.input,
             ),
@@ -963,7 +974,7 @@ impl Handler for RootHandler {
                 &Self::channel_id(&m.peer_id, m.dbid),
                 m.commitment_number,
                 &m.tx,
-                &m.psbt,
+                &m.psbt.inner,
                 &m.wscript,
                 m.option_anchors,
                 m.input,
@@ -995,7 +1006,7 @@ impl Handler for RootHandler {
                     .with_channel(&channel_id, |channel| Ok(channel.get_anchor_redeemscript()))?;
                 let anchor_scriptpubkey = anchor_redeemscript.to_v0_p2wsh();
 
-                let mut psbt = streamed.psbt;
+                let mut psbt = streamed.psbt().clone();
                 let anchor_index = psbt
                     .inputs
                     .iter()
@@ -1012,7 +1023,9 @@ impl Handler for RootHandler {
                 })?;
                 let witness = vec![signature_to_bitcoin_vec(sig), anchor_redeemscript.to_bytes()];
                 psbt.inputs[anchor_index].final_script_witness = Some(Witness::from_vec(witness));
-                Ok(Box::new(msgs::SignAnchorspendReply { psbt: WithSize(psbt) }))
+                Ok(Box::new(msgs::SignAnchorspendReply {
+                    psbt: WithSize(PsbtWrapper { inner: psbt }),
+                }))
             }
             m => unimplemented!("loop {}: unimplemented message {:?}", self.id, m),
         }
@@ -1146,22 +1159,22 @@ impl Handler for ChannelHandler {
                 let holder_shutdown_script = if m.local_shutdown_script.is_empty() {
                     None
                 } else {
-                    Some(Script::deserialize(&m.local_shutdown_script.as_slice()).expect("script"))
+                    Some(ScriptBuf::from_bytes(m.local_shutdown_script.as_slice().to_vec()))
                 };
 
                 let points = m.remote_basepoints;
                 let counterparty_points = ChannelPublicKeys {
                     funding_pubkey: extract_pubkey(&m.remote_funding_pubkey),
-                    revocation_basepoint: extract_pubkey(&points.revocation),
-                    payment_point: extract_pubkey(&points.payment),
-                    delayed_payment_basepoint: extract_pubkey(&points.delayed_payment),
-                    htlc_basepoint: extract_pubkey(&points.htlc),
+                    revocation_basepoint: points.revocation.into(),
+                    payment_point: points.payment.into(),
+                    delayed_payment_basepoint: points.delayed_payment.into(),
+                    htlc_basepoint: points.htlc.into(),
                 };
 
                 let counterparty_shutdown_script = if m.remote_shutdown_script.is_empty() {
                     None
                 } else {
-                    Some(Script::deserialize(&m.remote_shutdown_script.as_slice()).expect("script"))
+                    Some(ScriptBuf::from_bytes(m.remote_shutdown_script.as_slice().to_vec()))
                 };
 
                 // FIXME
@@ -1202,7 +1215,7 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::LockOutpointReply {}))
             }
             Message::SignRemoteHtlcTx(m) => {
-                let psbt = m.psbt;
+                let psbt = &m.psbt.inner;
                 let tx = m.tx.0;
                 let remote_per_commitment_point =
                     PublicKey::from_slice(&m.remote_per_commitment_point.0).expect("pubkey");
@@ -1210,7 +1223,7 @@ impl Handler for ChannelHandler {
                 assert_eq!(psbt.inputs.len(), 1);
                 assert_eq!(tx.output.len(), 1);
                 assert_eq!(tx.input.len(), 1);
-                let redeemscript = Script::from(m.wscript.0);
+                let redeemscript = ScriptBuf::from(m.wscript.0);
                 let htlc_amount_sat = psbt.inputs[0]
                     .witness_utxo
                     .as_ref()
@@ -1231,7 +1244,7 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::SignTxReply { signature: typed_to_bitcoin_sig(sig) }))
             }
             Message::SignRemoteCommitmentTx(m) => {
-                let psbt = m.psbt;
+                let psbt = &m.psbt.inner;
                 let witscripts = extract_psbt_witscripts(&psbt);
                 let tx = m.tx;
                 let remote_per_commitment_point =
@@ -1283,7 +1296,7 @@ impl Handler for ChannelHandler {
                 &self.channel_id,
                 m.commitment_number,
                 &m.tx,
-                &m.psbt,
+                &m.psbt.inner,
                 &m.wscript,
                 0,
             ),
@@ -1292,7 +1305,7 @@ impl Handler for ChannelHandler {
                 &self.channel_id,
                 &m.remote_per_commitment_point,
                 &m.tx,
-                &m.psbt,
+                &m.psbt.inner,
                 &m.wscript,
                 m.option_anchors,
                 0,
@@ -1302,13 +1315,13 @@ impl Handler for ChannelHandler {
                 &self.channel_id,
                 m.commitment_number,
                 &m.tx,
-                &m.psbt,
+                &m.psbt.inner,
                 &m.wscript,
                 m.option_anchors,
                 0,
             ),
             Message::SignMutualCloseTx(m) => {
-                let psbt = m.psbt;
+                let psbt = &m.psbt.inner;
                 let tx = m.tx;
                 let opaths = extract_psbt_output_paths(&psbt);
                 debug!(
@@ -1337,7 +1350,7 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::SignTxReply { signature: to_bitcoin_sig(sig) }))
             }
             Message::ValidateCommitmentTx(m) => {
-                let psbt = m.psbt;
+                let psbt = &m.psbt.inner;
                 let witscripts = extract_psbt_witscripts(&psbt);
                 let tx = m.tx.0;
                 let commit_num = m.commitment_number;
@@ -1495,7 +1508,7 @@ impl Handler for ChannelHandler {
                 &self.channel_id,
                 &m.revocation_secret,
                 &m.tx,
-                &m.psbt,
+                &m.psbt.inner,
                 &m.wscript,
                 0,
             ),
@@ -1538,7 +1551,7 @@ fn sign_delayed_payment_to_us(
 ) -> Result<Box<dyn SerBolt>> {
     // FIXME CLN is sending an incorrect tx in the psbt, so use the outer one in the message instead
     let commitment_number = commitment_number;
-    let redeemscript = Script::from(wscript.0.clone());
+    let redeemscript = ScriptBuf::from(wscript.0.clone());
     let input = input as usize;
     let htlc_amount_sat =
         psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
@@ -1573,7 +1586,7 @@ fn sign_remote_htlc_to_us(
 ) -> Result<Box<dyn SerBolt>> {
     let remote_per_commitment_point =
         PublicKey::from_slice(&remote_per_commitment_point.0).expect("pubkey");
-    let redeemscript = Script::from(wscript.0.clone());
+    let redeemscript = ScriptBuf::from(wscript.0.clone());
     let input = input as usize;
     let htlc_amount_sat =
         psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
@@ -1607,7 +1620,7 @@ fn sign_local_htlc_tx(
     input: u32,
 ) -> Result<Box<dyn SerBolt>> {
     let commitment_number = commitment_number;
-    let redeemscript = Script::from(wscript.0.clone());
+    let redeemscript = ScriptBuf::from(wscript.0.clone());
     let input = input as usize;
     let htlc_amount_sat =
         psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
@@ -1640,7 +1653,7 @@ fn sign_penalty_to_us(
     input: u32,
 ) -> Result<Box<dyn SerBolt>> {
     let revocation_secret = SecretKey::from_slice(&revocation_secret.0).expect("secret");
-    let redeemscript = Script::from(wscript.0.clone());
+    let redeemscript = ScriptBuf::from(wscript.0.clone());
     let input = input as usize;
     let htlc_amount_sat =
         psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
@@ -1683,8 +1696,8 @@ fn extract_pubkey(key: &PubKey) -> PublicKey {
 fn extract_psbt_witscripts(psbt: &PartiallySignedTransaction) -> Vec<Vec<u8>> {
     psbt.outputs
         .iter()
-        .map(|o| o.witness_script.clone().unwrap_or(Script::new()))
-        .map(|s| s[..].to_vec())
+        .map(|o| o.witness_script.clone().unwrap_or(ScriptBuf::new()))
+        .map(|s| s[..].to_bytes())
         .collect()
 }
 

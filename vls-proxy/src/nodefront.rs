@@ -5,9 +5,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::consensus::serialize;
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
+use bitcoin::{BlockHash, Network, OutPoint, Txid};
 
 use crate::persist::ExternalPersistWithHelper;
 use lightning_signer::bitcoin;

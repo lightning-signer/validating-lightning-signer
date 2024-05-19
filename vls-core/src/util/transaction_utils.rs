@@ -1,11 +1,12 @@
 use crate::io_extras::sink;
 use crate::prelude::*;
+use bitcoin::address::Payload;
 use bitcoin::consensus::Encodable;
 use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1};
-use bitcoin::util::address::Payload;
-use bitcoin::PublicKey as BitcoinPublicKey;
-use bitcoin::{EcdsaSighashType, Script, Transaction, TxOut, VarInt};
+use bitcoin::sighash::EcdsaSighashType;
+use bitcoin::{PublicKey as BitcoinPublicKey, ScriptBuf};
+use bitcoin::{Transaction, TxOut, VarInt};
 use lightning::ln::chan_utils::{
     get_commitment_transaction_number_obscure_factor, get_revokeable_redeemscript,
     make_funding_redeemscript, ChannelTransactionParameters, TxCreationKeys,
@@ -48,7 +49,7 @@ pub(crate) fn mutual_close_tx_weight(unsigned_tx: &Transaction) -> usize {
         2 + 1 + 4 + // witness-marker-and-flag witness-element-count 4-element-lengths
         72 + 72 + // <signature_for_pubkey1> <signature_for_pubkey2>
         1 + 1 + 33 + 1 + 33 + 1 + 1; // 2 <pubkey1> <pubkey2> 2 OP_CHECKMULTISIG
-    unsigned_tx.weight() + EXPECTED_MUTUAL_CLOSE_WITNESS_WEIGHT
+    unsigned_tx.weight().to_wu() as usize + EXPECTED_MUTUAL_CLOSE_WITNESS_WEIGHT
 }
 
 /// Possibly adds a change output to the given transaction, always doing so if there are excess
@@ -58,9 +59,9 @@ pub(crate) fn mutual_close_tx_weight(unsigned_tx: &Transaction) -> usize {
 pub fn maybe_add_change_output(
     tx: &mut Transaction,
     input_value: u64,
-    witness_max_weight: usize,
+    witness_max_weight: u64,
     feerate_sat_per_1000_weight: u32,
-    change_destination_script: Script,
+    change_destination_script: ScriptBuf,
 ) -> Result<(), ()> {
     if input_value > MAX_VALUE_MSAT / 1000 {
         //bail!("Input value is greater than max satoshis");
@@ -80,7 +81,7 @@ pub fn maybe_add_change_output(
     let mut change_output = TxOut { script_pubkey: change_destination_script, value: 0 };
     let change_len = change_output.consensus_encode(&mut sink()).map_err(|_| ())?;
     let mut weight_with_change: i64 =
-        tx.weight() as i64 + 2 + witness_max_weight as i64 + change_len as i64 * 4;
+        tx.weight().to_wu() as i64 + 2 + witness_max_weight as i64 + change_len as i64 * 4;
     // Include any extra bytes required to push an extra output.
     weight_with_change += (VarInt(tx.output.len() as u64 + 1).len()
         - VarInt(tx.output.len() as u64).len()) as i64
@@ -92,7 +93,8 @@ pub fn maybe_add_change_output(
         change_output.value = change_value as u64;
         tx.output.push(change_output);
     } else if (input_value - output_value) as i64
-        - (tx.weight() as i64 + 2 + witness_max_weight as i64) * feerate_sat_per_1000_weight as i64
+        - (tx.weight().to_wu() as i64 + 2 + witness_max_weight as i64)
+            * feerate_sat_per_1000_weight as i64
             / 1000
         < 0
     {
@@ -263,13 +265,15 @@ pub fn decode_commitment_number(
     }
 
     // check if the input sequence and locktime are set to standard commitment tx values
-    if (tx.input[0].sequence.0 >> 8 * 3) as u8 != 0x80 || (tx.lock_time.0 >> 8 * 3) as u8 != 0x20 {
+    if (tx.input[0].sequence.0 >> 8 * 3) as u8 != 0x80
+        || (tx.lock_time.to_consensus_u32() >> 8 * 3) as u8 != 0x20
+    {
         return None;
     }
 
     // forward counting
     let commitment_number = (((tx.input[0].sequence.0 as u64 & 0xffffff) << 3 * 8)
-        | (tx.lock_time.0 as u64 & 0xffffff))
+        | (tx.lock_time.to_consensus_u32() as u64 & 0xffffff))
         ^ obscure_factor;
     Some(commitment_number)
 }
@@ -281,8 +285,8 @@ mod tests {
     use crate::util::test_utils::{
         init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
     };
+    use bitcoin::consensus::deserialize;
     use bitcoin::hashes::hex::FromHex;
-    use bitcoin::psbt::serialize::Deserialize;
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::Transaction;
     use lightning::ln::chan_utils::{htlc_success_tx_weight, htlc_timeout_tx_weight};
@@ -412,7 +416,7 @@ mod tests {
 
     #[test]
     fn test_issue_165() {
-        let tx = Transaction::deserialize(&Vec::from_hex("0200000001b78e0523c17f8ac709eec54654cc849529c05584bfda6e04c92a3b670476f2a20000000000ffffffff017d4417000000000016001476168b09afc66bd3956efb25cd8b83650bda0c5f00000000").unwrap()).unwrap();
+        let tx: Transaction = deserialize(&Vec::from_hex("0200000001b78e0523c17f8ac709eec54654cc849529c05584bfda6e04c92a3b670476f2a20000000000ffffffff017d4417000000000016001476168b09afc66bd3956efb25cd8b83650bda0c5f00000000").unwrap()).unwrap();
         let tx_weight = tx.weight();
         let spk = tx.output[0].script_pubkey.len();
         let weight = super::mutual_close_tx_weight(&tx);
@@ -428,7 +432,7 @@ mod tests {
         )*4 +                                         // * 4 for non-witness parts
             ((8+1) +                            // output values and script length
                 spk as u64) * 4; // scriptpubkey and witness multiplier
-        assert_eq!(expected_tx_weight, tx_weight as u64);
+        assert_eq!(expected_tx_weight, tx_weight.to_wu());
         // CLN was actually missing the pubkey length byte, so the feerate is genuinely too low
         assert_eq!(estimated_feerate, 252);
     }

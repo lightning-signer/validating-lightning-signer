@@ -1,5 +1,6 @@
 use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::{EcdsaSighashType, Network, Script, Sighash, Transaction};
+use bitcoin::sighash::{EcdsaSighashType, SegwitV0Sighash};
+use bitcoin::{Network, ScriptBuf, Transaction};
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::sign::InMemorySigner;
 
@@ -209,10 +210,11 @@ impl Validator for OnchainValidator {
         setup: &ChannelSetup,
         txkeys: &TxCreationKeys,
         tx: &Transaction,
-        redeemscript: &Script,
+        redeemscript: &ScriptBuf,
         htlc_amount_sat: u64,
-        output_witscript: &Script,
-    ) -> Result<(u32, HTLCOutputInCommitment, Sighash, EcdsaSighashType), ValidationError> {
+        output_witscript: &ScriptBuf,
+    ) -> Result<(u32, HTLCOutputInCommitment, SegwitV0Sighash, EcdsaSighashType), ValidationError>
+    {
         // Delegate to SimplePolicy
         self.inner.decode_and_validate_htlc_tx(
             is_counterparty,
@@ -255,8 +257,8 @@ impl Validator for OnchainValidator {
         state: &EnforcementState,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
-        holder_script: &Option<Script>,
-        counterparty_script: &Option<Script>,
+        holder_script: &Option<ScriptBuf>,
+        counterparty_script: &Option<ScriptBuf>,
         holder_wallet_path_hint: &[u32],
     ) -> Result<(), ValidationError> {
         self.inner.validate_mutual_close_tx(
@@ -290,7 +292,7 @@ impl Validator for OnchainValidator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         tx: &Transaction,
-        redeemscript: &Script,
+        redeemscript: &ScriptBuf,
         input: usize,
         amount_sat: u64,
         wallet_path: &[u32],

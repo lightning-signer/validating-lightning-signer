@@ -1,18 +1,18 @@
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::{Address, Network, Script};
+use bitcoin::{Address, Network, ScriptBuf};
 
 use crate::util::status::Status;
 
 /// A layer-1 wallet used by Validator
 pub trait Wallet {
     /// True if the wallet can spend the given output with a derived key
-    fn can_spend(&self, child_path: &[u32], script_pubkey: &Script) -> Result<bool, Status>;
+    fn can_spend(&self, child_path: &[u32], script_pubkey: &ScriptBuf) -> Result<bool, Status>;
 
     /// Returns true if the given destination Lightning payee is in the node's allowlist
     fn allowlist_contains_payee(&self, payee: PublicKey) -> bool;
 
     /// True if the script_pubkey is in the node's allowlist
-    fn allowlist_contains(&self, script_pubkey: &Script, path: &[u32]) -> bool;
+    fn allowlist_contains(&self, script_pubkey: &ScriptBuf, path: &[u32]) -> bool;
 
     /// Returns the network
     fn network(&self) -> Network;
