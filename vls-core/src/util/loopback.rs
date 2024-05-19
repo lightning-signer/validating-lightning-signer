@@ -140,7 +140,7 @@ impl LoopbackChannelSigner {
     fn sign_holder_commitment_and_htlcs(
         &self,
         hct: &HolderCommitmentTransaction,
-    ) -> Result<(Signature, Vec<Signature>), ()> {
+    ) -> Result<Signature, ()> {
         let commitment_tx = hct.trust();
 
         debug!("loopback: sign local txid {}", commitment_tx.built_transaction().txid);
@@ -152,7 +152,7 @@ impl LoopbackChannelSigner {
         let (offered_htlcs, received_htlcs) =
             LoopbackChannelSigner::convert_to_htlc_info2(hct.htlcs());
 
-        let (sig, htlc_sigs) = self
+        let (sig, _) = self
             .signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
                 let result = chan.sign_holder_commitment_tx_phase2_redundant(
@@ -167,7 +167,7 @@ impl LoopbackChannelSigner {
             })
             .map_err(|s| self.bad_status(s))?;
 
-        Ok((sig, htlc_sigs))
+        Ok(sig)
     }
 
     fn convert_to_htlc_info2(htlcs: &[HTLCOutputInCommitment]) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
@@ -359,8 +359,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         hct: &HolderCommitmentTransaction,
         _secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
-        let (signature, _) = self.sign_holder_commitment_and_htlcs(hct)?;
-        Ok(signature)
+        self.sign_holder_commitment_and_htlcs(hct)
     }
 
     fn unsafe_sign_holder_commitment(
