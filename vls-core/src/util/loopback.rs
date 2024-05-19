@@ -10,7 +10,7 @@ use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::{Script, Transaction, TxOut};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
-    HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys,
+    HTLCOutputInCommitment, HolderCommitmentTransaction,
 };
 use lightning::ln::features::ChannelTypeFeatures;
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement, UnsignedGossipMessage};
@@ -112,25 +112,6 @@ impl LoopbackChannelSigner {
         self.signer
             .with_channel(&self.node_id, &self.channel_id, |chan| Ok(chan.setup.clone()))
             .map_err(|s| self.bad_status(s))
-    }
-
-    pub fn make_counterparty_tx_keys(
-        &self,
-        per_commitment_point: &PublicKey,
-        secp_ctx: &Secp256k1<All>,
-    ) -> Result<TxCreationKeys, ()> {
-        let pubkeys = &self.pubkeys;
-        let setup = self.get_channel_setup()?;
-        let counterparty_pubkeys = setup.counterparty_points;
-        let keys = TxCreationKeys::derive_new(
-            secp_ctx,
-            &per_commitment_point,
-            &counterparty_pubkeys.delayed_payment_basepoint,
-            &counterparty_pubkeys.htlc_basepoint,
-            &pubkeys.revocation_basepoint,
-            &pubkeys.htlc_basepoint,
-        );
-        Ok(keys)
     }
 
     fn bad_status(&self, s: Status) {
@@ -432,14 +413,14 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
-        let tx_keys = self.make_counterparty_tx_keys(&per_commitment_point, secp_ctx)?;
-        let redeem_script = chan_utils::get_htlc_redeemscript(&htlc, &self.features(), &tx_keys);
-        let wallet_path = LoopbackChannelSigner::dest_wallet_path();
+       let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2
         let sig = self
             .signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
+                let tx_keys = chan.make_counterparty_tx_keys(&per_commitment_point)?;
+                let redeem_script = chan_utils::get_htlc_redeemscript(&htlc, &self.features(), &tx_keys);
                 chan.sign_justice_sweep(
                     justice_tx,
                     input,
@@ -495,16 +476,16 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         amount: u64,
         per_commitment_point: &PublicKey,
         htlc: &HTLCOutputInCommitment,
-        secp_ctx: &Secp256k1<All>,
+        _secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
-        let chan_keys = self.make_counterparty_tx_keys(per_commitment_point, secp_ctx)?;
-        let redeem_script = chan_utils::get_htlc_redeemscript(htlc, &self.features(), &chan_keys);
-        let wallet_path = LoopbackChannelSigner::dest_wallet_path();
+       let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2
         let sig = self
             .signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
+                let chan_keys = chan.make_counterparty_tx_keys(per_commitment_point)?;
+                let redeem_script = chan_utils::get_htlc_redeemscript(htlc, &self.features(), &chan_keys);
                 chan.sign_counterparty_htlc_sweep(
                     htlc_tx,
                     input,
