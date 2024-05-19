@@ -247,7 +247,7 @@ mod tests {
                 &vec![opath.clone()],
             ),
             "policy failure: validate_onchain_tx: \
-             validate_beneficial_value: non-beneficial value considered as fees is above maximum feerate: 641554 > 151000"
+             validate_beneficial_value: non-beneficial value considered as fees is above maximum feerate: 641554 > 333333"
         );
     }
 
