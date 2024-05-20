@@ -104,6 +104,7 @@ pub fn connect(serial_port: String) -> anyhow::Result<SerialWrap> {
         &mut serial,
         &SerialRequestHeader { sequence, peer_id, dbid },
     )?;
+    info!("sending {:?}", &preinit2);
     msgs::write(&mut serial, preinit2)?;
     Ok(serial)
 }
@@ -132,6 +133,7 @@ impl SignerPort for SerialSignerPort {
     async fn handle_message(&self, message: Vec<u8>) -> Result<Vec<u8>> {
         if log::log_enabled!(log::Level::Debug) {
             let msg = msgs::from_vec(message.clone())?;
+            debug!("SerialSignerPort::handle_message request {:?}", msg);
             log_request!(msg);
         }
         let serial = Arc::clone(&self.serial);

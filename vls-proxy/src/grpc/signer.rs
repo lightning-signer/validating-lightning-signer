@@ -183,11 +183,13 @@ async fn handle_init_requests(
 
                 let response = handle_init_request(init_handler, request, request_id);
                 let is_done = response.as_ref().map(|(is_done, _)| *is_done).unwrap_or(false);
-                let response = response.map(|(_, r)| r);
+                let maybe_response = response.map(|(_, r)| r);
 
-                if send_response(sender, request_id, response).await {
-                    // stream closed
-                    return false;
+                if let Ok(Some(response)) = maybe_response {
+                    if send_response(sender, request_id, Ok(response)).await {
+                        // stream closed
+                        return false;
+                    }
                 }
                 if is_done {
                     return true;
@@ -212,22 +214,23 @@ fn handle_init_request(
     init_handler: &mut InitHandler,
     request: SignerRequest,
     request_id: u64,
-) -> StdResult<(bool, SignerResponse), Error> {
+) -> StdResult<(bool, Option<SignerResponse>), Error> {
     let msg = msgs::from_vec(request.message)?;
     Span::current().record("message_name", msg.inner().name());
 
     let reply = init_handler.handle(msg);
 
     let (is_done, response) = match reply {
-        Ok((is_done, res)) => (
+        Ok((is_done, Some(res))) => (
             is_done,
-            Ok(SignerResponse {
+            Ok(Some(SignerResponse {
                 request_id,
                 message: res.as_vec(),
                 error: String::new(),
                 is_temporary_failure: false,
-            }),
+            })),
         ),
+        Ok((is_done, None)) => (is_done, Ok(None)),
         Err(e) => (false, Err(e)),
     };
     response.map(|r| (is_done, r))

@@ -179,12 +179,14 @@ fn handle_init_requests(arc_devctx: &RefCell<DeviceContext>, init_handler: &mut 
         }
 
         drop(devctx); // Release the DeviceContext during the handler call (Approver needs)
-        let (is_done, reply) = init_handler.handle(message).expect("handle");
+        let (is_done, maybe_reply) = init_handler.handle(message).expect("handle");
         let mut devctx = arc_devctx.borrow_mut(); // Reacquire the DeviceContext
 
-        write_serial_response_header(&mut devctx.serial, reqhdr.sequence)
-            .expect("write reply header");
-        msgs::write_vec(&mut devctx.serial, reply.as_vec()).expect("write reply");
+        if let Some(reply) = maybe_reply {
+            write_serial_response_header(&mut devctx.serial, reqhdr.sequence)
+                .expect("write reply header");
+            msgs::write_vec(&mut devctx.serial, reply.as_vec()).expect("write reply");
+        }
         if is_done {
             break;
         }
