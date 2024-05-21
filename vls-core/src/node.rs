@@ -1244,6 +1244,10 @@ impl Node {
                     // Clone the matching monitor from the chaintracker's listeners
                     let (tracker_state, tracker_slot) =
                         listeners.remove(&funding_outpoint).unwrap_or_else(|| {
+                            warn!(
+                                "can't find funding outpoint {} in remaining listeners: {:#?}",
+                                &funding_outpoint, &listeners
+                            );
                             panic!("No chain tracker listener for {}", setup.funding_outpoint)
                         });
                     let monitor_base = ChainMonitorBase::new_from_persistence(
