@@ -118,39 +118,6 @@ impl LoopbackChannelSigner {
         error!("bad status {:?} on channel {}", s, self.channel_id);
     }
 
-    fn sign_holder_commitment_and_htlcs(
-        &self,
-        hct: &HolderCommitmentTransaction,
-    ) -> Result<Signature, ()> {
-        let commitment_tx = hct.trust();
-
-        debug!("loopback: sign local txid {}", commitment_tx.built_transaction().txid);
-
-        let commitment_number = INITIAL_COMMITMENT_NUMBER - hct.commitment_number();
-        let to_holder_value_sat = hct.to_broadcaster_value_sat();
-        let to_counterparty_value_sat = hct.to_countersignatory_value_sat();
-        let feerate_per_kw = hct.feerate_per_kw();
-        let (offered_htlcs, received_htlcs) =
-            LoopbackChannelSigner::convert_to_htlc_info2(hct.htlcs());
-
-        let (sig, _) = self
-            .signer
-            .with_channel(&self.node_id, &self.channel_id, |chan| {
-                let result = chan.sign_holder_commitment_tx_phase2_redundant(
-                    commitment_number,
-                    feerate_per_kw,
-                    to_holder_value_sat,
-                    to_counterparty_value_sat,
-                    offered_htlcs.clone(),
-                    received_htlcs.clone(),
-                )?;
-                Ok(result)
-            })
-            .map_err(|s| self.bad_status(s))?;
-
-        Ok(sig)
-    }
-
     fn convert_to_htlc_info2(htlcs: &[HTLCOutputInCommitment]) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
         let mut offered_htlcs = Vec::new();
         let mut received_htlcs = Vec::new();
@@ -340,7 +307,33 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         hct: &HolderCommitmentTransaction,
         _secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
-        self.sign_holder_commitment_and_htlcs(hct)
+        let commitment_tx = hct.trust();
+
+        debug!("loopback: sign local txid {}", commitment_tx.built_transaction().txid);
+
+        let commitment_number = INITIAL_COMMITMENT_NUMBER - hct.commitment_number();
+        let to_holder_value_sat = hct.to_broadcaster_value_sat();
+        let to_counterparty_value_sat = hct.to_countersignatory_value_sat();
+        let feerate_per_kw = hct.feerate_per_kw();
+        let (offered_htlcs, received_htlcs) =
+            LoopbackChannelSigner::convert_to_htlc_info2(hct.htlcs());
+
+        let (sig, _) = self
+            .signer
+            .with_channel(&self.node_id, &self.channel_id, |chan| {
+                let result = chan.sign_holder_commitment_tx_phase2_redundant(
+                    commitment_number,
+                    feerate_per_kw,
+                    to_holder_value_sat,
+                    to_counterparty_value_sat,
+                    offered_htlcs.clone(),
+                    received_htlcs.clone(),
+                )?;
+                Ok(result)
+            })
+            .map_err(|s| self.bad_status(s))?;
+
+        Ok(sig)
     }
 
     fn unsafe_sign_holder_commitment(
