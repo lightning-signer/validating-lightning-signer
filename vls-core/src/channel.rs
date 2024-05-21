@@ -2050,16 +2050,13 @@ impl Channel {
         if recomposed_tx.trust().built_transaction().transaction != *tx {
             #[cfg(not(feature = "log_pretty_print"))]
             {
-                debug!("ORIGINAL_TX={:?}", &tx);
-                debug!(
-                    "RECOMPOSED_TX={:?}",
-                    &recomposed_tx.trust().built_transaction().transaction
-                );
+                warn!("ORIGINAL_TX={:?}", &tx);
+                warn!("RECOMPOSED_TX={:?}", &recomposed_tx.trust().built_transaction().transaction);
             }
             #[cfg(feature = "log_pretty_print")]
             {
-                debug!("ORIGINAL_TX={:#?}", &tx);
-                debug!(
+                warn!("ORIGINAL_TX={:#?}", &tx);
+                warn!(
                     "RECOMPOSED_TX={:#?}",
                     &recomposed_tx.trust().built_transaction().transaction
                 );
