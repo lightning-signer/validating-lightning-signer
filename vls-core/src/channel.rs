@@ -2050,13 +2050,16 @@ impl Channel {
         if recomposed_tx.trust().built_transaction().transaction != *tx {
             #[cfg(not(feature = "log_pretty_print"))]
             {
-                warn!("ORIGINAL_TX={:?}", &tx);
-                warn!("RECOMPOSED_TX={:?}", &recomposed_tx.trust().built_transaction().transaction);
+                ::log::warn!("ORIGINAL_TX={:?}", &tx);
+                ::log::warn!(
+                    "RECOMPOSED_TX={:?}",
+                    &recomposed_tx.trust().built_transaction().transaction
+                );
             }
             #[cfg(feature = "log_pretty_print")]
             {
-                warn!("ORIGINAL_TX={:#?}", &tx);
-                warn!(
+                ::log::warn!("ORIGINAL_TX={:#?}", &tx);
+                ::log::warn!(
                     "RECOMPOSED_TX={:#?}",
                     &recomposed_tx.trust().built_transaction().transaction
                 );
@@ -2238,15 +2241,18 @@ impl Channel {
             );
             #[cfg(not(feature = "log_pretty_print"))]
             {
-                warn!("RECOMPOSITION FAILED");
-                warn!("ORIGINAL_TX={:?}", &tx);
-                warn!("RECOMPOSED_TX={:?}", &recomposed_tx.trust().built_transaction().transaction);
+                ::log::warn!("RECOMPOSITION FAILED");
+                ::log::warn!("ORIGINAL_TX={:?}", &tx);
+                ::log::warn!(
+                    "RECOMPOSED_TX={:?}",
+                    &recomposed_tx.trust().built_transaction().transaction
+                );
             }
             #[cfg(feature = "log_pretty_print")]
             {
-                warn!("RECOMPOSITION FAILED");
-                warn!("ORIGINAL_TX={:#?}", &tx);
-                warn!(
+                ::log::warn!("RECOMPOSITION FAILED");
+                ::log::warn!("ORIGINAL_TX={:#?}", &tx);
+                ::log::warn!(
                     "RECOMPOSED_TX={:#?}",
                     &recomposed_tx.trust().built_transaction().transaction
                 );

@@ -1281,8 +1281,8 @@ impl Validator for SimpleValidator {
         let recomposed_tx = trusted.built_transaction();
 
         if *recomposed_tx != *tx {
-            warn!("ORIGINAL_TX={:#?}", &tx);
-            warn!("RECOMPOSED_TX={:#?}", &recomposed_tx);
+            ::log::warn!("ORIGINAL_TX={:#?}", &tx);
+            ::log::warn!("RECOMPOSED_TX={:#?}", &recomposed_tx);
             // this actually covers a few policies, not just format
             policy_err!(self, "policy-onchain-format-standard", "recomposed tx mismatch");
         }
