@@ -2751,6 +2751,56 @@ impl Node {
             .map(|(_, slot_arc)| slot_arc.lock().unwrap().chaninfo())
             .collect()
     }
+
+    /// Perform extra consistency checking, panic on failure
+    pub fn check_consistency(&self) {
+        let tracker = self.tracker.lock().unwrap();
+        let channels = self.channels.lock().unwrap();
+
+        // Make sure we've got a listener for each ready channel
+        let mut nchannels: usize = 0;
+        let mut channel_outpoints = vec![];
+        channels.iter().for_each(|(channelid, slot)| {
+            match &*slot.lock().unwrap() {
+                ChannelSlot::Stub(_) => {}
+                ChannelSlot::Ready(chan) => {
+                    nchannels += 1;
+                    channel_outpoints.push(chan.setup.funding_outpoint);
+                    if let Some((mon, _listen_slot)) =
+                        tracker.listeners.get(&chan.setup.funding_outpoint)
+                    {
+                        // These consistency checks might not be valid when
+                        // splicing is in effect, the funding_outpoint used as
+                        // the listener key might be the original and others are
+                        // the updated spliced ones ...
+
+                        assert_eq!(chan.setup.funding_outpoint, mon.funding_outpoint);
+                        if let Some(funding_outpoint) = mon.as_base().funding_outpoint() {
+                            assert_eq!(chan.setup.funding_outpoint, funding_outpoint);
+                        }
+                    } else {
+                        panic!(
+                            "no listener for funding_outpoint {}: found listeners for: {:?}",
+                            &channelid,
+                            tracker.listeners.keys().collect::<Vec<_>>()
+                        );
+                    }
+                }
+            }
+        });
+
+        // Make sure there are no extra listeners
+        let nlisteners = tracker.listeners.len();
+        assert_eq!(
+            nlisteners,
+            nchannels,
+            "nlisteners {} != nchannel_outpoints {}, listeners: {:?}, channel_outpoints: {:?}",
+            nlisteners,
+            nchannels,
+            tracker.listeners.keys().collect::<Vec<_>>(),
+            channel_outpoints,
+        );
+    }
 }
 
 /// Trait to monitor read-only features of Node

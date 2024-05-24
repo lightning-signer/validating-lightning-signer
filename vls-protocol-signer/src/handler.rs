@@ -144,6 +144,7 @@ pub trait Handler {
         let reply = result?;
         log_reply(&reply);
         let muts = persister.prepare();
+        self.node().check_consistency();
         Ok((reply, muts))
     }
 
