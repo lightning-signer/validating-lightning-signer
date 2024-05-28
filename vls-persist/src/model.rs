@@ -24,7 +24,7 @@ use lightning_signer::persist::model::ChannelEntry as CoreChannelEntry;
 use lightning_signer::persist::ChainTrackerListenerEntry;
 use lightning_signer::policy::validator::{EnforcementState, ValidatorFactory};
 use lightning_signer::policy::DEFAULT_FEE_VELOCITY_CONTROL;
-use lightning_signer::util::ser_util::{ChannelIdHandler, OutPointDef};
+use lightning_signer::util::ser_util::{ChannelIdHandler, OutPointReversedDef};
 use lightning_signer::util::velocity::VelocityControl as CoreVelocityControl;
 
 #[derive(Serialize, Deserialize)]
@@ -190,7 +190,7 @@ pub struct ChainTrackerEntry {
     tip: Vec<u8>,
     height: u32,
     network: Network,
-    #[serde_as(as = "IfIsHumanReadable<Vec<(OutPointDef, (_, _))>>")]
+    #[serde_as(as = "IfIsHumanReadable<Vec<(OutPointReversedDef, (_, _))>>")]
     listeners: Vec<(OutPoint, (ChainMonitorState, ListenSlot))>,
 }
 

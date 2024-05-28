@@ -116,9 +116,15 @@ impl Writer for VecWriter {
     }
 }
 
-pub struct TxidDef;
+/// TxIdReversedDef should be used with the assumption
+/// that the transaction is built from a big-endian vector
+/// stream. This will produce a different Txid if not
+/// properly considered. For more details, see [issue#490].
+///
+/// [issue#490]: https://gitlab.com/lightning-signer/validating-lightning-signer/-/issues/490
+pub struct TxIdReversedDef;
 
-impl SerializeAs<Txid> for TxidDef {
+impl SerializeAs<Txid> for TxIdReversedDef {
     fn serialize_as<S>(value: &Txid, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -127,7 +133,7 @@ impl SerializeAs<Txid> for TxidDef {
     }
 }
 
-impl<'de> DeserializeAs<'de, Txid> for TxidDef {
+impl<'de> DeserializeAs<'de, Txid> for TxIdReversedDef {
     fn deserialize_as<D>(deserializer: D) -> Result<Txid, <D as Deserializer<'de>>::Error>
     where
         D: Deserializer<'de>,
@@ -138,28 +144,35 @@ impl<'de> DeserializeAs<'de, Txid> for TxidDef {
     }
 }
 
+/// OutPointReversedDef uses TxIdReversedDef for decoding the txid
+/// and this type should be used with the assumption
+/// that the transaction is built from a big-endian vector stream.
+/// This will produce a different Txid if not properly considered.
+/// For more details, see [issue#490].
+///
+/// [issue#490]: https://gitlab.com/lightning-signer/validating-lightning-signer/-/issues/490
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "OutPoint")]
-pub struct OutPointDef {
-    #[serde_as(as = "TxidDef")]
+pub struct OutPointReversedDef {
+    #[serde_as(as = "TxIdReversedDef")]
     pub txid: Txid,
     pub vout: u32,
 }
 
 #[derive(Deserialize)]
-struct OutPointHelper(#[serde(with = "OutPointDef")] OutPoint);
+struct OutPointHelper(#[serde(with = "OutPointReversedDef")] OutPoint);
 
-impl SerializeAs<OutPoint> for OutPointDef {
+impl SerializeAs<OutPoint> for OutPointReversedDef {
     fn serialize_as<S>(value: &OutPoint, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        OutPointDef::serialize(value, serializer)
+        OutPointReversedDef::serialize(value, serializer)
     }
 }
 
-impl<'de> DeserializeAs<'de, OutPoint> for OutPointDef {
+impl<'de> DeserializeAs<'de, OutPoint> for OutPointReversedDef {
     fn deserialize_as<D>(deserializer: D) -> Result<OutPoint, <D as Deserializer<'de>>::Error>
     where
         D: Deserializer<'de>,
