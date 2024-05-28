@@ -244,6 +244,8 @@ mod tests {
     use crate::kvv::{JsonFormat, KVVPersister};
     use alloc::sync::Arc;
     use hex::FromHex;
+    use lightning_signer::bitcoin::hashes::hex::ToHex;
+    use lightning_signer::channel::ChannelId;
     use lightning_signer::node::{Node, NodeServices};
     use lightning_signer::persist::{MemorySeedPersister, Mutations, Persist};
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
@@ -314,15 +316,22 @@ mod tests {
     fn restore_0_9_test() {
         // this data wasn't actually created with redb on 0.9
         // it was created with sled/kvv-json and then migrated to redb
-        do_restore_test("0_9_persist_redb")
+        do_restore_test(
+            "0_9_persist_redb",
+            "0202020202020202020202020202020202020202020202020202020202020202",
+        )
     }
 
     #[test]
     fn restore_0_10_test() {
-        do_restore_test("0_10_persist_redb")
+        // non-symmetric txid tests for endianness issues
+        do_restore_test(
+            "0_10_persist_redb",
+            "0101010101010101010101010101010101010101010101010101010101010102",
+        )
     }
 
-    fn do_restore_test(name: &str) {
+    fn do_restore_test(name: &str, expected_outpoint: &str) {
         // running inside coverage doesn't set CARGO_MANIFEST_DIR, so we have a fallback
         let fixture_path = if let Ok(module_path) = env::var("CARGO_MANIFEST_DIR") {
             println!("module_path: {}", module_path);
@@ -363,6 +372,14 @@ mod tests {
         let nodes = Node::restore_nodes(node_services, seed_persister).unwrap();
         assert_eq!(nodes.len(), 1);
         let node = nodes.values().next().unwrap();
-        assert_eq!(node.channels().len(), 1);
+        let channels = node.channels();
+        assert_eq!(channels.len(), 1);
+        drop(channels);
+        let expected_channel_id = ChannelId::new(&hex::decode(TEST_CHANNEL_ID[0]).unwrap());
+        node.with_channel(&expected_channel_id, |channel| {
+            assert_eq!(channel.setup.funding_outpoint.txid.to_hex(), expected_outpoint);
+            Ok(())
+        })
+        .unwrap();
     }
 }
