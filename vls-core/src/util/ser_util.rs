@@ -178,41 +178,15 @@ impl From<ScriptDef> for Script {
     }
 }
 
+#[derive(Deserialize)]
+struct ScriptHelper(#[serde(with = "ScriptDef")] Script);
+
 impl SerializeAs<Script> for ScriptDef {
     fn serialize_as<S>(value: &Script, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        Script::serialize(value, serializer)
-    }
-}
-
-struct ScriptVisitor;
-
-impl<'de> serde::de::Visitor<'de> for ScriptVisitor {
-    type Value = Script;
-
-    fn expecting(&self, formatter: &mut alloc::fmt::Formatter) -> alloc::fmt::Result {
-        formatter.write_str("expecting a byte array or a hex string")
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        let decoded_bytes = hex::decode(v).expect("hex string");
-        Ok(Script::from(decoded_bytes))
-    }
-
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-    where
-        A: SeqAccess<'de>,
-    {
-        let mut bytes = Vec::new();
-        while let Some(byte) = seq.next_element()? {
-            bytes.push(byte);
-        }
-        Ok(Script::from(bytes))
+        ScriptDef::serialize(value, serializer)
     }
 }
 
@@ -221,7 +195,7 @@ impl<'de> DeserializeAs<'de, Script> for ScriptDef {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_any(ScriptVisitor)
+        ScriptHelper::deserialize(deserializer).map(|h| h.0)
     }
 }
 
