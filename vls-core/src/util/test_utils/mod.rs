@@ -1858,11 +1858,13 @@ pub fn make_services() -> NodeServices {
 }
 
 pub fn create_test_channel_setup(dummy_pubkey: PublicKey) -> ChannelSetup {
+    let mut txid = [1; 32];
+    txid[0] = 2;
     ChannelSetup {
         is_outbound: true,
         channel_value_sat: 123456,
         push_value_msat: 0,
-        funding_outpoint: bitcoin::OutPoint { txid: Txid::from_slice(&[1; 32]).unwrap(), vout: 1 },
+        funding_outpoint: bitcoin::OutPoint { txid: Txid::from_slice(&txid).unwrap(), vout: 1 },
         holder_selected_contest_delay: 10,
         holder_shutdown_script: None,
         counterparty_points: ChannelPublicKeys {
