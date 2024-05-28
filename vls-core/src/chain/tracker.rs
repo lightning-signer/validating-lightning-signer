@@ -26,7 +26,7 @@ use txoo::proof::{ProofType, TxoProof};
 
 use crate::prelude::*;
 use crate::short_function;
-use crate::util::ser_util::OutPointDef;
+use crate::util::ser_util::{OutPointReversedDef, TxIdReversedDef};
 
 /// Error
 #[derive(Debug, PartialEq)]
@@ -77,12 +77,13 @@ macro_rules! error_invalid_proof {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListenSlot {
     /// watched transactions to be confirmed
+    #[serde_as(as = "IfIsHumanReadable<OrderedSet<TxIdReversedDef>>")]
     pub txid_watches: OrderedSet<Txid>,
     /// watched outpoints to be spent
-    #[serde_as(as = "IfIsHumanReadable<OrderedSet<OutPointDef>>")]
+    #[serde_as(as = "IfIsHumanReadable<OrderedSet<OutPointReversedDef>>")]
     pub watches: OrderedSet<OutPoint>,
     /// outpoints we have already seen
-    #[serde_as(as = "IfIsHumanReadable<OrderedSet<OutPointDef>>")]
+    #[serde_as(as = "IfIsHumanReadable<OrderedSet<OutPointReversedDef>>")]
     pub seen: OrderedSet<OutPoint>,
 }
 

@@ -35,7 +35,7 @@ use crate::tx::script::ANCHOR_OUTPUT_VALUE_SATOSHI;
 use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
 use crate::util::crypto_utils::derive_public_key;
 use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugVecVecU8};
-use crate::util::ser_util::{ChannelPublicKeysDef, OutPointDef, ScriptDef};
+use crate::util::ser_util::{ChannelPublicKeysDef, OutPointReversedDef, ScriptDef};
 use crate::util::status::{internal_error, invalid_argument, Status};
 use crate::util::transaction_utils::add_holder_sig;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
@@ -132,7 +132,7 @@ pub struct ChannelSetup {
     /// How much was pushed to the counterparty
     pub push_value_msat: u64,
     /// The funding outpoint
-    #[serde_as(as = "IfIsHumanReadable<OutPointDef>")]
+    #[serde_as(as = "IfIsHumanReadable<OutPointReversedDef>")]
     pub funding_outpoint: OutPoint,
     /// locally imposed requirement on the remote commitment transaction to_self_delay
     pub holder_selected_contest_delay: u16,

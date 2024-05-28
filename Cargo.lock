@@ -3003,7 +3003,6 @@ dependencies = [
  "serde",
  "serde_bolt",
  "serde_derive",
- "serde_json",
  "serde_with",
  "test-log",
  "tokio",
