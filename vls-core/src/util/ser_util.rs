@@ -6,10 +6,8 @@
 use crate::prelude::*;
 
 use alloc::borrow::Cow;
-use bitcoin::hashes::Hash as _;
 use core::fmt;
 use core::fmt::Formatter;
-use core::str::FromStr as _;
 use core::time::Duration;
 
 use bitcoin::hashes::Hash;
@@ -17,7 +15,7 @@ use bitcoin::secp256k1::PublicKey;
 use bitcoin::{OutPoint, Script, Txid};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::util::ser::Writer;
-use serde::de::{SeqAccess, Visitor};
+use serde::de::SeqAccess;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::{serde_as, IfIsHumanReadable};
@@ -149,62 +147,15 @@ pub struct OutPointDef {
     pub vout: u32,
 }
 
+#[derive(Deserialize)]
+struct OutPointHelper(#[serde(with = "OutPointDef")] OutPoint);
+
 impl SerializeAs<OutPoint> for OutPointDef {
     fn serialize_as<S>(value: &OutPoint, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        OutPoint::serialize(value, serializer)
-    }
-}
-
-struct OutPointVisitor;
-
-impl<'de> Visitor<'de> for OutPointVisitor {
-    type Value = OutPoint;
-
-    fn expecting(&self, formatter: &mut alloc::fmt::Formatter) -> alloc::fmt::Result {
-        formatter.write_str("A string with txid and vout separated by a colon or a json object with txid and vout fields")
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        let parts: Vec<&str> = v.split(':').collect();
-        if parts.len() == 2 {
-            let txid = Txid::from_slice(&hex::decode(parts[0]).unwrap()).unwrap();
-            let vout = parts[1].parse().unwrap();
-            Ok(OutPoint { txid, vout })
-        } else {
-            Err(serde::de::Error::custom("Invalid outpoint format"))
-        }
-    }
-
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-    where
-        A: serde::de::MapAccess<'de>,
-    {
-        let mut txid: Option<Txid> = None;
-        let mut vout: Option<u32> = None;
-
-        while let Some(key) = map.next_key()? {
-            match key {
-                "txid" => {
-                    let txid_str: &str = map.next_value()?;
-                    match Txid::from_str(txid_str) {
-                        Ok(txid_val) => txid = Some(txid_val),
-                        Err(_) => return Err(serde::de::Error::custom("Invalid txid format")),
-                    }
-                }
-                "vout" => {
-                    vout = Some(map.next_value()?);
-                }
-                _ => {}
-            }
-        }
-
-        Ok(OutPoint { txid: txid.expect("txid is None"), vout: vout.expect("vout is None") })
+        OutPointDef::serialize(value, serializer)
     }
 }
 
@@ -213,7 +164,7 @@ impl<'de> DeserializeAs<'de, OutPoint> for OutPointDef {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_any(OutPointVisitor)
+        OutPointHelper::deserialize(deserializer).map(|h| h.0)
     }
 }
 
