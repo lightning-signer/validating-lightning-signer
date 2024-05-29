@@ -4,6 +4,7 @@ use lightning_signer::policy::filter::{FilterResult, FilterRule};
 use lightning_signer::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
 use std::ffi::OsStr;
 use std::net::{IpAddr, Ipv4Addr};
+use std::path::PathBuf;
 use std::process::exit;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{env, fs};
@@ -146,6 +147,9 @@ pub struct SignerArgs {
 
     #[clap(long, help = "rpc server admin password", value_parser)]
     pub rpc_pass: Option<String>,
+
+    #[clap(long, help = "rpc server admin cookie file path", value_parser)]
+    pub rpc_cookie: Option<PathBuf>,
 }
 
 impl HasSignerArgs for SignerArgs {
@@ -257,8 +261,9 @@ fn convert_toml_value(key: String, value: Value) -> Vec<(String, String)> {
         Value::Float(v) => vec![(key, v.to_string())],
         Value::Boolean(v) => vec![(key, v.to_string())],
         Value::Datetime(v) => vec![(key, v.to_string())],
-        Value::Array(a) =>
-            a.into_iter().flat_map(|v| convert_toml_value(key.clone(), v)).collect::<Vec<_>>(),
+        Value::Array(a) => {
+            a.into_iter().flat_map(|v| convert_toml_value(key.clone(), v)).collect::<Vec<_>>()
+        }
         Value::Table(_) => vec![],
     }
 }

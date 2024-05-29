@@ -4,12 +4,14 @@ use http::{HeaderMap, HeaderValue, Uri};
 use jsonrpsee::core::{client::ClientT, params::ArrayParams};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use jsonrpsee::rpc_params;
+use std::path::PathBuf;
 use tracing::*;
 
 use clap::{Args, Parser, Subcommand};
 
 use vls_proxy::config::RPC_SERVER_ENDPOINT;
 use vls_proxy::rpc_server::RpcMethods;
+use vls_proxy::util::get_rpc_credentials;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -23,14 +25,49 @@ struct Cli {
     )]
     rpc_uri: Uri,
 
-    #[clap(long, help = "rpc server admin username", value_parser)]
-    rpc_user: String,
+    #[clap(
+        long,
+        help = "rpc server admin username",
+        value_parser,
+        required_unless_present = "rpc-cookie",
+        requires = "rpc-password"
+    )]
+    rpc_user: Option<String>,
 
-    #[clap(long, help = "rpc server admin password", value_parser)]
-    rpc_password: String,
+    #[clap(
+        long,
+        help = "rpc server admin password",
+        value_parser,
+        required_unless_present = "rpc-cookie",
+        requires = "rpc-user"
+    )]
+    rpc_password: Option<String>,
+
+    #[clap(long, help = "rpc server admin cookie file path", value_parser)]
+    rpc_cookie: Option<PathBuf>,
 
     #[clap(subcommand)]
     command: Commands,
+}
+
+impl Cli {
+    /// Get the value for the Authorization header
+    fn get_auth_header_value(&self) -> String {
+        let (username, password) = match get_rpc_credentials(
+            self.rpc_user.clone(),
+            self.rpc_password.clone(),
+            self.rpc_cookie.clone(),
+        ) {
+            Ok((username, password)) => (username, password),
+            Err(e) => {
+                eprintln!("Error getting rpc credentials: {}", e);
+                std::process::exit(1);
+            }
+        };
+
+        let raw_value = format!("{}:{}", username, password);
+        STANDARD.encode(raw_value.as_bytes())
+    }
 }
 
 #[derive(Subcommand)]
@@ -97,8 +134,7 @@ async fn main() -> anyhow::Result<()> {
     // install global collector configured based on RUST_LOG env var.
     tracing_subscriber::fmt::init();
     let args = Cli::parse();
-    let auth_header_value =
-        STANDARD.encode(format!("{}:{}", args.rpc_user, args.rpc_password).as_bytes());
+    let auth_header_value = args.get_auth_header_value();
     let rpc_client = RpcRequestClient::new(&args.rpc_uri, Some(&auth_header_value));
 
     let response = match args.command {
@@ -143,6 +179,8 @@ async fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use clap::Parser;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_cli() {
@@ -154,6 +192,30 @@ mod tests {
     #[test]
     fn test_fail_without_username() {
         let args = vec!["vls-cli", "info"];
+        let cli = super::Cli::try_parse_from(args);
+        assert!(cli.is_err())
+    }
+
+    /// Test that the cli can be parsed with a cookie file
+    #[test]
+    fn test_cli_cookie() {
+        let cookie_file = NamedTempFile::new().unwrap();
+        cookie_file.as_file().write_all(b"user:password").unwrap();
+        let path = cookie_file.path().to_str().unwrap();
+
+        let args = vec!["vls-cli", "--rpc-cookie", path, "info"];
+
+        let cli = super::Cli::parse_from(args);
+        assert!(matches!(cli.command, super::Commands::Info));
+
+        let auth_header = cli.get_auth_header_value();
+        assert_eq!(auth_header, "dXNlcjpwYXNzd29yZA==");
+    }
+
+    /// Test that parsing fails if username is passed without password
+    #[test]
+    fn test_fail_without_password() {
+        let args = vec!["vls-cli", "--rpc-user=user", "info"];
         let cli = super::Cli::try_parse_from(args);
         assert!(cli.is_err())
     }

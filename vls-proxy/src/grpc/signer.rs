@@ -3,8 +3,8 @@ use super::hsmd::{PingRequest, SignerRequest, SignerResponse};
 use crate::config::SignerArgs;
 use crate::rpc_server::start_rpc_server;
 use crate::util::{
-    integration_test_seed_or_generate, make_validator_factory_with_filter_and_velocity,
-    read_allowlist, should_auto_approve,
+    get_rpc_credentials, integration_test_seed_or_generate,
+    make_validator_factory_with_filter_and_velocity, read_allowlist, should_auto_approve,
 };
 
 use clap::Parser;
@@ -443,25 +443,27 @@ fn handle_request(
 }
 
 async fn start_rpc_server_with_auth(node: Arc<Node>, args: &SignerArgs) -> Option<JoinHandle<()>> {
-    if let Some(username) = &args.rpc_user {
-        if let Some(password) = &args.rpc_pass {
-            let (addr, join_rpc_server) = start_rpc_server(
-                node,
-                args.rpc_server_address,
-                args.rpc_server_port,
-                username,
-                password,
-            )
-            .await
-            .expect("start_rpc_server");
-            info!("rpc server running on {}", addr);
-            Some(join_rpc_server)
-        } else {
-            warn!("rpc server not started as no password provided");
-            None
+    let (username, password) = match get_rpc_credentials(
+        args.rpc_user.clone(),
+        args.rpc_pass.clone(),
+        args.rpc_cookie.clone(),
+    ) {
+        Ok((username, password)) => (username, password),
+        Err(e) => {
+            warn!("rpc server not started as no password provided: {}", e);
+            return None;
         }
-    } else {
-        warn!("rpc server not started as no username provided");
-        None
-    }
+    };
+
+    let (addr, join_rpc_server) = start_rpc_server(
+        node,
+        args.rpc_server_address,
+        args.rpc_server_port,
+        username.as_str(),
+        password.as_str(),
+    )
+    .await
+    .expect("start_rpc_server");
+    info!("rpc server running on {}", addr);
+    Some(join_rpc_server)
 }
