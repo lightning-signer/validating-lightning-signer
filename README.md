@@ -22,6 +22,10 @@ The following remain to be implemented:
 
 [Additional HOWTO Documentation](./contrib/howto/README.md)
 
+### Recommended Rust Version
+
+We recommend using the nightly version of Rust only in specific cases, such as for `cargo fmt` and `no-std`. Otherwise, we explicitly recommend using the stable version.
+
 ### Formatting Code
 
 Enable formatting precommit hooks:
