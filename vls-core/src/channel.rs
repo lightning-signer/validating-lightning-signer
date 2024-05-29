@@ -1204,15 +1204,15 @@ impl Channel {
         );
 
         // Sign the recomposed commitment.
-        let (sig, htlc_sigs) = self
+        let sig = self
             .keys
-            .sign_holder_commitment_and_htlcs(&recomposed_holder_tx, &self.secp_ctx)
+            .sign_holder_commitment(&recomposed_holder_tx, &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
 
         self.enforcement_state.channel_closed = true;
         trace_enforcement_state!(self);
         self.persist()?;
-        Ok((sig, htlc_sigs))
+        Ok((sig, vec![]))
     }
 
     /// Sign a holder commitment and HTLCs when recovering from node failure
@@ -1270,9 +1270,9 @@ impl Channel {
 
         // Sign the recomposed commitment.
         // FIXME handle HTLCs
-        let (sig, _htlc_sigs) = self
+        let sig = self
             .keys
-            .sign_holder_commitment_and_htlcs(&recomposed_holder_tx, &self.secp_ctx)
+            .sign_holder_commitment(&recomposed_holder_tx, &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
 
         let holder_tx = recomposed_holder_tx.trust();
@@ -1367,15 +1367,15 @@ impl Channel {
             &self.counterparty_pubkeys().funding_pubkey,
         );
 
-        let (sig, htlc_sigs) = self
+        let sig = self
             .keys
-            .sign_holder_commitment_and_htlcs(&holder_commitment_tx, &self.secp_ctx)
+            .sign_holder_commitment(&holder_commitment_tx, &self.secp_ctx)
             .map_err(|_| internal_error("failed to sign"))?;
 
         self.enforcement_state.channel_closed = true;
         trace_enforcement_state!(self);
         self.persist()?;
-        Ok((sig, htlc_sigs))
+        Ok((sig, vec![]))
     }
 
     pub(crate) fn make_holder_commitment_tx(

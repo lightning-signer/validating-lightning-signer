@@ -8,15 +8,15 @@ use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
 use bitcoin::secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey};
 use bitcoin::util::psbt::serialize::Serialize;
 use bitcoin::{Script, Transaction, TxOut};
-use lightning::events::bump_transaction::HTLCDescriptor;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
-    HTLCOutputInCommitment, HolderCommitmentTransaction, TxCreationKeys,
+    HTLCOutputInCommitment, HolderCommitmentTransaction,
 };
 use lightning::ln::features::ChannelTypeFeatures;
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
 use lightning::ln::{chan_utils, PaymentPreimage};
+use lightning::sign::HTLCDescriptor;
 use lightning::sign::{
     ChannelSigner, EcdsaChannelSigner, EntropySource, KeyMaterial, NodeSigner, Recipient,
     SignerProvider, SpendableOutputDescriptor, WriteableEcdsaChannelSigner,
@@ -114,60 +114,8 @@ impl LoopbackChannelSigner {
             .map_err(|s| self.bad_status(s))
     }
 
-    pub fn make_counterparty_tx_keys(
-        &self,
-        per_commitment_point: &PublicKey,
-        secp_ctx: &Secp256k1<All>,
-    ) -> Result<TxCreationKeys, ()> {
-        let pubkeys = &self.pubkeys;
-        let setup = self.get_channel_setup()?;
-        let counterparty_pubkeys = setup.counterparty_points;
-        let keys = TxCreationKeys::derive_new(
-            secp_ctx,
-            &per_commitment_point,
-            &counterparty_pubkeys.delayed_payment_basepoint,
-            &counterparty_pubkeys.htlc_basepoint,
-            &pubkeys.revocation_basepoint,
-            &pubkeys.htlc_basepoint,
-        );
-        Ok(keys)
-    }
-
     fn bad_status(&self, s: Status) {
         error!("bad status {:?} on channel {}", s, self.channel_id);
-    }
-
-    fn sign_holder_commitment_and_htlcs(
-        &self,
-        hct: &HolderCommitmentTransaction,
-    ) -> Result<(Signature, Vec<Signature>), ()> {
-        let commitment_tx = hct.trust();
-
-        debug!("loopback: sign local txid {}", commitment_tx.built_transaction().txid);
-
-        let commitment_number = INITIAL_COMMITMENT_NUMBER - hct.commitment_number();
-        let to_holder_value_sat = hct.to_broadcaster_value_sat();
-        let to_counterparty_value_sat = hct.to_countersignatory_value_sat();
-        let feerate_per_kw = hct.feerate_per_kw();
-        let (offered_htlcs, received_htlcs) =
-            LoopbackChannelSigner::convert_to_htlc_info2(hct.htlcs());
-
-        let (sig, htlc_sigs) = self
-            .signer
-            .with_channel(&self.node_id, &self.channel_id, |chan| {
-                let result = chan.sign_holder_commitment_tx_phase2_redundant(
-                    commitment_number,
-                    feerate_per_kw,
-                    to_holder_value_sat,
-                    to_counterparty_value_sat,
-                    offered_htlcs.clone(),
-                    received_htlcs.clone(),
-                )?;
-                Ok(result)
-            })
-            .map_err(|s| self.bad_status(s))?;
-
-        Ok((sig, htlc_sigs))
     }
 
     fn convert_to_htlc_info2(htlcs: &[HTLCOutputInCommitment]) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
@@ -354,26 +302,54 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         Ok(())
     }
 
-    fn sign_holder_commitment_and_htlcs(
+    fn sign_holder_commitment(
         &self,
         hct: &HolderCommitmentTransaction,
         _secp_ctx: &Secp256k1<All>,
-    ) -> Result<(Signature, Vec<Signature>), ()> {
-        Ok(self.sign_holder_commitment_and_htlcs(hct)?)
+    ) -> Result<Signature, ()> {
+        let commitment_tx = hct.trust();
+
+        debug!("loopback: sign local txid {}", commitment_tx.built_transaction().txid);
+
+        let commitment_number = INITIAL_COMMITMENT_NUMBER - hct.commitment_number();
+        let to_holder_value_sat = hct.to_broadcaster_value_sat();
+        let to_counterparty_value_sat = hct.to_countersignatory_value_sat();
+        let feerate_per_kw = hct.feerate_per_kw();
+        let (offered_htlcs, received_htlcs) =
+            LoopbackChannelSigner::convert_to_htlc_info2(hct.htlcs());
+
+        let (sig, _) = self
+            .signer
+            .with_channel(&self.node_id, &self.channel_id, |chan| {
+                let result = chan.sign_holder_commitment_tx_phase2_redundant(
+                    commitment_number,
+                    feerate_per_kw,
+                    to_holder_value_sat,
+                    to_counterparty_value_sat,
+                    offered_htlcs.clone(),
+                    received_htlcs.clone(),
+                )?;
+                Ok(result)
+            })
+            .map_err(|s| self.bad_status(s))?;
+
+        Ok(sig)
     }
 
-    fn unsafe_sign_holder_commitment_and_htlcs(
+    fn unsafe_sign_holder_commitment(
         &self,
         hct: &HolderCommitmentTransaction,
         secp_ctx: &Secp256k1<All>,
-    ) -> Result<(Signature, Vec<Signature>), ()> {
-        self.signer
+    ) -> Result<Signature, ()> {
+        let signature = self
+            .signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
                 chan.keys
-                    .unsafe_sign_holder_commitment_and_htlcs(hct, secp_ctx)
+                    .unsafe_sign_holder_commitment(hct, secp_ctx)
                     .map_err(|_| Status::internal("could not unsafe-sign"))
             })
-            .map_err(|_s| ())
+            .map_err(|_s| ())?;
+        Ok(signature)
     }
 
     fn sign_justice_revoked_output(
@@ -430,14 +406,14 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
         let per_commitment_point = PublicKey::from_secret_key(secp_ctx, per_commitment_key);
-        let tx_keys = self.make_counterparty_tx_keys(&per_commitment_point, secp_ctx)?;
-        let redeem_script = chan_utils::get_htlc_redeemscript(&htlc, &self.features(), &tx_keys);
-        let wallet_path = LoopbackChannelSigner::dest_wallet_path();
+       let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2
         let sig = self
             .signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
+                let tx_keys = chan.make_counterparty_tx_keys(&per_commitment_point)?;
+                let redeem_script = chan_utils::get_htlc_redeemscript(&htlc, &self.features(), &tx_keys);
                 chan.sign_justice_sweep(
                     justice_tx,
                     input,
@@ -454,12 +430,36 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
 
     fn sign_holder_htlc_transaction(
         &self,
-        _htlc_tx: &Transaction,
+        htlc_tx: &Transaction,
         _input: usize,
-        _htlc_descriptor: &HTLCDescriptor,
-        _secp_ctx: &Secp256k1<All>,
+        htlc_descriptor: &HTLCDescriptor,
+        secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
-        todo!("sign_holder_htlc_transaction - #381")
+        let signature = self
+            .signer
+            .with_channel(&self.node_id, &self.channel_id, |channel| {
+                let per_commitment_point = &htlc_descriptor.per_commitment_point;
+                let chan_keys = channel.make_holder_tx_keys(per_commitment_point)
+                                       .expect("channel.make_holder_tx_keys");
+                let witness_script = htlc_descriptor.witness_script(secp_ctx);
+                let redeem_script = chan_utils::get_htlc_redeemscript(
+                    &htlc_descriptor.htlc,
+                    &self.features(),
+                    &chan_keys,
+                );
+                // FIXME the redmee script is not the witness script
+                channel.sign_htlc_tx(
+                    htlc_tx,
+                    per_commitment_point,
+                    &redeem_script,
+                    htlc_descriptor.htlc.amount_msat / 1000,
+                    &witness_script,
+                    false,
+                    chan_keys.clone(),
+                )
+            })
+            .expect("sign_htlc_tx");
+        Ok(signature.sig)
     }
 
     fn sign_counterparty_htlc_transaction(
@@ -469,16 +469,16 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         amount: u64,
         per_commitment_point: &PublicKey,
         htlc: &HTLCOutputInCommitment,
-        secp_ctx: &Secp256k1<All>,
+        _secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
-        let chan_keys = self.make_counterparty_tx_keys(per_commitment_point, secp_ctx)?;
-        let redeem_script = chan_utils::get_htlc_redeemscript(htlc, &self.features(), &chan_keys);
-        let wallet_path = LoopbackChannelSigner::dest_wallet_path();
+       let wallet_path = LoopbackChannelSigner::dest_wallet_path();
 
         // TODO phase 2
         let sig = self
             .signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
+                let chan_keys = chan.make_counterparty_tx_keys(per_commitment_point)?;
+                let redeem_script = chan_utils::get_htlc_redeemscript(htlc, &self.features(), &chan_keys);
                 chan.sign_counterparty_htlc_sweep(
                     htlc_tx,
                     input,
