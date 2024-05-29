@@ -1,8 +1,11 @@
 mod env_var;
 mod r#macro;
 pub mod observability;
+mod rpc_cookie;
 mod testing;
 mod validation;
+
+pub use rpc_cookie::get_rpc_credentials;
 
 #[cfg(feature = "otlp")]
 mod otlp;
