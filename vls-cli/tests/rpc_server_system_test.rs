@@ -5,6 +5,11 @@ use tempfile::NamedTempFile;
 use tokio::time::sleep;
 
 #[tokio::test]
+async fn rpc_server_system_tests() {
+    rpc_server_test().await;
+    rpc_server_test_with_cookie().await;
+}
+
 async fn rpc_server_test() {
     Command::new("cargo")
         .args(["build", "--bin", "vlsd2"])
@@ -42,7 +47,6 @@ async fn rpc_server_test() {
     assert!(stdout_vls_cli.contains("version"));
 }
 
-#[tokio::test]
 async fn rpc_server_test_with_cookie() {
     Command::new("cargo")
         .args(["build", "--bin", "vlsd2"])
