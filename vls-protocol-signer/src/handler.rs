@@ -530,25 +530,27 @@ impl InitHandler {
     /// and a response.
     ///
     /// Panics if initial negotiation is already complete.
-    pub fn handle(&mut self, msg: Message) -> Result<(bool, Box<dyn SerBolt>)> {
+    pub fn handle(&mut self, msg: Message) -> Result<(bool, Option<Box<dyn SerBolt>>)> {
         assert!(self.protocol_version.is_none(), "initial negotiation already complete");
         log_request(&msg);
         let result = self.do_handle(msg);
         if let Err(ref err) = result {
             log_error(err);
         }
-        let (is_done, reply) = result?;
-        log_reply(&reply);
-        Ok((is_done, reply))
+        let (is_done, maybe_reply) = result?;
+        if let Some(ref reply) = maybe_reply {
+            log_reply(&reply);
+        }
+        Ok((is_done, maybe_reply))
     }
 
-    fn do_handle(&mut self, msg: Message) -> Result<(bool, Box<dyn SerBolt>)> {
+    fn do_handle(&mut self, msg: Message) -> Result<(bool, Option<Box<dyn SerBolt>>)> {
         match msg {
             Message::Ping(p) => {
                 info!("got ping with {} {}", p.id, String::from_utf8(p.message.0).unwrap());
                 let reply =
                     msgs::Pong { id: p.id, message: WireString("pong".as_bytes().to_vec()) };
-                Ok((false, Box::new(reply)))
+                Ok((false, Some(Box::new(reply))))
             }
             Message::HsmdDevPreinit(m) => {
                 // FIXME - this message should be disabled in production mode
@@ -564,12 +566,11 @@ impl InitHandler {
                 self.protocol_version = None;
                 Ok((
                     false, // HsmdInit{,2} will follow ...
-                    Box::new(msgs::HsmdDevPreinitReply { node_id: PubKey(node_id) }),
+                    Some(Box::new(msgs::HsmdDevPreinitReply { node_id: PubKey(node_id) })),
                 ))
             }
             Message::HsmdDevPreinit2(m) => {
                 assert_ne!(self.node.network(), Network::Bitcoin);
-                let node_id = self.node.get_id().serialize();
                 // the seed is extracted before this handler is called to create the node
                 let allowlist = if let Some(ref alist) = m.options.allowlist {
                     alist.iter().map(|ws| String::from_utf8(ws.0.clone()).expect("utf8")).collect()
@@ -581,8 +582,7 @@ impl InitHandler {
                 self.protocol_version = None;
                 Ok((
                     false, // HsmdInit{,2} will follow ...
-                    // There is no HsmdDevPreinit2 reply, use this as a placeholder ...
-                    Box::new(msgs::HsmdDevPreinitReply { node_id: PubKey(node_id) }),
+                    None,  // There is no HsmdDevPreinit2 reply
                 ))
             }
             Message::HsmdInit(m) => {
@@ -612,11 +612,11 @@ impl InitHandler {
                 if mutual_version < 4 {
                     return Ok((
                         true,
-                        Box::new(msgs::HsmdInitReplyV2 {
+                        Some(Box::new(msgs::HsmdInitReplyV2 {
                             node_id: PubKey(node_id),
                             bip32: ExtKey(bip32),
                             bolt12: PubKey(bolt12_pubkey),
-                        }),
+                        })),
                     ));
                 }
                 let mut hsm_capabilities = vec![
@@ -634,13 +634,13 @@ impl InitHandler {
                 }
                 Ok((
                     true,
-                    Box::new(msgs::HsmdInitReplyV4 {
+                    Some(Box::new(msgs::HsmdInitReplyV4 {
                         hsm_version: mutual_version,
                         hsm_capabilities: hsm_capabilities.into(),
                         node_id: PubKey(node_id),
                         bip32: ExtKey(bip32),
                         bolt12: PubKey(bolt12_pubkey),
-                    }),
+                    })),
                 ))
             }
             Message::HsmdInit2(m) => {
@@ -657,11 +657,11 @@ impl InitHandler {
                 self.protocol_version = Some(4);
                 Ok((
                     true,
-                    Box::new(msgs::HsmdInit2Reply {
+                    Some(Box::new(msgs::HsmdInit2Reply {
                         node_id: PubKey(node_id),
                         bip32: ExtKey(bip32),
                         bolt12: PubKey(bolt12_pubkey),
-                    }),
+                    })),
                 ))
             }
             m => unimplemented!("init loop {}: unimplemented message {:?}", self.id, m),
