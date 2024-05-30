@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io;
 use std::num::NonZeroUsize;
 use std::os::unix::io::AsRawFd;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -36,6 +37,7 @@ use crate::*;
 pub struct SerialWrap {
     inner: File,
     sequence: u16,
+    is_ready: Arc<AtomicBool>,
 }
 
 impl SerialWrap {
@@ -44,7 +46,37 @@ impl SerialWrap {
         let mut termios = tcgetattr(fd).expect("tcgetattr");
         cfmakeraw(&mut termios);
         tcsetattr(fd, SetArg::TCSANOW, &termios).expect("tcsetattr");
-        Self { inner, sequence: 0 }
+        Self { inner, sequence: 0, is_ready: Arc::new(AtomicBool::new(false)) }
+    }
+
+    fn is_ready(&self) -> bool {
+        self.is_ready.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn set_ready(&self) {
+        info!("setting is_ready true");
+        self.is_ready.store(true, Ordering::Relaxed);
+    }
+
+    fn send_preinit(&mut self, mut options: HsmdDevPreinit2Options) -> Result<()> {
+        let allowlist = read_allowlist()
+            .into_iter()
+            .map(|s| WireString(s.as_bytes().to_vec()))
+            .collect::<Vec<_>>();
+        // Check if a testing seed is available, otherwise send None
+        let seed = read_integration_test_seed(".").map(|s| DevSecret(s));
+        options.derivation_style = Some(0);
+        options.network_name = Some(WireString(Network::Testnet.to_string().as_bytes().to_vec()));
+        options.seed = seed;
+        options.allowlist = Some(allowlist.into());
+        let preinit2 = msgs::HsmdDevPreinit2 { options };
+        let sequence = 0;
+        let peer_id = [0; 33];
+        let dbid = 0;
+        msgs::write_serial_request_header(self, &SerialRequestHeader { sequence, peer_id, dbid })?;
+        info!("sending {:?}", &preinit2);
+        msgs::write(self, preinit2)?;
+        Ok(())
     }
 }
 
@@ -86,25 +118,7 @@ impl io::Write for SerialWrap {
 pub fn connect(serial_port: String) -> anyhow::Result<SerialWrap> {
     info!("connecting to {}", serial_port);
     let file = File::options().read(true).write(true).open(serial_port)?;
-    let mut serial = SerialWrap::new(file);
-    let allowlist =
-        read_allowlist().into_iter().map(|s| WireString(s.as_bytes().to_vec())).collect::<Vec<_>>();
-    // Check if a testing seed is available, otherwise send None
-    let seed = read_integration_test_seed(".").map(|s| DevSecret(s));
-    let mut options = HsmdDevPreinit2Options::default();
-    options.derivation_style = Some(0);
-    options.network_name = Some(WireString(Network::Testnet.to_string().as_bytes().to_vec()));
-    options.seed = seed;
-    options.allowlist = Some(allowlist.into());
-    let preinit2 = msgs::HsmdDevPreinit2 { options };
-    let sequence = 0;
-    let peer_id = [0; 33];
-    let dbid = 0;
-    msgs::write_serial_request_header(
-        &mut serial,
-        &SerialRequestHeader { sequence, peer_id, dbid },
-    )?;
-    msgs::write(&mut serial, preinit2)?;
+    let serial = SerialWrap::new(file);
     Ok(serial)
 }
 
@@ -132,6 +146,7 @@ impl SignerPort for SerialSignerPort {
     async fn handle_message(&self, message: Vec<u8>) -> Result<Vec<u8>> {
         if log::log_enabled!(log::Level::Debug) {
             let msg = msgs::from_vec(message.clone())?;
+            debug!("SerialSignerPort::handle_message request {:?}", msg);
             log_request!(msg);
         }
         let serial = Arc::clone(&self.serial);
@@ -160,7 +175,7 @@ impl SignerPort for SerialSignerPort {
     }
 
     fn is_ready(&self) -> bool {
-        true
+        self.serial.lock().unwrap().is_ready()
     }
 }
 
@@ -186,6 +201,7 @@ pub struct SignerLoop<C: 'static + Client> {
     serial: Arc<Mutex<SerialWrap>>,
     client_id: Option<ClientId>,
     preapproval_cache: LruCache<Sha256Hash, PreapprovalCacheEntry>,
+    maybe_preinit: Option<msgs::HsmdDevPreinit2>, // CLN's, if sent
 }
 
 impl<C: 'static + Client> SignerLoop<C> {
@@ -193,14 +209,21 @@ impl<C: 'static + Client> SignerLoop<C> {
     pub fn new(client: C, serial: Arc<Mutex<SerialWrap>>) -> Self {
         let log_prefix = format!("{}/{}/{}", std::process::id(), client.id(), 0);
         let preapproval_cache = LruCache::new(NonZeroUsize::new(6).unwrap());
-        Self { client, log_prefix, serial, client_id: None, preapproval_cache }
+        Self { client, log_prefix, serial, client_id: None, preapproval_cache, maybe_preinit: None }
     }
 
     // Create a loop for a non-root connection
     fn new_for_client(client: C, serial: Arc<Mutex<SerialWrap>>, client_id: ClientId) -> Self {
         let log_prefix = format!("{}/{}/{}", std::process::id(), client.id(), client_id.dbid);
         let preapproval_cache = LruCache::new(NonZeroUsize::new(6).unwrap());
-        Self { client, log_prefix, serial, client_id: Some(client_id), preapproval_cache }
+        Self {
+            client,
+            log_prefix,
+            serial,
+            client_id: Some(client_id),
+            preapproval_cache,
+            maybe_preinit: None,
+        }
     }
 
     /// Start the read loop
@@ -268,6 +291,28 @@ impl<C: 'static + Client> SignerLoop<C> {
                         _ => {} // allow future out-of-band reply types
                     }
                 }
+                Message::HsmdDevPreinit2(preinit) => {
+                    // Save the preinit message, we'll merge our VLS options in
+                    // and send in front of the HsmdInit message.
+                    self.maybe_preinit = Some(preinit);
+                }
+                Message::HsmdInit(_) => {
+                    // Send the HsmdDevPreinit2 message first
+                    let options = if let Some(ref preinit) = &self.maybe_preinit {
+                        // CLN sent a preinit, start with their options
+                        preinit.options.clone()
+                    } else {
+                        // No previous HsmdDevPreinit2, start with default options
+                        HsmdDevPreinit2Options::default()
+                    };
+                    self.serial.lock().unwrap().send_preinit(options)?;
+
+                    // HsmdDevPreinit2 does not have a reply, send the HsmdInit message
+                    self.do_proxy_msg(raw_msg)?;
+
+                    // The HsmdInit has been sent and we are ready for other requests.
+                    self.serial.lock().unwrap().set_ready();
+                }
                 _ => {
                     self.do_proxy_msg(raw_msg)?;
                 }
@@ -285,6 +330,7 @@ impl<C: 'static + Client> SignerLoop<C> {
         let reply = result?;
         log_reply!(reply, self);
         self.client.write_vec(reply.clone())?;
+        info!("replied {}", self.log_prefix);
         Ok(reply)
     }
 

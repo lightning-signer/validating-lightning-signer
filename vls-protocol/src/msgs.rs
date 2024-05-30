@@ -80,7 +80,7 @@ pub struct HsmdDevPreinit2 {
 }
 
 /// TLV encoded options for HsmdDevPreinit2
-#[derive(SerBoltTlvOptions, Default, Debug)]
+#[derive(SerBoltTlvOptions, Default, Debug, Clone)]
 pub struct HsmdDevPreinit2Options {
     // CLN: allocates from 1 ascending
     #[tlv_tag = 1]
