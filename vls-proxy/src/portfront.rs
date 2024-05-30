@@ -85,11 +85,14 @@ impl NodePortFront {
     async fn wait_ready(&self) {
         let mut attempt: u64 = 0;
         while !self.signer_port.is_ready() {
-            attempt += 1;
             if attempt % LOG_INTERVAL == 0 {
                 info!("waiting for signer_port to be ready");
             }
+            attempt += 1;
             tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        if attempt > 0 {
+            info!("signer_port is now ready");
         }
     }
 
