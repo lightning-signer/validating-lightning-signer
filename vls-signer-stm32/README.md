@@ -29,7 +29,7 @@ rustup target add thumbv7em-none-eabihf
 (cd $HOME && cargo install probe-run)
 
 sudo usermod -a -G dialout $USER
-# Need to log out and log back in for group privelege to take effect
+newgrp dialout
 ```
 
 Follow [udev rules setup instructions](https://probe.rs/docs/getting-started/probe-setup/)
