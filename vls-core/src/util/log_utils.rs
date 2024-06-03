@@ -54,6 +54,9 @@ macro_rules! catch_panic {
 
 #[cfg(test)]
 mod tests {
+    use super::parse_log_level_filter;
+    use log::LevelFilter;
+
     use crate::util::status::{Code, Status};
 
     #[test]
@@ -72,5 +75,29 @@ mod tests {
 
         let res = fut_success();
         assert_eq!(res.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_parse_log_level_filter() {
+        let valid_levels = [
+            ("OFF", LevelFilter::Off),
+            ("ERROR", LevelFilter::Error),
+            ("WARN", LevelFilter::Warn),
+            ("INFO", LevelFilter::Info),
+            ("DEBUG", LevelFilter::Debug),
+            ("TRACE", LevelFilter::Trace),
+        ];
+
+        for (name, expected_filter) in valid_levels.iter() {
+            let result = parse_log_level_filter(name.to_string());
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), *expected_filter);
+        }
+
+        // Test an invalid log level name
+        let invalid_level = "INVALID".to_string();
+        let result = parse_log_level_filter(invalid_level);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "invalid log level: INVALID");
     }
 }
