@@ -167,7 +167,7 @@ pub(crate) fn taproot_sign(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin::hashes::hex::ToHex;
+    use bitcoin::hashes::hex::{FromHex, ToHex};
 
     #[test]
     fn test_hkdf() {
@@ -176,12 +176,87 @@ mod tests {
         let salt = [3u8];
         let mut output = [0u8; 32 * 6];
         hkdf_extract_expand(&salt, &secret, &info, &mut output);
-        assert_eq!(output.to_vec().to_hex(), "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0efbbb13e74af4687137801e1628d1d1876d251b31d1321383568a9387da7c0baa7dee83ba374bba3774ef01140e4c4293791a512e536764bf4405aea511be32d5fd71a0b7a7ef3638312e476eb323fbac5f3d549ccf0fe0eabb38fe7bc16ad01db2288e57de45eabecd561ede4dc89164099ed7f0b0db5250e2b377e2aa84f520838612dccbde870f7b06a1e03f3cd79d30da717c55e15442a0b4dd02aafcd86");
+        assert_eq!(
+            output.to_vec().to_hex(),
+            "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0efbbb13e74af4687137801e1628d1d1876d251b31d1321383568a9387da7c0baa7dee83ba374bba3774ef01140e4c4293791a512e536764bf4405aea511be32d5fd71a0b7a7ef3638312e476eb323fbac5f3d549ccf0fe0eabb38fe7bc16ad01db2288e57de45eabecd561ede4dc89164099ed7f0b0db5250e2b377e2aa84f520838612dccbde870f7b06a1e03f3cd79d30da717c55e15442a0b4dd02aafcd86"
+        );
         let mut output = [0u8; 32];
         hkdf_extract_expand(&salt, &secret, &info, &mut output);
         assert_eq!(
             output.to_vec().to_hex(),
             "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0"
         );
+    }
+
+    #[test]
+    fn test_schnorr_signature_to_bitcoin_vec() {
+        let test_signature_bytes: Vec<u8> = vec![0; 64];
+
+        let test_signature = schnorr::Signature::from_slice(&test_signature_bytes).unwrap();
+
+        let result = schnorr_signature_to_bitcoin_vec(test_signature);
+
+        assert_eq!(test_signature_bytes, result);
+    }
+
+    #[test]
+    fn test_bitcoin_vec_to_signature() {
+        let sighash_type = EcdsaSighashType::All;
+        let sigvec: Vec<u8> = vec![];
+
+        let result = bitcoin_vec_to_signature(&sigvec, sighash_type);
+
+        assert_eq!(result, Err(secp256k1::Error::InvalidSignature));
+
+        let mut sigvec = Vec::from_hex(
+            "304402202e1f64d831e89e2b4a0dc8565cb2d0a4d6061a89f9b48f2c26d5ac0b3b9a0bb102200c8d396f8b2e9c6c623bebc015c47f1f41e8824fabe7cb028f174a0e5df3c0a0"
+        ).unwrap();
+
+        sigvec.push(1 as u8);
+
+        let result = bitcoin_vec_to_signature(&sigvec, sighash_type).unwrap();
+
+        sigvec.pop();
+
+        let parsed_signature = Signature::from_der(&sigvec).expect("valid DER signature");
+
+        assert_eq!(result, parsed_signature);
+    }
+
+    #[test]
+    fn test_maybe_generate_seed() {
+        let known_seed: [u8; 32] = [1; 32];
+
+        let result = maybe_generate_seed(Some(known_seed));
+
+        assert_eq!(result, known_seed);
+
+        let result = maybe_generate_seed(None);
+
+        assert_eq!(result.len(), 32);
+    }
+
+    #[test]
+    fn test_taproot_sign() {
+        let secp = Secp256k1::new();
+
+        let privkey_bytes =
+            Vec::from_hex("d8d3a3140ba89f14144b0dfe40e04220e02ed68736a5773e050a3c4116b1e31c")
+                .unwrap();
+        let secret_key =
+            SecretKey::from_slice(&privkey_bytes).expect("32 bytes, within curve order");
+
+        let privkey = PrivateKey::new(secret_key, bitcoin::Network::Bitcoin);
+
+        let sighash = TapSighashHash::hash(&[0]);
+
+        let aux_rand: [u8; 32] = [0u8; 32];
+
+        let signature = taproot_sign(&secp, &privkey, sighash, &aux_rand);
+
+        let expected_signature_hex =
+            "14262eb13409cd8928536ab60f431b95193d2d9c7cc476e9f43e8b8f98a8d5a8c38d3edc7bf43c389a12c9e5fad9485ee5d59df2d35f46c3f77ca07197ee1db2";
+
+        assert_eq!(expected_signature_hex, signature.to_hex());
     }
 }

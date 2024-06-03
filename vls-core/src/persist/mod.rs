@@ -473,6 +473,30 @@ pub mod fs {
     fn read_seed(path: PathBuf) -> Option<Vec<u8>> {
         fs::read_to_string(path).ok().map(|s| Vec::from_hex(s.trim()).expect("bad hex seed"))
     }
+
+    #[cfg(test)]
+    mod test {
+        use crate::persist::SeedPersist;
+
+        use super::FileSeedPersister;
+
+        use tempfile::tempdir;
+
+        #[test]
+        fn test_list() {
+            let temp_dir = tempdir().unwrap();
+            let persister = FileSeedPersister::new(temp_dir.path());
+            let seeds = vec![("node1", b"seed1"), ("node2", b"seed2"), ("node3", b"seed3")];
+            for (node, seed) in &seeds {
+                persister.put(node, seed.as_slice());
+            }
+            let listed_seeds = persister.list();
+            assert_eq!(listed_seeds.len(), seeds.len());
+            for (node, _) in &seeds {
+                assert!(listed_seeds.contains(&node.to_string()));
+            }
+        }
+    }
 }
 
 /// An external persister helper
@@ -563,6 +587,8 @@ fn add_to_hmac(key: &str, version: u64, value: &[u8], hmac: &mut HmacEngine<Sha2
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::hashes::hex::ToHex;
+
     use super::*;
 
     #[test]
@@ -580,5 +606,13 @@ mod tests {
         // mutating the data should fail the hmac
         kvs.add("baz".to_string(), 0, vec![0x03]);
         assert!(!helper.check_hmac(&kvs, hmac.to_vec()));
+
+        let client_secret = "2e3c1864370a95cbd641d09ae0cf7c0dd5bd0b1c30707ee5ec23775e41f19f2e";
+
+        assert_eq!(client_secret, helper.client_hmac(&kvs).to_hex());
+
+        let server_secret = "8fe3d55b41ae5f1c0d2b1015e3d190ff4c6d419bd792fccf8f349505031f9fec";
+
+        assert_eq!(server_secret, helper.server_hmac(&kvs).to_hex());
     }
 }
