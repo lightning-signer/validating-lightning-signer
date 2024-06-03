@@ -64,7 +64,7 @@ scopeguard = { version = "1.1.0", default-features = false }
 
 # Don't use "std" feature
 log = "0.4.14"
-tracing = { version = "0.1.40", features = ["attributes"], default-features = false }
+tracing = { version = "0.1.40", features = ["attributes", "log"], default-features = false }
 
 env_logger = { version = "0.9", optional = true }
 backtrace = { version = "0.3", optional = true }
