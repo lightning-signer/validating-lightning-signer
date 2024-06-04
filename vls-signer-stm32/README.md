@@ -43,38 +43,6 @@ sudo parted /dev/sdX --script mklabel gpt
 sudo mkfs.vfat -F32 /dev/sdX
 ```
 
-#### Hardware Test
-
-Connect the `ST_LINK` port to host computer using USB cable.
-
-On Fedora run:
-```
-CFLAGS=-I/usr/include cargo run --features stm32f413 --release --bin test
-```
-
-NOTE - By default, the `memory.x` config is set up for the `stm32f413`, if you are
-using a `stm32f412` it requires some adjusting.  Also, the heap size set in
-`src/device.rs` should be considered.
-
-```
-cargo run --features stm32f412 --release --bin test
-cargo run --features stm32f413 --release --bin test
-```
-
-Note that compiling with `--release` greatly reduces flash size, and therefore flashing time.
-
-#### Connecting to Serial Port
-
-Additionally connect the `USB_USER` (`stm32f412`) or `USB_OTG_FS`
-(`stm32f413`) port to host computer with a second USB cable.
-
-Connect to the serial connection with a suitable tool:
-```sh
-sudo screen /dev/ttyACM1 19200
-```
-
-Device will echo typed characters ...
-
 #### Run Signer Demo
 
 1. Connect the `ST_LINK` port to the host computer using a USB cable.
