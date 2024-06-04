@@ -1911,9 +1911,9 @@ pub fn make_simple_policy(network: Network) -> SimplePolicy {
             max_htlc_value_sat: 16_777_216, // lnd itest: multi-hop_htlc_error_propagation
             use_chain_state: false,
             min_feerate_per_kw: 253,     // testnet/regtest observed
-            max_feerate_per_kw: 151_000, // CLN max_feerate 150_000 common
+            max_feerate_per_kw: 333_333, // 301_096 observed in testnet
             enforce_balance: false,
-            max_routing_fee_msat: 160_000, // CLN test_renepay::test_fees: 153_000
+            max_routing_fee_msat: 222_000, // CLN test_pay_avoid_low_fee_chan_1: 200_000
             max_feerate_percentage: 10,
             dev_flags: None,
             filter: PolicyFilter::default(),

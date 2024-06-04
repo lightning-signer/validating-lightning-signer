@@ -61,6 +61,7 @@ impl SignerPort for GrpcSignerPort {
                 info!("temporary error, retrying");
                 return Err(BackoffError::transient(Error::Transport));
             }
+
             return Ok(reply.reply);
         })
         .await
@@ -81,15 +82,17 @@ impl GrpcSignerPort {
         GrpcSignerPort { sender, is_ready: Arc::new(AtomicBool::new(false)) }
     }
 
+    pub(crate) fn set_ready(&self) {
+        info!("setting is_ready true");
+        self.is_ready.store(true, Ordering::Relaxed);
+    }
+
     async fn send_request(&self, message: Vec<u8>) -> Result<oneshot::Receiver<ChannelReply>> {
         let (reply_rx, request) = Self::prepare_request(message, None);
 
         // Send a request to the gRPC handler to send to signer
         // This can fail if gRPC adapter shut down
         self.sender.send(request).await.map_err(|_| ProtocolError::Eof)?;
-
-        // Once the initial packet is sent, the signer is ready
-        self.is_ready.store(true, Ordering::Relaxed);
 
         Ok(reply_rx)
     }
@@ -106,9 +109,6 @@ impl GrpcSignerPort {
         // Send a request to the gRPC handler to send to signer
         // This can fail if gRPC adapter shut down
         self.sender.blocking_send(request).map_err(|_| ProtocolError::Eof)?;
-
-        // Once the initial packet is sent, the signer is ready
-        self.is_ready.store(true, Ordering::Relaxed);
 
         Ok(reply_rx)
     }
@@ -262,7 +262,7 @@ impl<C: 'static + Client> SignerLoop<C> {
                             continue;
                         }
                     }
-                    let reply_bytes = self.do_proxy_msg(raw_msg)?;
+                    let reply_bytes = self.do_proxy_msg(raw_msg, false)?;
                     let reply = msgs::from_vec(reply_bytes.clone()).expect("parse reply failed");
                     // Did we just witness an approval?
                     match reply {
@@ -285,6 +285,18 @@ impl<C: 'static + Client> SignerLoop<C> {
                         _ => {} // allow future out-of-band reply types
                     }
                 }
+                Message::HsmdDevPreinit2(_) => {
+                    if !self.is_root() {
+                        error!(
+                            "read loop {}: unexpected HsmdDevPreinit2 on non-root connection",
+                            self.log_prefix
+                        );
+                        return Err(Error::Protocol(ProtocolError::UnexpectedType(
+                            msgs::HsmdInit::TYPE,
+                        )));
+                    }
+                    _ = self.do_proxy_msg(raw_msg, /*ONEWAY*/ true)?;
+                }
                 Message::HsmdInit(mut m) => {
                     if !self.is_root() {
                         error!(
@@ -295,7 +307,7 @@ impl<C: 'static + Client> SignerLoop<C> {
                             msgs::HsmdInit::TYPE,
                         )));
                     }
-                    let raw_reply = self.do_proxy_msg(raw_msg)?;
+                    let raw_reply = self.do_proxy_msg(raw_msg, false)?;
                     // decode the reply and extract the protocol version
                     let reply = msgs::from_vec(raw_reply)?;
                     // we expect a HsmdInitReply
@@ -322,6 +334,10 @@ impl<C: 'static + Client> SignerLoop<C> {
                         )));
                     }
                     init_message_cache.init_message = Some(m.as_vec());
+
+                    // The signer is not ready for requests until the HsmdInit
+                    // has been handled.
+                    self.signer_port.set_ready();
                 }
                 Message::HsmdInit2(m) => {
                     if !self.is_root() {
@@ -333,7 +349,7 @@ impl<C: 'static + Client> SignerLoop<C> {
                             msgs::HsmdInit2::TYPE,
                         )));
                     }
-                    self.do_proxy_msg(raw_msg)?;
+                    self.do_proxy_msg(raw_msg, false)?;
 
                     // TODO HsmdInit2 does not have version negotiation
                     let mut init_message_cache = self.init_message_cache.lock().unwrap();
@@ -346,7 +362,7 @@ impl<C: 'static + Client> SignerLoop<C> {
                     init_message_cache.init_message = Some(m.as_vec());
                 }
                 _ => {
-                    self.do_proxy_msg(raw_msg)?;
+                    self.do_proxy_msg(raw_msg, false)?;
                 }
             }
         }
@@ -354,32 +370,41 @@ impl<C: 'static + Client> SignerLoop<C> {
 
     // Proxy the request to the signer, return the result to the node.
     // Returns the last response for caching
-    fn do_proxy_msg(&mut self, raw_msg: Vec<u8>) -> Result<Vec<u8>> {
-        let result = self.handle_message(raw_msg);
+    fn do_proxy_msg(&mut self, raw_msg: Vec<u8>, is_oneway: bool) -> Result<Vec<u8>> {
+        let result = self.handle_message(raw_msg, is_oneway);
         if let Err(ref err) = result {
             log_error!(err, self);
         }
         let reply = result?;
-        log_reply!(reply, self);
-        self.client.write_vec(reply.clone())?;
-        info!("replied {}", self.log_prefix);
+        if is_oneway {
+            info!("oneway sent {}", self.log_prefix);
+        } else {
+            log_reply!(reply, self);
+            self.client.write_vec(reply.clone())?;
+            info!("replied {}", self.log_prefix);
+        }
         Ok(reply)
     }
 
-    fn handle_message(&mut self, message: Vec<u8>) -> Result<Vec<u8>> {
+    fn handle_message(&mut self, message: Vec<u8>, is_oneway: bool) -> Result<Vec<u8>> {
         let result = backoff::retry(backoff(), || {
             let reply_rx =
                 self.send_request(message.clone()).map_err(|e| BackoffError::permanent(e))?;
-            // Wait for the signer reply
-            // Can fail if the adapter shut down
-            let reply =
-                reply_rx.blocking_recv().map_err(|_| BackoffError::permanent(Error::Transport))?;
-            if reply.is_temporary_failure {
-                // Retry with backoff
-                info!("read loop {}: temporary error, retrying", self.log_prefix);
-                return Err(BackoffError::transient(Error::Transport));
+            if is_oneway {
+                Ok(vec![])
+            } else {
+                // Wait for the signer reply
+                // Can fail if the adapter shut down
+                let reply = reply_rx
+                    .blocking_recv()
+                    .map_err(|_| BackoffError::permanent(Error::Transport))?;
+                if reply.is_temporary_failure {
+                    // Retry with backoff
+                    info!("read loop {}: temporary error, retrying", self.log_prefix);
+                    return Err(BackoffError::transient(Error::Transport));
+                };
+                Ok(reply.reply)
             }
-            return Ok(reply.reply);
         })
         .map_err(|e| error_from_backoff(e))
         .map_err(|e| {
