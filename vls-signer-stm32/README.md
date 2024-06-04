@@ -48,17 +48,14 @@ sudo mkfs.vfat -F32 /dev/sdX
 1. Connect the `ST_LINK` port to the host computer using a USB cable.
 
 2. From a terminal shell in this directory run the `demo_signer`:
-   - Set the `--features` flag to the specific board model you are using.
+```
+make run
+```
 
-For example, using the STM32F413:
-```
-cargo run --features stm32f413,debug --release --bin demo_signer
-```
 Wait for the demo_signer to finish loading and start executing, it will display
-"init" when it is ready.
+`waiting for node` when it is ready.
 
-3. Connect the user serial port (`USB_USER` on the `stm32f412` or
-   `USB_OTG_FS` on the `stm32f413`) to the host computer.
+3. Connect the user serial port (`USB_OTG_FS`) to the host computer.
 
 4. In a second terminal shell, change directories to the top-level
    `vls-hsmd` directory and execute the desired test:
@@ -70,7 +67,15 @@ make test-one VLS_MODE=cln:serial TEST=tests/test_plugin.py::test_forward_event_
 
 If you want to rerun the signer but do not wish to re-flash the device, perhaps after a crash:
 ```
-probe-run --chip STM32F413ZHTx target/thumbv7em-none-eabihf/release/demo_signer --no-flash
+make rerun
+```
+
+#### Specifying additional features
+
+If you would like to build and run w/ additional features set the
+`EXTRA_FEATURES` env variable when running the demo_signer:
+```
+make EXTRA_FEATURES=debug,log_pretty_print run
 ```
 
 #### Interesting integration tests
