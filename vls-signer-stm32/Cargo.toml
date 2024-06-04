@@ -59,6 +59,7 @@ rtt_block = []
 # dangerous, only for testing
 log-secrets = ["vls-protocol/log-secrets"]
 
+log_pretty_print = ["vls-protocol-signer/log_pretty_print"]
 
 [[bin]]
 name = "demo_signer"

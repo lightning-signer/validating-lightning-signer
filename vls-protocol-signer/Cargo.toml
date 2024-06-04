@@ -16,7 +16,7 @@ secp-lowmemory = ["vls-core/secp-lowmemory"]
 use_backtrace = ["vls-core/use_backtrace"]
 tracker_size_workaround = ["vls-core/tracker_size_workaround"]
 timeless_workaround = ["vls-core/timeless_workaround"]
-log_pretty_print = []
+log_pretty_print = ["vls-core/log_pretty_print"]
 debug_node_state = []
 debug = ["vls-core/debug", "debug_node_state"]
 
