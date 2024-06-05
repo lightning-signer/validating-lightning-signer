@@ -5,7 +5,6 @@ use jsonrpsee::core::{client::ClientT, params::ArrayParams};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use jsonrpsee::rpc_params;
 use std::path::PathBuf;
-use tracing::*;
 
 use clap::{Args, Parser, Subcommand};
 
@@ -123,7 +122,6 @@ impl RpcRequestClient {
         params: ArrayParams,
     ) -> anyhow::Result<serde_json::Value> {
         let response = self.client.request(method.as_str(), params).await;
-        info!("{:?}", response);
 
         Ok(response?)
     }
