@@ -261,9 +261,8 @@ fn convert_toml_value(key: String, value: Value) -> Vec<(String, String)> {
         Value::Float(v) => vec![(key, v.to_string())],
         Value::Boolean(v) => vec![(key, v.to_string())],
         Value::Datetime(v) => vec![(key, v.to_string())],
-        Value::Array(a) => {
-            a.into_iter().flat_map(|v| convert_toml_value(key.clone(), v)).collect::<Vec<_>>()
-        }
+        Value::Array(a) =>
+            a.into_iter().flat_map(|v| convert_toml_value(key.clone(), v)).collect::<Vec<_>>(),
         Value::Table(_) => vec![],
     }
 }

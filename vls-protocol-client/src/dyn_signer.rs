@@ -5,7 +5,6 @@ use delegate::delegate;
 
 use bitcoin::bech32::u5;
 use bitcoin::{secp256k1, Script, Transaction, TxOut};
-use lightning::sign::HTLCDescriptor;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction,
@@ -15,6 +14,7 @@ use lightning::ln::script::ShutdownScript;
 use lightning::ln::PaymentPreimage;
 use lightning::sign::ChannelSigner;
 use lightning::sign::EcdsaChannelSigner;
+use lightning::sign::HTLCDescriptor;
 use lightning::sign::InMemorySigner;
 use lightning::sign::{
     KeyMaterial, NodeSigner, Recipient, SignerProvider, SpendableOutputDescriptor,

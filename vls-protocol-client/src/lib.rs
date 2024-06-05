@@ -16,7 +16,6 @@ use bitcoin::util::bip32::ExtendedPubKey;
 use bitcoin::util::psbt::PartiallySignedTransaction;
 use bitcoin::{EcdsaSighashType, Script, WPubkeyHash};
 use bitcoin::{Transaction, TxOut};
-use lightning::sign::HTLCDescriptor;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction,
@@ -26,6 +25,7 @@ use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::ln::msgs::UnsignedGossipMessage;
 use lightning::ln::script::ShutdownScript;
 use lightning::ln::PaymentPreimage;
+use lightning::sign::HTLCDescriptor;
 use lightning::sign::{ChannelSigner, EcdsaChannelSigner, NodeSigner, WriteableEcdsaChannelSigner};
 use lightning::sign::{EntropySource, SignerProvider};
 use lightning::sign::{KeyMaterial, Recipient, SpendableOutputDescriptor};

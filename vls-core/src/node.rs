@@ -2857,8 +2857,8 @@ mod tests {
     use bitcoin::util::sighash::SighashCache;
     use bitcoin::{secp256k1, BlockHash, PackedLockTime, Sequence, TxIn, Witness};
     use bitcoin::{Address, EcdsaSighashType, OutPoint};
-    use lightning::ln::chan_utils::derive_private_key;
     use lightning::ln::chan_utils;
+    use lightning::ln::chan_utils::derive_private_key;
     use lightning_invoice::PaymentSecret;
     use lightning_invoice::{Currency, InvoiceBuilder};
     use std::time::{SystemTime, UNIX_EPOCH};
