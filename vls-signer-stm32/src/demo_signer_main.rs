@@ -79,6 +79,10 @@ fn main() -> ! {
     }
 }
 
+fn heap_free_kb() -> usize {
+    (HEAP_SIZE - heap_bytes_used()) / 1024
+}
+
 fn display_intro(devctx: &mut DeviceContext, network: Network, permissive: bool, path: &str) {
     // we have limited horizontal display room
     let mut abbrev_path = path.to_string();
@@ -91,9 +95,9 @@ fn display_intro(devctx: &mut DeviceContext, network: Network, permissive: bool,
         intro.push(format!("{: ^19}", verpart));
     }
     intro.push(format!("{: ^19}", if permissive { "PERMISSIVE" } else { "ENFORCING" }));
-    intro.push("".to_string());
-    intro.push(format!("{: ^19}", "waiting for node"));
     intro.push(format!(" {: >7}:{: <9}", network.to_string(), abbrev_path));
+    intro.push(format!("{: ^19}", format!("{}KB heap avail", heap_free_kb())));
+    intro.push(format!("{: ^19}", "waiting for node"));
     intro.push("".to_string());
     intro.push(format!("{: ^19}", "blue+reset to setup"));
 
@@ -137,7 +141,7 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
         let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
         let allowlist = vec![]; // TODO - add to NormalContext
         let seed = runctx.seed;
-        let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive);
+        let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive, runctx.cmn.network);
         let (root_handler, _muts) = HandlerBuilder::new(runctx.cmn.network, 0, services, seed.0)
             .allowlist(allowlist)
             .approver(approver)
@@ -251,7 +255,7 @@ fn start_test_mode(runctx: TestingContext) -> ! {
             vec![]
         };
 
-        let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive);
+        let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive, runctx.cmn.network);
         let (mut init_handler, _muts) = HandlerBuilder::new(runctx.cmn.network, 0, services, seed)
             .allowlist(allowlist)
             .approver(approver)
@@ -266,6 +270,8 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         info!("used {} bytes", heap_bytes_used());
         init_handler
     };
+
+    init_handler.log_chaninfo();
 
     handle_init_requests(&*runctx.cmn.devctx, &mut init_handler);
     let root_handler = init_handler.into_root_handler();
@@ -291,8 +297,7 @@ fn handle_requests(arc_devctx: &RefCell<DeviceContext>, root_handler: RootHandle
         let mut message_d = format!("dbid: {:>3}, {:<24}", reqhdr.dbid, message.inner().name());
         message_d.truncate(35);
 
-        let heap_free_kb = (HEAP_SIZE - heap_bytes_used()) / 1024;
-        info!("starting {}, {}KB heap free", message_d.clone(), heap_free_kb);
+        info!("starting {}, {}KB heap free", message_d.clone(), heap_free_kb());
 
         let start = devctx.timer1.now();
         drop(devctx); // Release the DeviceContext during the handler call (Approver needs)
@@ -316,6 +321,11 @@ fn handle_requests(arc_devctx: &RefCell<DeviceContext>, root_handler: RootHandle
         // update the display before the next request
         devctx.disp.clear_screen();
         let balance = root_handler.channel_balance();
+        let chan_count_str = channel_count_string(&balance);
+        let chan_bal_str = pretty_thousands(balance.claimable as i64);
+        let chan_field_len = chan_count_str.len() + chan_bal_str.len();
+        let chan_pad =
+            if chan_field_len < 17 { " ".repeat(17 - chan_field_len) } else { "".to_string() };
         devctx.disp.show_texts(&[
             format!(
                 "h:  {:<9}{:>4}KB",
@@ -323,23 +333,19 @@ fn handle_requests(arc_devctx: &RefCell<DeviceContext>, root_handler: RootHandle
                 heap_free_kb
             ),
             format!(
-                "r:{:>3} {:>+13}",
+                "r:{:>4} {:>+12}",
                 balance.received_htlc_count,
                 pretty_thousands(balance.received_htlc as i64)
             ),
-            format!(
-                "c:{:<5} {:>11}",
-                channel_count_string(&balance),
-                pretty_thousands(balance.claimable as i64)
-            ),
+            format!("c:{}{}{}", chan_count_str, chan_pad, chan_bal_str),
             if balance.offered_htlc > 0 {
                 format!(
-                    "o:{:>3} {:>+13}",
+                    "o:{:>4} {:>+12}",
                     balance.offered_htlc_count,
                     pretty_thousands(0 - balance.offered_htlc as i64),
                 )
             } else {
-                format!("o:{:>3} {:>13}", balance.offered_htlc_count, "-0")
+                format!("o:{:>4} {:>12}", balance.offered_htlc_count, "-0")
             },
             format!(""),
             top_tracks[0].clone(),
@@ -355,28 +361,28 @@ fn channel_count_string(balance: &ChannelBalance) -> String {
     // NOTE - there is not a lot of room on the display, this is contrived ...
     //
     // Examples, alignment is designed to match adjacent lines
-    // "1a5z2" - 1 prep, 5 active, 2 eol
-    // "1a8"   - 1 prep, 8 active
-    // " 16"   - 16 active
-    // " 16z2" - 16 active, 2 eol
+    // " 1a5z2" - 1 prep, 5 active, 2 eol
+    // "3a17"
+    // " 1a8"   - 1 prep, 8 active
+    // "  16"   - 16 active
+    // "  16z2" - 16 active, 2 eol
     //
     // To save room combine the stub count with the unconfirmed count.
-    let prep_count = balance.stub_count + balance.unconfirmed_count;
-    let mut buff = String::new();
-    if prep_count > 0 {
-        buff += &format!("{}a", prep_count);
-    } else {
-        buff += &" ";
-        if balance.channel_count < 10 {
-            // only a single digit channel count, pad an extra space
-            buff += &" ";
-        }
-    }
-    buff += &format!("{}", balance.channel_count);
-    if balance.closing_count > 0 {
-        buff += &format!("z{}", balance.closing_count);
-    }
-    buff
+    let npre = balance.stub_count + balance.unconfirmed_count;
+    let nact = balance.channel_count;
+    let ncls = balance.closing_count;
+
+    // Format the string components
+    let pre_str = if npre > 0 { format!("{}a", npre) } else { "".to_string() };
+    let act_str = format!("{}", nact);
+    let cls_str = if ncls > 0 { format!("z{}", ncls) } else { "".to_string() };
+
+    // Pad to line up the nact field w/ the surrounding lines
+    let align = 4;
+    let len = pre_str.len() + act_str.len();
+    let pad_str = if len < align { " ".repeat(align - len) } else { "".to_string() };
+
+    format!("{}{}{}{}", &pad_str, &pre_str, &act_str, &cls_str)
 }
 
 fn from_wire_string(s: &WireString) -> String {
@@ -408,8 +414,13 @@ fn make_validator_factory(network: Network, permissive: bool) -> Arc<SimpleValid
     } else {
         // TODO - from config
         let filter_opt = Some(PolicyFilter {
-            rules: vec![FilterRule::new_warn("policy-channel-safe-type-anchors")],
-        }); // TODO(236)
+            rules: vec![
+                FilterRule::new_warn("policy-channel-safe-type-anchors"), // TODO(236)
+                FilterRule::new_warn("policy-commitment-retry-same"),     // TODO(491)
+                FilterRule::new_warn("policy-commitment-htlc-routing-balance"), // TODO(313)
+                FilterRule::new_warn("policy-commitment-fee-range"),      // TODO(313)
+            ],
+        });
 
         if let Some(f) = filter_opt {
             policy.filter.merge(f);
@@ -420,12 +431,16 @@ fn make_validator_factory(network: Network, permissive: bool) -> Arc<SimpleValid
     Arc::new(SimpleValidatorFactory::new_with_policy(policy))
 }
 
-fn make_approver(devctx: &Arc<RefCell<DeviceContext>>, permissive: bool) -> Arc<dyn Approve> {
+fn make_approver(
+    devctx: &Arc<RefCell<DeviceContext>>,
+    permissive: bool,
+    network: Network,
+) -> Arc<dyn Approve> {
     if permissive {
         info!("VLS_PERMISSIVE: ALL INVOICES AND KEYSENDS AUTOMATICALLY APPROVED");
         Arc::new(WarningPositiveApprover())
     } else {
         info!("VLS_ENFORCING: INVOICES AND KEYSENDS REQUIRE APPROVAL");
-        Arc::new(ScreenApprover::new(Arc::clone(devctx)))
+        Arc::new(ScreenApprover::new(Arc::clone(devctx), network))
     }
 }

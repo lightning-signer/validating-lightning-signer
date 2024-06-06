@@ -23,18 +23,21 @@ use vls_protocol_signer::lightning_signer::{
     Arc,
 };
 
+use crate::bitcoin::Address;
 use crate::device::DeviceContext;
 use crate::pretty_thousands;
+use crate::Network;
 
 pub struct ScreenApprover {
     devctx: Arc<RefCell<DeviceContext>>,
+    network: Network,
 }
 
 impl SendSync for ScreenApprover {}
 
 impl ScreenApprover {
-    pub fn new(devctx: Arc<RefCell<DeviceContext>>) -> Self {
-        Self { devctx }
+    pub fn new(devctx: Arc<RefCell<DeviceContext>>, network: Network) -> Self {
+        Self { devctx, network }
     }
 }
 
@@ -52,7 +55,7 @@ impl Approve for ScreenApprover {
 
         let mut lines = vec![
             format!("{: ^19}", "Approve Invoice?"),
-            format!("{: >19}", format_payment_amount(amount_msat)),
+            format!("{: >19}", format_amount_msat(amount_msat)),
             format!("n {:17}", format_payee_pubkey(&payee_pubkey)),
             format!("x {:17}", format_expiration(expiry_secs)),
             format!("p {:17}", format_payment_hash(&payment_hash)),
@@ -74,7 +77,7 @@ impl Approve for ScreenApprover {
 
         let mut lines = vec![
             format!("{: ^19}", "Approve Keysend?"),
-            format!("{: >19}", format_payment_amount(amount_msat)),
+            format!("{: >19}", format_amount_msat(amount_msat)),
             format!("p {:17}", format_payment_hash(&payment_hash)),
         ];
         lines.resize_with(9, || format!(""));
@@ -88,11 +91,38 @@ impl Approve for ScreenApprover {
 
     fn approve_onchain(
         &self,
-        _tx: &Transaction,
-        _values_sat: &[TxOut],
-        _unknown_indices: &[usize],
+        tx: &Transaction,
+        prev_outs: &[TxOut],
+        unknown_indices: &[usize],
     ) -> bool {
-        false
+        info!(
+            "approve_onchain: tx={:#?} prev_outs={:#?} unknown_indices={:#?}",
+            tx, prev_outs, unknown_indices
+        );
+        let devctx: &mut DeviceContext = &mut self.devctx.borrow_mut();
+        for (ord, &ndx) in unknown_indices.iter().enumerate() {
+            let amount_sat = tx.output[ndx].value;
+            let script = &tx.output[ndx].script_pubkey;
+            let mut lines = vec![
+                format!("{: ^19}", format!("Destination {}/{}?", ord + 1, unknown_indices.len())),
+                format!("{: >19}", format_amount_sat(amount_sat)),
+            ];
+            lines.extend(format_address(
+                Address::from_script(&script, self.network).expect("dest address").to_string(),
+            ));
+            lines.resize_with(9, || format!(""));
+
+            lines.push(format!("{:^9} {:^9}", "Approve", "Decline"));
+
+            devctx.disp.clear_screen();
+            devctx.disp.show_texts(&lines);
+
+            // If any output is declined we decline the whole thing
+            if !wait_for_approval(devctx) {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -111,10 +141,14 @@ fn wait_for_approval(devctx: &mut DeviceContext) -> bool {
     }
 }
 
-fn format_payment_amount(amount_msat: u64) -> String {
+fn format_amount_msat(amount_msat: u64) -> String {
     // Using msat is too wide for display.  Probably a fancy units mapper
     // would be appropriate, maybe ok to lose precision on large values ...
     format!("{} sat", pretty_thousands(amount_msat as i64 / 1000))
+}
+
+fn format_amount_sat(amount_sat: u64) -> String {
+    format!("{} sat", pretty_thousands(amount_sat as i64))
 }
 
 fn format_payee_pubkey(pubkey: &PublicKey) -> String {
@@ -144,6 +178,15 @@ fn format_description(mut desc: String) -> Vec<String> {
     let mut rv = vec![];
     while desc.len() > 0 {
         rv.push(desc.drain(..min(desc.len(), 17)).collect());
+    }
+    rv
+}
+
+fn format_address(mut desc: String) -> Vec<String> {
+    // Break into left-aligned 19 char padded substrs
+    let mut rv = vec![];
+    while desc.len() > 0 {
+        rv.push(format!("{: <19}", desc.drain(..min(desc.len(), 19)).collect::<String>()));
     }
     rv
 }
