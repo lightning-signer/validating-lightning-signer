@@ -117,9 +117,23 @@ impl io::Write for SerialWrap {
 
 pub fn connect(serial_port: String) -> anyhow::Result<SerialWrap> {
     info!("connecting to {}", serial_port);
-    let file = File::options().read(true).write(true).open(serial_port)?;
-    let serial = SerialWrap::new(file);
-    Ok(serial)
+    let mut num_retries = 0;
+    loop {
+        match File::options().read(true).write(true).open(&serial_port) {
+            Ok(file) => {
+                let serial = SerialWrap::new(file);
+                info!("connected to {}", serial_port);
+                return Ok(serial);
+            }
+            Err(e) => {
+                if num_retries % 10 == 0 {
+                    warn!("connecting to {} failed: {}, retrying ...", serial_port, e);
+                }
+                thread::sleep(Duration::from_secs(1));
+                num_retries += 1;
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
