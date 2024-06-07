@@ -11,7 +11,7 @@ The following lines need to be changed:
 log-level=debug
 ```
 
-`~cln/.lightning/testnet-env`:
+`~cln/.lightning/testnet-setenv`:
 ```
 RUST_LOG=debug
 ```

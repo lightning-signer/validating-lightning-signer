@@ -56,20 +56,22 @@ bind-addr=0.0.0.0:19735
 announce-addr=23.93.101.158:19735
 ```
 
-Create `~cln/.lightning/testnet-env`:
+Create `~cln/.lightning/testnet-setenv`:
 ```
 sudo -u cln bash << 'EOF'
-cat > ~cln/.lightning/testnet-env << EOL
+cat > ~cln/.lightning/testnet-setenv << EOL
 VLS_PORT=17701
-VLS_SERIAL_PORT=/dev/ttyACM0
+VLS_SERIAL_PORT=/dev/vls-stm32
 VLS_NETWORK=testnet
 # If your SOCKET signer is remote, have the proxy listen to all interfaces.
 # Alternatively, set up a secure tunnel to the signer.
 # VLS_BIND=0.0.0.0
 BITCOIND_RPC_URL=http://rpcuser:6ffb57ab46aa726@localhost:18332
-VLS_CLN_VERSION=v0.11.0.1-62-g92cc76a
 RUST_LOG=info
 BITCOIND_CLIENT_TIMEOUT_SECS=60
+# Dynamically set VLS_CLN_VERSION
+VLS_CLN_VERSION=$(/usr/local/bin/lightningd --version)
+export VLS_PORT VLS_SERIAL_PORT VLS_NETWORK BITCOIND_RPC_URL RUST_LOG BITCOIND_CLIENT_TIMEOUT_SECS VLS_CLN_VERSION VLS_BIND
 EOL
 EOF
 ```
@@ -77,20 +79,12 @@ EOF
 Edit the file, change the `BITCOIND_RPC_URL` value to match your `bitcoind-testnet`:
 ```
 sudo -u bitcoin grep rpcpassword ~bitcoin/.bitcoin/bitcoin.conf
-sudo -u cln vi ~cln/.lightning/testnet-env
+sudo -u cln vi ~cln/.lightning/testnet-setenv
 ```
 
 Make sure cln owns everything:
 ```
 sudo chown -R cln:cln  /home/cln/
-```
-
-Update `~cln/.lightning/testnet-env` to the installed CLN version:
-```
-sudo -u cln bash -c 'cd ~cln/.lightning/ && \
-grep -v VLS_CLN_VERSION testnet-env > testnet-env.new && \
-echo "VLS_CLN_VERSION=`lightningd --version`" >> testnet-env.new && \
-mv testnet-env.new testnet-env'
 ```
 
 Install systemd unit file:

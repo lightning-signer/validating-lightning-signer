@@ -8,10 +8,10 @@ cd ~/lightning-signer/vls-hsmd && make VLS_BUILDARGS='--features heapmon_request
 ```
 
 You can control the threshold for "large" requests with the `VLS_HEAPMON_PEAK_THRESH`
-env variable.  You can add the following line to the `~vls/.lightning-signer/testnet-env`
+env variable.  You can add the following line to the `~vls/.lightning-signer/testnet-setenv`
 config file:
 ```
-VLS_HEAPMON_PEAK_THRESH=40000
+export VLS_HEAPMON_PEAK_THRESH=40000
 ```
 
 With `heapmon_requests` enabled additional information about large
