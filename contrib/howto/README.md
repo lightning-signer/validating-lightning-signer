@@ -16,6 +16,7 @@
 - [Setup TXOOD testnet Service](./txood-testnet-service.md)
 - [Setup CLN testnet Service](./cln-testnet-service.md)
 - [Setup VLS testnet Service](./vls-testnet-service.md)
+- [Setup VLS STM32 Probe testnet Service](./vls-probe-testnet-service.md)
 - [Setup CLBOSS and CLN Plugins](./clboss-plugins-setup.md)
 - [Setup Intel NUC8 Demo Unit](./nuc8-setup.md)
 - [Flash the STM32 Signer](./stm32-flash.md)
