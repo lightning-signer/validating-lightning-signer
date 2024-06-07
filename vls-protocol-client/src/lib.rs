@@ -49,14 +49,7 @@ use vls_protocol::model::{
     Basepoints, BitcoinSignature, CloseInfo, DisclosedSecret, Htlc, PubKey, Utxo,
 };
 use vls_protocol::msgs::{
-    DeBolt, Ecdh, EcdhReply, GetChannelBasepoints, GetChannelBasepointsReply,
-    GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply,
-    GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, SerBolt,
-    SetupChannel, SetupChannelReply, SignChannelAnnouncement, SignChannelAnnouncementReply,
-    SignCommitmentTxWithHtlcsReply, SignGossipMessage, SignGossipMessageReply, SignInvoice,
-    SignInvoiceReply, SignLocalCommitmentTx2, SignMutualCloseTx2, SignRemoteCommitmentTx2,
-    SignTxReply, SignWithdrawal, SignWithdrawalReply, ValidateCommitmentTx2,
-    ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply,
+    DeBolt, Ecdh, EcdhReply, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, SerBolt, SetupChannel, SetupChannelReply, SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxReply, SignCommitmentTxWithHtlcsReply, SignGossipMessage, SignGossipMessageReply, SignInvoice, SignInvoiceReply, SignLocalCommitmentTx2, SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal, SignWithdrawalReply, ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply
 };
 #[cfg(feature = "developer")]
 use vls_protocol::msgs::{HsmdDevPreinit, HsmdDevPreinitReply};
@@ -225,14 +218,8 @@ impl EcdsaChannelSigner for SignerClient {
         let message = SignLocalCommitmentTx2 {
             commitment_number: INITIAL_COMMITMENT_NUMBER - commitment_tx.commitment_number(),
         };
-        let result: SignCommitmentTxWithHtlcsReply = self.call(message).map_err(|_| ())?;
+        let result: SignCommitmentTxReply = self.call(message).map_err(|_| ())?;
         let signature = Signature::from_compact(&result.signature.signature.0).map_err(|_| ())?;
-        let _htlc_signatures = result
-            .htlc_signatures
-            .iter()
-            .map(|s| Signature::from_compact(&s.signature.0))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| ())?;
         Ok(signature)
     }
 

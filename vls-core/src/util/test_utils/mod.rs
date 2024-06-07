@@ -1313,7 +1313,7 @@ pub fn sign_holder_commitment(
     node_ctx: &TestNodeContext,
     chan_ctx: &TestChannelContext,
     commit_tx_ctx: &TestCommitmentTxContext,
-) -> Result<(Signature, Vec<Signature>), Status> {
+) -> Result<Signature, Status> {
     node_ctx.node.with_channel(&chan_ctx.channel_id, |chan| {
         chan.sign_holder_commitment_tx_phase2(commit_tx_ctx.commit_num)
     })

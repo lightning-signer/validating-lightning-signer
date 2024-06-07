@@ -818,7 +818,6 @@ impl Handler for RootHandler {
                         .with_channel(&channel_id, |chan| {
                             chan.sign_holder_commitment_tx_phase2(m.commitment_number)
                         })?
-                        .0
                 };
                 Ok(Box::new(msgs::SignCommitmentTxReply { signature: to_bitcoin_sig(sig) }))
             }
@@ -1495,14 +1494,11 @@ impl Handler for ChannelHandler {
             }
 
             Message::SignLocalCommitmentTx2(m) => {
-                let (sig, htlc_sigs) = self.node.with_channel(&self.channel_id, |chan| {
+                let sig = self.node.with_channel(&self.channel_id, |chan| {
                     chan.sign_holder_commitment_tx_phase2(m.commitment_number)
                 })?;
-                Ok(Box::new(msgs::SignCommitmentTxWithHtlcsReply {
+                Ok(Box::new(msgs::SignCommitmentTxReply {
                     signature: to_bitcoin_sig(sig),
-                    htlc_signatures: Array(
-                        htlc_sigs.into_iter().map(|s| to_bitcoin_sig(s)).collect(),
-                    ),
                 }))
             }
             Message::ValidateRevocation(m) => {

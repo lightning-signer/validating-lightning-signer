@@ -1220,7 +1220,7 @@ impl Channel {
     pub fn sign_holder_commitment_tx_phase2(
         &mut self,
         commitment_number: u64,
-    ) -> Result<(Signature, Vec<Signature>), Status> {
+    ) -> Result<Signature, Status> {
         // We are just signing the latest commitment info that we previously
         // stored in the enforcement state, while checking that the commitment
         // number supplied by the caller matches the one we expect.
@@ -1273,7 +1273,7 @@ impl Channel {
         self.enforcement_state.channel_closed = true;
         trace_enforcement_state!(self);
         self.persist()?;
-        Ok((sig, vec![]))
+        Ok(sig)
     }
 
     /// Sign a holder commitment and HTLCs when recovering from node failure
@@ -1381,7 +1381,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
-    ) -> Result<(Signature, Vec<Signature>), Status> {
+    ) -> Result<Signature, Status> {
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         let info2 = self.build_holder_commitment_info(
@@ -1438,7 +1438,7 @@ impl Channel {
         self.enforcement_state.channel_closed = true;
         trace_enforcement_state!(self);
         self.persist()?;
-        Ok((sig, vec![]))
+        Ok(sig)
     }
 
     pub(crate) fn make_holder_commitment_tx(

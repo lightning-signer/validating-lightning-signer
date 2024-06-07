@@ -52,7 +52,7 @@ mod tests {
                 Ok(commitment_tx.trust().built_transaction().transaction.clone())
             })
             .expect("build");
-        let (signature, _) = node
+        let signature = node
             .with_channel(&channel_id, |chan| {
                 chan.sign_holder_commitment_tx_phase2_redundant(
                     commit_num,
@@ -223,7 +223,7 @@ mod tests {
                 tx: &tx.transaction,
             });
 
-            let (sig, _htlc_sigs) =
+            let sig =
                 chan.sign_holder_commitment_tx_phase2(commit_tx_ctx.commit_num)?;
 
             let build_feerate =
@@ -286,6 +286,7 @@ mod tests {
             chan_ctx.setup.channel_value_sat,
             &channel_funding_redeemscript,
         );
+
         Ok(())
     }
 

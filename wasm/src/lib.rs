@@ -242,7 +242,7 @@ impl JSNode {
                     vec![],
                     vec![],
                 )
-                .map(|p| p.0.into())
+                .map(|p| p.into())
             })
             .map_err(|s| from_status(s).into())
     }
