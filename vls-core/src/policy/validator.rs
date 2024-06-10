@@ -399,6 +399,7 @@ pub trait Validator {
         external_block_hash: Option<&BlockHash>,
         prev_filter_header: &FilterHeader,
         outpoint_watches: &[OutPoint],
+        trusted_oracle_pubkeys: &Vec<PublicKey>,
     ) -> Result<(), ValidationError> {
         let secp = Secp256k1::new();
         let result = proof.verify(
@@ -427,7 +428,22 @@ pub trait Validator {
                 policy_err!(self, "policy-chain-validated", "invalid proof {:?}", result);
             }
         }
-        // TODO validate attestation is by configured oracle
+
+        let required_majority = (trusted_oracle_pubkeys.len() + 1) / 2;
+        let key_matches = trusted_oracle_pubkeys
+            .iter()
+            .filter(|&trusted_key| {
+                proof.attestations.iter().find(|(a, _)| *a == *trusted_key).is_some()
+            })
+            .count();
+        if key_matches < required_majority {
+            policy_err!(
+                self,
+                "policy-chain-validated",
+                "attestation from trusted oracles not found"
+            );
+        }
+
         // TODO validate filter header chain
         Ok(())
     }

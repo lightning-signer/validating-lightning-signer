@@ -246,6 +246,7 @@ impl Validator for MockValidator {
         external_block_hash: Option<&BlockHash>,
         prev_filter_header: &FilterHeader,
         outpoint_watches: &[OutPoint],
+        trusted_oracle_pubkeys: &Vec<PublicKey>,
     ) -> Result<(), ValidationError> {
         *self.last_validated_watches.lock().unwrap() = outpoint_watches.to_vec();
         Ok(())

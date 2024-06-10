@@ -15,6 +15,7 @@ pub fn main() {
         starting_time_factory,
         persister: Arc::new(DummyPersister {}),
         clock: Arc::new(clock),
+        trusted_oracle_pubkeys: vec![],
     };
     let _signer = MultiSigner::new(services);
 }

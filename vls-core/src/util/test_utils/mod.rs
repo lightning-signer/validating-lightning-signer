@@ -479,7 +479,13 @@ pub fn init_node(node_config: NodeConfig, seedstr: &str) -> Arc<Node> {
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
     let starting_time_factory = make_genesis_starting_time_factory(node_config.network);
     let clock = Arc::new(StandardClock());
-    let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
+    let services = NodeServices {
+        validator_factory,
+        starting_time_factory,
+        persister,
+        clock,
+        trusted_oracle_pubkeys: vec![],
+    };
 
     let node = Node::new(node_config, &seed, vec![], services);
     Arc::new(node)
@@ -498,12 +504,10 @@ pub fn init_node_and_channel(
 pub fn init_channel(setup: ChannelSetup, node: Arc<Node>) -> ChannelId {
     {
         let mut tracker = node.get_tracker();
-        let (header, proof) = make_testnet_header(tracker.tip(), tracker.height());
-        tracker.add_block(header, proof).unwrap();
-        let (header, proof) = make_testnet_header(tracker.tip(), tracker.height());
-        tracker.add_block(header, proof).unwrap();
-        let (header, proof) = make_testnet_header(tracker.tip(), tracker.height());
-        tracker.add_block(header, proof).unwrap();
+        for _ in 0..3 {
+            let (header, proof) = make_testnet_header(tracker.tip(), tracker.height());
+            tracker.add_block(header, proof).unwrap();
+        }
     }
     let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
     node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
@@ -1853,7 +1857,13 @@ pub fn make_services() -> NodeServices {
     let starting_time_factory = make_genesis_starting_time_factory(TEST_NODE_CONFIG.network);
     let clock = Arc::new(StandardClock());
 
-    let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
+    let services = NodeServices {
+        validator_factory,
+        starting_time_factory,
+        persister,
+        clock,
+        trusted_oracle_pubkeys: vec![],
+    };
     services
 }
 

@@ -253,7 +253,13 @@ mod tests {
         let persister = Arc::new(DummyPersister {});
         let clock = Arc::new(StandardClock());
         let starting_time_factory = make_genesis_starting_time_factory(TEST_NODE_CONFIG.network);
-        NodeServices { validator_factory, starting_time_factory, persister, clock }
+        NodeServices {
+            validator_factory,
+            starting_time_factory,
+            persister,
+            clock,
+            trusted_oracle_pubkeys: vec![],
+        }
     }
 
     #[test]

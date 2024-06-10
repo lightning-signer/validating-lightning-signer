@@ -65,6 +65,7 @@ fn persister_bench(c: &mut Criterion) {
         starting_time_factory,
         persister: persister.clone(),
         clock,
+        trusted_oracle_pubkeys: vec![],
     };
 
     let nodes = Node::restore_nodes(services.clone(), seed_persister.clone()).unwrap();
