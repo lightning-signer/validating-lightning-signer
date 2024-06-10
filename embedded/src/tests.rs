@@ -168,6 +168,7 @@ pub fn test_lightning_signer(postscript: fn()) {
         starting_time_factory,
         persister: persister.clone(),
         clock: clock.clone(),
+        trusted_oracle_pubkeys: vec![],
     };
     let node = Arc::new(Node::new(config, &seed, Vec::new(), services.clone()));
     let starting_time_factory2 = FixedStartingTimeFactory::new(2, 2);
@@ -176,6 +177,7 @@ pub fn test_lightning_signer(postscript: fn()) {
         starting_time_factory: starting_time_factory2,
         persister,
         clock,
+        trusted_oracle_pubkeys: vec![]
     };
     let node1 = Arc::new(Node::new(config, &seed1, Vec::new(), services2));
 

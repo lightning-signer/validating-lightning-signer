@@ -110,7 +110,13 @@ pub fn make_handler(datadir: &str, args: &SignerArgs) -> InitHandler {
         fee_velocity_control_spec,
     );
     let clock = Arc::new(StandardClock());
-    let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
+    let services = NodeServices {
+        validator_factory,
+        starting_time_factory,
+        persister,
+        clock,
+        trusted_oracle_pubkeys: args.trusted_oracle_pubkey.clone(),
+    };
     let mut handler_builder =
         HandlerBuilder::new(network, 0, services, seed).allowlist(allowlist.clone());
     if should_auto_approve() {

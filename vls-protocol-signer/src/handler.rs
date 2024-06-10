@@ -348,7 +348,7 @@ impl HandlerBuilder {
     /// persistence key can be derived.
     pub fn build_keys_manager(&self) -> (MyKeysManager, PublicKey) {
         let config = NodeConfig::new(self.network);
-        Node::make_keys_manager(config, &self.seed, &self.services)
+        Node::make_keys_manager(&config, &self.seed, &self.services)
     }
 
     fn do_build(self) -> Result<InitHandler> {

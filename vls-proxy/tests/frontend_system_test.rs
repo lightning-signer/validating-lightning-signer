@@ -67,7 +67,8 @@ impl DummySignerPort {
         let xpriv = ExtendedPrivKey::new_master(network, &[0; 32]).unwrap();
         let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
         let validator_factory = SimpleValidatorFactory::new();
-        let tracker = ChainTracker::for_network(network, node_id, Arc::new(validator_factory));
+        let tracker =
+            ChainTracker::for_network(network, node_id, Arc::new(validator_factory), vec![]);
         let block_hash = tracker.tip().0.block_hash();
         let height = tracker.height;
 
