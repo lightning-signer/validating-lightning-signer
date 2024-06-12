@@ -1187,10 +1187,11 @@ impl Node {
         if node_id != *expected_node_id {
             panic!("node_id mismatch: expected {} got {}", expected_node_id, node_id);
         }
-        let (tracker, listener_entries) = services
+        let (mut tracker, listener_entries) = services
             .persister
             .get_tracker(node_id.clone(), services.validator_factory.clone())
             .expect("get tracker from persister");
+        tracker.trusted_oracle_pubkeys = services.trusted_oracle_pubkeys.clone();
 
         let persister = services.persister.clone();
 

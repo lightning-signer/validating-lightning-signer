@@ -31,6 +31,7 @@ pub fn init_node(
         starting_time_factory,
         persister: persister.clone(),
         clock,
+        trusted_oracle_pubkeys: vec![],
     };
 
     let node = Node::new(node_config, &seed, vec![], services);
