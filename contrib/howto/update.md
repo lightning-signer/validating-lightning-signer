@@ -52,7 +52,6 @@ make setup
 Build:
 ```
 cd ~/lightning-signer/vls-hsmd && make build
-cd ~/lightning-signer/vls-hsmd/lightning && poetry run make
 ```
 
 ### Stop Daemons
@@ -84,33 +83,7 @@ is required, the signer can be left idle.
 
 #### Install CLN components on the `CLNHOST`:
 ```
-cd ~/lightning-signer/vls-hsmd/lightning
-sudo make install
-/usr/local/bin/lightningd --version
-```
-
-Update `~cln/.lightning/testnet-env` to CLN version:
-```
-sudo -u cln bash -c 'cd ~cln/.lightning/ && \
-  grep -v VLS_CLN_VERSION testnet-env > testnet-env.new && \
-  echo "VLS_CLN_VERSION=`lightningd --version`" >> testnet-env.new && \
-  mv testnet-env.new testnet-env'
-```
-
-#### Install VLS proxies on the `CLNHOST`:
-```
-sudo cp ~/lightning-signer/vls-hsmd/vls/target/debug/remote_hsmd_serial \
-    /usr/local/libexec/c-lightning/
-sudo cp ~/lightning-signer/vls-hsmd/vls/target/debug/remote_hsmd_socket \
-    /usr/local/libexec/c-lightning/
-/usr/local/libexec/c-lightning/remote_hsmd_serial --git-desc
-/usr/local/libexec/c-lightning/remote_hsmd_socket --git-desc
-```
-
-#### Install the VLS signer on the `VLSHOST` if you are running in `SOCKET` mode:
-```
-sudo cp ~/lightning-signer/vls-hsmd/vls/target/debug/vlsd2 /usr/local/bin
-/usr/local/bin/vlsd2 --git-desc
+cd ~/lightning-signer/vls-hsmd && sudo make install
 ```
 
 #### [Flash the STM32 Signer](./stm32-flash.md) if you are running in `SERIAL` mode.

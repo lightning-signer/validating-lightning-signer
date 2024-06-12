@@ -1,0 +1,19 @@
+[Unit]
+Description=Testnet VLS STM32 Probe
+
+[Service]
+[Service]
+ExecStart=/home/user/vls-probe/vls-probe-testnet
+# give vls-stm32 a head-start to load from persistence
+ExecStartPost=sleep 10
+PIDFile=/home/user/vls-probe/testnet/vls-probe-testnet.pid
+User=user
+Group=user
+Type=simple
+KillMode=control-group
+TimeoutSec=180
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
