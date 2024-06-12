@@ -5,6 +5,7 @@ use grpc::signer::make_handler;
 use grpc::signer::start_signer;
 use http::Uri;
 use lightning_signer::bitcoin::Network;
+use log::warn;
 use recovery::{direct::DirectRecoveryKeys, recover_close, recover_l1};
 use std::fs;
 use util::abort_on_panic;
@@ -37,6 +38,15 @@ impl HasSignerArgs for Args {
 #[tokio::main(worker_threads = 2)]
 pub async fn main() {
     abort_on_panic();
+
+    let (shutdown_trigger, shutdown_signal) = triggered::trigger();
+    let trigger1 = shutdown_trigger.clone();
+    ctrlc::set_handler(move || {
+        warn!("ctrlc handler triggering shutdown");
+        trigger1.trigger();
+    })
+    .expect("Error setting Ctrl-C handler");
+
     let bin_name = "vlsd2";
     let our_args: Args = parse_args_and_config(bin_name);
 
@@ -85,5 +95,5 @@ pub async fn main() {
     if network == Network::Bitcoin && args.integration_test {
         panic!("integration-test mode not supported on mainnet");
     }
-    start_signer(&datadir, uri, &args).await;
+    start_signer(&datadir, uri, &args, shutdown_signal).await;
 }

@@ -508,6 +508,11 @@ impl InitHandler {
         InitHandler { id, node, approver, max_protocol_version, protocol_version: None }
     }
 
+    /// Reset the handler
+    pub fn reset(&mut self) {
+        self.protocol_version = None;
+    }
+
     /// Get the associated node
     pub fn node(&self) -> &Arc<Node> {
         &self.node
@@ -516,9 +521,14 @@ impl InitHandler {
     /// Convert to RootHandler.
     ///
     /// Panics if initial negotiation is not complete - see [`InitHandler::handle`].
-    pub fn into_root_handler(self) -> RootHandler {
+    pub fn root_handler(&self) -> RootHandler {
         let protocol_version = self.protocol_version.expect("initial negotiation not complete");
-        RootHandler { id: self.id, node: self.node, approver: self.approver, protocol_version }
+        RootHandler {
+            id: self.id,
+            node: Arc::clone(&self.node),
+            approver: Arc::clone(&self.approver),
+            protocol_version,
+        }
     }
 
     /// Log channel information
