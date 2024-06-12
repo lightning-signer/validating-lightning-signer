@@ -63,17 +63,22 @@ pub async fn start_signer_localhost(port: u16) {
         .path_and_query("/")
         .build()
         .expect("uri"); // infallible by construction
-
+    let (_shutdown_trigger, shutdown_signal) = triggered::trigger();
     let args = SignerArgs::parse_from(&["signer", "--integration-test", "--network", "regtest"]);
     assert!(args.integration_test);
-    connect("remote_hsmd.kv", uri, &args).await;
+    connect("remote_hsmd.kv", uri, &args, shutdown_signal).await;
     info!("signer stopping");
 }
 
 /// Signer binary entry point
-pub async fn start_signer(datadir: &str, uri: Uri, args: &SignerArgs) {
+pub async fn start_signer(
+    datadir: &str,
+    uri: Uri,
+    args: &SignerArgs,
+    shutdown_signal: triggered::Listener,
+) {
     info!("signer starting on {} connecting to {}", args.network, uri);
-    connect(datadir, uri, args).await;
+    connect(datadir, uri, args, shutdown_signal).await;
     info!("signer stopping");
 }
 
@@ -140,26 +145,48 @@ fn reset_allowlist(node: &Node, allowlist: &Vec<String>) {
     info!("allowlist={:?}", node.allowlist().expect("allowlist"));
 }
 
-#[instrument(skip(args))]
-async fn connect(datadir: &str, uri: Uri, args: &SignerArgs) {
-    let (sender, receiver) = mpsc::channel(1);
-    let response_stream = ReceiverStream::new(receiver);
+#[instrument(skip(args, shutdown_signal))]
+async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: triggered::Listener) {
     let mut init_handler = make_handler(datadir, args);
     let node = Arc::clone(init_handler.node());
 
-    reset_allowlist(&*node, &read_allowlist());
-    init_handler.log_chaninfo();
+    let join_handle =
+        start_rpc_server_with_auth(Arc::clone(&node), &args, shutdown_signal.clone()).await;
 
-    let join_handle = start_rpc_server_with_auth(Arc::clone(&node), &args).await;
+    loop {
+        let handle_connection = async {
+            reset_allowlist(&*node, &read_allowlist());
+            init_handler.reset();
 
-    let mut client = do_connect(uri).await;
-    let mut request_stream = client.signer_stream(response_stream).await.unwrap().into_inner();
+            let (sender, receiver) = mpsc::channel(1);
+            let response_stream = ReceiverStream::new(receiver);
+            init_handler.log_chaninfo();
 
-    let is_success = handle_init_requests(&sender, &mut request_stream, &mut init_handler).await;
+            let mut client = do_connect(&uri).await;
+            let mut request_stream =
+                client.signer_stream(response_stream).await.unwrap().into_inner();
 
-    if is_success {
-        let root_handler = init_handler.into_root_handler();
-        handle_requests(&sender, &mut request_stream, &root_handler).await;
+            let is_success =
+                handle_init_requests(&sender, &mut request_stream, &mut init_handler).await;
+
+            if is_success {
+                let root_handler = init_handler.root_handler();
+                handle_requests(&sender, &mut request_stream, &root_handler).await;
+            }
+        };
+
+        tokio::select! {
+            _ = shutdown_signal.clone() => {
+                info!("signer shutting down");
+                break;
+            }
+            _ = handle_connection => {}
+        }
+
+        if args.integration_test {
+            // no reconnects needed for integration tests, just exit
+            break;
+        }
     }
 
     if let Some(join_rpc_server) = join_handle {
@@ -353,7 +380,7 @@ async fn send_response(
     false
 }
 
-async fn do_connect(uri: Uri) -> HsmdClient<Channel> {
+async fn do_connect(uri: &Uri) -> HsmdClient<Channel> {
     loop {
         let client = HsmdClient::connect(uri.clone()).await;
         match client {
@@ -454,7 +481,11 @@ fn handle_request(
     })
 }
 
-async fn start_rpc_server_with_auth(node: Arc<Node>, args: &SignerArgs) -> Option<JoinHandle<()>> {
+async fn start_rpc_server_with_auth(
+    node: Arc<Node>,
+    args: &SignerArgs,
+    shutdown_signal: triggered::Listener,
+) -> Option<JoinHandle<()>> {
     let (username, password) = match get_rpc_credentials(
         args.rpc_user.clone(),
         args.rpc_pass.clone(),
@@ -473,6 +504,7 @@ async fn start_rpc_server_with_auth(node: Arc<Node>, args: &SignerArgs) -> Optio
         args.rpc_server_port,
         username.as_str(),
         password.as_str(),
+        shutdown_signal,
     )
     .await
     .expect("start_rpc_server");

@@ -42,6 +42,7 @@ pub async fn start_rpc_server(
     port: u16,
     username: &str,
     password: &str,
+    shutdown_signal: triggered::Listener,
 ) -> anyhow::Result<(SocketAddr, JoinHandle<()>)> {
     let mut module = RpcModule::new(node);
     module.register_method(RpcMethods::Info.as_str(), |_, context| {
@@ -104,7 +105,11 @@ pub async fn start_rpc_server(
     let handle = server.start(module);
     info!("rpc_server: listening on {} on port {}", addr, port);
 
-    let join_handle = tokio::spawn(handle.stopped());
+    let join_handle = tokio::spawn(async move {
+        shutdown_signal.await;
+        handle.stop().expect("not already stopped");
+        handle.stopped().await;
+    });
 
     Ok((addr, join_handle))
 }
@@ -142,19 +147,21 @@ mod tests {
         let signer_args = SignerArgs::parse_from(&args);
 
         let root_handler = make_handler(datadir, &signer_args);
+        let (shutdown_trigger, shutdown_signal) = triggered::trigger();
         match start_rpc_server(
             Arc::clone(root_handler.node()),
             signer_args.rpc_server_address,
             signer_args.rpc_server_port,
             "user",
             "password",
+            shutdown_signal,
         )
         .await
         {
             Ok((addr, join_handle)) => {
                 println!("rpc server started at {}", addr);
-
-                join_handle.abort();
+                shutdown_trigger.trigger();
+                join_handle.await.unwrap();
             }
             Err(e) => {
                 println!("rpc server failed to start: {}", e);
