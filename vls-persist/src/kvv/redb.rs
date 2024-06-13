@@ -368,6 +368,7 @@ mod tests {
             starting_time_factory: make_genesis_starting_time_factory(TEST_NODE_CONFIG.network),
             persister: Arc::new(persister),
             clock: Arc::new(StandardClock()),
+            trusted_oracle_pubkeys: vec![],
         };
         let nodes = Node::restore_nodes(node_services, seed_persister).unwrap();
         assert_eq!(nodes.len(), 1);

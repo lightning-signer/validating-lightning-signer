@@ -17,7 +17,9 @@ use url::Url;
 
 use lightning_signer::bitcoin::Network;
 
-use vls_frontend::frontend::SourceFactory;
+use vls_frontend::frontend::{
+    DummySourceFactory, FileSourceFactory, HTTPSourceFactory, SourceFactory,
+};
 use vls_frontend::Frontend;
 
 use client::UnixClient;
@@ -31,6 +33,7 @@ use util::{
     vls_network,
 };
 use vls_proxy::grpc::signer_loop::InitMessageCache;
+use vls_proxy::util::txoo_source_url;
 use vls_proxy::*;
 
 /// Implement hsmd replacement that listens to connections from vlsd2.
@@ -93,7 +96,13 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
     let network = vls_network().parse::<Network>().expect("malformed vls network");
     let sender = server.sender();
     let signer_port = Arc::new(GrpcSignerPort::new(sender.clone()));
-    let source_factory = Arc::new(SourceFactory::new(".", network));
+    let source_factory: Arc<dyn SourceFactory> = match txoo_source_url() {
+        Some(url) => match Url::parse(&url) {
+            Ok(http_url) => Arc::new(HTTPSourceFactory::new(http_url, network)),
+            Err(_) => Arc::new(FileSourceFactory::new(url, network)),
+        },
+        None => Arc::new(DummySourceFactory::new(".", network)),
+    };
     let frontend = Frontend::new(
         Arc::new(SignerPortFront::new(signer_port.clone(), network)),
         source_factory,

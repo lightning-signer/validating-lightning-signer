@@ -1,5 +1,6 @@
+use async_trait::async_trait;
 use bitcoind_client::dummy::DummyPersistentTxooSource;
-use lightning_signer::txoo::source::Source;
+use lightning_signer::txoo::source::{FileSource, HttpSource, Source};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -14,20 +15,97 @@ use triggered::Listener;
 
 use crate::{chain_follower::ChainFollower, ChainTrack, ChainTrackDirectory};
 
-pub struct SourceFactory {
+#[async_trait]
+pub trait SourceFactory: Send + Sync {
+    /// Get a new TXOO Source
+    async fn get_source(
+        &self,
+        start_block: u32,
+        block_hash: BlockHash,
+        filter_header: FilterHeader,
+    ) -> Box<dyn Source>;
+
+    fn get_network(&self) -> Network;
+}
+
+pub struct FileSourceFactory {
     datadir: PathBuf,
     network: Network,
 }
 
-impl SourceFactory {
-    /// Create a new SourceFactory
+impl FileSourceFactory {
+    /// Create a new FileSourceFactory
     pub fn new<P: Into<PathBuf>>(datadir: P, network: Network) -> Self {
         Self { datadir: datadir.into(), network }
     }
+}
 
-    /// Get a new TXOO source
-    // TODO use real TxooSource
-    pub fn get_source(
+#[async_trait]
+impl SourceFactory for FileSourceFactory {
+    async fn get_source(
+        &self,
+        _start_block: u32,
+        _block_hash: BlockHash,
+        _filter_header: FilterHeader,
+    ) -> Box<dyn Source> {
+        let file_source = FileSource::new(self.datadir.clone());
+        let source_network = file_source.oracle_setup().await.network;
+        assert_eq!(source_network, self.network);
+        Box::new(file_source)
+    }
+
+    fn get_network(&self) -> Network {
+        self.network
+    }
+}
+
+pub struct HTTPSourceFactory {
+    url: Url,
+    network: Network,
+}
+
+impl HTTPSourceFactory {
+    /// Create a new HTTPSourceFactory
+    pub fn new(url: Url, network: Network) -> Self {
+        Self { url: url, network }
+    }
+}
+
+#[async_trait]
+impl SourceFactory for HTTPSourceFactory {
+    async fn get_source(
+        &self,
+        _start_block: u32,
+        _block_hash: BlockHash,
+        _filter_header: FilterHeader,
+    ) -> Box<dyn Source> {
+        let http_source =
+            HttpSource::new(self.url.clone()).await.expect("couldn't connect to http source");
+        let source_network = http_source.oracle_setup().await.network;
+        assert_eq!(source_network, self.network);
+        Box::new(http_source)
+    }
+
+    fn get_network(&self) -> Network {
+        self.network
+    }
+}
+
+pub struct DummySourceFactory {
+    datadir: PathBuf,
+    network: Network,
+}
+
+impl DummySourceFactory {
+    /// Create a new DummySourceFactory
+    pub fn new<P: Into<PathBuf>>(datadir: P, network: Network) -> Self {
+        Self { datadir: datadir.into(), network }
+    }
+}
+
+#[async_trait]
+impl SourceFactory for DummySourceFactory {
+    async fn get_source(
         &self,
         start_block: u32,
         block_hash: BlockHash,
@@ -41,6 +119,10 @@ impl SourceFactory {
             filter_header.clone(),
         ))
     }
+
+    fn get_network(&self) -> Network {
+        self.network
+    }
 }
 
 #[derive(Clone)]
@@ -48,7 +130,7 @@ pub struct Frontend {
     directory: Arc<dyn ChainTrackDirectory>,
     rpc_url: Url,
     tracker_ids: Arc<Mutex<HashSet<Vec<u8>>>>,
-    source_factory: Arc<SourceFactory>,
+    source_factory: Arc<dyn SourceFactory>,
     shutdown_signal: Listener,
 }
 
@@ -56,7 +138,7 @@ impl Frontend {
     /// Create a new Frontend
     pub fn new(
         signer: Arc<dyn ChainTrackDirectory>,
-        source_factory: Arc<SourceFactory>,
+        source_factory: Arc<dyn SourceFactory>,
         rpc_url: Url,
         shutdown_signal: Listener,
     ) -> Frontend {
@@ -106,8 +188,8 @@ impl Frontend {
 
     /// Start a chain follower for a specific tracker
     pub async fn start_follower(&self, tracker: Arc<dyn ChainTrack>) {
-        assert_eq!(tracker.network(), self.source_factory.network);
-        let cf_arc = ChainFollower::new(tracker, &self.source_factory, &self.rpc_url).await;
+        assert_eq!(tracker.network(), self.source_factory.get_network());
+        let cf_arc = ChainFollower::new(tracker, self.source_factory.as_ref(), &self.rpc_url).await;
         ChainFollower::start(cf_arc).await;
     }
 }

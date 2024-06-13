@@ -162,6 +162,7 @@ fn new_signer() -> Arc<MultiSigner> {
         starting_time_factory,
         persister,
         clock,
+        trusted_oracle_pubkeys: vec![]
     };
     Arc::new(MultiSigner::new_with_test_mode(true, vec![], services))
 }
@@ -181,7 +182,8 @@ fn invoice_test() {
         validator_factory,
         starting_time_factory,
         persister,
-        clock
+        clock,
+        trusted_oracle_pubkeys: vec![]
     };
     let validating_signer = Arc::new(MultiSigner::new(services));
 

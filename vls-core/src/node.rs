@@ -968,6 +968,7 @@ impl SignedHeartbeat {
 ///     starting_time_factory,
 ///     persister,
 ///     clock,
+///     trusted_oracle_pubkeys: vec![],
 /// };
 /// let node = Arc::new(Node::new(config, &seed, vec![], services));
 /// // TODO: persist the seed
@@ -1009,6 +1010,8 @@ pub struct NodeServices {
     pub persister: Arc<dyn Persist>,
     /// Clock source
     pub clock: Arc<dyn Clock>,
+    /// public keys of trusted TXO oracle
+    pub trusted_oracle_pubkeys: Vec<PublicKey>,
 }
 
 impl Wallet for Node {
@@ -1127,18 +1130,20 @@ impl Node {
         let fee_velocity_control = Self::make_fee_velocity_control(&policy);
         let state = NodeState::new(global_velocity_control, fee_velocity_control);
 
-        let (keys_manager, node_id) = Self::make_keys_manager(node_config, seed, &services);
+        let (keys_manager, node_id) = Self::make_keys_manager(&node_config, seed, &services);
         let tracker = if node_config.use_checkpoints {
             ChainTracker::for_network(
                 node_config.network,
                 node_id.clone(),
                 services.validator_factory.clone(),
+                services.trusted_oracle_pubkeys.clone(),
             )
         } else {
             ChainTracker::from_genesis(
                 node_config.network,
                 node_id.clone(),
                 services.validator_factory.clone(),
+                services.trusted_oracle_pubkeys.clone(),
             )
         };
 
@@ -1178,14 +1183,15 @@ impl Node {
         services: NodeServices,
         state: NodeState,
     ) -> Arc<Node> {
-        let (keys_manager, node_id) = Self::make_keys_manager(node_config, seed, &services);
+        let (keys_manager, node_id) = Self::make_keys_manager(&node_config, seed, &services);
         if node_id != *expected_node_id {
             panic!("node_id mismatch: expected {} got {}", expected_node_id, node_id);
         }
-        let (tracker, listener_entries) = services
+        let (mut tracker, listener_entries) = services
             .persister
             .get_tracker(node_id.clone(), services.validator_factory.clone())
             .expect("get tracker from persister");
+        tracker.trusted_oracle_pubkeys = services.trusted_oracle_pubkeys.clone();
 
         let persister = services.persister.clone();
 
@@ -1338,7 +1344,7 @@ impl Node {
     /// Create a keys manager - useful for bootstrapping a node from persistence, so the
     /// persistence key can be derived.
     pub fn make_keys_manager(
-        node_config: NodeConfig,
+        node_config: &NodeConfig,
         seed: &[u8],
         services: &NodeServices,
     ) -> (MyKeysManager, PublicKey) {

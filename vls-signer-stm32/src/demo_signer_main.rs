@@ -138,7 +138,8 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
         let starting_time_factory = RandomStartingTimeFactory::new(RefCell::new(rng));
         let persister: Arc<dyn Persist> = Arc::new(FatJsonPersister::new(setupfs, signer_id));
         let clock = Arc::new(ManualClock::new(Duration::ZERO));
-        let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
+        // TODO(king-11) pass trusted oracle public keys
+        let services = NodeServices { validator_factory, starting_time_factory, persister, clock, trusted_oracle_pubkeys: vec![] };
         let allowlist = vec![]; // TODO - add to NormalContext
         let seed = runctx.seed;
         let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive, runctx.cmn.network);
@@ -249,7 +250,8 @@ fn start_test_mode(runctx: TestingContext) -> ! {
             RandomStartingTimeFactory::new(RefCell::new(devctx.rng.take().unwrap()));
         let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
         let clock = Arc::new(ManualClock::new(Duration::ZERO));
-        let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
+        // TODO(king-11) pass trusted oracle public keys
+        let services = NodeServices { validator_factory, starting_time_factory, persister, clock, trusted_oracle_pubkeys: vec![] };
         let allowlist = if let Some(ref alist) = preinit.options.allowlist {
             alist.iter().map(|s| from_wire_string(s)).collect::<Vec<_>>()
         } else {

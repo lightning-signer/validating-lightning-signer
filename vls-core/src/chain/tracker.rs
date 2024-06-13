@@ -145,6 +145,8 @@ pub struct ChainTracker<L: ChainListener> {
     validator_factory: Arc<dyn ValidatorFactory>,
     // Block decoder, only while streaming a block is in progress
     decode_state: Option<RefCell<BlockDecodeState>>,
+    /// public keys of trusted TXO oracle
+    pub trusted_oracle_pubkeys: Vec<PublicKey>,
 }
 
 impl<L: ChainListener> ChainTracker<L> {
@@ -163,6 +165,7 @@ impl<L: ChainListener> ChainTracker<L> {
         tip: Headers,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
+        trusted_oracle_pubkeys: Vec<PublicKey>,
     ) -> Result<Self, Error> {
         let header = tip.0;
         header
@@ -179,6 +182,7 @@ impl<L: ChainListener> ChainTracker<L> {
             node_id,
             validator_factory,
             decode_state: None,
+            trusted_oracle_pubkeys,
         })
     }
 
@@ -191,6 +195,7 @@ impl<L: ChainListener> ChainTracker<L> {
         listeners: OrderedMap<L::Key, (L, ListenSlot)>,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
+        trusted_oracle_pubkeys: Vec<PublicKey>,
     ) -> Self {
         ChainTracker {
             headers,
@@ -201,6 +206,7 @@ impl<L: ChainListener> ChainTracker<L> {
             node_id,
             validator_factory,
             decode_state: None,
+            trusted_oracle_pubkeys,
         }
     }
 
@@ -209,6 +215,7 @@ impl<L: ChainListener> ChainTracker<L> {
         network: Network,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
+        trusted_oracle_pubkeys: Vec<PublicKey>,
     ) -> Self {
         let height = 0;
         let genesis = genesis_block(network);
@@ -221,6 +228,7 @@ impl<L: ChainListener> ChainTracker<L> {
             &genesis.header,
             &filter_header,
             height,
+            trusted_oracle_pubkeys,
         )
     }
 
@@ -231,10 +239,11 @@ impl<L: ChainListener> ChainTracker<L> {
         header: &BlockHeader,
         filter_header: &FilterHeader,
         height: u32,
+        trusted_oracle_pubkeys: Vec<PublicKey>,
     ) -> Self {
         let tip = Headers(*header, *filter_header);
 
-        Self::new(network, height, tip, node_id, validator_factory)
+        Self::new(network, height, tip, node_id, validator_factory, trusted_oracle_pubkeys)
             .expect("genesis block / checkpoint is expected to be valid")
     }
 
@@ -243,6 +252,7 @@ impl<L: ChainListener> ChainTracker<L> {
         network: Network,
         node_id: PublicKey,
         validator_factory: Arc<dyn ValidatorFactory>,
+        trusted_oracle_pubkeys: Vec<PublicKey>,
     ) -> Self {
         if let Some((height, _hash, filter_header, header)) = get_latest_checkpoint(network) {
             Self::from_checkpoint(
@@ -252,9 +262,10 @@ impl<L: ChainListener> ChainTracker<L> {
                 &header,
                 &filter_header,
                 height,
+                trusted_oracle_pubkeys,
             )
         } else {
-            Self::from_genesis(network, node_id, validator_factory)
+            Self::from_genesis(network, node_id, validator_factory, trusted_oracle_pubkeys)
         }
     }
 
@@ -592,6 +603,7 @@ impl<L: ChainListener> ChainTracker<L> {
                     external_block_hash,
                     prev_filter_header,
                     &outpoint_watches,
+                    &self.trusted_oracle_pubkeys,
                 )
                 .map_err(|e| error_invalid_proof!("{:?}", e))?;
         }
@@ -1032,8 +1044,14 @@ mod tests {
         let validator_factory = Arc::new(MockValidatorFactory::new());
         let (node_id, _, _) = make_node();
         let tip = Headers(genesis.header, FilterHeader::all_zeros());
-        let tracker =
-            ChainTracker::new(Network::Regtest, 0, tip, node_id, validator_factory.clone())?;
+        let tracker = ChainTracker::new(
+            Network::Regtest,
+            0,
+            tip,
+            node_id,
+            validator_factory.clone(),
+            vec![],
+        )?;
         Ok((tracker, validator_factory))
     }
 }

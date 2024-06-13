@@ -240,6 +240,7 @@ impl ChainTrackerEntry {
                 OrderedMap::new(),
                 node_id,
                 validator_factory,
+                vec![],
             ),
             listeners,
         )
@@ -274,8 +275,14 @@ mod tests {
         let validator_factory = Arc::new(SimpleValidatorFactory::new());
         let (node_id, _, _) = make_node();
         let tip = Headers(genesis.header, FilterHeader::all_zeros());
-        let mut tracker =
-            ChainTracker::new(Network::Regtest, 0, tip, node_id, validator_factory.clone())?;
+        let mut tracker = ChainTracker::new(
+            Network::Regtest,
+            0,
+            tip,
+            node_id,
+            validator_factory.clone(),
+            vec![],
+        )?;
         tracker.add_listener(monitor.clone(), OrderedSet::new());
         tracker.add_listener_watches(
             &outpoint,

@@ -1,4 +1,5 @@
 use clap::{ErrorKind, Parser};
+use lightning_signer::bitcoin::secp256k1::PublicKey;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::policy::filter::{FilterResult, FilterRule};
 use lightning_signer::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
@@ -150,6 +151,9 @@ pub struct SignerArgs {
 
     #[clap(long, help = "rpc server admin cookie file path", value_parser)]
     pub rpc_cookie: Option<PathBuf>,
+
+    #[clap(short, help = "public key of trusted TXO oracle", value_parser)]
+    pub trusted_oracle_pubkey: Vec<PublicKey>,
 }
 
 impl HasSignerArgs for SignerArgs {

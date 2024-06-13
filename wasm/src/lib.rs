@@ -265,7 +265,7 @@ pub fn make_node() -> JSNode {
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
     let clock = Arc::new(ManualClock::new(Duration::ZERO));
-    let services = NodeServices { validator_factory, starting_time_factory, persister, clock };
+    let services = NodeServices { validator_factory, starting_time_factory, persister, clock, trusted_oracle_pubkeys: vec![] };
     let node = Node::new(config, &seed, vec![], services);
     JSNode { node: Arc::new(node) }
 }

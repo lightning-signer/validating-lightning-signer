@@ -14,7 +14,7 @@ use lightning_signer::bitcoin::Network;
 
 use serial::{connect, SerialSignerPort, SignerLoop};
 
-use vls_frontend::frontend::SourceFactory;
+use vls_frontend::frontend::DummySourceFactory;
 use vls_frontend::Frontend;
 use vls_protocol::msgs::{self, Message, SerialRequestHeader};
 use vls_protocol::serde_bolt::WireString;
@@ -103,7 +103,7 @@ pub fn main() -> anyhow::Result<()> {
         let network = vls_network().parse::<Network>().expect("malformed vls network");
         let signer_port = SerialSignerPort::new(serial.clone());
         let signer_front = Arc::new(SignerPortFront::new(Arc::new(signer_port), network));
-        let source_factory = Arc::new(SourceFactory::new(".", network));
+        let source_factory = Arc::new(DummySourceFactory::new(".", network));
         let frontend = Frontend::new(
             signer_front,
             source_factory,
