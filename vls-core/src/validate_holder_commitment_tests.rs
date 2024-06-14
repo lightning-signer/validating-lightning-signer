@@ -11,6 +11,7 @@ mod tests {
     use lightning::ln::PaymentHash;
     use lightning::sign::ChannelSigner;
 
+    use log::*;
     use test_log::test;
 
     use crate::channel::{Channel, ChannelBase, CommitmentType};
@@ -454,9 +455,16 @@ mod tests {
                     deferred_rv = chan.activate_initial_commitment().map(|_| ());
                 }
             }
+
             if deferred_rv.is_ok() {
+                // It's ok to re-revoke prior commitment's ([#502])
+                debug!("re-revoking a previously revoked commitment");
+                chan.revoke_previous_holder_commitment(commit_tx_ctx.commit_num - 1)?;
+
+                debug!("revoking the previous holder commitment");
                 chan.revoke_previous_holder_commitment(commit_tx_ctx.commit_num)?;
-                // check idempotency
+
+                debug!("revoking it again to check idempotency");
                 chan.revoke_previous_holder_commitment(commit_tx_ctx.commit_num)?;
             }
             validate_channel_state(&ValidationState { chan });
@@ -851,7 +859,9 @@ mod tests {
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM - 1);
         },
         |_| {
-            "policy failure: get_per_commitment_point: commitment_number 44 invalid when next_holder_commit_num is 42"
+            "policy failure: revoke_previous_holder_commitment: \
+             new_current_commitment == next_holder_commit_num 42 \
+             but next_holder_commit_info.is_none"
         }
     );
 
