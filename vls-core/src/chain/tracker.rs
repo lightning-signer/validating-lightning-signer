@@ -370,8 +370,9 @@ impl<L: ChainListener> ChainTracker<L> {
             true,
         )?;
         match proof.proof {
-            ProofType::Filter(_, spv_proof) =>
-                self.notify_listeners_remove(Some(spv_proof.txs.as_slice()), tip_block_hash),
+            ProofType::Filter(_, spv_proof) => {
+                self.notify_listeners_remove(Some(spv_proof.txs.as_slice()), tip_block_hash)
+            }
             ProofType::Block(b) => panic!("non-streamed block not supported {}", b.block_hash()),
             ProofType::ExternalBlock() => self.notify_listeners_remove(None, tip_block_hash),
         };
@@ -477,8 +478,9 @@ impl<L: ChainListener> ChainTracker<L> {
             false,
         )?;
         match proof.proof {
-            ProofType::Filter(_, spv_proof) =>
-                self.notify_listeners_add(Some(spv_proof.txs.as_slice()), message_block_hash),
+            ProofType::Filter(_, spv_proof) => {
+                self.notify_listeners_add(Some(spv_proof.txs.as_slice()), message_block_hash)
+            }
             ProofType::Block(b) => panic!("non-streamed block not supported {}", b.block_hash()),
             ProofType::ExternalBlock() => self.notify_listeners_add(None, message_block_hash),
         };
@@ -782,6 +784,7 @@ mod tests {
     use bitcoin::consensus::serialize;
     use bitcoin::hashes::Hash;
     use bitcoin::network::constants::Network;
+    use bitcoin::secp256k1::{Secp256k1, SecretKey};
     use bitcoin::util::hash::bitcoin_merkle_root;
     use bitcoin::{Block, TxIn};
     use bitcoin::{PackedLockTime, Sequence, TxMerkleNode, Witness};
@@ -793,6 +796,38 @@ mod tests {
     use crate::util::mocks::MockValidatorFactory;
     use test_log::test;
     use txoo::source::Source;
+
+    #[tokio::test]
+    async fn test_add_valid_proof() -> Result<(), Error> {
+        let source = make_source().await;
+        let (mut tracker, _) = make_tracker()?;
+        assert_eq!(tracker.height(), 0);
+
+        let public_key = source.oracle_setup().await.public_key;
+        tracker.trusted_oracle_pubkeys = vec![public_key];
+
+        add_block(&mut tracker, &source, &[]).await?;
+        add_block(&mut tracker, &source, &[]).await?;
+        assert_eq!(tracker.height(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_add_invalid_proof() -> Result<(), Error> {
+        let source = make_source().await;
+        let (mut tracker, _) = make_tracker()?;
+        assert_eq!(tracker.height(), 0);
+
+        let random_secret = [0x11; 32];
+        let public_key = get_txoo_public_key(&random_secret);
+        tracker.trusted_oracle_pubkeys = vec![public_key];
+
+        add_block(&mut tracker, &source, &[]).await?;
+        let result = add_block(&mut tracker, &source, &[]).await;
+        assert!(result.is_err());
+
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_add_remove() -> Result<(), Error> {
@@ -825,12 +860,6 @@ mod tests {
         let prev_headers = Headers(header0, FilterHeader::all_zeros());
         assert_eq!(tracker.remove_block(proof, prev_headers).err(), Some(Error::ReorgTooDeep));
         Ok(())
-    }
-
-    async fn make_source() -> DummyTxooSource {
-        let source = DummyTxooSource::new();
-        source.on_new_block(0, &genesis_block(Network::Regtest)).await;
-        source
     }
 
     #[tokio::test]
@@ -920,6 +949,68 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_retarget() -> Result<(), Error> {
+        let source = make_source().await;
+        let (mut tracker, _) = make_tracker()?;
+        for _ in 1..DIFFCHANGE_INTERVAL {
+            add_block(&mut tracker, &source, &[]).await?;
+        }
+        assert_eq!(tracker.height, DIFFCHANGE_INTERVAL - 1);
+        let target = tracker.tip().0.target();
+
+        // Decrease difficulty by 2 fails because of chain max
+        let bits = BlockHeader::compact_target_from_u256(&(target << 1));
+        assert_eq!(
+            add_block_with_bits(&mut tracker, &source, bits, false).await.err(),
+            Some(Error::InvalidBlock)
+        );
+
+        // Increase difficulty by 8 fails because of max retarget
+        let bits = BlockHeader::compact_target_from_u256(&(target >> 3));
+        assert_eq!(
+            add_block_with_bits(&mut tracker, &source, bits, false).await.err(),
+            Some(Error::InvalidChain)
+        );
+
+        // Increase difficulty by 2
+        let bits = BlockHeader::compact_target_from_u256(&(target >> 1));
+        add_block_with_bits(&mut tracker, &source, bits, true).await?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_retarget_rounding() -> Result<(), Error> {
+        validate_retarget(
+            BlockHeader::u256_from_compact_target(0x1c063051),
+            BlockHeader::u256_from_compact_target(0x1c018c14),
+            Network::Testnet,
+        )?;
+        Ok(())
+    }
+
+    fn make_tracker() -> Result<(ChainTracker<MockListener>, Arc<MockValidatorFactory>), Error> {
+        let genesis = genesis_block(Network::Regtest);
+        let validator_factory = Arc::new(MockValidatorFactory::new());
+        let (node_id, _, _) = make_node();
+        let tip = Headers(genesis.header, FilterHeader::all_zeros());
+        let tracker = ChainTracker::new(
+            Network::Regtest,
+            0,
+            tip,
+            node_id,
+            validator_factory.clone(),
+            vec![],
+        )?;
+        Ok((tracker, validator_factory))
+    }
+
+    async fn make_source() -> DummyTxooSource {
+        let source = DummyTxooSource::new();
+        source.on_new_block(0, &genesis_block(Network::Regtest)).await;
+        source
     }
 
     // returns the new block's header
@@ -1025,59 +1116,9 @@ mod tests {
         txs
     }
 
-    #[tokio::test]
-    async fn test_retarget() -> Result<(), Error> {
-        let source = make_source().await;
-        let (mut tracker, _) = make_tracker()?;
-        for _ in 1..DIFFCHANGE_INTERVAL {
-            add_block(&mut tracker, &source, &[]).await?;
-        }
-        assert_eq!(tracker.height, DIFFCHANGE_INTERVAL - 1);
-        let target = tracker.tip().0.target();
-
-        // Decrease difficulty by 2 fails because of chain max
-        let bits = BlockHeader::compact_target_from_u256(&(target << 1));
-        assert_eq!(
-            add_block_with_bits(&mut tracker, &source, bits, false).await.err(),
-            Some(Error::InvalidBlock)
-        );
-
-        // Increase difficulty by 8 fails because of max retarget
-        let bits = BlockHeader::compact_target_from_u256(&(target >> 3));
-        assert_eq!(
-            add_block_with_bits(&mut tracker, &source, bits, false).await.err(),
-            Some(Error::InvalidChain)
-        );
-
-        // Increase difficulty by 2
-        let bits = BlockHeader::compact_target_from_u256(&(target >> 1));
-        add_block_with_bits(&mut tracker, &source, bits, true).await?;
-        Ok(())
-    }
-
-    #[test]
-    fn test_retarget_rounding() -> Result<(), Error> {
-        validate_retarget(
-            BlockHeader::u256_from_compact_target(0x1c063051),
-            BlockHeader::u256_from_compact_target(0x1c018c14),
-            Network::Testnet,
-        )?;
-        Ok(())
-    }
-
-    fn make_tracker() -> Result<(ChainTracker<MockListener>, Arc<MockValidatorFactory>), Error> {
-        let genesis = genesis_block(Network::Regtest);
-        let validator_factory = Arc::new(MockValidatorFactory::new());
-        let (node_id, _, _) = make_node();
-        let tip = Headers(genesis.header, FilterHeader::all_zeros());
-        let tracker = ChainTracker::new(
-            Network::Regtest,
-            0,
-            tip,
-            node_id,
-            validator_factory.clone(),
-            vec![],
-        )?;
-        Ok((tracker, validator_factory))
+    fn get_txoo_public_key(secret_key: &[u8]) -> PublicKey {
+        let secp = Secp256k1::new();
+        let secret_key = SecretKey::from_slice(&secret_key).expect("32 bytes, within curve order");
+        PublicKey::from_secret_key(&secp, &secret_key)
     }
 }
