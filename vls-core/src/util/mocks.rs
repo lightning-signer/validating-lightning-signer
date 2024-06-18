@@ -8,23 +8,19 @@ use crate::policy::Policy;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
 use crate::wallet::Wallet;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::{
-    BlockHash, BlockHeader, EcdsaSighashType, FilterHeader, Network, OutPoint, Script, Sighash,
-    Transaction,
-};
+use bitcoin::{EcdsaSighashType, Network, Script, Sighash, Transaction};
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::sign::InMemorySigner;
 use std::sync::{Arc, Mutex};
-use txoo::proof::TxoProof;
 
 #[derive(Clone)]
 pub(crate) struct MockValidator {
-    pub last_validated_watches: Arc<Mutex<Vec<OutPoint>>>,
+    pub policy: Arc<dyn Policy>,
 }
 
 impl MockValidator {
     pub fn new() -> Self {
-        MockValidator { last_validated_watches: Arc::new(Mutex::new(vec![])) }
+        MockValidator { policy: Arc::new(make_simple_policy(Network::Regtest)) }
     }
 }
 
@@ -53,7 +49,7 @@ impl ValidatorFactory for MockValidatorFactory {
     }
 
     fn policy(&self, network: Network) -> Box<dyn Policy> {
-        Box::new(make_simple_policy(Network::Regtest))
+        Box::new(make_simple_policy(network))
     }
 }
 
@@ -235,20 +231,6 @@ impl Validator for MockValidator {
     }
 
     fn policy(&self) -> Box<&dyn Policy> {
-        todo!()
-    }
-
-    fn validate_block(
-        &self,
-        proof: &TxoProof,
-        height: u32,
-        header: &BlockHeader,
-        external_block_hash: Option<&BlockHash>,
-        prev_filter_header: &FilterHeader,
-        outpoint_watches: &[OutPoint],
-        trusted_oracle_pubkeys: &Vec<PublicKey>,
-    ) -> Result<(), ValidationError> {
-        *self.last_validated_watches.lock().unwrap() = outpoint_watches.to_vec();
-        Ok(())
+        Box::new(self.policy.as_ref())
     }
 }
