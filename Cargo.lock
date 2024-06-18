@@ -2828,9 +2828,9 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 
 [[package]]
 name = "txoo"
-version = "0.6.4"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d63e3a8a97175f205a3b101cb100568ce15e6b4e77d88207e9065da4a4e061e"
+checksum = "ebde23ffd378bda02b6b9b8c761749796297603290609b2a4dece8426d470e40"
 dependencies = [
  "async-trait",
  "bitcoin",
@@ -2846,9 +2846,9 @@ dependencies = [
 
 [[package]]
 name = "txoo-bitcoind-client"
-version = "0.6.4"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f30d25b5339d0e2a8a0f252c4a162d37051eb96b997dc7c6c70dee8b53aa30db"
+checksum = "9c3425d9de8c6e710627cfd36fd08f1bd4ceec60c368607feee275121b856171"
 dependencies = [
  "async-trait",
  "bitcoin",

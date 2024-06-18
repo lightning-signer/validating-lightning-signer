@@ -1368,12 +1368,14 @@ pub const TEST_NODE_CONFIG: NodeConfig = NodeConfig {
     network: Network::Testnet,
     key_derivation_style: KeyDerivationStyle::Native,
     use_checkpoints: false,
+    allow_deep_reorgs: false,
 };
 
 pub const REGTEST_NODE_CONFIG: NodeConfig = NodeConfig {
     network: Network::Regtest,
     key_derivation_style: KeyDerivationStyle::Native,
     use_checkpoints: false,
+    allow_deep_reorgs: false,
 };
 
 pub const TEST_SEED: &[&str] = &[

@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
 use lightning_signer::bitcoin;
+use lightning_signer::chain::tracker::Headers;
 use lightning_signer::node::SignedHeartbeat;
 use lightning_signer::txoo::proof::TxoProof;
 
@@ -59,7 +60,7 @@ pub trait ChainTrack: Sync + Send {
     async fn add_block(&self, header: BlockHeader, proof: TxoProof);
 
     /// Remove block at tip due to reorg
-    async fn remove_block(&self, proof: TxoProof);
+    async fn remove_block(&self, proof: TxoProof, prev_headers: Headers);
 
     /// Produce a signed heartbeat for the signer node
     async fn beat(&self) -> SignedHeartbeat;

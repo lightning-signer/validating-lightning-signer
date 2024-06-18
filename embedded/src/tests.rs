@@ -154,6 +154,7 @@ pub fn test_lightning_signer(postscript: fn()) {
         network: Network::Signet,
         key_derivation_style: KeyDerivationStyle::Native,
         use_checkpoints: false,
+        allow_deep_reorgs: false,
     };
     let seed = [0u8; 32];
     let seed1 = [1u8; 32];

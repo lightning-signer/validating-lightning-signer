@@ -5,13 +5,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use bitcoin::consensus::serialize;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
 
 use crate::persist::ExternalPersistWithHelper;
 use lightning_signer::bitcoin;
-use lightning_signer::bitcoin::consensus::serialize;
-use lightning_signer::chain::tracker::ChainTracker;
+use lightning_signer::chain::tracker::{ChainTracker, Headers};
 use lightning_signer::monitor::ChainMonitor;
 use lightning_signer::node::{Node, SignedHeartbeat};
 use lightning_signer::persist::Persist;
@@ -80,11 +80,11 @@ impl NodeFront {
         });
     }
 
-    fn do_remove_block(&self, proof: TxoProof, persister: Arc<dyn Persist>) {
+    fn do_remove_block(&self, proof: TxoProof, persister: Arc<dyn Persist>, prev_headers: Headers) {
         let mut tracker = self.node.get_tracker();
         let proof = self.maybe_stream_block(&mut *tracker, proof);
         tracker
-            .remove_block(proof)
+            .remove_block(proof, prev_headers)
             .unwrap_or_else(|e| panic!("{}: remove_block failed: {:?}", self.node.log_prefix(), e));
         persister.update_tracker(&self.node.get_id(), &tracker).unwrap_or_else(|e| {
             panic!("{}: persist tracker failed: {:?}", self.node.log_prefix(), e)
@@ -183,15 +183,15 @@ impl ChainTrack for NodeFront {
         }
     }
 
-    async fn remove_block(&self, proof: TxoProof) {
+    async fn remove_block(&self, proof: TxoProof, prev_headers: Headers) {
         let persister = self.node.get_persister();
         if let Some(external_persist) = &self.external_persist {
             Self::with_persist_context(external_persist, persister, |persister| {
-                self.do_remove_block(proof, persister);
+                self.do_remove_block(proof, persister, prev_headers);
             })
             .await;
         } else {
-            self.do_remove_block(proof, persister);
+            self.do_remove_block(proof, persister, prev_headers);
         }
     }
 
