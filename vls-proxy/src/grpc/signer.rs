@@ -12,7 +12,7 @@ use http::Uri;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::node::{Node, NodeServices};
 use lightning_signer::persist::fs::FileSeedPersister;
-use lightning_signer::persist::SeedPersist;
+use lightning_signer::persist::{ExternalPersistHelper, Mutations, Persist, SeedPersist};
 use lightning_signer::policy::filter::{FilterRule, PolicyFilter};
 use lightning_signer::policy::DEFAULT_FEE_VELOCITY_CONTROL;
 use lightning_signer::signer::ClockStartingTimeFactory;
@@ -27,31 +27,52 @@ use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
 use std::result::Result as StdResult;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::sync::mpsc;
+use thiserror::Error;
+use tokio::sync::{mpsc, Mutex as AsyncMutex};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tracing::*;
-use vls_persist::kvv::{redb::RedbKVVStore, JsonFormat, KVVPersister};
+use vls_persist::kvv::{redb::RedbKVVStore, JsonFormat, KVVPersister, KVVStore};
+use vls_protocol::Error as ProtocolError;
 use vls_protocol_signer::approver::WarningPositiveApprover;
-use vls_protocol_signer::handler::{Error, Handler, HandlerBuilder, InitHandler, RootHandler};
+use vls_protocol_signer::handler::{
+    Error as HandlerError, Handler, HandlerBuilder, InitHandler, RootHandler,
+};
 use vls_protocol_signer::vls_protocol::model::PubKey;
 use vls_protocol_signer::vls_protocol::msgs;
 
+use crate::persist::ExternalPersistWithHelper;
 #[cfg(feature = "heapmon_requests")]
 use heapmon::{self, HeapMon, SummaryOrder};
+use lightning_storage_server::client::Auth;
 #[cfg(feature = "heapmon_requests")]
 use std::alloc::System;
 use std::fmt::Debug;
 use tokio::sync::mpsc::Sender;
 use tonic::Streaming;
+use url::Url;
+use vls_frontend::external_persist::lss::Client as LssClient;
+use vls_frontend::external_persist::{self, ExternalPersist};
+use vls_persist::kvv::cloud::CloudKVVStore;
+use vls_protocol::msgs::{Message, SerBolt};
 
 #[cfg(feature = "heapmon_requests")]
 #[global_allocator]
 pub static HEAPMON: HeapMon<System> = HeapMon::system();
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("protocol error")]
+    Protocol(#[from] ProtocolError),
+    #[error("handler error")]
+    Handler(#[from] HandlerError),
+    #[error("LSS error")]
+    LssClient(#[from] external_persist::Error),
+}
 
 /// Signer binary entry point for local integration test
 #[tokio::main(worker_threads = 2)]
@@ -84,10 +105,18 @@ pub async fn start_signer(
 }
 
 /// Create a signer protocol handler
-pub fn make_handler(datadir: &str, args: &SignerArgs) -> InitHandler {
+pub fn make_handler(datadir: &str, args: &SignerArgs) -> (InitHandler, Mutations) {
+    let persister = make_persister(datadir, args);
+    make_handler_builder(datadir, args, persister).build().expect("handler build")
+}
+
+pub fn make_handler_builder(
+    datadir: &str,
+    args: &SignerArgs,
+    persister: Arc<dyn Persist>,
+) -> HandlerBuilder {
     let network = args.network;
     let data_path = format!("{}/{}", datadir, network.to_string());
-    let persister = Arc::new(KVVPersister(RedbKVVStore::new(&data_path), JsonFormat));
     let seed_persister = Arc::new(FileSeedPersister::new(&data_path));
     let seeddir = PathBuf::from_str(datadir).unwrap().join("..").join(network.to_string());
     let seed = get_or_generate_seed(network, seed_persister, args.integration_test, Some(seeddir));
@@ -139,10 +168,22 @@ pub fn make_handler(datadir: &str, args: &SignerArgs) -> InitHandler {
             }
         }
     }
+    handler_builder
+}
 
-    let (init_handler, _muts) = handler_builder.build().expect("handler build");
+fn make_persister(datadir: &str, args: &SignerArgs) -> Arc<dyn Persist> {
+    let local_store = make_local_store(datadir, args);
+    if args.lss.is_some() {
+        Arc::new(KVVPersister(CloudKVVStore::new(local_store), JsonFormat))
+    } else {
+        Arc::new(KVVPersister(local_store, JsonFormat))
+    }
+}
 
-    init_handler
+fn make_local_store(datadir: &str, args: &SignerArgs) -> RedbKVVStore {
+    let network = args.network;
+    let data_path = format!("{}/{}", datadir, network.to_string());
+    RedbKVVStore::new(&data_path)
 }
 
 // NOTE - For this signer mode it is easier to use the ALLOWLIST file to maintain the
@@ -154,7 +195,54 @@ fn reset_allowlist(node: &Node, allowlist: &Vec<String>) {
 
 #[instrument(skip(args, shutdown_signal))]
 async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: triggered::Listener) {
-    let mut init_handler = make_handler(datadir, args);
+    if args.dump_storage {
+        let local_store = make_local_store(datadir, args);
+        let mut iter = local_store.get_prefix("").expect("get_prefix");
+        while let Some(kvv) = iter.next() {
+            let value = kvv.1 .1;
+            let value_str = std::str::from_utf8(&value).expect("utf8");
+            println!("{} = {} @ {}", kvv.0, value_str, kvv.1 .0);
+        }
+        return;
+    }
+
+    let mut init_handler = if let Some(mut lss_url) = args.lss.clone() {
+        if lss_url.port().is_none() {
+            lss_url.set_port(Some(55551)).expect("set port");
+        }
+        info!("connecting to LSS at {}", lss_url);
+        let persister = make_persister(datadir, args);
+        let builder = make_handler_builder(datadir, args, persister.clone());
+        let external_persist = make_external_persist(&lss_url, &builder).await;
+
+        // get the initial state from the LSS
+        external_persist.init_state().await;
+        let state = external_persist.state.lock().unwrap();
+        let muts: Vec<_> = state.iter().map(|(k, (v, vv))| (k.clone(), (*v, vv.clone()))).collect();
+
+        if args.dump_lss {
+            info!("LSS state: {:?}", state);
+            return;
+        }
+
+        // update local persister with the initial cloud state
+        persister.put_batch_unlogged(Mutations::from_vec(muts)).expect("put_batch_unlogged");
+
+        // build the init handler, potentially changing the state (e.g. new node or modified allowlist)
+        let (handler, muts) = builder.build().expect("handler build");
+
+        // store any changes made during build to LSS
+        let client = external_persist.persist_client.lock().await;
+        store_with_client(muts, &*client, &external_persist.helper)
+            .await
+            .expect("store during build");
+
+        handler
+    } else {
+        let (handler, muts) = make_handler(datadir, args);
+        assert!(muts.is_empty(), "got memorized mutations, but not persisting to cloud");
+        handler
+    };
     let node = Arc::clone(init_handler.node());
 
     let join_handle =
@@ -277,17 +365,18 @@ fn handle_init_request(
         Ok((is_done, None)) => (is_done, Ok(None)),
         Err(e) => (false, Err(e)),
     };
-    response.map(|r| (is_done, r))
+    Ok(response.map(|r| (is_done, r))?)
 }
 
 // Handle a request stream
 struct HandleLoop {
     handler: RootHandler,
+    pub external_persist: Option<ExternalPersistWithHelper>,
 }
 
 impl HandleLoop {
     fn new(handler: RootHandler) -> Self {
-        Self { handler }
+        Self { handler, external_persist: None }
     }
 }
 
@@ -332,7 +421,7 @@ impl HandleLoop {
                         heapmon_label
                     };
 
-                    let response = self.handle_request(request);
+                    let response = self.handle_request(request).await;
 
                     #[cfg(feature = "heapmon_requests")]
                     {
@@ -375,7 +464,7 @@ async fn send_response(
                 return true;
             }
         }
-        Err(Error::Temporary(error)) => {
+        Err(Error::Handler(HandlerError::Temporary(error))) => {
             error!("received temporary error from handler: {}", error);
             let response = SignerResponse {
                 request_id,
@@ -468,35 +557,29 @@ impl HandleLoop {
         parent = None,
         err(Debug)
     )]
-    fn handle_request(&mut self, request: SignerRequest) -> StdResult<SignerResponse, Error> {
+    async fn handle_request(&mut self, request: SignerRequest) -> StdResult<SignerResponse, Error> {
         let msg = msgs::from_vec(request.message)?;
         Span::current().record("message_name", msg.inner().name());
 
-        info!(
-            "signer got request {} dbid {} - {:?}",
-            request.request_id,
-            request.context.as_ref().map(|c| c.dbid).unwrap_or(0),
-            msg
-        );
-        let reply = if let Some(context) = request.context {
-            if context.dbid > 0 {
-                let peer = PubKey(
-                    context
-                        .peer_id
-                        .try_into()
-                        .map_err(|_| Error::Signing(Status::invalid_argument("peer id")))?,
-                );
-                let handler = self.handler.for_new_client(context.dbid, peer, context.dbid);
-                handler.handle(msg)?
-            } else {
-                self.handler.handle(msg)?
-            }
+        let context = request.context.as_ref().map(|c| (c.dbid, c.peer_id.clone()));
+        let dbid = context.as_ref().map(|c| c.0).unwrap_or(0);
+        info!("signer got request {} dbid {} - {:?}", request.request_id, dbid, msg);
+        let res = if let Some(external_persist) = &self.external_persist {
+            // Note: we lock early because we actually need a global lock right now,
+            // since our copy of the cloud state is not atomic.  In particular, if one request
+            // advances a version of a key, another request might advance the same
+            // version again, but may write to the cloud before the first.
+            // TODO(devrandom) evaluate atomicity
+            let persist_client = external_persist.persist_client.lock().await;
+            let (res, muts) = self.do_handle(context.as_ref(), msg)?;
+            store_with_client(muts, &*persist_client, &external_persist.helper).await?;
+            res
         } else {
-            self.handler.handle(msg)?
+            let (res, muts) = self.do_handle(context.as_ref(), msg)?;
+            assert!(muts.is_empty(), "got memorized mutations, but not persisting to cloud");
+            res
         };
-        info!("signer sending reply {} - {:?}", request.request_id, reply);
-        // TODO handle memorized mutations
-        let (res, _muts) = reply;
+        info!("signer sending reply {} - {:?}", request.request_id, res);
 
         Ok(SignerResponse {
             request_id: request.request_id,
@@ -504,6 +587,27 @@ impl HandleLoop {
             error: String::new(),
             is_temporary_failure: false,
         })
+    }
+
+    fn do_handle(
+        &self,
+        context: Option<&(u64, Vec<u8>)>,
+        msg: Message,
+    ) -> Result<(Box<dyn SerBolt>, Mutations), Error> {
+        let (res, muts) = if let Some((dbid, peer_id)) = context {
+            if *dbid > 0 {
+                let peer = PubKey(peer_id.clone().try_into().map_err(|_| {
+                    Error::Handler(HandlerError::Signing(Status::invalid_argument("peer id")))
+                })?);
+                let handler = self.handler.for_new_client(*dbid, peer, *dbid);
+                handler.handle(msg)?
+            } else {
+                self.handler.handle(msg)?
+            }
+        } else {
+            self.handler.handle(msg)?
+        };
+        Ok((res, muts))
     }
 }
 
@@ -536,4 +640,35 @@ async fn start_rpc_server_with_auth(
     .expect("start_rpc_server");
     info!("rpc server running on {}", addr);
     Some(join_rpc_server)
+}
+
+async fn store_with_client(
+    muts: Mutations,
+    client: &Box<dyn ExternalPersist>,
+    helper: &ExternalPersistHelper,
+) -> Result<(), Error> {
+    if !muts.is_empty() {
+        let client_hmac = helper.client_hmac(&muts);
+        client.put(muts, &client_hmac).await?;
+    }
+    Ok(())
+}
+
+async fn make_external_persist(uri: &Url, builder: &HandlerBuilder) -> ExternalPersistWithHelper {
+    let (keys_manager, node_id) = builder.build_keys_manager();
+    let client_id = keys_manager.get_persistence_pubkey();
+    let server_pubkey =
+        LssClient::get_server_pubkey(uri.as_str()).await.expect("failed to get pubkey");
+    let shared_secret = keys_manager.get_persistence_shared_secret(&server_pubkey);
+    let auth_token = keys_manager.get_persistence_auth_token(&server_pubkey);
+    let helper = ExternalPersistHelper::new(shared_secret);
+    let auth = Auth { client_id, token: auth_token.to_vec() };
+
+    let client =
+        LssClient::new(uri.as_str(), &server_pubkey, auth).await.expect("failed to connect to LSS");
+    info!("connected to LSS provider {} for node {}", server_pubkey, node_id);
+
+    let persist_client = Arc::new(AsyncMutex::new(Box::new(client) as Box<dyn ExternalPersist>));
+    let state = Arc::new(Mutex::new(Default::default()));
+    ExternalPersistWithHelper { persist_client, state, helper }
 }

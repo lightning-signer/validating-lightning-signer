@@ -8,6 +8,7 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp::min;
+use core::fmt::{Debug, Display, Formatter};
 use core::str::FromStr;
 
 use bitcoin::bech32::u5;
@@ -73,6 +74,14 @@ pub enum Error {
     /// We failed to sign because of a temporary error
     Temporary(Status),
 }
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        Debug::fmt(self, f)
+    }
+}
+
+impl std::error::Error for Error {}
 
 impl From<ProtocolError> for Error {
     fn from(e: ProtocolError) -> Self {

@@ -56,6 +56,15 @@ pub struct SignerArgs {
     #[clap(long, help = "print git desc version and exit")]
     pub git_desc: bool,
 
+    #[clap(long, help = "LSS RPC endpoint")]
+    pub lss: Option<Url>,
+
+    #[clap(long, help = "dump LSS contents and exit")]
+    pub dump_lss: bool,
+
+    #[clap(long, help = "dump local storage contents and exit")]
+    pub dump_storage: bool,
+
     #[clap(
         long,
         value_parser,
