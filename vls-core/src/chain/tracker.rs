@@ -370,9 +370,8 @@ impl<L: ChainListener> ChainTracker<L> {
             true,
         )?;
         match proof.proof {
-            ProofType::Filter(_, spv_proof) => {
-                self.notify_listeners_remove(Some(spv_proof.txs.as_slice()), tip_block_hash)
-            }
+            ProofType::Filter(_, spv_proof) =>
+                self.notify_listeners_remove(Some(spv_proof.txs.as_slice()), tip_block_hash),
             ProofType::Block(b) => panic!("non-streamed block not supported {}", b.block_hash()),
             ProofType::ExternalBlock() => self.notify_listeners_remove(None, tip_block_hash),
         };
@@ -478,9 +477,8 @@ impl<L: ChainListener> ChainTracker<L> {
             false,
         )?;
         match proof.proof {
-            ProofType::Filter(_, spv_proof) => {
-                self.notify_listeners_add(Some(spv_proof.txs.as_slice()), message_block_hash)
-            }
+            ProofType::Filter(_, spv_proof) =>
+                self.notify_listeners_add(Some(spv_proof.txs.as_slice()), message_block_hash),
             ProofType::Block(b) => panic!("non-streamed block not supported {}", b.block_hash()),
             ProofType::ExternalBlock() => self.notify_listeners_add(None, message_block_hash),
         };
@@ -808,7 +806,7 @@ mod tests {
 
         add_block(&mut tracker, &source, &[]).await?;
         add_block(&mut tracker, &source, &[]).await?;
-        assert_eq!(tracker.height(), 1);
+        assert_eq!(tracker.height(), 2);
         Ok(())
     }
 
@@ -1024,8 +1022,17 @@ mod tests {
         let block = make_block(tracker.tip().0, txs);
         let height = tracker.height() + 1;
         source.on_new_block(height, &block).await;
-        let (_attestation, filter_header) = source.get(height, &block).await.unwrap();
-        let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
+        let (attestation, filter_header) = source.get(height, &block).await.unwrap();
+        let pubkey = source.oracle_setup().await.public_key;
+        let txid_watches: Vec<_> = block.txdata.iter().map(|tx| tx.txid()).collect();
+        let proof = TxoProof::prove(
+            vec![(pubkey, attestation)],
+            &filter_header,
+            &block,
+            height,
+            &[],
+            &txid_watches,
+        );
 
         tracker.add_block(block.header.clone(), proof)?;
         Ok(block.header)
@@ -1042,8 +1049,17 @@ mod tests {
         let block = make_block(tracker.tip().0, txs);
         let height = tracker.height() + 1;
         source.on_new_block(height, &block).await;
-        let (_attestation, filter_header) = source.get(height, &block).await.unwrap();
-        let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
+        let (attestation, filter_header) = source.get(height, &block).await.unwrap();
+        let pubkey = source.oracle_setup().await.public_key;
+        let txid_watches: Vec<_> = block.txdata.iter().map(|tx| tx.txid()).collect();
+        let proof = TxoProof::prove(
+            vec![(pubkey, attestation)],
+            &filter_header,
+            &block,
+            height,
+            &[],
+            &txid_watches,
+        );
 
         let proof =
             TxoProof { attestations: proof.attestations, proof: ProofType::ExternalBlock() };
@@ -1070,14 +1086,23 @@ mod tests {
         let block = Block { header, txdata: txs };
         let height = tracker.height() + 1;
 
-        let filter_header = if do_add {
+        let proof: TxoProof;
+        if do_add {
             source.on_new_block(height, &block).await;
-            let (_attestation, filter_header) = source.get(height, &block).await.unwrap();
-            filter_header
+            let public_key = source.oracle_setup().await.public_key;
+            let (attestation, filter_header) = source.get(height, &block).await.unwrap();
+            proof = TxoProof::prove(
+                vec![(public_key, attestation)],
+                &filter_header,
+                &block,
+                height,
+                &vec![],
+                &txids,
+            );
         } else {
-            FilterHeader::all_zeros()
-        };
-        let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
+            let filter_header = FilterHeader::all_zeros();
+            proof = TxoProof::prove_unchecked(&block, &filter_header, height);
+        }
 
         tracker.add_block(block.header.clone(), proof)?;
         Ok(block.header)
@@ -1093,8 +1118,17 @@ mod tests {
         let txs = txs_with_coinbase(txs);
         let block = make_block(*prev_header, txs);
         let height = tracker.height();
-        let (_attestation, filter_header) = source.get(height, &block).await.unwrap();
-        let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
+        let (attestation, filter_header) = source.get(height, &block).await.unwrap();
+        let pubkey = source.oracle_setup().await.public_key;
+        let txid_watches: Vec<_> = block.txdata.iter().map(|tx| tx.txid()).collect();
+        let proof = TxoProof::prove(
+            vec![(pubkey, attestation)],
+            &filter_header,
+            &block,
+            height,
+            &[],
+            &txid_watches,
+        );
 
         let prev_filter_header = tracker.headers[0].1;
         let prev_headers = Headers(*prev_header, prev_filter_header);
