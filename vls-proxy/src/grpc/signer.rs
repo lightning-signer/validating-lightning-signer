@@ -45,6 +45,7 @@ use vls_protocol_signer::vls_protocol::msgs;
 use heapmon::{self, HeapMon, SummaryOrder};
 #[cfg(feature = "heapmon_requests")]
 use std::alloc::System;
+use std::fmt::Debug;
 use tokio::sync::mpsc::Sender;
 use tonic::Streaming;
 
@@ -177,7 +178,8 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
 
             if is_success {
                 let root_handler = init_handler.root_handler();
-                handle_requests(&sender, &mut request_stream, &root_handler).await;
+                let mut handle_loop = HandleLoop::new(root_handler);
+                handle_loop.handle_requests(&sender, &mut request_stream).await;
             }
         };
 
@@ -278,66 +280,85 @@ fn handle_init_request(
     response.map(|r| (is_done, r))
 }
 
-async fn handle_requests(
-    sender: &Sender<SignerResponse>,
-    request_stream: &mut Streaming<SignerRequest>,
-    root_handler: &RootHandler,
-) {
-    #[cfg(feature = "heapmon_requests")]
-    let peak_thresh = {
-        let peak_thresh = env::var("VLS_HEAPMON_PEAK_THRESH")
-            .map(|s| s.parse().expect("VLS_HEAPMON_PEAK_THRESH parse"))
-            .unwrap_or(50 * 1024);
-        info!("using VLS_HEAPMON_PEAK_THRESH={}", peak_thresh);
-        HEAPMON.filter("KVJsonPersister");
-        HEAPMON.filter("sled::pagecache");
-        HEAPMON.filter("backtrace::symbolize");
-        HEAPMON.filter("redb::");
-        HEAPMON.filter("tokio_util::codec::length_delimited");
-        peak_thresh
-    };
+// Handle a request stream
+struct HandleLoop {
+    handler: RootHandler,
+}
 
-    while let Some(item) = request_stream.next().await {
-        match item {
-            Ok(request) => {
-                let request_id = request.request_id;
+impl HandleLoop {
+    fn new(handler: RootHandler) -> Self {
+        Self { handler }
+    }
+}
 
-                #[cfg(feature = "heapmon_requests")]
-                let heapmon_label = {
-                    // Enable peakhold for every message
-                    let heapmon_label =
-                        msgs::from_vec(request.clone().message).expect("msg").inner().name();
-                    HEAPMON.reset();
-                    HEAPMON.peakhold();
-                    heapmon_label
-                };
+impl Debug for HandleLoop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HandleLoop").finish()
+    }
+}
 
-                let response = handle_request(request, &root_handler);
+impl HandleLoop {
+    async fn handle_requests(
+        &mut self,
+        sender: &Sender<SignerResponse>,
+        request_stream: &mut Streaming<SignerRequest>,
+    ) {
+        #[cfg(feature = "heapmon_requests")]
+        let peak_thresh = {
+            let peak_thresh = env::var("VLS_HEAPMON_PEAK_THRESH")
+                .map(|s| s.parse().expect("VLS_HEAPMON_PEAK_THRESH parse"))
+                .unwrap_or(50 * 1024);
+            info!("using VLS_HEAPMON_PEAK_THRESH={}", peak_thresh);
+            HEAPMON.filter("KVJsonPersister");
+            HEAPMON.filter("sled::pagecache");
+            HEAPMON.filter("backtrace::symbolize");
+            HEAPMON.filter("redb::");
+            HEAPMON.filter("tokio_util::codec::length_delimited");
+            peak_thresh
+        };
 
-                #[cfg(feature = "heapmon_requests")]
-                {
-                    // But only dump big heap excursions
-                    let (_heapsz, peaksz) = HEAPMON.disable();
-                    if peaksz > peak_thresh {
-                        // The filters are applied here and the threshold check re-applied
-                        HEAPMON.dump(SummaryOrder::MemoryUsed, peak_thresh, heapmon_label);
+        while let Some(item) = request_stream.next().await {
+            match item {
+                Ok(request) => {
+                    let request_id = request.request_id;
+
+                    #[cfg(feature = "heapmon_requests")]
+                    let heapmon_label = {
+                        // Enable peakhold for every message
+                        let heapmon_label =
+                            msgs::from_vec(request.clone().message).expect("msg").inner().name();
+                        HEAPMON.reset();
+                        HEAPMON.peakhold();
+                        heapmon_label
+                    };
+
+                    let response = self.handle_request(request);
+
+                    #[cfg(feature = "heapmon_requests")]
+                    {
+                        // But only dump big heap excursions
+                        let (_heapsz, peaksz) = HEAPMON.disable();
+                        if peaksz > peak_thresh {
+                            // The filters are applied here and the threshold check re-applied
+                            HEAPMON.dump(SummaryOrder::MemoryUsed, peak_thresh, heapmon_label);
+                        }
+                    }
+
+                    if send_response(sender, request_id, response).await {
+                        // stream closed
+                        break;
                     }
                 }
-
-                if send_response(sender, request_id, response).await {
-                    // stream closed
+                Err(e) => {
+                    error!("error on stream: {}", e);
                     break;
                 }
             }
-            Err(e) => {
-                error!("error on stream: {}", e);
-                break;
-            }
         }
-    }
 
-    // log channel information on shutdown
-    root_handler.log_chaninfo();
+        // log channel information on shutdown
+        self.handler.log_chaninfo();
+    }
 }
 
 // returns true if there stream was closed
@@ -436,55 +457,54 @@ fn get_or_generate_seed(
     }
 }
 
-#[instrument(
-    name = "handle_request",
-    skip(request, root_handler),
-    fields(
-        request_id = %request.request_id,
+impl HandleLoop {
+    #[instrument(
+        name = "handle_request",
+        skip(request),
+        fields(
+        request_id = % request.request_id,
         message_name
-    ),
-    parent = None,
-    err(Debug)
-)]
-fn handle_request(
-    request: SignerRequest,
-    root_handler: &RootHandler,
-) -> StdResult<SignerResponse, Error> {
-    let msg = msgs::from_vec(request.message)?;
-    Span::current().record("message_name", msg.inner().name());
+        ),
+        parent = None,
+        err(Debug)
+    )]
+    fn handle_request(&mut self, request: SignerRequest) -> StdResult<SignerResponse, Error> {
+        let msg = msgs::from_vec(request.message)?;
+        Span::current().record("message_name", msg.inner().name());
 
-    info!(
-        "signer got request {} dbid {} - {:?}",
-        request.request_id,
-        request.context.as_ref().map(|c| c.dbid).unwrap_or(0),
-        msg
-    );
-    let reply = if let Some(context) = request.context {
-        if context.dbid > 0 {
-            let peer = PubKey(
-                context
-                    .peer_id
-                    .try_into()
-                    .map_err(|_| Error::Signing(Status::invalid_argument("peer id")))?,
-            );
-            let handler = root_handler.for_new_client(context.dbid, peer, context.dbid);
-            handler.handle(msg)?
+        info!(
+            "signer got request {} dbid {} - {:?}",
+            request.request_id,
+            request.context.as_ref().map(|c| c.dbid).unwrap_or(0),
+            msg
+        );
+        let reply = if let Some(context) = request.context {
+            if context.dbid > 0 {
+                let peer = PubKey(
+                    context
+                        .peer_id
+                        .try_into()
+                        .map_err(|_| Error::Signing(Status::invalid_argument("peer id")))?,
+                );
+                let handler = self.handler.for_new_client(context.dbid, peer, context.dbid);
+                handler.handle(msg)?
+            } else {
+                self.handler.handle(msg)?
+            }
         } else {
-            root_handler.handle(msg)?
-        }
-    } else {
-        root_handler.handle(msg)?
-    };
-    info!("signer sending reply {} - {:?}", request.request_id, reply);
-    // TODO handle memorized mutations
-    let (res, _muts) = reply;
+            self.handler.handle(msg)?
+        };
+        info!("signer sending reply {} - {:?}", request.request_id, reply);
+        // TODO handle memorized mutations
+        let (res, _muts) = reply;
 
-    Ok(SignerResponse {
-        request_id: request.request_id,
-        message: res.as_vec(),
-        error: String::new(),
-        is_temporary_failure: false,
-    })
+        Ok(SignerResponse {
+            request_id: request.request_id,
+            message: res.as_vec(),
+            error: String::new(),
+            is_temporary_failure: false,
+        })
+    }
 }
 
 async fn start_rpc_server_with_auth(
