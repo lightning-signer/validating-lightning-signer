@@ -3,24 +3,34 @@
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::policy::error::ValidationError;
 use crate::policy::simple_validator::make_simple_policy;
-use crate::policy::validator::{ChainState, EnforcementState, Validator, ValidatorFactory};
+use crate::policy::validator::{
+    validate_block, ChainState, EnforcementState, Validator, ValidatorFactory,
+};
 use crate::policy::Policy;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
 use crate::wallet::Wallet;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::{EcdsaSighashType, Network, Script, Sighash, Transaction};
+use bitcoin::{
+    BlockHash, BlockHeader, EcdsaSighashType, FilterHeader, Network, OutPoint, Script, Sighash,
+    Transaction,
+};
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::sign::InMemorySigner;
 use std::sync::{Arc, Mutex};
+use txoo::proof::TxoProof;
 
 #[derive(Clone)]
 pub(crate) struct MockValidator {
+    pub last_validated_watches: Arc<Mutex<Vec<OutPoint>>>,
     pub policy: Arc<dyn Policy>,
 }
 
 impl MockValidator {
     pub fn new() -> Self {
-        MockValidator { policy: Arc::new(make_simple_policy(Network::Regtest)) }
+        MockValidator {
+            last_validated_watches: Arc::new(Mutex::new(vec![])),
+            policy: Arc::new(make_simple_policy(Network::Regtest)),
+        }
     }
 }
 
@@ -49,7 +59,7 @@ impl ValidatorFactory for MockValidatorFactory {
     }
 
     fn policy(&self, network: Network) -> Box<dyn Policy> {
-        Box::new(make_simple_policy(network))
+        Box::new(make_simple_policy(Network::Regtest))
     }
 }
 
@@ -232,5 +242,28 @@ impl Validator for MockValidator {
 
     fn policy(&self) -> Box<&dyn Policy> {
         Box::new(self.policy.as_ref())
+    }
+
+    fn validate_block(
+        &self,
+        proof: &TxoProof,
+        height: u32,
+        header: &BlockHeader,
+        external_block_hash: Option<&BlockHash>,
+        prev_filter_header: &FilterHeader,
+        outpoint_watches: &[OutPoint],
+        trusted_oracle_pubkeys: &Vec<PublicKey>,
+    ) -> Result<(), ValidationError> {
+        *self.last_validated_watches.lock().unwrap() = outpoint_watches.to_vec();
+        return validate_block(
+            self,
+            proof,
+            height,
+            header,
+            external_block_hash,
+            prev_filter_header,
+            outpoint_watches,
+            trusted_oracle_pubkeys,
+        );
     }
 }

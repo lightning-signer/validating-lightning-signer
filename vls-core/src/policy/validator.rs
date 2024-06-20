@@ -401,51 +401,16 @@ pub trait Validator {
         outpoint_watches: &[OutPoint],
         trusted_oracle_pubkeys: &Vec<PublicKey>,
     ) -> Result<(), ValidationError> {
-        let secp = Secp256k1::new();
-        let result = proof.verify(
+        validate_block(
+            self,
+            proof,
             height,
             header,
             external_block_hash,
             prev_filter_header,
             outpoint_watches,
-            &secp,
-        );
-        match result {
-            Ok(()) => {}
-            Err(VerifyError::InvalidAttestation) => {
-                for (pubkey, attestation) in &proof.attestations {
-                    error!(
-                        "invalid attestation for oracle {} at height {} block hash {} - {:?}",
-                        pubkey,
-                        height,
-                        header.block_hash(),
-                        &attestation.attestation
-                    );
-                }
-                policy_err!(self, "policy-chain-validated", "invalid attestation");
-            }
-            Err(_) => {
-                policy_err!(self, "policy-chain-validated", "invalid proof {:?}", result);
-            }
-        }
-
-        let required_majority = (trusted_oracle_pubkeys.len() + 1) / 2;
-        let key_matches = trusted_oracle_pubkeys
-            .iter()
-            .filter(|&trusted_key| {
-                proof.attestations.iter().find(|(a, _)| *a == *trusted_key).is_some()
-            })
-            .count();
-        if key_matches < required_majority {
-            policy_err!(
-                self,
-                "policy-chain-validated",
-                "attestation from trusted oracles not found"
-            );
-        }
-
-        // TODO validate filter header chain
-        Ok(())
+            trusted_oracle_pubkeys,
+        )
     }
 
     /// Validate an invoice
@@ -490,6 +455,61 @@ pub trait Validator {
 
         Ok(())
     }
+}
+
+/// Validate a block and a TXOO proof for spent/unspent watched outputs
+#[inline]
+pub fn validate_block<T: Validator + ?Sized>(
+    self_: &T,
+    proof: &TxoProof,
+    height: u32,
+    header: &BlockHeader,
+    external_block_hash: Option<&BlockHash>,
+    prev_filter_header: &FilterHeader,
+    outpoint_watches: &[OutPoint],
+    trusted_oracle_pubkeys: &Vec<PublicKey>,
+) -> Result<(), ValidationError> {
+    let secp = Secp256k1::new();
+    let result = proof.verify(
+        height,
+        header,
+        external_block_hash,
+        prev_filter_header,
+        outpoint_watches,
+        &secp,
+    );
+    match result {
+        Ok(()) => {}
+        Err(VerifyError::InvalidAttestation) => {
+            for (pubkey, attestation) in &proof.attestations {
+                error!(
+                    "invalid attestation for oracle {} at height {} block hash {} - {:?}",
+                    pubkey,
+                    height,
+                    header.block_hash(),
+                    &attestation.attestation
+                );
+            }
+            policy_err!(self_, "policy-chain-validated", "invalid attestation");
+        }
+        Err(_) => {
+            policy_err!(self_, "policy-chain-validated", "invalid proof {:?}", result);
+        }
+    }
+
+    let required_majority = (trusted_oracle_pubkeys.len() + 1) / 2;
+    let key_matches = trusted_oracle_pubkeys
+        .iter()
+        .filter(|&trusted_key| {
+            proof.attestations.iter().find(|(a, _)| *a == *trusted_key).is_some()
+        })
+        .count();
+    if key_matches < required_majority {
+        policy_err!(self_, "policy-chain-validated", "attestation from trusted oracles not found");
+    }
+
+    // TODO validate filter header chain
+    Ok(())
 }
 
 /// Blockchain state used by the validator

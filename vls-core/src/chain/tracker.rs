@@ -863,7 +863,7 @@ mod tests {
     #[tokio::test]
     async fn test_listeners() -> Result<(), Error> {
         let source = make_source().await;
-        let (mut tracker, _validator_factory) = make_tracker()?;
+        let (mut tracker, validator_factory) = make_tracker()?;
 
         let header1 = add_block(&mut tracker, &source, &[]).await?;
 
@@ -900,6 +900,12 @@ mod tests {
 
         assert_eq!(tracker.listeners.get(listener.key()).unwrap().1.watches, OrderedSet::new());
 
+        // validation included forward watches
+        assert_eq!(
+            *validator_factory.validator().last_validated_watches.lock().unwrap(),
+            vec![second_watch]
+        );
+
         remove_block(&mut tracker, &source, &[tx2], &header2).await?;
 
         assert_eq!(
@@ -907,11 +913,24 @@ mod tests {
             OrderedSet::from_iter(vec![second_watch])
         );
 
+        // validation should have included reverse watches
+        assert_eq!(
+            *validator_factory.validator().last_validated_watches.lock().unwrap(),
+            vec![initial_watch, second_watch]
+        );
+
         remove_block(&mut tracker, &source, &[tx], &header1).await?;
 
         assert_eq!(
             tracker.listeners.get(listener.key()).unwrap().1.watches,
             OrderedSet::from_iter(vec![initial_watch])
+        );
+
+        // validation should still include reverse watches, because those are
+        // currently not pruned
+        assert_eq!(
+            *validator_factory.validator().last_validated_watches.lock().unwrap(),
+            vec![initial_watch, second_watch]
         );
 
         Ok(())
