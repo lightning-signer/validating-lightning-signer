@@ -62,6 +62,9 @@ pub struct SignerArgs {
     #[clap(long, help = "dump LSS contents and exit")]
     pub dump_lss: bool,
 
+    #[clap(long, help = "initialize LSS from local storage and exit.  LSS must be empty.")]
+    pub init_lss: bool,
+
     #[clap(long, help = "dump local storage contents and exit")]
     pub dump_storage: bool,
 

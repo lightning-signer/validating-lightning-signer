@@ -201,6 +201,13 @@ impl<L: KVVStore> KVVStore for CloudKVVStore<L> {
         self.local.put_batch(kvvs)
     }
 
+    fn reset_versions(&self) -> Result<(), Error> {
+        if self.local.get(LAST_WRITER_KEY).unwrap().is_some() {
+            panic!("cannot reset versions when local storage is already linked to cloud storage")
+        }
+        self.local.reset_versions()
+    }
+
     fn signer_id(&self) -> SignerId {
         self.local.signer_id()
     }
@@ -246,6 +253,41 @@ mod tests {
 
         assert!(cloud.is_in_sync(Some((0, signer_id.to_vec()))));
 
+        Ok(())
+    }
+
+    #[should_panic(
+        expected = "cannot reset versions when local storage is already linked to cloud storage"
+    )]
+    #[test]
+    fn reset_versions_panic_when_last_writer_key_present_test() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let local = RedbKVVStore::new(tempdir.path());
+        let cloud = CloudKVVStore::new(local);
+
+        cloud.enter().unwrap();
+        cloud.put("foo2", b"boo".to_vec()).unwrap();
+        cloud.commit().unwrap();
+
+        // Attempt to reset versions, should panic
+        cloud.reset_versions().unwrap();
+    }
+
+    #[test]
+    fn reset_versions_success_test() -> Result<(), Error> {
+        let tempdir = tempfile::tempdir().unwrap();
+        let local = RedbKVVStore::new(tempdir.path());
+        local.put("foo1", b"bar".to_vec())?;
+        local.put("foo1", b"baz".to_vec())?;
+        assert_eq!(local.get("foo1")?.unwrap().0, 1);
+        let cloud = CloudKVVStore::new(local);
+
+        // Ensure LAST_WRITER_KEY is not present
+        assert!(cloud.local.get(LAST_WRITER_KEY)?.is_none());
+
+        // Attempt to reset versions
+        assert!(cloud.reset_versions().is_ok());
+        assert_eq!(cloud.local.get("foo1")?.unwrap().0, 0);
         Ok(())
     }
 

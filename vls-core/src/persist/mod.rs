@@ -249,6 +249,15 @@ pub trait Persist: SendSync {
         false
     }
 
+    /// Start replication by putting the local store into a compatible starting
+    /// state for a cloud persister.
+    ///
+    /// All versions are reset to zero. Gets the entire stored content as Mutations
+    /// that the caller must store into the empty cloud store.
+    fn begin_replication(&self) -> Result<Mutations, Error> {
+        unimplemented!("begin_replication is only implemented for KVV persisters")
+    }
+
     /// Get our unique 128-bit signer ID
     fn signer_id(&self) -> SignerId;
 }

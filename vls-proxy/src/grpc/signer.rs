@@ -26,7 +26,7 @@ use std::error::Error as _;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
 use std::result::Result as StdResult;
-use std::str::FromStr;
+use std::str::{from_utf8, FromStr};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
@@ -200,7 +200,8 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
         let mut iter = local_store.get_prefix("").expect("get_prefix");
         while let Some(kvv) = iter.next() {
             let value = kvv.1 .1;
-            let value_str = std::str::from_utf8(&value).expect("utf8");
+            // this assumes that the value is utf8, which is currently true since we use JSON
+            let value_str = from_utf8(&value).expect("utf8");
             println!("{} = {} @ {}", kvv.0, value_str, kvv.1 .0);
         }
         return;
@@ -221,7 +222,25 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
         let muts: Vec<_> = state.iter().map(|(k, (v, vv))| (k.clone(), (*v, vv.clone()))).collect();
 
         if args.dump_lss {
-            info!("LSS state: {:?}", state);
+            for (k, (v, value)) in muts.iter() {
+                let value_str = from_utf8(&value).expect("utf8");
+                println!("{} = {} @ {}", k, value_str, v);
+            }
+            return;
+        }
+
+        if args.init_lss {
+            if !muts.is_empty() {
+                error!("LSS state is not empty, but --init-lss was specified");
+                return;
+            }
+            let muts = persister.begin_replication().expect("get_all during LSS init");
+            let client = external_persist.persist_client.lock().await;
+            store_with_client(muts, &*client, &external_persist.helper)
+                .await
+                .expect("store during LSS init");
+
+            info!("LSS state initialized, exiting");
             return;
         }
 
@@ -243,6 +262,7 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
         assert!(muts.is_empty(), "got memorized mutations, but not persisting to cloud");
         handler
     };
+
     let node = Arc::clone(init_handler.node());
 
     let join_handle =
