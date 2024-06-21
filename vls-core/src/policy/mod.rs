@@ -43,7 +43,7 @@ pub const MIN_INVOICE_EXPIRY: Duration = Duration::from_secs(60);
 pub const MAX_CLOCK_SKEW: Duration = Duration::from_secs(60);
 
 /// An enforcement policy
-pub trait Policy {
+pub trait Policy: Send + Sync {
     /// A policy error has occurred.
     /// Policy errors can be converted to warnings by returning `Ok(())`
     fn policy_error(&self, _tag: String, msg: String) -> Result<(), error::ValidationError>;

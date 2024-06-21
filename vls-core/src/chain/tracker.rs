@@ -782,6 +782,7 @@ mod tests {
     use bitcoin::consensus::serialize;
     use bitcoin::hashes::Hash;
     use bitcoin::network::constants::Network;
+    use bitcoin::secp256k1::{Secp256k1, SecretKey};
     use bitcoin::util::hash::bitcoin_merkle_root;
     use bitcoin::{Block, TxIn};
     use bitcoin::{PackedLockTime, Sequence, TxMerkleNode, Witness};
@@ -793,6 +794,38 @@ mod tests {
     use crate::util::mocks::MockValidatorFactory;
     use test_log::test;
     use txoo::source::Source;
+
+    #[tokio::test]
+    async fn test_add_valid_proof() -> Result<(), Error> {
+        let source = make_source().await;
+        let (mut tracker, _) = make_tracker()?;
+        assert_eq!(tracker.height(), 0);
+
+        let public_key = source.oracle_setup().await.public_key;
+        tracker.trusted_oracle_pubkeys = vec![public_key];
+
+        add_block(&mut tracker, &source, &[]).await?;
+        add_block(&mut tracker, &source, &[]).await?;
+        assert_eq!(tracker.height(), 2);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_add_invalid_proof() -> Result<(), Error> {
+        let source = make_source().await;
+        let (mut tracker, _) = make_tracker()?;
+        assert_eq!(tracker.height(), 0);
+
+        let random_secret = [0x11; 32];
+        let public_key = get_txoo_public_key(&random_secret);
+        tracker.trusted_oracle_pubkeys = vec![public_key];
+
+        add_block(&mut tracker, &source, &[]).await?;
+        let result = add_block(&mut tracker, &source, &[]).await;
+        assert!(result.is_err());
+
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_add_remove() -> Result<(), Error> {
@@ -825,12 +858,6 @@ mod tests {
         let prev_headers = Headers(header0, FilterHeader::all_zeros());
         assert_eq!(tracker.remove_block(proof, prev_headers).err(), Some(Error::ReorgTooDeep));
         Ok(())
-    }
-
-    async fn make_source() -> DummyTxooSource {
-        let source = DummyTxooSource::new();
-        source.on_new_block(0, &genesis_block(Network::Regtest)).await;
-        source
     }
 
     #[tokio::test]
@@ -941,109 +968,6 @@ mod tests {
         Ok(())
     }
 
-    // returns the new block's header
-    async fn add_block(
-        tracker: &mut ChainTracker<MockListener>,
-        source: &DummyTxooSource,
-        txs: &[Transaction],
-    ) -> Result<BlockHeader, Error> {
-        let txs = txs_with_coinbase(txs);
-
-        let block = make_block(tracker.tip().0, txs);
-        let height = tracker.height() + 1;
-        source.on_new_block(height, &block).await;
-        let (_attestation, filter_header) = source.get(height, &block).await.unwrap();
-        let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
-
-        tracker.add_block(block.header.clone(), proof)?;
-        Ok(block.header)
-    }
-
-    // returns the new block's header
-    async fn add_streamed_block(
-        tracker: &mut ChainTracker<MockListener>,
-        source: &DummyTxooSource,
-        txs: &[Transaction],
-    ) -> Result<BlockHeader, Error> {
-        let txs = txs_with_coinbase(txs);
-
-        let block = make_block(tracker.tip().0, txs);
-        let height = tracker.height() + 1;
-        source.on_new_block(height, &block).await;
-        let (_attestation, filter_header) = source.get(height, &block).await.unwrap();
-        let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
-
-        let proof =
-            TxoProof { attestations: proof.attestations, proof: ProofType::ExternalBlock() };
-
-        let bytes = serialize(&block);
-        tracker.block_chunk(block.block_hash(), 0, &bytes)?;
-        tracker.add_block(block.header.clone(), proof)?;
-        Ok(block.header)
-    }
-
-    // returns the new block's header
-    async fn add_block_with_bits(
-        tracker: &mut ChainTracker<MockListener>,
-        source: &DummyTxooSource,
-        bits: u32,
-        do_add: bool,
-    ) -> Result<BlockHeader, Error> {
-        let txs = txs_with_coinbase(&[]);
-        let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
-
-        let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).unwrap().into();
-        let header = mine_header_with_bits(tracker.tip().0.block_hash(), merkle_root, bits);
-
-        let block = Block { header, txdata: txs };
-        let height = tracker.height() + 1;
-
-        let filter_header = if do_add {
-            source.on_new_block(height, &block).await;
-            let (_attestation, filter_header) = source.get(height, &block).await.unwrap();
-            filter_header
-        } else {
-            FilterHeader::all_zeros()
-        };
-        let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
-
-        tracker.add_block(block.header.clone(), proof)?;
-        Ok(block.header)
-    }
-
-    // returns the removed block's header
-    async fn remove_block(
-        tracker: &mut ChainTracker<MockListener>,
-        source: &DummyTxooSource,
-        txs: &[Transaction],
-        prev_header: &BlockHeader,
-    ) -> Result<BlockHeader, Error> {
-        let txs = txs_with_coinbase(txs);
-        let block = make_block(*prev_header, txs);
-        let height = tracker.height();
-        let (_attestation, filter_header) = source.get(height, &block).await.unwrap();
-        let proof = TxoProof::prove_unchecked(&block, &filter_header, height);
-
-        let prev_filter_header = tracker.headers[0].1;
-        let prev_headers = Headers(*prev_header, prev_filter_header);
-        let removed_header = tracker.remove_block(proof, prev_headers)?;
-        Ok(removed_header)
-    }
-
-    fn txs_with_coinbase(txs: &[Transaction]) -> Vec<Transaction> {
-        let mut txs = txs.to_vec();
-        txs.insert(
-            0,
-            Transaction {
-                version: 0,
-                lock_time: PackedLockTime(0),
-                input: vec![],
-                output: vec![Default::default()],
-            },
-        );
-        txs
-    }
-
     #[tokio::test]
     async fn test_retarget() -> Result<(), Error> {
         let source = make_source().await;
@@ -1098,5 +1022,156 @@ mod tests {
             vec![],
         )?;
         Ok((tracker, validator_factory))
+    }
+
+    async fn make_source() -> DummyTxooSource {
+        let source = DummyTxooSource::new();
+        source.on_new_block(0, &genesis_block(Network::Regtest)).await;
+        source
+    }
+
+    // returns the new block's header
+    async fn add_block(
+        tracker: &mut ChainTracker<MockListener>,
+        source: &DummyTxooSource,
+        txs: &[Transaction],
+    ) -> Result<BlockHeader, Error> {
+        let txs = txs_with_coinbase(txs);
+
+        let block = make_block(tracker.tip().0, txs);
+        let height = tracker.height() + 1;
+        source.on_new_block(height, &block).await;
+        let (attestation, filter_header) = source.get(height, &block).await.unwrap();
+        let pubkey = source.oracle_setup().await.public_key;
+        let txid_watches: Vec<_> = block.txdata.iter().map(|tx| tx.txid()).collect();
+        let proof = TxoProof::prove(
+            vec![(pubkey, attestation)],
+            &filter_header,
+            &block,
+            height,
+            &[],
+            &txid_watches,
+        );
+
+        tracker.add_block(block.header.clone(), proof)?;
+        Ok(block.header)
+    }
+
+    // returns the new block's header
+    async fn add_streamed_block(
+        tracker: &mut ChainTracker<MockListener>,
+        source: &DummyTxooSource,
+        txs: &[Transaction],
+    ) -> Result<BlockHeader, Error> {
+        let txs = txs_with_coinbase(txs);
+
+        let block = make_block(tracker.tip().0, txs);
+        let height = tracker.height() + 1;
+        source.on_new_block(height, &block).await;
+        let (attestation, filter_header) = source.get(height, &block).await.unwrap();
+        let pubkey = source.oracle_setup().await.public_key;
+        let txid_watches: Vec<_> = block.txdata.iter().map(|tx| tx.txid()).collect();
+        let proof = TxoProof::prove(
+            vec![(pubkey, attestation)],
+            &filter_header,
+            &block,
+            height,
+            &[],
+            &txid_watches,
+        );
+
+        let proof =
+            TxoProof { attestations: proof.attestations, proof: ProofType::ExternalBlock() };
+
+        let bytes = serialize(&block);
+        tracker.block_chunk(block.block_hash(), 0, &bytes)?;
+        tracker.add_block(block.header.clone(), proof)?;
+        Ok(block.header)
+    }
+
+    // returns the new block's header
+    async fn add_block_with_bits(
+        tracker: &mut ChainTracker<MockListener>,
+        source: &DummyTxooSource,
+        bits: u32,
+        do_add: bool,
+    ) -> Result<BlockHeader, Error> {
+        let txs = txs_with_coinbase(&[]);
+        let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
+
+        let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).unwrap().into();
+        let header = mine_header_with_bits(tracker.tip().0.block_hash(), merkle_root, bits);
+
+        let block = Block { header, txdata: txs };
+        let height = tracker.height() + 1;
+
+        let proof: TxoProof;
+        if do_add {
+            source.on_new_block(height, &block).await;
+            let public_key = source.oracle_setup().await.public_key;
+            let (attestation, filter_header) = source.get(height, &block).await.unwrap();
+            proof = TxoProof::prove(
+                vec![(public_key, attestation)],
+                &filter_header,
+                &block,
+                height,
+                &vec![],
+                &txids,
+            );
+        } else {
+            let filter_header = FilterHeader::all_zeros();
+            proof = TxoProof::prove_unchecked(&block, &filter_header, height);
+        }
+
+        tracker.add_block(block.header.clone(), proof)?;
+        Ok(block.header)
+    }
+
+    // returns the removed block's header
+    async fn remove_block(
+        tracker: &mut ChainTracker<MockListener>,
+        source: &DummyTxooSource,
+        txs: &[Transaction],
+        prev_header: &BlockHeader,
+    ) -> Result<BlockHeader, Error> {
+        let txs = txs_with_coinbase(txs);
+        let block = make_block(*prev_header, txs);
+        let height = tracker.height();
+        let (attestation, filter_header) = source.get(height, &block).await.unwrap();
+        let pubkey = source.oracle_setup().await.public_key;
+        let txid_watches: Vec<_> = block.txdata.iter().map(|tx| tx.txid()).collect();
+        let proof = TxoProof::prove(
+            vec![(pubkey, attestation)],
+            &filter_header,
+            &block,
+            height,
+            &[],
+            &txid_watches,
+        );
+
+        let prev_filter_header = tracker.headers[0].1;
+        let prev_headers = Headers(*prev_header, prev_filter_header);
+        let removed_header = tracker.remove_block(proof, prev_headers)?;
+        Ok(removed_header)
+    }
+
+    fn txs_with_coinbase(txs: &[Transaction]) -> Vec<Transaction> {
+        let mut txs = txs.to_vec();
+        txs.insert(
+            0,
+            Transaction {
+                version: 0,
+                lock_time: PackedLockTime(0),
+                input: vec![],
+                output: vec![Default::default()],
+            },
+        );
+        txs
+    }
+
+    fn get_txoo_public_key(secret_key: &[u8]) -> PublicKey {
+        let secp = Secp256k1::new();
+        let secret_key = SecretKey::from_slice(&secret_key).expect("32 bytes, within curve order");
+        PublicKey::from_secret_key(&secp, &secret_key)
     }
 }

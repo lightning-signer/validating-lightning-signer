@@ -3,7 +3,9 @@
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::policy::error::ValidationError;
 use crate::policy::simple_validator::make_simple_policy;
-use crate::policy::validator::{ChainState, EnforcementState, Validator, ValidatorFactory};
+use crate::policy::validator::{
+    validate_block, ChainState, EnforcementState, Validator, ValidatorFactory,
+};
 use crate::policy::Policy;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
 use crate::wallet::Wallet;
@@ -20,11 +22,15 @@ use txoo::proof::TxoProof;
 #[derive(Clone)]
 pub(crate) struct MockValidator {
     pub last_validated_watches: Arc<Mutex<Vec<OutPoint>>>,
+    pub policy: Arc<dyn Policy>,
 }
 
 impl MockValidator {
     pub fn new() -> Self {
-        MockValidator { last_validated_watches: Arc::new(Mutex::new(vec![])) }
+        MockValidator {
+            last_validated_watches: Arc::new(Mutex::new(vec![])),
+            policy: Arc::new(make_simple_policy(Network::Regtest)),
+        }
     }
 }
 
@@ -235,7 +241,7 @@ impl Validator for MockValidator {
     }
 
     fn policy(&self) -> Box<&dyn Policy> {
-        todo!()
+        Box::new(self.policy.as_ref())
     }
 
     fn validate_block(
@@ -249,6 +255,15 @@ impl Validator for MockValidator {
         trusted_oracle_pubkeys: &Vec<PublicKey>,
     ) -> Result<(), ValidationError> {
         *self.last_validated_watches.lock().unwrap() = outpoint_watches.to_vec();
-        Ok(())
+        return validate_block(
+            self,
+            proof,
+            height,
+            header,
+            external_block_hash,
+            prev_filter_header,
+            outpoint_watches,
+            trusted_oracle_pubkeys,
+        );
     }
 }
