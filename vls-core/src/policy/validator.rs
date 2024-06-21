@@ -756,6 +756,7 @@ impl EnforcementState {
         counterparty_signatures: CommitmentSignatures,
     ) {
         let current = self.next_holder_commit_num;
+        assert_eq!(num, current + 1);
         // TODO - should we enforce policy-v2-commitment-retry-same here?
         debug!("next_holder_commit_num {} -> {}", current, num);
         self.next_holder_commit_num = num;

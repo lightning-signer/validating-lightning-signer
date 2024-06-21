@@ -972,16 +972,18 @@ impl Channel {
             counterparty_signatures,
         )?;
 
-        self.revoke_previous_commitment(new_current_commitment_number)
+        self.release_commitment_secret(new_current_commitment_number)
     }
 
-    // revoke the commitment before `commitment_number`
-    fn revoke_previous_commitment(
+    // Gets the revocation return values for a previous commitments which are
+    // ready to be released (fails on future commitments)
+    fn release_commitment_secret(
         &mut self,
         commitment_number: u64,
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
         let next_holder_commitment_point = self.get_per_commitment_point(commitment_number + 1)?;
         let maybe_old_secret = if commitment_number >= 1 {
+            // this will fail if the secret is not ready to be released
             Some(self.get_per_commitment_secret(commitment_number - 1)?)
         } else {
             None
@@ -1112,42 +1114,52 @@ impl Channel {
         &mut self,
         new_current_commitment_number: u64,
     ) -> Result<(PublicKey, Option<SecretKey>), Status> {
+        // If we are called on anything other than the next_holder_commit_num
+        // with existing next_holder_commit_info we must not change any state
+        if new_current_commitment_number != self.enforcement_state.next_holder_commit_num {
+            return Ok(self.release_commitment_secret(new_current_commitment_number)?);
+            // don't persist, this case doesn't change state
+        }
+
         let validator = self.validator();
-        let (next_holder_commitment_point, maybe_old_secret) = if let Some((info2, sigs)) =
-            self.enforcement_state.next_holder_commit_info.take()
-        {
-            let incoming_payment_summary =
-                self.enforcement_state.incoming_payments_summary(Some(&info2), None);
-            let outgoing_payment_summary =
-                self.enforcement_state.payments_summary(Some(&info2), None);
 
-            let node = self.get_node();
-            let mut state = node.get_state();
-
-            let delta =
-                self.enforcement_state.claimable_balances(&*state, Some(&info2), None, &self.setup);
-
-            let (next_holder_commitment_point, maybe_old_secret) = self
-                .advance_holder_commitment_state(
-                    validator.clone(),
-                    new_current_commitment_number,
-                    info2,
-                    sigs,
-                )?;
-
-            state.apply_payments(
-                &self.id0,
-                &incoming_payment_summary,
-                &outgoing_payment_summary,
-                &delta,
+        if self.enforcement_state.next_holder_commit_info.is_none() {
+            // the caller failed to call validate_holder_commitment_tx
+            policy_err!(
                 validator,
+                "policy-revoke-new-commitment-signed",
+                "new_current_commitment == next_holder_commit_num {} \
+                 but next_holder_commit_info.is_none",
+                new_current_commitment_number,
             );
-            (next_holder_commitment_point, maybe_old_secret)
-        } else {
-            // this will check that we are doing an idempotent operation (i.e. we are
-            // revoking a commitment that we have already revoked)
-            self.revoke_previous_commitment(new_current_commitment_number)?
-        };
+        }
+
+        let (info2, sigs) = self.enforcement_state.next_holder_commit_info.take().unwrap();
+        let incoming_payment_summary =
+            self.enforcement_state.incoming_payments_summary(Some(&info2), None);
+        let outgoing_payment_summary = self.enforcement_state.payments_summary(Some(&info2), None);
+
+        let node = self.get_node();
+        let mut state = node.get_state();
+
+        let delta =
+            self.enforcement_state.claimable_balances(&*state, Some(&info2), None, &self.setup);
+
+        let (next_holder_commitment_point, maybe_old_secret) = self
+            .advance_holder_commitment_state(
+                validator.clone(),
+                new_current_commitment_number,
+                info2,
+                sigs,
+            )?;
+
+        state.apply_payments(
+            &self.id0,
+            &incoming_payment_summary,
+            &outgoing_payment_summary,
+            &delta,
+            validator,
+        );
 
         trace_enforcement_state!(self);
         self.persist()?;
