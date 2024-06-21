@@ -261,8 +261,9 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
             let mut request_stream =
                 client.signer_stream(response_stream).await.unwrap().into_inner();
 
-            let is_success =
-                handle_init_requests(&sender, &mut request_stream, &mut init_handler).await;
+            let mut handle_loop = InitHandleLoop::new(init_handler.clone());
+
+            let is_success = handle_loop.handle_requests(&sender, &mut request_stream).await;
 
             if is_success {
                 let root_handler = init_handler.root_handler();
@@ -293,79 +294,94 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
     }
 }
 
-// return true if the negotiation succeeded
-async fn handle_init_requests(
-    sender: &Sender<SignerResponse>,
-    request_stream: &mut Streaming<SignerRequest>,
-    init_handler: &mut InitHandler,
-) -> bool {
-    while let Some(item) = request_stream.next().await {
-        match item {
-            Ok(request) => {
-                let request_id = request.request_id;
+impl InitHandleLoop {
+    // return true if the negotiation succeeded
+    async fn handle_requests(
+        &mut self,
+        sender: &Sender<SignerResponse>,
+        request_stream: &mut Streaming<SignerRequest>,
+    ) -> bool {
+        while let Some(item) = request_stream.next().await {
+            match item {
+                Ok(request) => {
+                    let request_id = request.request_id;
 
-                let rspframe = handle_init_request(init_handler, request, request_id);
-                let is_done = rspframe.as_ref().map(|(is_done, _)| *is_done).unwrap_or(false);
-                let maybe_response = rspframe.map(|(_, r)| r);
+                    let rspframe = self.handle_request(request, request_id);
+                    let is_done = rspframe.as_ref().map(|(is_done, _)| *is_done).unwrap_or(false);
+                    let maybe_response = rspframe.map(|(_, r)| r);
 
-                match maybe_response {
-                    Ok(Some(response)) => {
-                        if send_response(sender, request_id, Ok(response)).await {
-                            // stream closed
-                            return false;
+                    match maybe_response {
+                        Ok(Some(response)) => {
+                            if send_response(sender, request_id, Ok(response)).await {
+                                // stream closed
+                                return false;
+                            }
+                        }
+                        Ok(None) => {} // success w/o return message
+                        Err(err) => {
+                            if send_response(sender, request_id, Err(err)).await {
+                                // stream closed
+                                return false;
+                            }
                         }
                     }
-                    Ok(None) => {} // success w/o return message
-                    Err(err) => {
-                        if send_response(sender, request_id, Err(err)).await {
-                            // stream closed
-                            return false;
-                        }
+                    if is_done {
+                        return true;
                     }
                 }
-                if is_done {
-                    return true;
+                Err(e) => {
+                    error!("error on init stream: {}", e);
+                    return false;
                 }
-            }
-            Err(e) => {
-                error!("error on init stream: {}", e);
-                return false;
             }
         }
+        false
     }
-    false
+
+    #[instrument(name = "handle_init_request", skip(request), fields(message_name), err(Debug))]
+    fn handle_request(
+        &mut self,
+        request: SignerRequest,
+        request_id: u64,
+    ) -> StdResult<(bool, Option<SignerResponse>), Error> {
+        let msg = msgs::from_vec(request.message)?;
+        Span::current().record("message_name", msg.inner().name());
+
+        let reply = self.handler.handle(msg);
+
+        let (is_done, response) = match reply {
+            Ok((is_done, Some(res))) => (
+                is_done,
+                Ok(Some(SignerResponse {
+                    request_id,
+                    message: res.as_vec(),
+                    error: String::new(),
+                    is_temporary_failure: false,
+                })),
+            ),
+            Ok((is_done, None)) => (is_done, Ok(None)),
+            Err(e) => (false, Err(e)),
+        };
+        Ok(response.map(|r| (is_done, r))?)
+    }
 }
 
-#[instrument(
-    name = "handle_init_request",
-    skip(init_handler, request),
-    fields(message_name),
-    err(Debug)
-)]
-fn handle_init_request(
-    init_handler: &mut InitHandler,
-    request: SignerRequest,
-    request_id: u64,
-) -> StdResult<(bool, Option<SignerResponse>), Error> {
-    let msg = msgs::from_vec(request.message)?;
-    Span::current().record("message_name", msg.inner().name());
+// Handle a request stream while initializing
+struct InitHandleLoop {
+    handler: InitHandler,
+    pub external_persist: Option<ExternalPersistWithHelper>,
+}
 
-    let reply = init_handler.handle(msg);
+impl InitHandleLoop {
+    fn new(handler: InitHandler) -> Self {
+        Self { handler, external_persist: None }
+    }
+}
 
-    let (is_done, response) = match reply {
-        Ok((is_done, Some(res))) => (
-            is_done,
-            Ok(Some(SignerResponse {
-                request_id,
-                message: res.as_vec(),
-                error: String::new(),
-                is_temporary_failure: false,
-            })),
-        ),
-        Ok((is_done, None)) => (is_done, Ok(None)),
-        Err(e) => (false, Err(e)),
-    };
-    Ok(response.map(|r| (is_done, r))?)
+impl Debug for InitHandleLoop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InitHandleLoop").finish()
+    }
 }
 
 // Handle a request stream
