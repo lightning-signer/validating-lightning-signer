@@ -12,6 +12,7 @@ use http::Uri;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::node::{Node, NodeServices};
 use lightning_signer::persist::fs::FileSeedPersister;
+use lightning_signer::persist::Error as PersistError;
 use lightning_signer::persist::{ExternalPersistHelper, Mutations, Persist, SeedPersist};
 use lightning_signer::policy::filter::{FilterRule, PolicyFilter};
 use lightning_signer::policy::DEFAULT_FEE_VELOCITY_CONTROL;
@@ -72,6 +73,8 @@ pub enum Error {
     Handler(#[from] HandlerError),
     #[error("LSS error")]
     LssClient(#[from] external_persist::Error),
+    #[error("persist error")]
+    Persist(#[from] PersistError),
 }
 
 /// Signer binary entry point for local integration test
@@ -104,10 +107,16 @@ pub async fn start_signer(
     info!("signer stopping");
 }
 
-/// Create a signer protocol handler
+/// Create a signer protocol handler.
+/// Must commit the transaction if persisting to cloud.
 pub fn make_handler(datadir: &str, args: &SignerArgs) -> (InitHandler, Mutations) {
     let persister = make_persister(datadir, args);
-    make_handler_builder(datadir, args, persister).build().expect("handler build")
+    // TODO error handling
+    persister.enter().expect("start transaction during handler build");
+    let handler =
+        make_handler_builder(datadir, args, persister.clone()).build().expect("handler build");
+    let muts = persister.prepare();
+    (handler, muts)
 }
 
 pub fn make_handler_builder(
@@ -207,7 +216,7 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
         return;
     }
 
-    let mut init_handler = if let Some(mut lss_url) = args.lss.clone() {
+    let (mut init_handler, external_persist) = if let Some(mut lss_url) = args.lss.clone() {
         if lss_url.port().is_none() {
             lss_url.set_port(Some(55551)).expect("set port");
         }
@@ -220,6 +229,7 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
         external_persist.init_state().await;
         let state = external_persist.state.lock().unwrap();
         let muts: Vec<_> = state.iter().map(|(k, (v, vv))| (k.clone(), (*v, vv.clone()))).collect();
+        drop(state);
 
         if args.dump_lss {
             for (k, (v, value)) in muts.iter() {
@@ -247,8 +257,12 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
         // update local persister with the initial cloud state
         persister.put_batch_unlogged(Mutations::from_vec(muts)).expect("put_batch_unlogged");
 
+        // TODO error handling
+        persister.enter().expect("start transaction during handler build");
         // build the init handler, potentially changing the state (e.g. new node or modified allowlist)
-        let (handler, muts) = builder.build().expect("handler build");
+        let handler = builder.build().expect("handler build");
+
+        let muts = persister.prepare();
 
         // store any changes made during build to LSS
         let client = external_persist.persist_client.lock().await;
@@ -256,11 +270,14 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
             .await
             .expect("store during build");
 
-        handler
+        persister.commit().expect("commit during build");
+        drop(client);
+
+        (handler, Some(external_persist))
     } else {
         let (handler, muts) = make_handler(datadir, args);
         assert!(muts.is_empty(), "got memorized mutations, but not persisting to cloud");
-        handler
+        (handler, None)
     };
 
     let node = Arc::clone(init_handler.node());
@@ -270,7 +287,8 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
 
     loop {
         let handle_connection = async {
-            reset_allowlist(&*node, &read_allowlist());
+            // FIXME did not enter persist context
+            // reset_allowlist(&*node, &read_allowlist());
             init_handler.reset();
 
             let (sender, receiver) = mpsc::channel(1);
@@ -281,13 +299,11 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
             let mut request_stream =
                 client.signer_stream(response_stream).await.unwrap().into_inner();
 
-            let mut handle_loop = InitHandleLoop::new(init_handler.clone());
+            let handle_loop = InitHandleLoop::new(init_handler.clone(), external_persist.clone());
 
-            let is_success = handle_loop.handle_requests(&sender, &mut request_stream).await;
+            let root_handler = handle_loop.handle_requests(&sender, &mut request_stream).await;
 
-            if is_success {
-                let root_handler = init_handler.root_handler();
-                let mut handle_loop = HandleLoop::new(root_handler);
+            if let Some(mut handle_loop) = root_handler {
                 handle_loop.handle_requests(&sender, &mut request_stream).await;
             }
         };
@@ -317,16 +333,16 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
 impl InitHandleLoop {
     // return true if the negotiation succeeded
     async fn handle_requests(
-        &mut self,
+        mut self,
         sender: &Sender<SignerResponse>,
         request_stream: &mut Streaming<SignerRequest>,
-    ) -> bool {
+    ) -> Option<HandleLoop> {
         while let Some(item) = request_stream.next().await {
             match item {
                 Ok(request) => {
                     let request_id = request.request_id;
 
-                    let rspframe = self.handle_request(request, request_id);
+                    let rspframe = self.handle_request(request, request_id).await;
                     let is_done = rspframe.as_ref().map(|(is_done, _)| *is_done).unwrap_or(false);
                     let maybe_response = rspframe.map(|(_, r)| r);
 
@@ -334,32 +350,38 @@ impl InitHandleLoop {
                         Ok(Some(response)) => {
                             if send_response(sender, request_id, Ok(response)).await {
                                 // stream closed
-                                return false;
+                                return None;
                             }
                         }
                         Ok(None) => {} // success w/o return message
                         Err(err) => {
                             if send_response(sender, request_id, Err(err)).await {
                                 // stream closed
-                                return false;
+                                return None;
                             }
                         }
                     }
                     if is_done {
-                        return true;
+                        let root_handler = self.handler.into();
+                        return Some(HandleLoop::new(root_handler, self.external_persist));
                     }
                 }
                 Err(e) => {
                     error!("error on init stream: {}", e);
-                    return false;
+                    return None;
                 }
             }
         }
-        false
+        return None;
     }
 
-    #[instrument(name = "handle_init_request", skip(request), fields(message_name), err(Debug))]
-    fn handle_request(
+    #[instrument(
+        name = "InitHandleLoop::handle_request",
+        skip(request),
+        fields(message_name),
+        err(Debug)
+    )]
+    async fn handle_request(
         &mut self,
         request: SignerRequest,
         request_id: u64,
@@ -367,22 +389,31 @@ impl InitHandleLoop {
         let msg = msgs::from_vec(request.message)?;
         Span::current().record("message_name", msg.inner().name());
 
-        let reply = self.handler.handle(msg);
+        let (is_done, reply) = if let Some(external_persist) = &self.external_persist {
+            let node = self.handler.node();
+            let persister = node.get_persister();
+            persister.enter()?;
 
-        let (is_done, response) = match reply {
-            Ok((is_done, Some(res))) => (
-                is_done,
-                Ok(Some(SignerResponse {
-                    request_id,
-                    message: res.as_vec(),
-                    error: String::new(),
-                    is_temporary_failure: false,
-                })),
-            ),
-            Ok((is_done, None)) => (is_done, Ok(None)),
-            Err(e) => (false, Err(e)),
+            // see comments in HandleLoop::handle_request
+            let persist_client = external_persist.persist_client.lock().await;
+            let result = self.handler.handle(msg);
+            let muts = persister.prepare();
+
+            store_with_client(muts, &*persist_client, &external_persist.helper).await?;
+            persister.commit()?;
+            result?
+        } else {
+            let (is_done, reply) = self.handler.handle(msg)?;
+            (is_done, reply)
         };
-        Ok(response.map(|r| (is_done, r))?)
+
+        let response = reply.map(|reply| SignerResponse {
+            request_id,
+            message: reply.as_vec(),
+            error: String::new(),
+            is_temporary_failure: false,
+        });
+        Ok((is_done, response))
     }
 }
 
@@ -393,8 +424,8 @@ struct InitHandleLoop {
 }
 
 impl InitHandleLoop {
-    fn new(handler: InitHandler) -> Self {
-        Self { handler, external_persist: None }
+    fn new(handler: InitHandler, external_persist: Option<ExternalPersistWithHelper>) -> Self {
+        Self { handler, external_persist }
     }
 }
 
@@ -411,8 +442,8 @@ struct HandleLoop {
 }
 
 impl HandleLoop {
-    fn new(handler: RootHandler) -> Self {
-        Self { handler, external_persist: None }
+    fn new(handler: RootHandler, external_persist: Option<ExternalPersistWithHelper>) -> Self {
+        Self { handler, external_persist }
     }
 }
 
@@ -584,7 +615,6 @@ fn get_or_generate_seed(
 
 impl HandleLoop {
     #[instrument(
-        name = "handle_request",
         skip(request),
         fields(
         request_id = % request.request_id,
@@ -607,13 +637,15 @@ impl HandleLoop {
             // version again, but may write to the cloud before the first.
             // TODO(devrandom) evaluate atomicity
             let persist_client = external_persist.persist_client.lock().await;
-            let (res, muts) = self.do_handle(context.as_ref(), msg)?;
+            let (res, muts) = self.do_handle(context.as_ref(), msg);
+
             store_with_client(muts, &*persist_client, &external_persist.helper).await?;
-            res
+            self.handler.commit();
+            res?
         } else {
-            let (res, muts) = self.do_handle(context.as_ref(), msg)?;
+            let (res, muts) = self.do_handle(context.as_ref(), msg);
             assert!(muts.is_empty(), "got memorized mutations, but not persisting to cloud");
-            res
+            res?
         };
         info!("signer sending reply {} - {:?}", request.request_id, res);
 
@@ -629,21 +661,57 @@ impl HandleLoop {
         &self,
         context: Option<&(u64, Vec<u8>)>,
         msg: Message,
-    ) -> Result<(Box<dyn SerBolt>, Mutations), Error> {
-        let (res, muts) = if let Some((dbid, peer_id)) = context {
+    ) -> (Result<Box<dyn SerBolt>, Error>, Mutations) {
+        let node = self.handler.node();
+        let persister = node.get_persister();
+        if let Err(e) = persister.enter() {
+            error!("failed to start transaction: {:?}", e);
+            return (
+                Err(Error::Handler(Status::internal("failed to start transaction").into())),
+                Mutations::new(),
+            );
+        }
+
+        let result = if let Some((dbid, peer_id)) = context {
             if *dbid > 0 {
-                let peer = PubKey(peer_id.clone().try_into().map_err(|_| {
-                    Error::Handler(HandlerError::Signing(Status::invalid_argument("peer id")))
-                })?);
+                let peer = match peer_id.clone().try_into() {
+                    Ok(pubkey) => PubKey(pubkey),
+                    Err(_) => {
+                        // this should trivially succeed, because we didn't do any work yet
+                        persister.commit().expect("commit");
+                        return (
+                            Err(Error::Handler(HandlerError::Signing(Status::invalid_argument(
+                                "peer id",
+                            )))
+                            .into()),
+                            Mutations::new(),
+                        );
+                    }
+                };
                 let handler = self.handler.for_new_client(*dbid, peer, *dbid);
-                handler.handle(msg)?
+                handler.handle(msg)
             } else {
-                self.handler.handle(msg)?
+                self.handler.handle(msg)
             }
         } else {
-            self.handler.handle(msg)?
+            self.handler.handle(msg)
         };
-        Ok((res, muts))
+
+        let muts = persister.prepare();
+
+        if let Err(HandlerError::Temporary(_)) = result {
+            // There must be no mutated state when a temporary error is returned
+            if !muts.is_empty() {
+                #[cfg(not(feature = "log_pretty_print"))]
+                debug!("stranded mutations: {:?}", &muts);
+                #[cfg(feature = "log_pretty_print")]
+                debug!("stranded mutations: {:#?}", &muts);
+                panic!("temporary error with stranded mutations");
+            }
+        }
+
+        let result = result.map_err(|e| Error::Handler(e));
+        (result, muts)
     }
 }
 
