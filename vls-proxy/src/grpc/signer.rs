@@ -197,7 +197,7 @@ fn make_local_store(datadir: &str, args: &SignerArgs) -> RedbKVVStore {
 
 // NOTE - For this signer mode it is easier to use the ALLOWLIST file to maintain the
 // allowlist. Replace existing entries w/ the current ALLOWLIST file contents.
-fn reset_allowlist(node: &Node, allowlist: &Vec<String>) {
+fn reset_allowlist(node: &Node, allowlist: &[String]) {
     node.set_allowlist(&allowlist).expect("allowlist");
     info!("allowlist={:?}", node.allowlist().expect("allowlist"));
 }
@@ -261,6 +261,7 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
         persister.enter().expect("start transaction during handler build");
         // build the init handler, potentially changing the state (e.g. new node or modified allowlist)
         let handler = builder.build().expect("handler build");
+        reset_allowlist(&handler.node(), &read_allowlist());
 
         let muts = persister.prepare();
 
@@ -287,8 +288,6 @@ async fn connect(datadir: &str, uri: Uri, args: &SignerArgs, shutdown_signal: tr
 
     loop {
         let handle_connection = async {
-            // FIXME did not enter persist context
-            // reset_allowlist(&*node, &read_allowlist());
             init_handler.reset();
 
             let (sender, receiver) = mpsc::channel(1);
