@@ -32,10 +32,11 @@ pub const CODE_ORPHAN_BLOCK: u16 = 401;
 
 // Notable hsmd protocol versions
 pub const PROTOCOL_VERSION_REVOKE: u32 = 5; // RevokeCommitmentTx was split from ValidateCommitmentTx
+pub const PROTOCOL_VERSION_NO_SECRET: u32 = 6; // GetPerCommitmentPoint no longer returns secret
 
 /// Our default protcol version
 /// (see also [`HsmdInit::hsm_wire_min_version`], etc.)
-pub const DEFAULT_MAX_PROTOCOL_VERSION: u32 = PROTOCOL_VERSION_REVOKE;
+pub const DEFAULT_MAX_PROTOCOL_VERSION: u32 = PROTOCOL_VERSION_NO_SECRET;
 
 /// Our minimum protcol version
 pub const MIN_PROTOCOL_VERSION: u32 = 2;
