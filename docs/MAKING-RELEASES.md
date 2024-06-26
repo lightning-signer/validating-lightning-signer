@@ -100,8 +100,9 @@ where XXX is the token from `~/.cargo/credentials`.
 ## Helpful Commands
 
 ```
+# do bolt-derive and/or lightning-storage-server need publishing?
 export PREV_VER=v0.11.1
-export VER=v0.12.0-rc.1
+export VER=v0.12.0-rc.2
 export YM=$(date +%Y-%m)
 git checkout main && git pull
 git checkout -b $YM-$VER
@@ -109,7 +110,7 @@ scripts/harvest-changelog "$PREV_VER".. > /tmp/CHANGELOG_ENTRIES.md
 # merge /tmp/CHANGELOG_ENTRIES.md into CHANGELOG.md
 git log --pretty="%aN" "$PREV_VER".. | sort -fu > /tmp/AUTHORS.txt
 # incorporate the authors into the CHANGELOG.md
-string replace the old release w/ the new
+# string replace the old release w/ the new
 ./scripts/build-all
 cargo test
 cargo build --release
