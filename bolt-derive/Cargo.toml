@@ -1,7 +1,7 @@
 [package]
 name = "bolt-derive"
 license = "Apache-2.0"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "A library implementing Bitcoin Lightning style serialization for structures"
 homepage = "https://gitlab.com/lightning-signer/docs/"

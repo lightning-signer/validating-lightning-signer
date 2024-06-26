@@ -10,7 +10,7 @@ repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 
 [dependencies]
 bitcoin-consensus-derive = { version = "0.1.0" }
-bolt-derive = { path = "../bolt-derive", version = "0.2.0" }
+bolt-derive = { path = "../bolt-derive", version = "0.3.0" }
 log = "0.4"
 as-any = "0.3"
 hex = { version = "0.4", default-features = false }
