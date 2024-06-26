@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [0.12.0-rc.1] - 2024-06-25: "Benevolent Basilisk"
+## [0.12.0-rc.2] - 2024-06-25: "Benevolent Basilisk"
 
 This release named by Provisional Pete
 

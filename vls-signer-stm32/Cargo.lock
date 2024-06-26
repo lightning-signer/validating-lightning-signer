@@ -162,7 +162,7 @@ checksum = "ed570934406eb16438a4e976b1b4500774099c13b8cb96eec99f620f05090ddf"
 
 [[package]]
 name = "bolt-derive"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -980,7 +980,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "vls-core"
-version = "0.12.0-rc.1"
+version = "0.12.0-rc.2"
 dependencies = [
  "anyhow",
  "bitcoin",
@@ -1005,7 +1005,7 @@ dependencies = [
 
 [[package]]
 name = "vls-persist"
-version = "0.12.0-rc.1"
+version = "0.12.0-rc.2"
 dependencies = [
  "hex",
  "log",
@@ -1017,7 +1017,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol"
-version = "0.12.0-rc.1"
+version = "0.12.0-rc.2"
 dependencies = [
  "as-any",
  "bitcoin-consensus-derive",
@@ -1031,7 +1031,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol-signer"
-version = "0.12.0-rc.1"
+version = "0.12.0-rc.2"
 dependencies = [
  "bit-vec",
  "log",
