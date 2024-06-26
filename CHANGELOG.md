@@ -4,6 +4,93 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.12.0-rc.1] - 2024-06-25: "Benevolent Basilisk"
+
+This release named by Provisional Pete
+
+### Added
+
+ - core: Added tests for validating trusted oracle public key.
+ - core: Implement `sign_holder_htlc_transaction`.
+ - core: Make `NativeKeyDerive` struct public usable.
+ - core: Rename `TxIdDef` and `OutpointDef` to clarify the txid encoding used.
+ - core: Validate blocks using trusted oracle pubkeys.
+ - core: `channel_balance` now breaks channel counts into stub, unconfirmed, ready, and closing counts.
+ - protocol: Added hsmd protocol version 6: `GetPerCommitmentPoint` no longer returns the old secret.
+ - protocol: A new procedural macro `SerBoltTlvOptions` was added to streamline defining TLV option structures.
+ - proxy: Set the default directory to ~/.
+ - proxy: Set the only read permission on the seed.
+ - serial-proxy: `HsmdDevPreinit2` sent from CLN is now merged with VLS use.
+ - stm32: Added unknown onchain destination approver screen.  Fixes ([#488]).
+ - stm32: Now displays prep, active, and closing channel counts.
+ - stm32: To avoid accidentally deleting a node instance the blue button must be held down when deleting a node.
+ - vls-cli: Added new rpc methods and cli commands.
+ - logging: Added log support for core, persist.
+ - logging: Added tracing-instrument macro for span generation.
+ - logging: Opentelemetry Logging Protocol exporter with tracing subscriber.
+ - logging: The channel balance summary is logged on heartbeats.
+ - debug: A table of current channel information is logged on startup.
+ - howto: vls-probe-testnet service added to monitor stm32
+
+### Changed
+
+ - policy: The testnet value of max_feerate_per_kw was increased because higher values were observed in testnet.  See ([#313])
+ - core: Use standard serialize for rust-bitcoin and provide backward compatible deserializer visitors.
+ - protocol: A new msg `HsmdDevPreinit2` replaces the old `HsmdDevPreinit` with all arguments represented by a TLV encoded options.
+ - protocol: Handle deep reorgs for testnet.
+ - protocol: Update `serde_bolt` to v0.3.5.
+ - security: Updated `mio` to 0.8.11 to mitigate `RUSTSEC-2024-0019`.
+ - security: Updated `whoami` to 1.5.0 to mitigate `RUSTSEC-2024-0020.`
+ - handler: Development initialization (forced seed etc) now uses the TLV based `HsmdDevPreinit2` message.
+ - proxy: Allow comments and whitespace in ALLOWLIST by calling a publically available line_filter in the allowlist_parser.
+ - proxy: Implement `SimplePolicy` values logging at startup using `Debug` and add regex to logfilter.
+ - proxy: Rename `GREENLIGHT_VERSION` env variable to `VLS_CLN_VERSION`.
+ - proxy: Replaces fixed placeholder seed for `HsmdDevPreinit` if no testing seed is found on startup. Now sends `None` instead and generate a random seed on the signer.
+ - signer: The `HsmdDevPreinit2` handler does not send a reply.
+ - stm32: Master messages on behalf of a single channel are shown on the channels track.
+ - stm32: The serial proxy and demo_signer are updated to use the `HsmdDevPreinit2` message for development initialization.
+ - debug: Enabling the `log_pretty_print` feature enables it for dependencies as well.
+ - debug: The feature `log-pretty-print` is no longer default for debug builds.
+ - howto: The `max-locktime-blocks` setting was removed from the example testnet config because CLN v24.05 deprecated it.
+ - howto: The cln-testnet service is streamlined by automatically dynamically setting `VLS_CLN_VERSION`.
+ - howto: the update instructions for build and install were simplified.
+
+### Fixed
+
+ - core: A problem w/ handling historical revocations on reconnection which led to state corruption was fixed ([#502])
+ - vlsd2: Reconnect to CLN if CLN crashes.
+ - stm32: The crash in the stm32 invoice approver is fixed ([#429])
+
+### Workaround
+
+ - protocol: Until `HSMD PROTOCOL VERSION` 6 it is safer if `get_per_commitment` doesn't fail on invalid (secret) indexes ([#469])
+ - stm32: policies that CLBOSS hits are downgraded to warnings. ([#313])
+ - stm32: `policy-commitment-retry-same` is nerfed until ([491]) resolved
+
+### Contributors
+
+The following people contributed to this release:
+- bit-aloo
+- Devrandom
+- Harsh1s
+- Jack Ronaldi
+- Ken Sedgwick
+- Lakshya Singh
+- Shourya Sharma
+- sistemd
+- Tarek
+- Vincenzo Palazzo
+
+
+## [0.11.1] - 2024-05-16: "Auspicious Anubis"
+
+This release named by Jack Ronaldi
+
+### Fixed
+
+- core: Added a compilation fix for dependency `serde_bolt v0.3.5` which broke API compatibility.
+- security: Minimum `rustls`, `h2`, and `mio` versions now specified to mitigate issues reported by`cargo audit`.
+
 ## [0.11.0] - 2024-02-29: "Auspicious Anubis"
 
 This release named by Jack Ronaldi

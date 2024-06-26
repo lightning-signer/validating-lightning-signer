@@ -624,7 +624,7 @@ checksum = "301abaae475aa91687eb82514b328ab47a211a533026cb25fc3e519b86adfc3c"
 
 [[package]]
 name = "vls-core"
-version = "0.11.0"
+version = "0.12.0-rc.1"
 dependencies = [
  "anyhow",
  "backtrace",

@@ -97,21 +97,29 @@ You may also be interested in:
 
 where XXX is the token from `~/.cargo/credentials`.
 
-## Checklist
+## Helpful Commands
 
-- [ ] `export VER=v0.x.y` # ie "v0.11.0-rc3" or "v0.11.0"
-- [ ] `git checkout main && git pull`
-- [ ] `git checkout -b 2024-02-$VER`
-- [ ] `scripts/harvest-changelog <PREVIOUS>..`
-- [ ] string replace the old release w/ the new
-- [ ] `./scripts/build-all`
-- [ ] `cargo test`
-- [ ] `cargo build --release`
-- [ ] `cargo package`
-- [ ] commit changes
-- [ ] push MR
-- [ ] merge MR
-- [ ] `git tag -a -s $VER -m $VER`
-- [ ] `git push --follow-tags`
-- [ ] `cargo login <your_token>`
-- [ ] `./scripts/publish-all`
+```
+export PREV_VER=v0.11.1
+export VER=v0.12.0-rc.1
+export YM=$(date +%Y-%m)
+git checkout main && git pull
+git checkout -b $YM-$VER
+scripts/harvest-changelog "$PREV_VER".. > /tmp/CHANGELOG_ENTRIES.md
+# merge /tmp/CHANGELOG_ENTRIES.md into CHANGELOG.md
+git log --pretty="%aN" "$PREV_VER".. | sort -fu > /tmp/AUTHORS.txt
+# incorporate the authors into the CHANGELOG.md
+string replace the old release w/ the new
+./scripts/build-all
+cargo test
+cargo build --release
+cargo package
+# commit changes
+# push MR
+# review MR
+# merge MR
+git tag -a -s $VER -m $VER
+git push --follow-tags
+cargo login <your_token>
+./scripts/publish-all
+```
