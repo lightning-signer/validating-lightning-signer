@@ -398,7 +398,11 @@ impl InitHandleLoop {
             let result = self.handler.handle(msg);
             let muts = persister.prepare();
 
-            store_with_client(muts, &*persist_client, &external_persist.helper).await?;
+            // if this fails, our in-memory state is out of sync with both the local store and the cloud, which is fatal
+            // TODO we could potentially recover by reloading from local storage
+            store_with_client(muts, &*persist_client, &external_persist.helper)
+                .await
+                .expect("store during init handle");
             persister.commit()?;
             result?
         } else {
@@ -638,7 +642,12 @@ impl HandleLoop {
             let persist_client = external_persist.persist_client.lock().await;
             let (res, muts) = self.do_handle(context.as_ref(), msg);
 
-            store_with_client(muts, &*persist_client, &external_persist.helper).await?;
+            // if this fails, our in-memory state is out of sync with both the local store and the cloud, which is fatal
+            // TODO we could potentially recover by reloading from local storage
+            store_with_client(muts, &*persist_client, &external_persist.helper)
+                .await
+                .expect("store during handle");
+
             self.handler.commit();
             res?
         } else {
