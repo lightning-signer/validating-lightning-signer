@@ -104,6 +104,8 @@ pub trait KVVStore: SendSync {
     fn put_batch_unlogged(&self, kvvs: Vec<KVV>) -> Result<(), Error> {
         self.put_batch(kvvs)
     }
+    /// Reset the versions of all keys to 0, so that a replica can be initialized from scratch
+    fn reset_versions(&self) -> Result<(), Error>;
     /// Get the signer ID
     fn signer_id(&self) -> SignerId;
 }
@@ -317,6 +319,18 @@ impl<S: KVVStore, F: ValueFormat> Persist for KVVPersister<S, F> {
     fn put_batch_unlogged(&self, muts: Mutations) -> Result<(), Error> {
         let kvvs = muts.into_iter().map(|(k, (v, vv))| KVV(k, (v, vv))).collect::<Vec<_>>();
         self.0.put_batch_unlogged(kvvs)
+    }
+
+    fn begin_replication(&self) -> Result<Mutations, Error> {
+        self.reset_versions()?;
+        let res = self
+            .get_prefix("")?
+            .map(|kvv| {
+                let (k, (v, vv)) = kvv.into_inner();
+                (k, (v, vv))
+            })
+            .collect();
+        Ok(Mutations::from_vec(res))
     }
 
     fn signer_id(&self) -> SignerId {

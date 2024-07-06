@@ -4,7 +4,7 @@ use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::OutPoint;
-use core::fmt::Debug;
+use core::fmt::{Debug, Display};
 use core::ops::Index;
 use lightning::sign::EntropySource;
 
@@ -102,6 +102,22 @@ pub enum Error {
     /// Serialization, deserialization error
     SerdeError(String),
 }
+
+impl Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        match self {
+            Error::Unavailable(s) => write!(f, "Unavailable: {}", s),
+            Error::NotFound(s) => write!(f, "Not found: {}", s),
+            Error::AlreadyExists(s) => write!(f, "Already exists: {}", s),
+            Error::Internal(s) => write!(f, "Internal error: {}", s),
+            Error::VersionMismatch => write!(f, "Version mismatch"),
+            Error::SerdeError(s) => write!(f, "Serialization error: {}", s),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for Error {}
 
 /// Used to keep track of the chain monitor listeners while restoring from persistence
 pub struct ChainTrackerListenerEntry(pub OutPoint, pub (ChainMonitorState, ListenSlot));
@@ -247,6 +263,15 @@ pub trait Persist: SendSync {
     /// needs to recover from a backup (e.g. empty).
     fn recovery_required(&self) -> bool {
         false
+    }
+
+    /// Start replication by putting the local store into a compatible starting
+    /// state for a cloud persister.
+    ///
+    /// All versions are reset to zero. Gets the entire stored content as Mutations
+    /// that the caller must store into the empty cloud store.
+    fn begin_replication(&self) -> Result<Mutations, Error> {
+        unimplemented!("begin_replication is only implemented for KVV persisters")
     }
 
     /// Get our unique 128-bit signer ID

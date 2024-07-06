@@ -233,6 +233,26 @@ impl KVVStore for RedbKVVStore {
         Ok(())
     }
 
+    fn reset_versions(&self) -> Result<(), Error> {
+        let mut versions = self.versions.lock().unwrap();
+        let tx = self.db.begin_write().unwrap();
+        {
+            let mut table = tx.open_table(TABLE).unwrap();
+            for key in versions.keys() {
+                let vv = table.get(key.as_str()).expect("failed to get").unwrap();
+                let (_version, value) = Self::decode_vv(vv.value());
+                drop(vv);
+                let vv = Self::encode_vv(0, value);
+                table.insert(key.as_str(), vv.as_slice()).expect("failed to insert");
+            }
+            for version in versions.values_mut() {
+                *version = 0;
+            }
+        }
+        tx.commit().unwrap();
+        Ok(())
+    }
+
     fn signer_id(&self) -> SignerId {
         self.signer_id
     }
@@ -277,6 +297,21 @@ mod tests {
         let store = RedbKVVStore::new(tempdir.path());
         assert_eq!(store.signer_id(), id);
 
+        Ok(())
+    }
+
+    #[test]
+    fn begin_replicate_test() -> Result<(), Error> {
+        let tempdir = tempfile::tempdir().unwrap();
+        let store = RedbKVVStore::new(tempdir.path());
+        store.put("foo1", b"bar".to_vec())?;
+        store.put("foo2", b"boo".to_vec())?;
+        let persist = KVVPersister(store, JsonFormat);
+        let muts = persist.begin_replication().unwrap();
+        let mut iter = muts.iter();
+        assert_eq!(iter.next().unwrap().clone(), ("foo1".to_owned(), (0, b"bar".to_vec())));
+        assert_eq!(iter.next().unwrap().clone(), ("foo2".to_owned(), (0, b"boo".to_vec())));
+        assert!(iter.next().is_none());
         Ok(())
     }
 

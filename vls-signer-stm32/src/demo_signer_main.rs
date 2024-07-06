@@ -143,7 +143,7 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
         let allowlist = vec![]; // TODO - add to NormalContext
         let seed = runctx.seed;
         let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive, runctx.cmn.network);
-        let (root_handler, _muts) = HandlerBuilder::new(runctx.cmn.network, 0, services, seed.0)
+        let root_handler = HandlerBuilder::new(runctx.cmn.network, 0, services, seed.0)
             .allowlist(allowlist)
             .approver(approver)
             .build()
@@ -163,7 +163,7 @@ fn start_normal_mode(runctx: NormalContext) -> ! {
 
     info!("ready for requests");
     handle_init_requests(&*runctx.cmn.devctx, &mut init_handler);
-    let root_handler = init_handler.root_handler();
+    let root_handler = init_handler.into();
     handle_requests(&*runctx.cmn.devctx, root_handler);
 }
 
@@ -259,7 +259,7 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         };
 
         let approver = make_approver(&runctx.cmn.devctx, runctx.cmn.permissive, runctx.cmn.network);
-        let (mut init_handler, _muts) = HandlerBuilder::new(runctx.cmn.network, 0, services, seed)
+        let mut init_handler = HandlerBuilder::new(runctx.cmn.network, 0, services, seed)
             .allowlist(allowlist)
             .approver(approver)
             .build()
@@ -277,7 +277,7 @@ fn start_test_mode(runctx: TestingContext) -> ! {
     init_handler.log_chaninfo();
 
     handle_init_requests(&*runctx.cmn.devctx, &mut init_handler);
-    let root_handler = init_handler.root_handler();
+    let root_handler = init_handler.into();
     handle_requests(&*runctx.cmn.devctx, root_handler);
 }
 
@@ -306,9 +306,9 @@ fn handle_requests(arc_devctx: &RefCell<DeviceContext>, root_handler: RootHandle
         drop(devctx); // Release the DeviceContext during the handler call (Approver needs)
         let reply = if reqhdr.dbid > 0 {
             let handler = root_handler.for_new_client(0, peer_id, reqhdr.dbid);
-            handler.handle(message).expect("handle").0
+            handler.handle(message).expect("handle")
         } else {
-            root_handler.handle(message).expect("handle").0
+            root_handler.handle(message).expect("handle")
         };
         devctx = arc_devctx.borrow_mut(); // Reacquire the DeviceContext
         let end = devctx.timer1.now();

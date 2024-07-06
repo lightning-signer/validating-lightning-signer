@@ -146,7 +146,7 @@ mod tests {
         ];
         let signer_args = SignerArgs::parse_from(&args);
 
-        let root_handler = make_handler(datadir, &signer_args);
+        let (root_handler, _muts) = make_handler(datadir, &signer_args);
         let (shutdown_trigger, shutdown_signal) = triggered::trigger();
         match start_rpc_server(
             Arc::clone(root_handler.node()),

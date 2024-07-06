@@ -119,6 +119,14 @@ impl KVVStore for MemoryKVVStore {
         Ok(())
     }
 
+    fn reset_versions(&self) -> Result<(), Error> {
+        let mut data = self.data.lock().unwrap();
+        for (_, (ver, _)) in data.iter_mut() {
+            *ver = 0;
+        }
+        Ok(())
+    }
+
     fn signer_id(&self) -> SignerId {
         self.signer_id
     }

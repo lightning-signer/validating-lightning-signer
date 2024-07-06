@@ -8,6 +8,7 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp::min;
+use core::fmt::{Debug, Display, Formatter};
 use core::str::FromStr;
 
 use bitcoin::bech32::u5;
@@ -74,6 +75,15 @@ pub enum Error {
     Temporary(Status),
 }
 
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        Debug::fmt(self, f)
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for Error {}
+
 impl From<ProtocolError> for Error {
     fn from(e: ProtocolError) -> Self {
         Error::Protocol(e)
@@ -119,33 +129,15 @@ pub type Result<T> = core::result::Result<T, Error>;
 /// messages and [`ChannelHandler`] for channel level messages.
 pub trait Handler {
     /// Handle a message
-    fn handle(&self, msg: Message) -> Result<(Box<dyn SerBolt>, Mutations)> {
-        let node = self.node();
-        let persister = node.get_persister();
-        persister.enter().map_err(|e| {
-            error!("failed to enter persister: {:?}", e);
-            Status::internal("failed to start persister transaction")
-        })?;
+    fn handle(&self, msg: Message) -> Result<Box<dyn SerBolt>> {
         log_request(&msg);
         let result = self.do_handle(msg);
         if let Err(ref err) = result {
             log_error(err);
-            if let Error::Temporary(_) = err {
-                // There must be no mutated state when a temporary error is returned
-                let muts = persister.prepare();
-                if !muts.is_empty() {
-                    #[cfg(not(feature = "log_pretty_print"))]
-                    debug!("stranded mutations: {:?}", &muts);
-                    #[cfg(feature = "log_pretty_print")]
-                    debug!("stranded mutations: {:#?}", &muts);
-                    panic!("temporary error with stranded mutations");
-                }
-            }
         }
         let reply = result?;
         log_reply(&reply);
-        let muts = persister.prepare();
-        Ok((reply, muts))
+        Ok(reply)
     }
 
     /// Commit the persister transaction if any
@@ -329,22 +321,6 @@ impl HandlerBuilder {
         self
     }
 
-    /// Build the root handler.
-    ///
-    /// Returns the handler and any mutations that need to be stored.
-    /// You must call [`Handler::commit`] after you persist the mutations in the
-    /// cloud.
-    pub fn build(self) -> Result<(InitHandler, Mutations)> {
-        let persister = self.services.persister.clone();
-        persister.enter().map_err(|e| {
-            error!("failed to enter persister: {:?}", e);
-            Status::internal("failed to start persister transaction")
-        })?;
-        let handler = self.do_build()?;
-        let muts = persister.prepare();
-        Ok((handler, muts))
-    }
-
     /// Create a keys manager - useful for bootstrapping a node from persistence, so the
     /// persistence key can be derived.
     pub fn build_keys_manager(&self) -> (MyKeysManager, PublicKey) {
@@ -352,7 +328,12 @@ impl HandlerBuilder {
         Node::make_keys_manager(&config, &self.seed, &self.services)
     }
 
-    fn do_build(self) -> Result<InitHandler> {
+    /// Build the root handler.
+    ///
+    /// Returns the handler and any mutations that need to be stored.
+    /// You must call [`Handler::commit`] after you persist the mutations in the
+    /// cloud.
+    pub fn build(self) -> Result<InitHandler> {
         let config = NodeConfig::new(self.network);
 
         let persister = self.services.persister.clone();
@@ -519,19 +500,6 @@ impl InitHandler {
         &self.node
     }
 
-    /// Convert to RootHandler.
-    ///
-    /// Panics if initial negotiation is not complete - see [`InitHandler::handle`].
-    pub fn root_handler(&self) -> RootHandler {
-        let protocol_version = self.protocol_version.expect("initial negotiation not complete");
-        RootHandler {
-            id: self.id,
-            node: Arc::clone(&self.node),
-            approver: Arc::clone(&self.approver),
-            protocol_version,
-        }
-    }
-
     /// Log channel information
     pub fn log_chaninfo(&self) {
         log_chaninfo(self.node.chaninfo());
@@ -677,6 +645,13 @@ impl InitHandler {
             }
             m => unimplemented!("init loop {}: unimplemented message {:?}", self.id, m),
         }
+    }
+}
+
+impl Into<RootHandler> for InitHandler {
+    fn into(self) -> RootHandler {
+        let protocol_version = self.protocol_version.expect("initial negotiation not complete");
+        RootHandler { id: self.id, node: self.node, approver: self.approver, protocol_version }
     }
 }
 

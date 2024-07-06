@@ -71,7 +71,7 @@ pub async fn main() {
             "esplora" => BlockExplorerType::Esplora,
             _ => panic!("unknown recover type"),
         };
-        let root_handler = make_handler(&datadir, &args);
+        let (root_handler, _muts) = make_handler(&datadir, &args);
         let node = root_handler.node().clone();
         if address != "none" {
             node.set_allowlist(&[address.to_string()]).expect("add destination to allowlist");
