@@ -1132,7 +1132,11 @@ impl Channel {
                  but next_holder_commit_info.is_none",
                 new_current_commitment_number,
             );
-            // the above does not return, but we can't continue without next_holder_commit_info
+            // `policy_err!` will not return an error in permissive mode, so we need to return
+            // something plausible here.  The node will likely crash soon after, because we will
+            // not return a revocation secret (`None` below).
+            // That's OK, because the node should have called `validate_holder_commitment_tx` first
+            // so the logic error is in the node.
             let holder_commitment_point = self.get_per_commitment_point(new_current_commitment_number)?;
             return Ok((holder_commitment_point, None));
         }
