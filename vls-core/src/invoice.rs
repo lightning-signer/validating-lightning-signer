@@ -65,7 +65,7 @@ impl InvoiceAttributes for Invoice {
                 bolt11::Bolt11InvoiceDescription::Direct(d) => d.to_string(),
                 bolt11::Bolt11InvoiceDescription::Hash(h) => format!("hash: {:?}", h),
             },
-            Invoice::Bolt12(bolt12) => bolt12.description().0.to_string(),
+            Invoice::Bolt12(bolt12) => bolt12.description().unwrap().to_string(),
         }
     }
 

@@ -100,17 +100,17 @@ tempfile = "3.10.1"
 
 # TODO point this and lightning-invoice at next release
 [dependencies.lightning]
-version = "0.0.122"
+version = "0.0.123"
 default-features = false
 features = ["grind_signatures", "unsafe_revoked_tx_signing"]
 
 [dev-dependencies.lightning]
-version = "0.0.122"
+version = "0.0.123"
 default-features = false
 features = ["grind_signatures", "_test_utils", "unsafe_revoked_tx_signing"]
 
 [dependencies.lightning-invoice]
-version = "0.30.0"
+version = "0.31.0"
 default-features = false
 
 [dependencies.bitcoin]

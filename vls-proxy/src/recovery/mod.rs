@@ -269,6 +269,7 @@ pub async fn recover_close<R: RecoveryKeys>(
                                     revocation_pubkey: RevocationKey(revocation_pubkey),
                                     channel_keys_id: [0; 32], // unused
                                     channel_value_satoshis: 0,
+                                    channel_transaction_parameters: None,
                                 };
                                 sweeps.push((descriptor, uck.clone()));
                             } else {
