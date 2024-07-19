@@ -66,7 +66,6 @@ impl ProtocolAdapter {
         let shutdown_signal = self.shutdown_signal.clone();
 
         let cache = self.init_message_cache.lock().unwrap().clone();
-
         let output = async_stream::try_stream! {
             if let Some(message) = cache.init_message.as_ref() {
                 yield SignerRequest {
@@ -86,21 +85,11 @@ impl ProtocolAdapter {
                     }
                     resp_opt = receiver.recv() => {
                         if let Some(req) = resp_opt {
-                            let message = req.message.clone();
                             let mut reqs = requests.lock().await;
                             let request_id = reqs.request_id.fetch_add(1, Ordering::AcqRel);
-                            let context = req.client_id.as_ref().map(|c| HsmRequestContext {
-                                peer_id: c.peer_id.to_vec(),
-                                dbid: c.dbid,
-                                capabilities: 0,
-                            });
+                            let signer_request = Self::make_signer_request(request_id, &req);
                             reqs.requests.insert(request_id, req);
-                            debug!("writer sending request {} to signer", request_id);
-                            yield SignerRequest {
-                                request_id,
-                                message,
-                                context,
-                            };
+                            yield signer_request;
                         } else {
                             // parent closed UNIX fd - we are shutting down
                             info!("writer: parent closed - shutting down signer stream");
@@ -114,6 +103,7 @@ impl ProtocolAdapter {
             // ignore join result
             let _ = stream_reader_task.await;
         };
+
         Box::pin(output)
     }
 
@@ -183,6 +173,16 @@ impl ProtocolAdapter {
             }
             info!("stream reader loop finished");
         })
+    }
+
+    fn make_signer_request(request_id: u64, req: &ChannelRequest) -> SignerRequest {
+        let context = req.client_id.as_ref().map(|c| HsmRequestContext {
+            peer_id: c.peer_id.to_vec(),
+            dbid: c.dbid,
+            capabilities: 0,
+        });
+        debug!("writer sending request {} to signer", request_id);
+        SignerRequest { request_id, message: req.message.clone(), context }
     }
 }
 
