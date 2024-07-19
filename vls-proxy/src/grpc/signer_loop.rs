@@ -235,7 +235,6 @@ impl<C: 'static + Client> SignerLoop<C> {
     fn do_loop(&mut self) -> Result<()> {
         loop {
             let raw_msg = self.client.read_raw()?;
-            debug!("read loop {}: got raw", self.log_prefix);
             let msg = msgs::from_vec(raw_msg.clone())?;
             log_request!(msg);
             match msg {
@@ -388,6 +387,12 @@ impl<C: 'static + Client> SignerLoop<C> {
 
     fn handle_message(&mut self, message: Vec<u8>, is_oneway: bool) -> Result<Vec<u8>> {
         let result = backoff::retry(backoff(), || {
+            info!(
+                "read loop {}: request {}{}",
+                self.log_prefix,
+                msgs::message_name_from_vec(&message),
+                if is_oneway { " (oneway)" } else { "" }
+            );
             let reply_rx =
                 self.send_request(message.clone()).map_err(|e| BackoffError::permanent(e))?;
             if is_oneway {
@@ -403,6 +408,11 @@ impl<C: 'static + Client> SignerLoop<C> {
                     info!("read loop {}: temporary error, retrying", self.log_prefix);
                     return Err(BackoffError::transient(Error::Transport));
                 };
+                info!(
+                    "read loop {}: reply {}",
+                    self.log_prefix,
+                    msgs::message_name_from_vec(&reply.reply)
+                );
                 Ok(reply.reply)
             }
         })

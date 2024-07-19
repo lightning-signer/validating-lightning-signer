@@ -17,6 +17,7 @@ use crate::psbt::StreamedPSBT;
 use bitcoin_consensus_derive::{Decodable, Encodable};
 use bolt_derive::{ReadMessage, SerBolt, SerBoltTlvOptions};
 use lightning_signer::lightning;
+use lightning_signer::prelude::*;
 use serde_bolt::{
     io, io::Read, io::Write, take::Take, to_vec, Array, ArrayBE, LargeOctets, Octets, WireString,
     WithSize,
@@ -1239,6 +1240,14 @@ pub fn from_vec(mut v: Vec<u8>) -> Result<Message> {
     from_reader(&mut cursor, len as u32)
 }
 
+pub fn message_name_from_vec(v: &[u8]) -> String {
+    if v.len() < 2 {
+        return "ShortRead".to_owned();
+    }
+    let message_type = u16::from_be_bytes([v[0], v[1]]);
+    Message::message_name(message_type).to_owned()
+}
+
 /// Read a BOLT message from a reader:
 ///
 /// - u16 packet type
@@ -1345,6 +1354,21 @@ mod tests {
     use test_log::test;
 
     use super::*;
+
+    #[test]
+    fn message_name_from_vec_test() {
+        // Test with a short vector
+        let short_vec = vec![0x01];
+        assert_eq!(message_name_from_vec(&short_vec), "ShortRead");
+
+        // Test with a valid message type
+        let valid_vec = vec![0x00, 11];
+        assert_eq!(message_name_from_vec(&valid_vec), "HsmdInit");
+
+        // Test with an unknown message type
+        let unknown_vec = vec![0xFF, 0xFF];
+        assert_eq!(message_name_from_vec(&unknown_vec), "Unknown");
+    }
 
     #[test]
     fn roundtrip_test() {
