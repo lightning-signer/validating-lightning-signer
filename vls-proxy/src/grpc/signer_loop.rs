@@ -377,11 +377,11 @@ impl<C: 'static + Client> SignerLoop<C> {
         }
         let reply = result?;
         if is_oneway {
-            info!("oneway sent {}", self.log_prefix);
+            debug!("oneway sent {}", self.log_prefix);
         } else {
             log_reply!(reply, self);
             self.client.write_vec(reply.clone())?;
-            info!("replied {}", self.log_prefix);
+            debug!("replied {}", self.log_prefix);
         }
         Ok(reply)
     }
