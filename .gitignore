@@ -15,3 +15,7 @@ signer.kv
 /TAGS
 rusty-tags.emacs
 .DS_Store
+
+# IDEs
+.vscode
+.idea
