@@ -207,6 +207,13 @@ pub fn derive_read_message(input: TokenStream) -> TokenStream {
                 Ok(message)
             }
 
+            fn message_name(message_type: u16) -> &'static str {
+                match message_type {
+                    #(#vs::TYPE => stringify!(#vs)),*,
+                    _ => "Unknown",
+                }
+            }
+
             pub fn inner(&self) -> alloc::boxed::Box<&dyn SerBolt> {
                 match self {
                     #(#ident::#vs(inner) => alloc::boxed::Box::new(inner)),*,

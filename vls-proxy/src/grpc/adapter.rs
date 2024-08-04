@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::pin::Pin;
 use std::result::Result as StdResult;
 use std::sync::Arc;
@@ -20,7 +20,7 @@ use tonic::transport::Error;
 use triggered::{Listener, Trigger};
 
 struct Requests {
-    requests: HashMap<u64, ChannelRequest>,
+    requests: BTreeMap<u64, ChannelRequest>,
     request_id: AtomicU64,
 }
 
@@ -50,7 +50,7 @@ impl ProtocolAdapter {
         ProtocolAdapter {
             receiver: Arc::new(Mutex::new(receiver)),
             requests: Arc::new(Mutex::new(Requests {
-                requests: HashMap::new(),
+                requests: BTreeMap::new(),
                 request_id: AtomicU64::new(0),
             })),
             shutdown_trigger,
@@ -66,8 +66,8 @@ impl ProtocolAdapter {
         let shutdown_signal = self.shutdown_signal.clone();
 
         let cache = self.init_message_cache.lock().unwrap().clone();
-
         let output = async_stream::try_stream! {
+            // send any init message
             if let Some(message) = cache.init_message.as_ref() {
                 yield SignerRequest {
                     request_id: DUMMY_REQUEST_ID,
@@ -75,9 +75,28 @@ impl ProtocolAdapter {
                     context: None,
                 };
             }
+
+            // Retransmit any requests that were not processed during the signer's previous connection.
+            // We reacquire the lock on each iteration because we yield inside the loop.
+            let mut ind = 0;
+            loop {
+                let reqs = requests.lock().await;
+                if ind == 0 {
+                    info!("retransmitting {} outstanding requests", reqs.requests.len());
+                }
+                // get the first key/value where key >= ind
+                if let Some((&request_id, req)) = reqs.requests.range(ind..).next() {
+                    ind = request_id + 1;
+                    debug!("writer sending request {} to signer", request_id);
+                    yield Self::make_signer_request(request_id, req);
+                } else {
+                    break;
+                }
+            };
+
             let mut receiver = receiver.lock().await;
-            // TODO resend outstanding requests
-            // Parent request
+
+            // read requests from parent
             loop {
                 tokio::select! {
                     _ = shutdown_signal.clone() => {
@@ -86,21 +105,12 @@ impl ProtocolAdapter {
                     }
                     resp_opt = receiver.recv() => {
                         if let Some(req) = resp_opt {
-                            let message = req.message.clone();
                             let mut reqs = requests.lock().await;
                             let request_id = reqs.request_id.fetch_add(1, Ordering::AcqRel);
-                            let context = req.client_id.as_ref().map(|c| HsmRequestContext {
-                                peer_id: c.peer_id.to_vec(),
-                                dbid: c.dbid,
-                                capabilities: 0,
-                            });
-                            reqs.requests.insert(request_id, req);
                             debug!("writer sending request {} to signer", request_id);
-                            yield SignerRequest {
-                                request_id,
-                                message,
-                                context,
-                            };
+                            let signer_request = Self::make_signer_request(request_id, &req);
+                            reqs.requests.insert(request_id, req);
+                            yield signer_request;
                         } else {
                             // parent closed UNIX fd - we are shutting down
                             info!("writer: parent closed - shutting down signer stream");
@@ -114,6 +124,7 @@ impl ProtocolAdapter {
             // ignore join result
             let _ = stream_reader_task.await;
         };
+
         Box::pin(output)
     }
 
@@ -183,6 +194,15 @@ impl ProtocolAdapter {
             }
             info!("stream reader loop finished");
         })
+    }
+
+    fn make_signer_request(request_id: u64, req: &ChannelRequest) -> SignerRequest {
+        let context = req.client_id.as_ref().map(|c| HsmRequestContext {
+            peer_id: c.peer_id.to_vec(),
+            dbid: c.dbid,
+            capabilities: 0,
+        });
+        SignerRequest { request_id, message: req.message.clone(), context }
     }
 }
 
