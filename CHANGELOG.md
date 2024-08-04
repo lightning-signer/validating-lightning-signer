@@ -4,12 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [0.12.0-rc.2] - 2024-06-25: "Benevolent Basilisk"
+## [0.12.0-rc.3] - 2024-06-25: "Benevolent Basilisk"
 
 This release named by Provisional Pete
 
 ### Added
 
+ - LSS support in vlsd2
  - core: Added tests for validating trusted oracle public key.
  - core: Implement `sign_holder_htlc_transaction`.
  - core: Make `NativeKeyDerive` struct public usable.
@@ -57,6 +58,8 @@ This release named by Provisional Pete
 
 ### Fixed
 
+ - fix crash while revoking in permissive mode
+ - retransmit requests on signer reconnect
  - core: A problem w/ handling historical revocations on reconnection which led to state corruption was fixed ([#502])
  - vlsd2: Reconnect to CLN if CLN crashes.
  - stm32: The crash in the stm32 invoice approver is fixed ([#429])

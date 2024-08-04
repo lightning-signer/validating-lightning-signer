@@ -1,6 +1,6 @@
 [package]
 name = "vls-frontend"
-version = "0.12.0-rc.2"
+version = "0.12.0-rc.3"
 authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
 edition = "2021"
 license = "Apache-2.0"
@@ -24,12 +24,12 @@ async-trait = "0.1"
 log = { version="0.4.14", features = [ "std" ] }
 tokio = { version = "1.27", features = ["macros", "rt-multi-thread"] }
 url = "2.3"
-vls-core = { path = "../vls-core", version = "0.12.0-rc.2", features = ["txoo-source"] }
+vls-core = { path = "../vls-core", version = "0.12.0-rc.3", features = ["txoo-source"] }
 lightning-storage-server = { path = "../lightning-storage-server", version = "0.3.0", default-features = false }
 triggered = "0.1"
 
 [dependencies.txoo-bitcoind-client]
-version = "0.7.0"
+version = "0.7.1"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #rev = "d49b25283a5f1db675db20a19b313e5ca7456410"
 #branch = "main"
