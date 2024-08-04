@@ -134,7 +134,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
 
     let clear_db = matches.is_present("cleardb");
 
-    #[cfg(not(feature = "dangerous_flags"))]
+    #[cfg(not(feature = "dangerous-flags"))]
     if clear_db {
         error!("--cleardb is a dangerous flag and is only available with the dangerous-flags compilation feature");
         return Err("flag not available".into());
