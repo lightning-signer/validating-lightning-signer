@@ -329,7 +329,7 @@ dependencies = [
 
 [[package]]
 name = "bolt-derive"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2846,9 +2846,9 @@ dependencies = [
 
 [[package]]
 name = "txoo-bitcoind-client"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c3425d9de8c6e710627cfd36fd08f1bd4ceec60c368607feee275121b856171"
+checksum = "5f1e6af5edf20feb53fc3a83ac928c79a2f28e95d247e6632105fdf6b225a719"
 dependencies = [
  "async-trait",
  "bitcoin",
@@ -2953,7 +2953,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "vls-cli"
-version = "0.12.0-rc.2"
+version = "0.12.0-rc.3"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -2971,7 +2971,7 @@ dependencies = [
 
 [[package]]
 name = "vls-core"
-version = "0.12.0-rc.2"
+version = "0.12.0-rc.3"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -3005,7 +3005,7 @@ dependencies = [
 
 [[package]]
 name = "vls-core-test"
-version = "0.12.0-rc.2"
+version = "0.12.0-rc.3"
 dependencies = [
  "criterion",
  "env_logger",
@@ -3019,7 +3019,7 @@ dependencies = [
 
 [[package]]
 name = "vls-frontend"
-version = "0.12.0-rc.2"
+version = "0.12.0-rc.3"
 dependencies = [
  "async-trait",
  "env_logger",
@@ -3035,7 +3035,7 @@ dependencies = [
 
 [[package]]
 name = "vls-persist"
-version = "0.12.0-rc.2"
+version = "0.12.0-rc.3"
 dependencies = [
  "env_logger",
  "hex",
@@ -3053,7 +3053,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol"
-version = "0.12.0-rc.2"
+version = "0.12.0-rc.3"
 dependencies = [
  "as-any",
  "bitcoin-consensus-derive",
@@ -3070,7 +3070,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol-client"
-version = "0.12.0-rc.2"
+version = "0.12.0-rc.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3084,7 +3084,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol-signer"
-version = "0.12.0-rc.2"
+version = "0.12.0-rc.3"
 dependencies = [
  "bit-vec",
  "env_logger",
@@ -3096,7 +3096,7 @@ dependencies = [
 
 [[package]]
 name = "vls-proxy"
-version = "0.12.0-rc.2"
+version = "0.12.0-rc.3"
 dependencies = [
  "anyhow",
  "as-any",
