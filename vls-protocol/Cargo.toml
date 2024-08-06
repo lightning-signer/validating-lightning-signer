@@ -24,7 +24,7 @@ version = "0.3.5"
 default-features = false
 
 [dependencies.txoo]
-version = "0.7.0"
+version = "0.7.1"
 #git = "https://gitlab.com/lightning-signer/txoo"
 #rev = "d49b25283a5f1db675db20a19b313e5ca7456410"
 #branch = "main"
