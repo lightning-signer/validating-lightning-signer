@@ -3,7 +3,8 @@ use std::convert::{TryFrom, TryInto};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use crate::lightning::sign::HTLCDescriptor;
+use lightning_signer::bitcoin::absolute::LockTime;
+use lightning_signer::lightning::sign::HTLCDescriptor;
 use bitcoin::bech32::u5;
 use bitcoin::bip32::ChildNumber;
 use bitcoin::bip32::ExtendedPubKey;
@@ -34,12 +35,13 @@ use lightning::sign::{KeyMaterial, Recipient, SpendableOutputDescriptor};
 use lightning::util::ser::Readable;
 use lightning::util::ser::{Writeable, Writer};
 use lightning_signer::bitcoin::sighash::EcdsaSighashType;
-use lightning_signer::bitcoin::{self, ScriptBuf};
-use lightning_signer::channel::{
-    dbid_from_ldk_channel_id, ldk_channel_id_from_dbid, CommitmentType,
-};
+use lightning_signer::bitcoin::{self, ScriptBuf, Witness};
+use lightning_signer::channel::CommitmentType;
+use lightning_signer::channel::{dbid_from_ldk_channel_id, ldk_channel_id_from_dbid};
 use lightning_signer::lightning;
+use lightning_signer::lightning::sign::OutputSpender;
 use lightning_signer::signer::derive::KeyDerivationStyle;
+use lightning_signer::util::transaction_utils::create_spending_transaction;
 use lightning_signer::util::INITIAL_COMMITMENT_NUMBER;
 use log::{debug, error};
 
@@ -707,6 +709,32 @@ impl SignerProvider for KeysManagerClient {
 
     fn get_shutdown_scriptpubkey(&self) -> Result<ShutdownScript, ()> {
         Ok(ShutdownScript::try_from(self.get_destination_script([0; 32])?).expect("script"))
+    }
+}
+
+impl OutputSpender for KeysManagerClient {
+    fn spend_spendable_outputs<C: bitcoin::secp256k1::Signing>(
+        &self,
+        descriptors: &[&SpendableOutputDescriptor],
+        outputs: Vec<TxOut>,
+        change_destination_script: ScriptBuf,
+        feerate_sat_per_1000_weight: u32,
+        locktime: Option<bitcoin::absolute::LockTime>,
+        _secp_ctx: &Secp256k1<C>,
+    ) -> Result<Transaction, ()> {
+        let mut tx = create_spending_transaction(
+            descriptors,
+            outputs,
+            Box::new(change_destination_script),
+            feerate_sat_per_1000_weight,
+        )
+        .unwrap();
+        tx.lock_time = locktime.unwrap_or(LockTime::ZERO);
+        let witnesses = self.sign_onchain_tx(&tx, descriptors);
+        for (idx, w) in witnesses.into_iter().enumerate() {
+            tx.input[idx].witness = Witness::from_slice(&w);
+        }
+        Ok(tx)
     }
 }
 

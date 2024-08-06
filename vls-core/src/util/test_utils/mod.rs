@@ -32,12 +32,12 @@ use lightning::ln::chan_utils::{
     ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters,
     DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
+use lightning::ln::ChannelId as LnChannelId;
 use lightning::ln::channel_keys::{
     DelayedPaymentBasepoint, HtlcBasepoint, RevocationBasepoint, RevocationKey,
 };
 use lightning::ln::features::ChannelTypeFeatures;
 use lightning::ln::{PaymentHash, PaymentPreimage};
-use lightning::sign::ecdsa::WriteableEcdsaChannelSigner;
 use lightning::sign::{ChannelSigner, InMemorySigner};
 use lightning::util::test_utils;
 use lightning_invoice::{Currency, InvoiceBuilder, PaymentSecret};
@@ -153,9 +153,7 @@ impl chainmonitor::Persist<LoopbackChannelSigner> for TestPersister {
         self.update_ret.lock().unwrap().clone()
     }
 
-    fn archive_persisted_channel(&self, channel_funding_outpoint: OutPoint) {
-        unimplemented!()
-    }
+    fn archive_persisted_channel(&self, _channel_funding_outpoint: OutPoint) { }
 
     fn update_persisted_channel(
         &self,
@@ -214,7 +212,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
         monitor: channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
     ) -> Result<chain::ChannelMonitorUpdateStatus, ()> {
         self.latest_monitor_update_id.lock().unwrap().insert(
-            lightning::ln::ChannelId::v1_from_funding_outpoint(funding_txo).0,
+            LnChannelId::v1_from_funding_outpoint(funding_txo).0,
             (funding_txo, monitor.get_latest_update_id()),
         );
         self.added_monitors.lock().unwrap().push((funding_txo, ()));
@@ -237,7 +235,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
         update: &channelmonitor::ChannelMonitorUpdate,
     ) -> chain::ChannelMonitorUpdateStatus {
         self.latest_monitor_update_id.lock().unwrap().insert(
-            lightning::ln::ChannelId::v1_from_funding_outpoint(funding_txo).0,
+            LnChannelId::v1_from_funding_outpoint(funding_txo).0,
             (funding_txo, update.update_id),
         );
         let update_res = self.chain_monitor.update_channel(funding_txo, update);
@@ -256,7 +254,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
 
     fn release_pending_monitor_events(
         &self,
-    ) -> Vec<(OutPoint, lightning::ln::ChannelId, Vec<MonitorEvent>, Option<PublicKey>)> {
+    ) -> Vec<(OutPoint, LnChannelId, Vec<MonitorEvent>, Option<PublicKey>)> {
         self.chain_monitor.release_pending_monitor_events()
     }
 }

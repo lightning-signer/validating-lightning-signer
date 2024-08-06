@@ -59,7 +59,9 @@ impl Approve for ScreenApprover {
             format!("x {:17}", format_expiration(expiry_secs)),
             format!("p {:17}", format_payment_hash(&payment_hash)),
         ];
-        lines.extend(format_description("d ".to_string() + &desc));
+        if let Some(desc) = desc {
+            lines.extend(format_description("d ".to_string() + &desc));
+        }
         lines.resize_with(9, || format!(""));
         lines.push(format!("{:^9} {:^9}", "Approve", "Decline"));
 

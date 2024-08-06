@@ -3441,7 +3441,7 @@ mod tests {
 
         let invoice = make_test_bolt12_invoice("This is the invoice description", hash);
 
-        assert_eq!(invoice.description(), "This is the invoice description".to_string());
+        assert_eq!(invoice.description(), Some("This is the invoice description".to_string()));
 
         assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 

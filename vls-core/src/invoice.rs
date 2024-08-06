@@ -19,7 +19,7 @@ pub trait InvoiceAttributes {
     /// Invoiced amount
     fn amount_milli_satoshis(&self) -> u64;
     /// Description
-    fn description(&self) -> String;
+    fn description(&self) -> Option<String>;
     /// Payee's public key
     fn payee_pub_key(&self) -> PublicKey;
     /// Timestamp of the payment, as duration since the UNIX epoch
@@ -59,13 +59,13 @@ impl InvoiceAttributes for Invoice {
         }
     }
 
-    fn description(&self) -> String {
+    fn description(&self) -> Option<String> {
         match self {
             Invoice::Bolt11(bolt11) => match bolt11.description() {
-                bolt11::Bolt11InvoiceDescription::Direct(d) => d.to_string(),
-                bolt11::Bolt11InvoiceDescription::Hash(h) => format!("hash: {:?}", h),
+                bolt11::Bolt11InvoiceDescription::Direct(d) => Some(d.to_string()),
+                bolt11::Bolt11InvoiceDescription::Hash(h) => Some(format!("hash: {:?}", h)),
             },
-            Invoice::Bolt12(bolt12) => bolt12.description().unwrap().to_string(),
+            Invoice::Bolt12(bolt12) => bolt12.description().map(|d| d.to_string()),
         }
     }
 
