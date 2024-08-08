@@ -17,7 +17,6 @@ use bitcoind_client::{bitcoind_client_from_url, BlockSource};
 use lightning_signer::bitcoin::hashes::Hash;
 use lightning_signer::bitcoin::{BlockHash, BlockHeader, FilterHeader};
 use lightning_signer::chain::tracker::Headers;
-use lightning_signer::txoo::filter::BlockSpendFilter;
 use lightning_signer::txoo::proof::{ProofType, TxoProof};
 use lightning_signer::txoo::{decode_checkpoint, CHECKPOINTS_BITCOIN, CHECKPOINTS_TESTNET};
 #[allow(unused_imports)]
@@ -75,8 +74,6 @@ impl ChainFollower {
         rpc_url: &Url,
     ) -> Arc<ChainFollower> {
         let client = bitcoind_client_from_url(rpc_url.clone(), tracker.network()).await;
-        let genesis_hash = client.get_block_hash(0).await.unwrap().unwrap();
-        let genesis = client.get_block(&genesis_hash).await.unwrap();
         let txoo_source =
             if let Some((first_height, (ckp_height, ckp_hash, ckp_filter_header, _))) =
                 get_first_and_last_checkpoint(tracker.network())
@@ -91,8 +88,8 @@ impl ChainFollower {
                 );
                 txoo_source_factory.get_source(ckp_height, ckp_hash, ckp_filter_header).await
             } else {
-                let filter = BlockSpendFilter::from_block(&genesis);
-                let filter_header = filter.filter_header(&FilterHeader::all_zeros());
+                let genesis_hash = client.get_block_hash(0).await.unwrap().unwrap();
+                let filter_header = FilterHeader::all_zeros();
 
                 txoo_source_factory.get_source(0, genesis_hash, filter_header).await
             };
