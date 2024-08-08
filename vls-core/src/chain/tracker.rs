@@ -22,7 +22,6 @@ use log::{debug, error, info, warn};
 use push_decoder::{BlockDecoder, Listener as PushListener};
 use serde_derive::{Deserialize, Serialize};
 use serde_with::{serde_as, IfIsHumanReadable};
-use txoo::filter::BlockSpendFilter;
 use txoo::get_latest_checkpoint;
 use txoo::proof::{ProofType, TxoProof};
 
@@ -227,8 +226,7 @@ impl<L: ChainListener> ChainTracker<L> {
     ) -> Self {
         let height = 0;
         let genesis = genesis_block(network);
-        let filter = BlockSpendFilter::from_block(&genesis);
-        let filter_header = filter.filter_header(&FilterHeader::all_zeros());
+        let filter_header = FilterHeader::all_zeros();
         Self::from_checkpoint(
             network,
             node_id,

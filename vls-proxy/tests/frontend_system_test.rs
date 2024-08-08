@@ -183,6 +183,8 @@ struct Args {
         value_name = "URL"
     )]
     pub rpc: Option<Url>,
+    #[clap(long, help = "do not capture logs")]
+    nocapture: bool,
 }
 
 #[tokio::test]
