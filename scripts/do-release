@@ -9,3 +9,4 @@ cargo publish -p vls-protocol-signer
 cargo publish -p vls-protocol-client
 cargo publish -p vls-frontend
 cargo publish -p vls-proxy
+cargo publish -p vls-cli

@@ -921,9 +921,9 @@ checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
 
 [[package]]
 name = "txoo"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebde23ffd378bda02b6b9b8c761749796297603290609b2a4dece8426d470e40"
+checksum = "a9db6dd6fd9fff3c0d875c1d8b891481c368b02c76d81bacd0f52f832a3699ef"
 dependencies = [
  "bitcoin",
  "core2",
@@ -980,7 +980,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "vls-core"
-version = "0.12.0-rc.3"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "bitcoin",
@@ -1005,7 +1005,7 @@ dependencies = [
 
 [[package]]
 name = "vls-persist"
-version = "0.12.0-rc.3"
+version = "0.12.0"
 dependencies = [
  "hex",
  "log",
@@ -1017,7 +1017,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol"
-version = "0.12.0-rc.3"
+version = "0.12.0"
 dependencies = [
  "as-any",
  "bitcoin-consensus-derive",
@@ -1031,7 +1031,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol-signer"
-version = "0.12.0-rc.3"
+version = "0.12.0"
 dependencies = [
  "bit-vec",
  "log",

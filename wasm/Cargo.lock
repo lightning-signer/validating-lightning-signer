@@ -606,9 +606,9 @@ checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
 
 [[package]]
 name = "txoo"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebde23ffd378bda02b6b9b8c761749796297603290609b2a4dece8426d470e40"
+checksum = "a9db6dd6fd9fff3c0d875c1d8b891481c368b02c76d81bacd0f52f832a3699ef"
 dependencies = [
  "bitcoin",
  "core2",
@@ -624,7 +624,7 @@ checksum = "301abaae475aa91687eb82514b328ab47a211a533026cb25fc3e519b86adfc3c"
 
 [[package]]
 name = "vls-core"
-version = "0.12.0-rc.3"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "backtrace",
