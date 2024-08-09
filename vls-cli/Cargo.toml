@@ -5,6 +5,9 @@ edition = "2021"
 license = "Apache-2.0"
 description = "A CLI for interacting with the vlsd2 JSON-RPC API"
 authors = ["Lakshya Singh <lakshay.singh1108@gmail.com>"]
+homepage = "https://gitlab.com/lightning-signer/docs/"
+repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
+rust-version = "1.66.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
