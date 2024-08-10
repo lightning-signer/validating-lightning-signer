@@ -389,14 +389,30 @@ impl ChannelBase for ChannelStub {
     }
 }
 
+/// The CLN dbid is encoded in little-endian in the last 8 bytes of the ChannelId
 fn oid_from_native_channelid(cid: &ChannelId) -> u64 {
-    // The CLN dbid is encoded in little-endian in the last 8 bytes of the ChannelId
     let chanidvec = &cid.0;
     assert!(chanidvec.len() >= 8);
     let bytes_slice = &chanidvec[chanidvec.len() - 8..];
     let mut bytes_array = [0u8; 8];
     bytes_array.copy_from_slice(bytes_slice);
     u64::from_le_bytes(bytes_array)
+}
+
+/// The LDK dbid is enconded in big endian in the first 8 bytes of the ChannelId
+pub fn dbid_from_ldk_channel_id(channel_id: &[u8]) -> u64 {
+    assert!(channel_id.len() >= 8);
+    let mut dbid_slice = [0; 8];
+    dbid_slice.copy_from_slice(&channel_id[0..8]);
+    u64::from_be_bytes(dbid_slice)
+}
+
+///The LDK channel id is formed by 8 bytes of dbid followed by zeroed out bytes
+pub fn ldk_channel_id_from_dbid(dbid: u64) -> [u8; 32] {
+    let mut channel_id = [0u8; 32];
+    let dbid_slice = dbid.to_be_bytes();
+    channel_id[..8].copy_from_slice(&dbid_slice);
+    channel_id
 }
 
 impl ChannelStub {
@@ -421,6 +437,7 @@ impl ChannelStub {
     fn oid(&self) -> u64 {
         match self.node.upgrade().unwrap().node_config.key_derivation_style {
             KeyDerivationStyle::Native => oid_from_native_channelid(&self.id0),
+            KeyDerivationStyle::Ldk => dbid_from_ldk_channel_id(&self.id0.inner()),
             // add other derivation styles here
             _ => 0,
         }
@@ -570,6 +587,7 @@ impl Channel {
     fn oid(&self) -> u64 {
         match self.node.upgrade().unwrap().node_config.key_derivation_style {
             KeyDerivationStyle::Native => oid_from_native_channelid(&self.id0),
+            KeyDerivationStyle::Ldk => dbid_from_ldk_channel_id(&self.id0.inner()),
             // add other derivation styles here
             _ => 0,
         }
@@ -1137,7 +1155,8 @@ impl Channel {
             // not return a revocation secret (`None` below).
             // That's OK, because the node should have called `validate_holder_commitment_tx` first
             // so the logic error is in the node.
-            let holder_commitment_point = self.get_per_commitment_point(new_current_commitment_number)?;
+            let holder_commitment_point =
+                self.get_per_commitment_point(new_current_commitment_number)?;
             return Ok((holder_commitment_point, None));
         }
 
@@ -2740,10 +2759,12 @@ mod tests {
     use lightning::ln::chan_utils::HTLCOutputInCommitment;
     use lightning::ln::PaymentHash;
 
-    use crate::channel::ChannelBase;
+    use crate::channel::{dbid_from_ldk_channel_id, ldk_channel_id_from_dbid, ChannelBase};
     use crate::util::test_utils::{
         init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
     };
+
+    use super::ChannelId;
 
     #[test]
     fn test_dummy_sig() {
@@ -2778,5 +2799,16 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    #[test]
+    fn test_ldk_dbid() {
+        let dbid: u64 = 42;
+        let mut channel_id_inner = [0u8; 32];
+        channel_id_inner[..8].copy_from_slice(&dbid.to_be_bytes());
+        let channel_id = ChannelId(channel_id_inner.to_vec());
+
+        assert_eq!(dbid, dbid_from_ldk_channel_id(&channel_id.inner()));
+        assert_eq!(channel_id, ChannelId(ldk_channel_id_from_dbid(dbid).to_vec()));
     }
 }
