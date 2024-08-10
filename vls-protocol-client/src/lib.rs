@@ -32,7 +32,9 @@ use lightning::sign::{KeyMaterial, Recipient, SpendableOutputDescriptor};
 use lightning::util::ser::Readable;
 use lightning::util::ser::{Writeable, Writer};
 use lightning_signer::bitcoin;
-use lightning_signer::channel::CommitmentType;
+use lightning_signer::channel::{
+    dbid_from_ldk_channel_id, ldk_channel_id_from_dbid, CommitmentType,
+};
 use lightning_signer::lightning;
 use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::util::INITIAL_COMMITMENT_NUMBER;
@@ -149,19 +151,6 @@ fn dest_wallet_path() -> ArrayBE<u32> {
     // elsewhere we assume that the path has a single component
     assert_eq!(result.len(), 1);
     result.into()
-}
-
-fn dbid_to_channel_id(dbid: u64) -> [u8; 32] {
-    let mut res = [0; 32];
-    let ser_dbid = dbid.to_be_bytes();
-    res[0..8].copy_from_slice(&ser_dbid);
-    res
-}
-
-fn channel_id_to_dbid(slice: &[u8; 32]) -> u64 {
-    let mut s = [0; 8];
-    s.copy_from_slice(&slice[0..8]);
-    u64::from_be_bytes(s)
 }
 
 impl SignerClient {
@@ -396,7 +385,7 @@ impl ChannelSigner for SignerClient {
     }
 
     fn channel_keys_id(&self) -> [u8; 32] {
-        dbid_to_channel_id(self.dbid)
+        ldk_channel_id_from_dbid(self.dbid)
     }
 
     fn provide_channel_parameters(&mut self, p: &ChannelTransactionParameters) {
@@ -525,15 +514,16 @@ impl KeysManagerClient {
     fn descriptor_to_utxo(d: &SpendableOutputDescriptor) -> Utxo {
         let (outpoint, amount, keyindex, close_info) = match d {
             // Mutual close - we are spending a non-delayed output to us on the shutdown key
-            SpendableOutputDescriptor::StaticOutput { output, outpoint } =>
-                (outpoint.clone(), output.value, dest_wallet_path()[0], None), // FIXME this makes some assumptions
+            SpendableOutputDescriptor::StaticOutput { output, outpoint } => {
+                (outpoint.clone(), output.value, dest_wallet_path()[0], None)
+            } // FIXME this makes some assumptions
             // We force-closed - we are spending a delayed output to us
             SpendableOutputDescriptor::DelayedPaymentOutput(o) => (
                 o.outpoint,
                 o.output.value,
                 0,
                 Some(CloseInfo {
-                    channel_id: channel_id_to_dbid(&o.channel_keys_id),
+                    channel_id: dbid_from_ldk_channel_id(&o.channel_keys_id),
                     peer_id: PubKey([0; 33]),
                     commitment_point: Some(to_pubkey(o.per_commitment_point)),
                     is_anchors: false,
@@ -546,7 +536,7 @@ impl KeysManagerClient {
                 o.output.value,
                 0,
                 Some(CloseInfo {
-                    channel_id: channel_id_to_dbid(&o.channel_keys_id),
+                    channel_id: dbid_from_ldk_channel_id(&o.channel_keys_id),
                     peer_id: PubKey([0; 33]),
                     commitment_point: None,
                     is_anchors: false,
@@ -663,9 +653,7 @@ impl SignerProvider for KeysManagerClient {
         _user_channel_id: u128,
     ) -> [u8; 32] {
         let dbid = self.next_dbid.fetch_add(1, Ordering::AcqRel);
-        let mut id = [0; 32];
-        id[0..8].copy_from_slice(&dbid.to_be_bytes());
-        id
+        ldk_channel_id_from_dbid(dbid)
     }
 
     fn derive_channel_signer(
@@ -676,7 +664,7 @@ impl SignerProvider for KeysManagerClient {
         // We don't use the peer_id, because it's not easy to get at this point within the LDK framework.
         // The dbid is unique, so that's enough for our purposes.
         let peer_id = [0u8; 33];
-        let dbid = u64::from_be_bytes(channel_keys_id[0..8].try_into().unwrap());
+        let dbid = dbid_from_ldk_channel_id(&channel_keys_id);
 
         let message = NewChannel { node_id: PubKey(peer_id.clone()), dbid };
         let _: NewChannelReply = self.call(message).expect("NewChannel");
@@ -734,15 +722,5 @@ impl InnerSign for SignerClient {
 
     fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), std::io::Error> {
         self.write(writer)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn dbid_test() {
-        assert_eq!(channel_id_to_dbid(&dbid_to_channel_id(0x123456)), 0x123456);
     }
 }
