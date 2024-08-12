@@ -6,7 +6,7 @@ use core::fmt::{self, Debug, Formatter};
 use lightning_signer::lightning;
 use lightning_signer::lightning::io::{self, Read, Write};
 use lightning_signer::lightning::ln::channel_keys::{
-    DelayedPaymentBasepoint, HtlcBasepoint, PaymentBasepoint, RevocationBasepoint,
+    DelayedPaymentBasepoint, HtlcBasepoint, RevocationBasepoint,
 };
 use lightning_signer::lightning::ln::msgs::DecodeError;
 use lightning_signer::lightning::util::ser::{Readable, Writeable, Writer};
@@ -168,12 +168,6 @@ impl Into<RevocationBasepoint> for PubKey {
 impl Into<HtlcBasepoint> for PubKey {
     fn into(self) -> HtlcBasepoint {
         HtlcBasepoint(self.into())
-    }
-}
-
-impl Into<PaymentBasepoint> for PubKey {
-    fn into(self) -> PaymentBasepoint {
-        PaymentBasepoint(self.into())
     }
 }
 
