@@ -109,16 +109,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bitcoin-consensus-derive"
-version = "0.1.0"
-source = "git+https://gitlab.com/davidcaseria/serde-bolt.git?branch=upgrade-bitcoin-dep#641d05a68515464281de57dba9637107a523a103"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "bitcoin-private"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -126,8 +116,9 @@ checksum = "73290177011694f38ec25e165d0387ab7ea749a4b81cd4c80dae5988229f7a57"
 
 [[package]]
 name = "bitcoin-push-decoder"
-version = "0.2.2"
-source = "git+https://gitlab.com/vincenzopalazzo/txoo?rev=94ba28c5cd86a6591b4ebd9832bd45c880624dc9#94ba28c5cd86a6591b4ebd9832bd45c880624dc9"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee01fc59f06261a3727830dc61fd87f9f9ae503194d7aea0306a2535a9a06a3d"
 dependencies = [
  "bitcoin",
  "core2",
@@ -148,7 +139,7 @@ dependencies = [
 
 [[package]]
 name = "bolt-derive"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -501,24 +492,12 @@ dependencies = [
 
 [[package]]
 name = "serde_bolt"
-version = "0.3.4"
-source = "git+https://gitlab.com/davidcaseria/serde-bolt.git?branch=upgrade-bitcoin-dep#641d05a68515464281de57dba9637107a523a103"
-dependencies = [
- "bitcoin",
- "bitcoin-consensus-derive 0.1.0 (git+https://gitlab.com/davidcaseria/serde-bolt.git?branch=upgrade-bitcoin-dep)",
- "chunked-buffer",
- "core2",
- "hex",
-]
-
-[[package]]
-name = "serde_bolt"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bffab210d8357b433ffab5b3fd39d56f7fddb5eb36c84039fa455933ef05209f"
 dependencies = [
  "bitcoin",
- "bitcoin-consensus-derive 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bitcoin-consensus-derive",
  "chunked-buffer",
  "core2",
  "hex",
@@ -655,13 +634,14 @@ checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
 
 [[package]]
 name = "txoo"
-version = "0.7.0"
-source = "git+https://gitlab.com/vincenzopalazzo/txoo?rev=94ba28c5cd86a6591b4ebd9832bd45c880624dc9#94ba28c5cd86a6591b4ebd9832bd45c880624dc9"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5675f1c4ed9845d91baa88cc10aff641867ed17b32440f9e26cd04c086610ba0"
 dependencies = [
  "bitcoin",
  "core2",
  "log",
- "serde_bolt 0.3.4",
+ "serde_bolt",
 ]
 
 [[package]]
@@ -672,12 +652,12 @@ checksum = "301abaae475aa91687eb82514b328ab47a211a533026cb25fc3e519b86adfc3c"
 
 [[package]]
 name = "vls-core"
-version = "0.12.0-rc.2"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "backtrace",
  "bitcoin",
- "bitcoin-consensus-derive 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bitcoin-consensus-derive",
  "bitcoin-push-decoder",
  "bolt-derive",
  "core2",
@@ -689,7 +669,7 @@ dependencies = [
  "log",
  "scopeguard",
  "serde",
- "serde_bolt 0.4.1",
+ "serde_bolt",
  "serde_derive",
  "serde_with",
  "tracing",

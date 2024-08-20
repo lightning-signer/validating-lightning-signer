@@ -37,7 +37,7 @@ regex = "1.5"
 # For logging in unit tests
 env_logger = "0.9"
 test-log = "0.2.8"
-serde_bolt = { version = "0.3.5", features = ["test_utils"] }
+serde_bolt = { version = "0.4.1", features = ["test_utils"] }
 
 [features]
 default = ["std"]

@@ -9,7 +9,6 @@
 // You may not use this file except in accordance with one or both of these
 // licenses.
 
-#[cfg(not(fuzzing))]
 mod real_chacha {
     use core::cmp;
     use core::convert::TryInto;
@@ -277,33 +276,7 @@ mod real_chacha {
         }
     }
 }
-#[cfg(not(fuzzing))]
 pub use self::real_chacha::ChaCha20;
-
-#[cfg(fuzzing)]
-mod fuzzy_chacha {
-    pub struct ChaCha20 {}
-
-    impl ChaCha20 {
-        pub fn new(key: &[u8], nonce: &[u8]) -> ChaCha20 {
-            assert!(key.len() == 16 || key.len() == 32);
-            assert!(nonce.len() == 8 || nonce.len() == 12);
-            Self {}
-        }
-
-        pub fn get_single_block(_key: &[u8; 32], _nonce: &[u8; 16]) -> [u8; 32] {
-            [0; 32]
-        }
-
-        pub fn process(&mut self, input: &[u8], output: &mut [u8]) {
-            output.copy_from_slice(input);
-        }
-
-        pub fn process_in_place(&mut self, _input_output: &mut [u8]) {}
-    }
-}
-#[cfg(fuzzing)]
-pub use self::fuzzy_chacha::ChaCha20;
 
 #[cfg(test)]
 mod test {

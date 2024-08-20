@@ -21,7 +21,7 @@ secp-lowmemory = ["bitcoin/secp-lowmemory"]
 # if you use tonic, this is convenient for auto-conversion of MySigner Status to tonic::Status
 grpc = ["tonic"]
 
-test_utils = ["use_backtrace", "lightning/_test_utils", "lightning/unsafe_revoked_tx_signing", "bitcoin/bitcoinconsensus", "txoo/test-utils"]
+test_utils = ["use_backtrace", "lightning/_test_utils", "lightning/unsafe_revoked_tx_signing", "bitcoin/bitcoinconsensus", "txoo/test-utils", "serde_bolt/test_utils"]
 
 debug = ["debug_enforcement_state", "debug_node_state"]
 
@@ -46,7 +46,7 @@ name = "lightning_signer"
 path = "src/lib.rs"
 
 [dependencies]
-serde = { version = "1.0", default_features = false, features = ["alloc"] }
+serde = { version = "1.0", default-features = false, features = ["alloc"] }
 serde_derive = { version = "1.0" }
 bitcoin-consensus-derive = { version = "0.1.0" }
 serde_with = { version = "3.6", default-features = false, features = ["hex", "macros"] }
@@ -75,35 +75,18 @@ itertools = { version = "0.10", default-features = false }
 
 [dependencies.serde_bolt]
 version = "0.4.1"
-#git = "https://gitlab.com/lightning-signer/serde-bolt.git"
-#rev = "9b1c851981337cdd748cf0fdf3342ea9b51e8cce"
-#branch = "pr13"
-#path = "../../../serde-bolt"
 default-features = false
 
 [dependencies.bitcoin-push-decoder]
 version = "0.3"
-#git = "https://gitlab.com/vincenzopalazzo/txoo"
-#branch = "macros/upgrade-bitcoin"
-#rev = "94ba28c5cd86a6591b4ebd9832bd45c880624dc9"
-#path = "../../txoo/push-decoder"
 default-features = false
 
 [dependencies.txoo]
 version = "0.8"
-#git = "https://gitlab.com/vincenzopalazzo/txoo"
-#rev = "94ba28c5cd86a6591b4ebd9832bd45c880624dc9"
-#branch = "macros/upgrade-bitcoin"
-#rev = "afeb58147d6aa1a57ceee0a6128e2dca20fba157"
-#path = "../../txoo"
 default-features = false
 
 [dev-dependencies.txoo-bitcoind-client]
 version = "0.8"
-#git = "https://gitlab.com/vincenzopalazzo/txoo"
-#rev = "94ba28c5cd86a6591b4ebd9832bd45c880624dc9"
-#branch = "macros/upgrade-bitcoin"
-#path = "../../txoo/bitcoind-client"
 default-features = false
 features = ["dummy-source"]
 
@@ -116,28 +99,16 @@ tempfile = "3.10.1"
 
 # TODO point this and lightning-invoice at next release
 [dependencies.lightning]
-#git = "https://github.com/lightningdevkit/rust-lightning.git"
-#rev = "a7600dcd584db0c46fdcd99d71d5b271f3052892"
-#branch = "main"
-#path = "../../rust-lightning/lightning"
 version = "0.0.119"
 default-features = false
 features = ["grind_signatures", "unsafe_revoked_tx_signing"]
 
 [dev-dependencies.lightning]
-#git = "https://github.com/lightningdevkit/rust-lightning.git"
-#rev = "a7600dcd584db0c46fdcd99d71d5b271f3052892"
-#branch = "main"
-#path = "../../rust-lightning/lightning"
 version = "0.0.119"
 default-features = false
 features = ["grind_signatures", "_test_utils", "unsafe_revoked_tx_signing"]
 
 [dependencies.lightning-invoice]
-#git = "https://github.com/lightningdevkit/rust-lightning.git"
-#rev = "a7600dcd584db0c46fdcd99d71d5b271f3052892"
-#branch = "main"
-#path = "../../rust-lightning/lightning-invoice"
 version = "0.27.0"
 default-features = false
 
