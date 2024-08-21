@@ -21,7 +21,7 @@ secp-lowmemory = ["bitcoin/secp-lowmemory"]
 # if you use tonic, this is convenient for auto-conversion of MySigner Status to tonic::Status
 grpc = ["tonic"]
 
-test_utils = ["use_backtrace", "lightning/_test_utils", "lightning/unsafe_revoked_tx_signing", "bitcoin/bitcoinconsensus", "txoo/test-utils", "serde_bolt/test_utils"]
+test_utils = ["use_backtrace", "lightning/_test_utils", "lightning/unsafe_revoked_tx_signing", "bitcoin/bitcoinconsensus", "txoo/test-utils", "serde_bolt/test_utils", "bitcoin/rand-std"]
 
 debug = ["debug_enforcement_state", "debug_node_state"]
 
