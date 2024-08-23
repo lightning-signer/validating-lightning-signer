@@ -1,6 +1,6 @@
 use crate::recovery::{Iter, RecoveryKeys, RecoverySign};
 use lightning_signer::bitcoin::secp256k1::{PublicKey, SecretKey};
-use lightning_signer::bitcoin::{Address, Script, Transaction, TxOut};
+use lightning_signer::bitcoin::{Address, ScriptBuf, Transaction, TxOut};
 use lightning_signer::channel::{Channel, ChannelBase, ChannelSlot};
 use lightning_signer::lightning::chain::transaction::OutPoint;
 use lightning_signer::node::Node;
@@ -67,8 +67,10 @@ pub struct DirectRecoverySigner {
 impl RecoverySign for DirectRecoverySigner {
     fn sign_holder_commitment_tx_for_recovery(
         &self,
-    ) -> Result<(Transaction, Vec<Transaction>, Script, (SecretKey, Vec<Vec<u8>>), PublicKey), Status>
-    {
+    ) -> Result<
+        (Transaction, Vec<Transaction>, ScriptBuf, (SecretKey, Vec<Vec<u8>>), PublicKey),
+        Status,
+    > {
         let mut lock = self.lock();
         Self::channel(&mut lock).sign_holder_commitment_tx_for_recovery()
     }

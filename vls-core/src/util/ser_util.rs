@@ -9,10 +9,12 @@ use alloc::borrow::Cow;
 use core::fmt;
 use core::fmt::Formatter;
 use core::time::Duration;
+use lightning::ln::channel_keys::{DelayedPaymentBasepoint, HtlcBasepoint, RevocationBasepoint};
+use vls_common::HexEncode;
 
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::{OutPoint, Script, Txid};
+use bitcoin::{OutPoint, Script, ScriptBuf, Txid};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use lightning::util::ser::Writer;
 use serde::de::SeqAccess;
@@ -47,6 +49,72 @@ impl<'de> DeserializeAs<'de, PublicKey> for PublicKeyHandler {
     }
 }
 
+#[derive(Copy, Clone, Debug, Default)]
+pub struct RevocationBasepointHandler;
+
+impl SerializeAs<RevocationBasepoint> for RevocationBasepointHandler {
+    fn serialize_as<S>(source: &RevocationBasepoint, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serde::Serialize::serialize(&source.0, serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, RevocationBasepoint> for RevocationBasepointHandler {
+    fn deserialize_as<D>(deserializer: D) -> Result<RevocationBasepoint, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let key = PublicKey::deserialize(deserializer)?;
+        Ok(key.into())
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct DelayedPaymentBasepointHandler;
+
+impl SerializeAs<DelayedPaymentBasepoint> for DelayedPaymentBasepointHandler {
+    fn serialize_as<S>(source: &DelayedPaymentBasepoint, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serde::Serialize::serialize(&source.0, serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, DelayedPaymentBasepoint> for DelayedPaymentBasepointHandler {
+    fn deserialize_as<D>(deserializer: D) -> Result<DelayedPaymentBasepoint, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let key = PublicKey::deserialize(deserializer)?;
+        Ok(key.into())
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct HtlcBasepointHandler;
+
+impl SerializeAs<HtlcBasepoint> for HtlcBasepointHandler {
+    fn serialize_as<S>(source: &HtlcBasepoint, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serde::Serialize::serialize(&source.0, serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, HtlcBasepoint> for HtlcBasepointHandler {
+    fn deserialize_as<D>(deserializer: D) -> Result<HtlcBasepoint, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let key = PublicKey::deserialize(deserializer)?;
+        Ok(key.into())
+    }
+}
+
 pub struct ChannelIdHandler;
 
 impl SerializeAs<ChannelId> for ChannelIdHandler {
@@ -75,14 +143,17 @@ impl<'de> DeserializeAs<'de, ChannelId> for ChannelIdHandler {
 pub struct ChannelPublicKeysDef {
     #[serde_as(as = "IfIsHumanReadable<PublicKeyHandler>")]
     pub funding_pubkey: PublicKey,
-    #[serde_as(as = "IfIsHumanReadable<PublicKeyHandler>")]
-    pub revocation_basepoint: PublicKey,
+    // FIXME here and below, the binary representation needs to be restored
+    #[serde_as(as = "IfIsHumanReadable<RevocationBasepointHandler, RevocationBasepointHandler>")]
+    pub revocation_basepoint: RevocationBasepoint,
     #[serde_as(as = "IfIsHumanReadable<PublicKeyHandler>")]
     pub payment_point: PublicKey,
-    #[serde_as(as = "IfIsHumanReadable<PublicKeyHandler>")]
-    pub delayed_payment_basepoint: PublicKey,
-    #[serde_as(as = "IfIsHumanReadable<PublicKeyHandler>")]
-    pub htlc_basepoint: PublicKey,
+    #[serde_as(
+        as = "IfIsHumanReadable<DelayedPaymentBasepointHandler, DelayedPaymentBasepointHandler>"
+    )]
+    pub delayed_payment_basepoint: DelayedPaymentBasepoint,
+    #[serde_as(as = "IfIsHumanReadable<HtlcBasepointHandler, HtlcBasepointHandler>")]
+    pub htlc_basepoint: HtlcBasepoint,
 }
 
 #[derive(Deserialize)]
@@ -129,7 +200,7 @@ impl SerializeAs<Txid> for TxIdReversedDef {
     where
         S: Serializer,
     {
-        serializer.serialize_str(hex::encode(value.to_vec()).as_str())
+        serializer.serialize_str(value.as_byte_array().to_hex().as_str())
     }
 }
 
@@ -182,20 +253,20 @@ impl<'de> DeserializeAs<'de, OutPoint> for OutPointReversedDef {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(remote = "Script")]
+#[serde(remote = "ScriptBuf")]
 pub struct ScriptDef(#[serde(getter = "Script::to_bytes")] Vec<u8>);
 
-impl From<ScriptDef> for Script {
+impl From<ScriptDef> for ScriptBuf {
     fn from(s: ScriptDef) -> Self {
-        Script::from(s.0)
+        ScriptBuf::from(s.0)
     }
 }
 
 #[derive(Deserialize)]
-struct ScriptHelper(#[serde(with = "ScriptDef")] Script);
+struct ScriptHelper(#[serde(with = "ScriptDef")] ScriptBuf);
 
-impl SerializeAs<Script> for ScriptDef {
-    fn serialize_as<S>(value: &Script, serializer: S) -> Result<S::Ok, S::Error>
+impl SerializeAs<ScriptBuf> for ScriptDef {
+    fn serialize_as<S>(value: &ScriptBuf, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -203,8 +274,8 @@ impl SerializeAs<Script> for ScriptDef {
     }
 }
 
-impl<'de> DeserializeAs<'de, Script> for ScriptDef {
-    fn deserialize_as<D>(deserializer: D) -> Result<Script, <D as Deserializer<'de>>::Error>
+impl<'de> DeserializeAs<'de, ScriptBuf> for ScriptDef {
+    fn deserialize_as<D>(deserializer: D) -> Result<ScriptBuf, <D as Deserializer<'de>>::Error>
     where
         D: Deserializer<'de>,
     {

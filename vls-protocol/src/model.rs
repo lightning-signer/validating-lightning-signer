@@ -5,11 +5,15 @@ use bitcoin_consensus_derive::{Decodable, Encodable};
 use core::fmt::{self, Debug, Formatter};
 use lightning_signer::lightning;
 use lightning_signer::lightning::io::{self, Read, Write};
+use lightning_signer::lightning::ln::channel_keys::{
+    DelayedPaymentBasepoint, HtlcBasepoint, PaymentBasepoint, RevocationBasepoint,
+};
 use lightning_signer::lightning::ln::msgs::DecodeError;
 use lightning_signer::lightning::util::ser::{Readable, Writeable, Writer};
 use serde_bolt::bitcoin;
 use serde_bolt::bitcoin::consensus::encode::Error as BitcoinError;
 use serde_bolt::Octets;
+use txoo::bitcoin::secp256k1::PublicKey;
 
 macro_rules! secret_array_impl {
     ($ty:ident, $len:tt) => {
@@ -153,6 +157,36 @@ pub struct Basepoints {
     pub payment: PubKey,
     pub htlc: PubKey,
     pub delayed_payment: PubKey,
+}
+
+impl Into<RevocationBasepoint> for PubKey {
+    fn into(self) -> RevocationBasepoint {
+        RevocationBasepoint(self.into())
+    }
+}
+
+impl Into<HtlcBasepoint> for PubKey {
+    fn into(self) -> HtlcBasepoint {
+        HtlcBasepoint(self.into())
+    }
+}
+
+impl Into<PaymentBasepoint> for PubKey {
+    fn into(self) -> PaymentBasepoint {
+        PaymentBasepoint(self.into())
+    }
+}
+
+impl Into<DelayedPaymentBasepoint> for PubKey {
+    fn into(self) -> DelayedPaymentBasepoint {
+        DelayedPaymentBasepoint(self.into())
+    }
+}
+
+impl Into<PublicKey> for PubKey {
+    fn into(self) -> PublicKey {
+        PublicKey::from_slice(&self.0).expect("PublicKey::from_slice")
+    }
 }
 
 array_impl!(Signature, 64);

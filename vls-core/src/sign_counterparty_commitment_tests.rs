@@ -1,16 +1,19 @@
 #[cfg(test)]
 mod tests {
     use bitcoin;
-    use bitcoin::hashes::hex::ToHex;
+    use bitcoin::absolute::LockTime;
+
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::PublicKey;
-    use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::Network;
-    use bitcoin::{PackedLockTime, Sequence};
+    use bitcoin::Sequence;
     use lightning::ln::chan_utils::{
         make_funding_redeemscript, BuiltCommitmentTransaction,
         DirectedChannelTransactionParameters, TxCreationKeys,
     };
+    use lightning::ln::channel_keys::DelayedPaymentKey;
+    use lightning::ln::channel_keys::HtlcKey;
+    use lightning::ln::channel_keys::RevocationKey;
     use lightning::ln::PaymentHash;
     use lightning::sign::ChannelSigner;
     use std::sync::Arc;
@@ -91,7 +94,7 @@ mod tests {
                 )
                 .expect("scripts");
                 let output_witscripts: Vec<_> =
-                    redeem_scripts.iter().map(|s| s.serialize()).collect();
+                    redeem_scripts.iter().map(|s| s.as_bytes().to_vec()).collect();
 
                 // rebuild to get the scripts
                 let trusted_tx = commitment_tx.trust();
@@ -113,7 +116,7 @@ mod tests {
             .expect("build_commitment_tx");
 
         assert_eq!(
-            tx.txid().to_hex(),
+            tx.txid().to_string(),
             "1645eee89d5a231702eda1c1b02dee7d42742c8b763c731b7b4cf7936054eae6"
         );
 
@@ -201,7 +204,7 @@ mod tests {
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
                 let output_witscripts: Vec<_> =
-                    redeem_scripts.iter().map(|s| s.serialize()).collect();
+                    redeem_scripts.iter().map(|s| s.as_bytes().to_vec()).collect();
 
                 for received_htlc in received_htlcs.clone() {
                     node.add_keysend(
@@ -227,7 +230,7 @@ mod tests {
             .expect("build_commitment_tx");
 
         assert_eq!(
-            tx.txid().to_hex(),
+            tx.txid().to_string(),
             "08491fe78992b402bbc51771386395fc81bf20d0178b4156bc039b5a84e92aea"
         );
 
@@ -283,7 +286,7 @@ mod tests {
                 let trusted_tx = commitment_tx.trust();
                 let tx = trusted_tx.built_transaction();
                 assert_eq!(
-                    tx.txid.to_hex(),
+                    tx.txid.to_string(),
                     "3b157ff3091373a904ccf571f913eef9bdb94b9a6acda0651df2c240c63df22b"
                 );
                 Ok(tx.transaction.clone())
@@ -381,7 +384,8 @@ mod tests {
                 &chan.setup.counterparty_points.funding_pubkey,
             )
             .expect("scripts");
-            let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let mut output_witscripts =
+                redeem_scripts.iter().map(|s| s.as_bytes().to_vec()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
                 keys,
@@ -690,7 +694,7 @@ mod tests {
     generate_failed_precondition_error_phase1_with_mutated_tx!(
         bad_locktime,
         |tms| {
-            tms.tx.transaction.lock_time = PackedLockTime(42);
+            tms.tx.transaction.lock_time = LockTime::from_height(42).unwrap();
         },
         |_| "policy failure: sign_counterparty_commitment_tx: recomposed tx mismatch"
     );
@@ -730,7 +734,7 @@ mod tests {
     generate_failed_precondition_error_phase1_with_mutated_keys!(
         bad_revpubkey,
         |keys| {
-            keys.revocation_key = make_test_pubkey(42);
+            keys.revocation_key = RevocationKey(make_test_pubkey(42));
         },
         |_| "policy failure: sign_counterparty_commitment_tx: recomposed tx mismatch"
     );
@@ -739,7 +743,7 @@ mod tests {
     generate_failed_precondition_error_phase1_with_mutated_keys!(
         bad_htlcpubkey,
         |keys| {
-            keys.countersignatory_htlc_key = make_test_pubkey(42);
+            keys.countersignatory_htlc_key = HtlcKey(make_test_pubkey(42));
         },
         |_| "policy failure: sign_counterparty_commitment_tx: recomposed tx mismatch"
     );
@@ -748,7 +752,7 @@ mod tests {
     generate_failed_precondition_error_phase1_with_mutated_keys!(
         bad_delayed_pubkey,
         |keys| {
-            keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
+            keys.broadcaster_delayed_payment_key = DelayedPaymentKey(make_test_pubkey(42));
         },
         |_| "policy failure: sign_counterparty_commitment_tx: recomposed tx mismatch"
     );
@@ -761,7 +765,7 @@ mod tests {
                 let redeem_script =
                     get_to_countersignatory_with_anchors_redeemscript(&make_test_pubkey(42));
                 tms.tx.transaction.output[5].script_pubkey = redeem_script.to_v0_p2wsh();
-                tms.witscripts[5] = redeem_script.serialize();
+                tms.witscripts[5] = redeem_script.as_bytes().to_vec();
             } else {
                 tms.tx.transaction.output[3].script_pubkey =
                     payload_for_p2wpkh(&make_test_pubkey(42)).script_pubkey();
@@ -974,7 +978,7 @@ mod tests {
             &chan.setup.counterparty_points.funding_pubkey,
         )
         .expect("scripts");
-        let output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+        let output_witscripts = redeem_scripts.iter().map(|s| s.as_bytes().to_vec()).collect();
 
         let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
             keys,

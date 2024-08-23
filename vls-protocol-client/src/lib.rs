@@ -3,18 +3,19 @@ use std::convert::{TryFrom, TryInto};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use crate::lightning::sign::HTLCDescriptor;
 use bitcoin::bech32::u5;
+use bitcoin::bip32::ChildNumber;
+use bitcoin::bip32::ExtendedPubKey;
 use bitcoin::hashes::Hash;
+use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use bitcoin::secp256k1::rand::rngs::OsRng;
 use bitcoin::secp256k1::rand::RngCore;
 use bitcoin::secp256k1::{
     ecdh::SharedSecret, ecdsa::Signature, All, PublicKey, Scalar, Secp256k1, SecretKey,
 };
-use bitcoin::util::bip32::ChildNumber;
-use bitcoin::util::bip32::ExtendedPubKey;
-use bitcoin::util::psbt::PartiallySignedTransaction;
-use bitcoin::{EcdsaSighashType, Script, WPubkeyHash};
+use bitcoin::WPubkeyHash;
 use bitcoin::{Transaction, TxOut};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
@@ -25,13 +26,15 @@ use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::ln::msgs::UnsignedGossipMessage;
 use lightning::ln::script::ShutdownScript;
 use lightning::ln::PaymentPreimage;
-use lightning::sign::HTLCDescriptor;
-use lightning::sign::{ChannelSigner, EcdsaChannelSigner, NodeSigner, WriteableEcdsaChannelSigner};
+use lightning::sign::ecdsa::EcdsaChannelSigner;
+use lightning::sign::ecdsa::WriteableEcdsaChannelSigner;
+use lightning::sign::{ChannelSigner, NodeSigner};
 use lightning::sign::{EntropySource, SignerProvider};
 use lightning::sign::{KeyMaterial, Recipient, SpendableOutputDescriptor};
 use lightning::util::ser::Readable;
 use lightning::util::ser::{Writeable, Writer};
-use lightning_signer::bitcoin;
+use lightning_signer::bitcoin::sighash::EcdsaSighashType;
+use lightning_signer::bitcoin::{self, ScriptBuf};
 use lightning_signer::channel::{
     dbid_from_ldk_channel_id, ldk_channel_id_from_dbid, CommitmentType,
 };
@@ -92,10 +95,6 @@ pub struct SignerClient {
     dbid: u64,
     channel_keys: ChannelPublicKeys,
     channel_value: u64,
-}
-
-fn from_pubkey(pubkey: PubKey) -> PublicKey {
-    PublicKey::from_slice(&pubkey.0).unwrap()
 }
 
 fn to_pubkey(pubkey: PublicKey) -> PubKey {
@@ -189,6 +188,7 @@ impl EcdsaChannelSigner for SignerClient {
         &self,
         commitment_tx: &CommitmentTransaction,
         _preimages: Vec<PaymentPreimage>,
+        _preimages_ount: Vec<PaymentPreimage>,
         _secp_ctx: &Secp256k1<All>,
     ) -> Result<(Signature, Vec<Signature>), ()> {
         // TODO preimage handling
@@ -211,15 +211,6 @@ impl EcdsaChannelSigner for SignerClient {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| ())?;
         Ok((signature, htlc_signatures))
-    }
-
-    fn validate_counterparty_revocation(&self, idx: u64, secret: &SecretKey) -> Result<(), ()> {
-        let message = ValidateRevocation {
-            commitment_number: INITIAL_COMMITMENT_NUMBER - idx,
-            commitment_secret: DisclosedSecret(secret[..].try_into().unwrap()),
-        };
-        let _: ValidateRevocationReply = self.call(message).map_err(|_| ())?;
-        Ok(())
     }
 
     fn sign_holder_commitment(
@@ -308,8 +299,8 @@ impl EcdsaChannelSigner for SignerClient {
         let message = SignMutualCloseTx2 {
             to_local_value_sat: tx.to_holder_value_sat(),
             to_remote_value_sat: tx.to_counterparty_value_sat(),
-            local_script: tx.to_holder_script().clone().into_bytes().into(),
-            remote_script: tx.to_counterparty_script().clone().into_bytes().into(),
+            local_script: tx.to_holder_script().to_bytes().into(),
+            remote_script: tx.to_counterparty_script().to_bytes().into(),
             local_wallet_path_hint: dest_wallet_path(),
         };
         let result: SignTxReply = self.call(message).map_err(|_| ())?;
@@ -345,6 +336,15 @@ impl ChannelSigner for SignerClient {
         let result: GetPerCommitmentPoint2Reply =
             self.call(message).expect("get_per_commitment_point");
         PublicKey::from_slice(&result.point.0).expect("public key")
+    }
+
+    fn validate_counterparty_revocation(&self, idx: u64, secret: &SecretKey) -> Result<(), ()> {
+        let message = ValidateRevocation {
+            commitment_number: INITIAL_COMMITMENT_NUMBER - idx,
+            commitment_secret: DisclosedSecret(secret[..].try_into().unwrap()),
+        };
+        let _: ValidateRevocationReply = self.call(message).map_err(|_| ())?;
+        Ok(())
     }
 
     fn release_commitment_secret(&self, idx: u64) -> [u8; 32] {
@@ -415,10 +415,10 @@ impl ChannelSigner for SignerClient {
             local_shutdown_script: Octets::EMPTY, // TODO
             local_shutdown_wallet_index: None,
             remote_basepoints: Basepoints {
-                revocation: to_pubkey(cp.pubkeys.revocation_basepoint),
+                revocation: to_pubkey(cp.pubkeys.revocation_basepoint.0),
                 payment: to_pubkey(cp.pubkeys.payment_point),
-                htlc: to_pubkey(cp.pubkeys.htlc_basepoint),
-                delayed_payment: to_pubkey(cp.pubkeys.delayed_payment_basepoint),
+                htlc: to_pubkey(cp.pubkeys.htlc_basepoint.0),
+                delayed_payment: to_pubkey(cp.pubkeys.delayed_payment_basepoint.0),
             },
             remote_funding_pubkey: to_pubkey(cp.pubkeys.funding_pubkey),
             remote_to_self_delay: cp.selected_contest_delay,
@@ -472,11 +472,11 @@ impl KeysManagerClient {
         let message = GetChannelBasepoints { node_id: PubKey(peer_id), dbid };
         let result: GetChannelBasepointsReply = self.call(message).expect("pubkeys");
         let channel_keys = ChannelPublicKeys {
-            funding_pubkey: from_pubkey(result.funding),
-            revocation_basepoint: from_pubkey(result.basepoints.revocation),
-            payment_point: from_pubkey(result.basepoints.payment),
-            delayed_payment_basepoint: from_pubkey(result.basepoints.delayed_payment),
-            htlc_basepoint: from_pubkey(result.basepoints.htlc),
+            funding_pubkey: result.funding.into(),
+            revocation_basepoint: result.basepoints.revocation.into(),
+            payment_point: result.basepoints.payment.into(),
+            delayed_payment_basepoint: result.basepoints.delayed_payment.into(),
+            htlc_basepoint: result.basepoints.htlc.into(),
         };
         channel_keys
     }
@@ -499,7 +499,7 @@ impl KeysManagerClient {
 
         let message = SignWithdrawal { utxos, psbt: streamed_psbt };
         let result: SignWithdrawalReply = self.call(message).expect("sign failed");
-        let psbt = result.psbt.0;
+        let psbt = result.psbt.0.inner;
         psbt.inputs.into_iter().map(|i| i.final_script_witness.unwrap().to_vec()).collect()
     }
 
@@ -514,9 +514,8 @@ impl KeysManagerClient {
     fn descriptor_to_utxo(d: &SpendableOutputDescriptor) -> Utxo {
         let (outpoint, amount, keyindex, close_info) = match d {
             // Mutual close - we are spending a non-delayed output to us on the shutdown key
-            SpendableOutputDescriptor::StaticOutput { output, outpoint } => {
-                (outpoint.clone(), output.value, dest_wallet_path()[0], None)
-            } // FIXME this makes some assumptions
+            SpendableOutputDescriptor::StaticOutput { output, outpoint, .. } =>
+                (outpoint.clone(), output.value, dest_wallet_path()[0], None), // FIXME this makes some assumptions
             // We force-closed - we are spending a delayed output to us
             SpendableOutputDescriptor::DelayedPaymentOutput(o) => (
                 o.outpoint,
@@ -644,7 +643,7 @@ impl NodeSigner for KeysManagerClient {
 }
 
 impl SignerProvider for KeysManagerClient {
-    type Signer = SignerClient;
+    type EcdsaSigner = SignerClient;
 
     fn generate_channel_keys_id(
         &self,
@@ -660,7 +659,7 @@ impl SignerProvider for KeysManagerClient {
         &self,
         channel_value_satoshis: u64,
         channel_keys_id: [u8; 32],
-    ) -> Self::Signer {
+    ) -> Self::EcdsaSigner {
         // We don't use the peer_id, because it's not easy to get at this point within the LDK framework.
         // The dbid is unique, so that's enough for our purposes.
         let peer_id = [0u8; 33];
@@ -680,7 +679,7 @@ impl SignerProvider for KeysManagerClient {
         )
     }
 
-    fn read_chan_signer(&self, mut reader: &[u8]) -> Result<Self::Signer, DecodeError> {
+    fn read_chan_signer(&self, mut reader: &[u8]) -> Result<Self::EcdsaSigner, DecodeError> {
         let peer_id = Readable::read(&mut reader)?;
         let dbid = Readable::read(&mut reader)?;
         let channel_keys = Readable::read(&mut reader)?;
@@ -695,7 +694,7 @@ impl SignerProvider for KeysManagerClient {
         })
     }
 
-    fn get_destination_script(&self) -> Result<Script, ()> {
+    fn get_destination_script(&self, _: [u8; 32]) -> Result<ScriptBuf, ()> {
         let secp_ctx = Secp256k1::new();
         let wallet_path = dest_wallet_path();
         let mut key = self.xpub;
@@ -703,11 +702,11 @@ impl SignerProvider for KeysManagerClient {
             key = key.ckd_pub(&secp_ctx, ChildNumber::from_normal_idx(*i).unwrap()).unwrap();
         }
         let pubkey = key.public_key;
-        Ok(Script::new_v0_p2wpkh(&WPubkeyHash::hash(&pubkey.serialize())))
+        Ok(ScriptBuf::new_v0_p2wpkh(&WPubkeyHash::hash(&pubkey.serialize())))
     }
 
     fn get_shutdown_scriptpubkey(&self) -> Result<ShutdownScript, ()> {
-        Ok(ShutdownScript::try_from(self.get_destination_script()?).expect("script"))
+        Ok(ShutdownScript::try_from(self.get_destination_script([0; 32])?).expect("script"))
     }
 }
 

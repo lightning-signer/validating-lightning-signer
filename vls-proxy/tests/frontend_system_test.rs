@@ -7,14 +7,15 @@
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use bitcoin::bip32::{ExtendedPrivKey, ExtendedPubKey};
+use bitcoin::blockdata::block::Header as BlockHeader;
+use bitcoin::consensus::deserialize;
+use bitcoin::secp256k1::{All, KeyPair, PublicKey, Secp256k1, SecretKey};
+use bitcoin::{BlockHash, Network};
 use bitcoind_client::{BitcoindClient, BlockchainInfo};
 use clap::Parser;
 use core::result::Result as CoreResult;
-use lightning_signer::bitcoin::consensus::deserialize;
-use lightning_signer::bitcoin::hashes::hex::FromHex;
-use lightning_signer::bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey};
-use lightning_signer::bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey};
-use lightning_signer::bitcoin::{BlockHash, BlockHeader, KeyPair, Network};
+use lightning_signer::bitcoin;
 use lightning_signer::chain::tracker::ChainTracker;
 use lightning_signer::node::{Heartbeat, SignedHeartbeat};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
@@ -23,6 +24,7 @@ use lightning_signer::util::crypto_utils::sighash_from_heartbeat;
 use lightning_signer::util::test_utils::MockListener;
 use log::*;
 use serde_json::{json, Value};
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::TempDir;
@@ -273,7 +275,7 @@ async fn run_regtest(tmpdir: TempDir) -> Result<()> {
 
 async fn mine(client: &BitcoindClient, address: &str, blocks: u32) -> Result<BlockHash> {
     let hashes: Value = client.call("generatetoaddress", &[json!(blocks), json!(address)]).await?;
-    Ok(BlockHash::from_hex(&hashes[0].as_str().unwrap())?)
+    Ok(BlockHash::from_str(&hashes[0].as_str().unwrap())?)
 }
 
 async fn get_info(client: &BitcoindClient) -> Result<BlockchainInfo> {

@@ -1,20 +1,19 @@
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
+use bitcoin::absolute::LockTime;
 use core::cell::RefCell;
 use core::mem;
 #[cfg(feature = "timeless_workaround")]
 use core::time::Duration;
 
+use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::blockdata::constants::{genesis_block, DIFFCHANGE_INTERVAL};
 use bitcoin::consensus::{Decodable, Encodable};
-use bitcoin::hashes::hex::ToHex;
+use bitcoin::hash_types::FilterHeader;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::util::uint::Uint256;
-use bitcoin::{
-    BlockHash, BlockHeader, FilterHeader, Network, OutPoint, PackedLockTime, Transaction, TxIn,
-    TxOut, Txid,
-};
+use bitcoin::{BlockHash, Network, OutPoint, Target, Transaction, TxIn, TxOut, Txid};
+use vls_common::HexEncode;
 
 use crate::policy::validator::ValidatorFactory;
 #[allow(unused_imports)]
@@ -169,7 +168,7 @@ impl<L: ChainListener> ChainTracker<L> {
     ) -> Result<Self, Error> {
         let header = tip.0;
         header
-            .validate_pow(&header.target())
+            .validate_pow(header.target())
             .map_err(|e| error_invalid_block!("validate pow {}: {}", header.target(), e))?;
         let headers = VecDeque::new();
         let listeners = OrderedMap::new();
@@ -342,9 +341,9 @@ impl<L: ChainListener> ChainTracker<L> {
             if supplied_prev_headers.1 != self.headers[0].1 {
                 return Err(error_invalid_chain!(
                     "supplied prev filter header {} != self.headers[0].1 {} for prev block hash {}",
-                    supplied_prev_headers.1.to_hex(),
-                    self.headers[0].1.to_hex(),
-                    supplied_prev_headers.0.block_hash().to_hex()
+                    supplied_prev_headers.1.to_string(),
+                    self.headers[0].1.to_string(),
+                    supplied_prev_headers.0.block_hash().to_string()
                 ));
             }
             self.headers.pop_front();
@@ -601,7 +600,7 @@ impl<L: ChainListener> ChainTracker<L> {
             ));
         }
         // Ensure correctly mined (hash is under target)
-        header.validate_pow(&header.target()).map_err(|_| Error::InvalidBlock)?;
+        header.validate_pow(header.target()).map_err(|_| Error::InvalidBlock)?;
         if self.network == Network::Testnet
             && header.target() == max_target(self.network)
             && header.time > prev_header.time + 60 * 20
@@ -616,8 +615,8 @@ impl<L: ChainListener> ChainTracker<L> {
             if header.bits != prev_header.bits && self.network != Network::Testnet {
                 return Err(error_invalid_chain!(
                     "header.bits {} != self.tip.bits {}",
-                    header.bits,
-                    prev_header.bits
+                    header.bits.to_consensus(),
+                    prev_header.bits.to_consensus()
                 ));
             }
         }
@@ -628,7 +627,7 @@ impl<L: ChainListener> ChainTracker<L> {
         let validator = self.validator_factory.make_validator(self.network, self.node_id, None);
         let prev_filter_header = &prev_headers.1;
 
-        if prev_filter_header.iter().all(|x| *x == 0) {
+        if prev_filter_header.to_byte_array().iter().all(|x| *x == 0) {
             // This allows us to upgrade old signers that didn't have filter headers.
             // It is safe, because it's vanishingly unlikely that the filter header is
             // all zeros, so the only way this can be triggered is if the filter header
@@ -651,26 +650,36 @@ impl<L: ChainListener> ChainTracker<L> {
     }
 }
 
-fn validate_retarget(prev_target: Uint256, target: Uint256, network: Network) -> Result<(), Error> {
+fn validate_retarget(prev_target: Target, target: Target, network: Network) -> Result<(), Error> {
     // TODO do actual retargeting with timestamps, requires remembering start timestamp
 
     // Round trip the target bounds, to simulate the way bitcoind checks them
-    fn round_trip_target(prev_target: &Uint256) -> Uint256 {
-        BlockHeader::u256_from_compact_target(BlockHeader::compact_target_from_u256(prev_target))
+    fn round_trip_target(target: Target) -> Target {
+        Target::from_compact(target.to_compact_lossy())
     }
 
-    let min = round_trip_target(&(prev_target >> 2));
-    let max = round_trip_target(&(prev_target << 2));
+    let min = round_trip_target(prev_target.min_difficulty_transition_threshold());
+    let max = round_trip_target(prev_target.max_difficulty_transition_threshold());
     let chain_max = max_target(network);
 
     if target.gt(&chain_max) {
-        return Err(error_invalid_block!("target {} > chain_max {}", target, chain_max));
+        return Err(error_invalid_block!("target {:x} > chain_max {:x}", target, chain_max));
     }
     if target.lt(&min) {
-        return Err(error_invalid_chain!("target {} < min {}", target, min));
+        return Err(error_invalid_chain!(
+            "bad transition {:x} -> target {:x} < min {:x}",
+            prev_target,
+            target,
+            min
+        ));
     }
     if target.gt(&max) {
-        return Err(error_invalid_chain!("target {} > max {}", target, max));
+        return Err(error_invalid_chain!(
+            "bad transition {:x} -> target {:x} > max {:x}",
+            prev_target,
+            target,
+            max
+        ));
     }
     Ok(())
 }
@@ -709,7 +718,7 @@ impl<'a, L: ChainListener> PushListener for ChainTrackerPushListener<'a, L> {
         self.do_push(|pl| pl.on_transaction_start(version));
     }
 
-    fn on_transaction_end(&mut self, locktime: PackedLockTime, txid: Txid) {
+    fn on_transaction_end(&mut self, locktime: LockTime, txid: Txid) {
         self.do_push(|pl| pl.on_transaction_end(locktime, txid));
     }
 
@@ -765,12 +774,17 @@ pub trait ChainListener: SendSync {
         F: FnOnce(&mut dyn PushListener);
 }
 
-/// The one in rust-bitcoin is incorrect for Regtest at least
-pub fn max_target(network: Network) -> Uint256 {
-    match network {
-        Network::Regtest => Uint256::from_u64(0x7fffff).unwrap() << (256 - 24),
-        _ => Uint256::from_u64(0xFFFF).unwrap() << 208,
-    }
+/// Convert the Network to a max target value for each network.
+pub fn max_target(network: Network) -> Target {
+    let upper = match network {
+        Network::Regtest => 0x7fffffu128 << (128 - 24),
+        Network::Testnet => 0xffffu128 << (128 - 48),
+        Network::Bitcoin => 0xffffu128 << (128 - 48),
+        _ => unreachable!(),
+    };
+    let mut bytes = [0u8; 32];
+    bytes[0..16].copy_from_slice(&upper.to_be_bytes());
+    Target::from_be_bytes(bytes)
 }
 
 #[cfg(test)]
@@ -778,19 +792,22 @@ mod tests {
     use crate::util::test_utils::*;
     use bitcoin::blockdata::constants::genesis_block;
     use bitcoin::consensus::serialize;
+    use bitcoin::hash_types::TxMerkleNode;
     use bitcoin::hashes::Hash;
+    use bitcoin::key::Secp256k1;
     use bitcoin::network::constants::Network;
-    use bitcoin::secp256k1::{Secp256k1, SecretKey};
-    use bitcoin::util::hash::bitcoin_merkle_root;
-    use bitcoin::{Block, TxIn};
-    use bitcoin::{PackedLockTime, Sequence, TxMerkleNode, Witness};
+    use bitcoin::secp256k1::SecretKey;
+    use bitcoin::string::FromHexStr;
+    use bitcoin::{merkle_tree, Block, CompactTarget, TxIn};
+    use bitcoin::{Sequence, Witness};
     use bitcoind_client::dummy::DummyTxooSource;
     use core::iter::FromIterator;
+    use test_log::test;
 
     use super::*;
 
     use crate::util::mocks::MockValidatorFactory;
-    use test_log::test;
+
     use txoo::source::Source;
 
     #[tokio::test]
@@ -836,9 +853,12 @@ mod tests {
         assert_eq!(tracker.height(), 1);
 
         // difficulty can't change within the retarget period
-        let bad_bits = header1.bits - 1;
-        let header_bad_bits =
-            mine_header_with_bits(tracker.tip.0.block_hash(), TxMerkleNode::all_zeros(), bad_bits);
+        let bad_bits = header1.bits.to_consensus() - 1;
+        let header_bad_bits = mine_header_with_bits(
+            tracker.tip.0.block_hash(),
+            TxMerkleNode::all_zeros(),
+            CompactTarget::from_consensus(bad_bits),
+        );
         let dummy_proof =
             TxoProof::prove_unchecked(&genesis, &FilterHeader::all_zeros(), tracker.height() + 1);
         assert_eq!(
@@ -974,33 +994,48 @@ mod tests {
             add_block(&mut tracker, &source, &[]).await?;
         }
         assert_eq!(tracker.height, DIFFCHANGE_INTERVAL - 1);
+
         let target = tracker.tip().0.target();
 
         // Decrease difficulty by 2 fails because of chain max
-        let bits = BlockHeader::compact_target_from_u256(&(target << 1));
+        let new_bits = shift_target(target, 1).to_compact_lossy();
+
         assert_eq!(
-            add_block_with_bits(&mut tracker, &source, bits, false).await.err(),
+            add_block_with_bits(&mut tracker, &source, new_bits, false).await.err(),
             Some(Error::InvalidBlock)
         );
 
         // Increase difficulty by 8 fails because of max retarget
-        let bits = BlockHeader::compact_target_from_u256(&(target >> 3));
+        let new_bits = shift_target(target, -3).to_compact_lossy();
+
         assert_eq!(
-            add_block_with_bits(&mut tracker, &source, bits, false).await.err(),
+            add_block_with_bits(&mut tracker, &source, new_bits, false).await.err(),
             Some(Error::InvalidChain)
         );
 
         // Increase difficulty by 2
-        let bits = BlockHeader::compact_target_from_u256(&(target >> 1));
-        add_block_with_bits(&mut tracker, &source, bits, true).await?;
+        let new_bits = shift_target(target, -1).to_compact_lossy();
+        add_block_with_bits(&mut tracker, &source, new_bits, true).await?;
         Ok(())
+    }
+
+    fn shift_target(target: Target, shift: i8) -> Target {
+        let mut target_bytes = target.to_be_bytes();
+        let mut upper = u128::from_be_bytes(target_bytes[0..16].try_into().unwrap());
+        if shift > 0 {
+            upper <<= shift as u128;
+        } else {
+            upper >>= -shift as u128;
+        }
+        target_bytes[0..16].copy_from_slice(&upper.to_be_bytes());
+        Target::from_be_bytes(target_bytes)
     }
 
     #[test]
     fn test_retarget_rounding() -> Result<(), Error> {
         validate_retarget(
-            BlockHeader::u256_from_compact_target(0x1c063051),
-            BlockHeader::u256_from_compact_target(0x1c018c14),
+            Target::from_compact(CompactTarget::from_hex_str("0x1c063051").unwrap()),
+            Target::from_compact(CompactTarget::from_hex_str("0x1c018c14").unwrap()),
             Network::Testnet,
         )?;
         Ok(())
@@ -1091,15 +1126,17 @@ mod tests {
     async fn add_block_with_bits(
         tracker: &mut ChainTracker<MockListener>,
         source: &DummyTxooSource,
-        bits: u32,
+        bits: CompactTarget,
         do_add: bool,
     ) -> Result<BlockHeader, Error> {
         let txs = txs_with_coinbase(&[]);
         let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
 
-        let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).unwrap().into();
-        let header = mine_header_with_bits(tracker.tip().0.block_hash(), merkle_root, bits);
+        let merkle_root = merkle_tree::calculate_root(txids.into_iter()).unwrap();
+        let merkle_root_node = TxMerkleNode::from_raw_hash(merkle_root.into());
+        let header = mine_header_with_bits(tracker.tip().0.block_hash(), merkle_root_node, bits);
 
+        let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
         let block = Block { header, txdata: txs };
         let height = tracker.height() + 1;
 
@@ -1159,7 +1196,7 @@ mod tests {
             0,
             Transaction {
                 version: 0,
-                lock_time: PackedLockTime(0),
+                lock_time: LockTime::ZERO,
                 input: vec![],
                 output: vec![Default::default()],
             },

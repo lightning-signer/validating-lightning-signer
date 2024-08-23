@@ -52,6 +52,8 @@ pub mod signer;
 pub mod tx;
 /// Layer-1 wallet
 pub mod wallet;
+/// Reexport the hex crate
+pub use hex;
 
 #[cfg(not(feature = "std"))]
 mod io_extras {

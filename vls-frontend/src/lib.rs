@@ -7,8 +7,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::{BlockHash, BlockHeader, Network, OutPoint, Txid};
+use bitcoin::{BlockHash, Network, OutPoint, Txid};
 use lightning_signer::bitcoin;
 use lightning_signer::chain::tracker::Headers;
 use lightning_signer::node::SignedHeartbeat;

@@ -1,7 +1,7 @@
-use bitcoin::hashes::hex::ToHex;
+use bitcoin::absolute::{Height, Time};
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-use bitcoin::util::sighash::SighashCache;
-use bitcoin::{EcdsaSighashType, Network, Script, Sighash, Transaction};
+use bitcoin::sighash::{EcdsaSighashType, SegwitV0Sighash, SighashCache};
+use bitcoin::{Network, ScriptBuf, Transaction};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, htlc_success_tx_weight, htlc_timeout_tx_weight,
     make_funding_redeemscript, ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys,
@@ -9,6 +9,7 @@ use lightning::ln::chan_utils::{
 use lightning::ln::PaymentHash;
 use lightning::sign::{ChannelSigner, InMemorySigner};
 use log::*;
+use vls_common::HexEncode;
 
 use super::error::{
     policy_error, transaction_format_error, unknown_destinations_error, ValidationError,
@@ -192,9 +193,12 @@ impl SimpleValidator {
     const NON_ANCHOR_SEQS: [u32; 3] = [0x_0000_0000_u32, 0x_ffff_fffd_u32, 0x_ffff_ffff_u32];
 
     fn log_prefix(&self) -> String {
-        let short_node_id = &self.node_id.to_hex()[0..4];
-        let short_channel_id =
-            self.channel_id.as_ref().map(|c| c.as_slice()[0..4].to_hex()).unwrap_or("".to_string());
+        let short_node_id = &self.node_id.to_string()[0..4];
+        let short_channel_id = self
+            .channel_id
+            .as_ref()
+            .map(|c| c.as_slice()[0..4].to_vec().to_hex())
+            .unwrap_or("".to_string());
         format!("{}/{}", short_node_id, short_channel_id)
     }
 
@@ -928,10 +932,11 @@ impl Validator for SimpleValidator {
         setup: &ChannelSetup,
         txkeys: &TxCreationKeys,
         tx: &Transaction,
-        redeemscript: &Script,
+        redeemscript: &ScriptBuf,
         htlc_amount_sat: u64,
-        output_witscript: &Script,
-    ) -> Result<(u32, HTLCOutputInCommitment, Sighash, EcdsaSighashType), ValidationError> {
+        output_witscript: &ScriptBuf,
+    ) -> Result<(u32, HTLCOutputInCommitment, SegwitV0Sighash, EcdsaSighashType), ValidationError>
+    {
         let to_self_delay = if is_counterparty {
             setup.holder_selected_contest_delay // the local side imposes this value
         } else {
@@ -964,7 +969,7 @@ impl Validator for SimpleValidator {
         };
 
         // Extract some parameters from the submitted transaction.
-        let cltv_expiry = if offered { tx.lock_time.0 } else { 0 };
+        let cltv_expiry = if offered { tx.lock_time.to_consensus_u32() } else { 0 };
         let transaction_output_index = tx.input[0].previous_output.vout;
         let commitment_txid = tx.input[0].previous_output.txid;
         let total_fee = htlc_amount_sat - tx.output[0].value;
@@ -1037,9 +1042,9 @@ impl Validator for SimpleValidator {
                      \x20  delayed_pubkey: {},\n\
                      ]",
                 &recomposed_tx,
-                &txkeys.revocation_key,
+                &txkeys.revocation_key.0,
                 to_self_delay,
-                &txkeys.broadcaster_delayed_payment_key
+                &txkeys.broadcaster_delayed_payment_key.0
             );
             return Err(policy_error("sighash mismatch".to_string()));
         }
@@ -1162,8 +1167,8 @@ impl Validator for SimpleValidator {
         struct ValidateArgs {
             to_holder_value_sat: u64,
             to_counterparty_value_sat: u64,
-            holder_script: Option<Script>,
-            counterparty_script: Option<Script>,
+            holder_script: Option<ScriptBuf>,
+            counterparty_script: Option<ScriptBuf>,
             wallet_path: Vec<u32>,
         }
 
@@ -1273,8 +1278,8 @@ impl Validator for SimpleValidator {
         let closing_tx = ClosingTransaction::new(
             good_args.to_holder_value_sat,
             good_args.to_counterparty_value_sat,
-            good_args.holder_script.unwrap_or_else(|| Script::new()),
-            good_args.counterparty_script.unwrap_or_else(|| Script::new()),
+            good_args.holder_script.unwrap_or_else(|| ScriptBuf::new()),
+            good_args.counterparty_script.unwrap_or_else(|| ScriptBuf::new()),
             setup.funding_outpoint,
         );
         let trusted = closing_tx.trust();
@@ -1298,8 +1303,8 @@ impl Validator for SimpleValidator {
         estate: &EnforcementState,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
-        holder_script: &Option<Script>,
-        counterparty_script: &Option<Script>,
+        holder_script: &Option<ScriptBuf>,
+        counterparty_script: &Option<ScriptBuf>,
         holder_wallet_path_hint: &[u32],
     ) -> Result<(), ValidationError> {
         let mut debug_on_return = scoped_debug_return!(
@@ -1359,8 +1364,8 @@ impl Validator for SimpleValidator {
             &ClosingTransaction::new(
                 to_holder_value_sat,
                 to_counterparty_value_sat,
-                holder_script.clone().unwrap_or_else(|| Script::new()),
-                counterparty_script.clone().unwrap_or_else(|| Script::new()),
+                holder_script.clone().unwrap_or_else(|| ScriptBuf::new()),
+                counterparty_script.clone().unwrap_or_else(|| ScriptBuf::new()),
                 setup.funding_outpoint,
             )
             .trust()
@@ -1472,7 +1477,12 @@ impl Validator for SimpleValidator {
         self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        if tx.lock_time.0 > cstate.current_height + MAX_CHAIN_LAG {
+        if !tx.lock_time.is_satisfied_by(
+            Height::from_consensus(cstate.current_height + MAX_CHAIN_LAG)
+                .expect("Height::from_consensus"),
+            // We are only interested in checking the height, and not the time. So we can put here any value.
+            Time::min_value(),
+        ) {
             transaction_format_err!(
                 self,
                 "policy-sweep-locktime",
@@ -1503,7 +1513,7 @@ impl Validator for SimpleValidator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         tx: &Transaction,
-        redeemscript: &Script,
+        redeemscript: &ScriptBuf,
         input: usize,
         amount_sat: u64,
         wallet_path: &[u32],
@@ -1534,7 +1544,7 @@ impl Validator for SimpleValidator {
                 );
             }
 
-            if tx.lock_time.0 > cltv_expiry as u32 {
+            if tx.lock_time.to_consensus_u32() > cltv_expiry as u32 {
                 transaction_format_err!(
                     self,
                     "policy-sweep-locktime",
@@ -1551,8 +1561,13 @@ impl Validator for SimpleValidator {
         )) = parse_offered_htlc_script(redeemscript, setup.is_anchors())
         {
             // It's an offered htlc (counterparty perspective)
-
-            if tx.lock_time.0 > cstate.current_height + MAX_CHAIN_LAG {
+            // FIXME: The bitcoin Height type should implement `From<u32>`.
+            if !tx.lock_time.is_satisfied_by(
+                Height::from_consensus(cstate.current_height + MAX_CHAIN_LAG)
+                    .expect("Height::from_consensus"),
+                // We are only interested in checking the height, and not the time. So we can put here any value.
+                Time::min_value(),
+            ) {
                 transaction_format_err!(
                     self,
                     "policy-sweep-locktime",
@@ -1608,7 +1623,12 @@ impl Validator for SimpleValidator {
         self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
-        if tx.lock_time.0 > cstate.current_height + MAX_CHAIN_LAG {
+        if !tx.lock_time.is_satisfied_by(
+            Height::from_consensus(cstate.current_height + MAX_CHAIN_LAG)
+                .expect("Height::from_consensus"),
+            // We are only interested in checking the height, and not the time. So we can put here any value.
+            Time::min_value(),
+        ) {
             transaction_format_err!(
                 self,
                 "policy-sweep-locktime",

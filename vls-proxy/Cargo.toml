@@ -26,7 +26,7 @@ vls-protocol-signer = { path = "../vls-protocol-signer", version = "0.12.0" }
 vls-protocol-client = { path = "../vls-protocol-client", version = "0.12.0" }
 vls-protocol = { path = "../vls-protocol", version = "0.12.0" }
 vls-frontend = { path = "../vls-frontend", version = "0.12.0" }
-vls-persist = { path = "../vls-persist", version = "0.12.0", default_features = false, features = ["std", "kvv", "redb-kvv"] }
+vls-persist = { path = "../vls-persist", version = "0.12.0", default-features = false, features = ["std", "kvv", "redb-kvv"] }
 lightning-storage-server = { path = "../lightning-storage-server", version = "0.3.0", default-features = false }
 nix = "0.26"
 serde = "1.0"
@@ -74,16 +74,9 @@ base64 = "0.21.7"
 
 [dependencies.heapmon]
 version = "0.1"
-#path = "../../../heapmon"
-#git = "https://gitlab.com/lightning-signer/heapmon"
-#rev = "a374805e55fa0bd089ff1db18a836e330219bc62"
 
 [dependencies.txoo-bitcoind-client]
-version = "0.7.1"
-#git = "https://gitlab.com/lightning-signer/txoo"
-#rev = "d49b25283a5f1db675db20a19b313e5ca7456410"
-#branch = "main"
-#path = "../../txoo/bitcoind-client"
+version = "0.8.1"
 
 [dev-dependencies]
 tempfile = "3"

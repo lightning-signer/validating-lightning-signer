@@ -1,6 +1,7 @@
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::Network;
 use lightning::ln::chan_utils::ChannelPublicKeys;
+use lightning::ln::channel_keys::{DelayedPaymentBasepoint, HtlcBasepoint, RevocationBasepoint};
 
 /// Make a bitcoin test key
 pub fn make_test_bitcoin_key(i: u8) -> (bitcoin::PublicKey, bitcoin::PrivateKey) {
@@ -37,9 +38,9 @@ pub fn make_test_privkey(i: u8) -> SecretKey {
 pub fn make_test_counterparty_points() -> ChannelPublicKeys {
     ChannelPublicKeys {
         funding_pubkey: make_test_pubkey(104),
-        revocation_basepoint: make_test_pubkey(100),
+        revocation_basepoint: RevocationBasepoint(make_test_pubkey(100)),
         payment_point: make_test_pubkey(101),
-        delayed_payment_basepoint: make_test_pubkey(102),
-        htlc_basepoint: make_test_pubkey(103),
+        delayed_payment_basepoint: DelayedPaymentBasepoint(make_test_pubkey(102)),
+        htlc_basepoint: HtlcBasepoint(make_test_pubkey(103)),
     }
 }

@@ -9,11 +9,11 @@ use crate::policy::validator::{
 use crate::policy::Policy;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
 use crate::wallet::Wallet;
+use bitcoin::blockdata::block::Header as BlockHeader;
+use bitcoin::hash_types::FilterHeader;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::{
-    BlockHash, BlockHeader, EcdsaSighashType, FilterHeader, Network, OutPoint, Script, Sighash,
-    Transaction,
-};
+use bitcoin::sighash::{EcdsaSighashType, SegwitV0Sighash};
+use bitcoin::{BlockHash, Network, OutPoint, ScriptBuf, Transaction};
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::sign::InMemorySigner;
 use std::sync::{Arc, Mutex};
@@ -140,10 +140,11 @@ impl Validator for MockValidator {
         setup: &ChannelSetup,
         txkeys: &TxCreationKeys,
         tx: &Transaction,
-        redeemscript: &Script,
+        redeemscript: &ScriptBuf,
         htlc_amount_sat: u64,
-        output_witscript: &Script,
-    ) -> Result<(u32, HTLCOutputInCommitment, Sighash, EcdsaSighashType), ValidationError> {
+        output_witscript: &ScriptBuf,
+    ) -> Result<(u32, HTLCOutputInCommitment, SegwitV0Sighash, EcdsaSighashType), ValidationError>
+    {
         todo!()
     }
 
@@ -176,8 +177,8 @@ impl Validator for MockValidator {
         state: &EnforcementState,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
-        holder_shutdown_script: &Option<Script>,
-        counterparty_shutdown_script: &Option<Script>,
+        holder_shutdown_script: &Option<ScriptBuf>,
+        counterparty_shutdown_script: &Option<ScriptBuf>,
         holder_wallet_path_hint: &[u32],
     ) -> Result<(), ValidationError> {
         todo!()
@@ -202,7 +203,7 @@ impl Validator for MockValidator {
         setup: &ChannelSetup,
         cstate: &ChainState,
         tx: &Transaction,
-        redeemscript: &Script,
+        redeemscript: &ScriptBuf,
         input: usize,
         amount_sat: u64,
         key_path: &[u32],

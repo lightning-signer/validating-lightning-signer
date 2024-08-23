@@ -5,22 +5,21 @@ use std::time::{Duration, SystemTime};
 
 use core::cmp;
 
-use bitcoin;
+use bitcoin::absolute::LockTime;
+use bitcoin::block::Version;
+use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::blockdata::script::Script;
+use bitcoin::hash_types::TxMerkleNode;
 use bitcoin::hash_types::Txid;
-use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::{hex, hex::FromHex, Hash};
 use bitcoin::network::constants::Network;
 use bitcoin::secp256k1::{self, ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey};
-use bitcoin::util::hash::bitcoin_merkle_root;
-use bitcoin::util::psbt::serialize::Serialize;
-use bitcoin::util::sighash::SighashCache;
-use bitcoin::{
-    Address, Block, BlockHash, BlockHeader, EcdsaSighashType, PackedLockTime, Sequence,
-    Transaction, TxIn, TxMerkleNode, TxOut, Witness,
-};
+use bitcoin::sighash::EcdsaSighashType;
+use bitcoin::sighash::SighashCache;
+use bitcoin::{self, merkle_tree, CompactTarget, ScriptBuf};
+use bitcoin::{Address, Block, BlockHash, Sequence, Transaction, TxIn, TxOut, Witness};
 use chain::chaininterface;
 use lightning::chain;
 use lightning::chain::chainmonitor::MonitorUpdateId;
@@ -33,8 +32,11 @@ use lightning::ln::chan_utils::{
     ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters,
     DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
+use lightning::ln::channel_keys::{
+    DelayedPaymentBasepoint, HtlcBasepoint, RevocationBasepoint, RevocationKey,
+};
 use lightning::ln::features::ChannelTypeFeatures;
-use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage};
+use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning::sign::{ChannelSigner, InMemorySigner};
 use lightning::util::test_utils;
 use lightning_invoice::{Currency, InvoiceBuilder, PaymentSecret};
@@ -69,6 +71,10 @@ use crate::{Arc, CommitmentPointProvider};
 use key::{
     make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
 };
+use vls_common::HexEncode;
+
+use super::crypto_utils;
+use super::status::internal_error;
 
 // Status assertions:
 
@@ -535,10 +541,10 @@ pub fn make_test_previous_tx(
 ) -> (Transaction, Txid) {
     let tx = Transaction {
         version: 2,
-        lock_time: PackedLockTime::ZERO,
+        lock_time: LockTime::ZERO,
         input: vec![TxIn {
             previous_output: bitcoin::OutPoint { txid: Txid::all_zeros(), vout: 0 },
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence::ZERO,
             witness: Witness::default(),
         }],
@@ -567,7 +573,7 @@ pub fn make_test_funding_wallet_input(
         previous_tx,
         TxIn {
             previous_output: bitcoin::OutPoint { txid, vout: 0 },
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence::ZERO,
             witness: Witness::default(),
         },
@@ -606,14 +612,14 @@ pub fn make_test_funding_channel_outpoint(
 }
 
 pub fn make_test_funding_tx_with_ins_outs(inputs: Vec<TxIn>, outputs: Vec<TxOut>) -> Transaction {
-    Transaction { version: 2, lock_time: PackedLockTime::ZERO, input: inputs, output: outputs }
+    Transaction { version: 2, lock_time: LockTime::ZERO, input: inputs, output: outputs }
 }
 
 pub fn make_test_wallet_dest(
     node_ctx: &TestNodeContext,
     wallet_index: u32,
     stype: SpendType,
-) -> (Script, Vec<u32>) {
+) -> (ScriptBuf, Vec<u32>) {
     let child_path = vec![wallet_index];
     let pubkey = node_ctx.node.get_wallet_pubkey(&child_path).unwrap();
 
@@ -632,7 +638,7 @@ pub fn make_test_nonwallet_dest(
     node_ctx: &TestNodeContext,
     index: u8,
     stype: SpendType,
-) -> (Script, Vec<u32>) {
+) -> (ScriptBuf, Vec<u32>) {
     let pubkey = make_test_bitcoin_pubkey(index);
     let script_pubkey = match stype {
         SpendType::P2wpkh => Address::p2wpkh(&pubkey, node_ctx.node.network()),
@@ -962,7 +968,7 @@ impl TestFundingTxContext {
             self.input_txs.iter().map(|in_tx| (in_tx.txid(), in_tx)).collect();
 
         for ndx in 0..tx.input.len() {
-            tx.input[ndx].witness = Witness::from_vec(witvec[ndx].clone())
+            tx.input[ndx].witness = Witness::from_slice(&witvec[ndx])
         }
 
         let verify_result = tx.verify(|outpoint| {
@@ -1273,7 +1279,8 @@ pub fn validate_holder_commitment(
             &chan.setup.counterparty_points.funding_pubkey,
         )
         .expect("scripts");
-        let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
+        let output_witscripts: Vec<_> =
+            redeem_scripts.iter().map(|s| s.as_bytes().to_vec()).collect();
 
         for offered_htlc in commit_tx_ctx.offered_htlcs.clone() {
             node_ctx.node.add_keysend(
@@ -1345,13 +1352,13 @@ pub fn make_test_funding_tx_with_p2shwpkh_change(
 pub fn make_test_commitment_tx() -> Transaction {
     let input = TxIn {
         previous_output: bitcoin::OutPoint { txid: Txid::all_zeros(), vout: 0 },
-        script_sig: Script::new(),
+        script_sig: ScriptBuf::new(),
         sequence: Sequence::ZERO,
         witness: Witness::default(),
     };
     Transaction {
         version: 2,
-        lock_time: PackedLockTime::ZERO,
+        lock_time: LockTime::ZERO,
         input: vec![input],
         output: vec![TxOut {
             script_pubkey: payload_for_p2wpkh(&make_test_bitcoin_pubkey(1).inner).script_pubkey(),
@@ -1404,11 +1411,11 @@ pub fn build_tx_scripts(
     channel_parameters: &DirectedChannelTransactionParameters,
     broadcaster_funding_key: &PublicKey,
     countersignatory_funding_key: &PublicKey,
-) -> Result<Vec<Script>, ()> {
+) -> Result<Vec<ScriptBuf>, ()> {
     let countersignatory_pubkeys = channel_parameters.countersignatory_pubkeys();
     let contest_delay = channel_parameters.contest_delay();
 
-    let mut txouts: Vec<(TxOut, (Option<HTLCOutputInCommitment>, Script))> = Vec::new();
+    let mut txouts: Vec<(TxOut, (Option<HTLCOutputInCommitment>, ScriptBuf))> = Vec::new();
 
     let features = channel_parameters.channel_type_features();
     let is_anchors = features.supports_anchors_nonzero_fee_htlc_tx()
@@ -1421,7 +1428,7 @@ pub fn build_tx_scripts(
             );
             (script.clone(), script.to_v0_p2wsh())
         } else {
-            (Script::new(), get_p2wpkh_redeemscript(&countersignatory_pubkeys.payment_point))
+            (ScriptBuf::new(), get_p2wpkh_redeemscript(&countersignatory_pubkeys.payment_point))
         };
         txouts.push((
             TxOut { script_pubkey, value: to_countersignatory_value_sat },
@@ -1516,7 +1523,7 @@ pub fn get_channel_htlc_pubkey(
         let pubkey = derive_public_key(
             &secp_ctx,
             &remote_per_commitment_point,
-            &chan.keys.pubkeys().htlc_basepoint,
+            &chan.keys.pubkeys().htlc_basepoint.0,
         )
         .unwrap();
         Ok(pubkey)
@@ -1534,7 +1541,7 @@ pub fn get_channel_delayed_payment_pubkey(
         let pubkey = derive_public_key(
             &secp_ctx,
             &remote_per_commitment_point,
-            &chan.keys.pubkeys().delayed_payment_basepoint,
+            &chan.keys.pubkeys().delayed_payment_basepoint.0,
         )
         .unwrap();
         Ok(pubkey)
@@ -1547,16 +1554,17 @@ pub fn get_channel_revocation_pubkey(
     channel_id: &ChannelId,
     revocation_point: &PublicKey,
 ) -> PublicKey {
-    let res: Result<PublicKey, Status> = node.with_channel(&channel_id, |chan| {
+    let res: Result<RevocationKey, Status> = node.with_channel(&channel_id, |chan| {
         let secp_ctx = &chan.secp_ctx;
-        let pubkey = chan_utils::derive_public_revocation_key(
+        let pubkey = crypto_utils::derive_public_revocation_key(
             secp_ctx,
             revocation_point, // matches revocation_secret
             &chan.keys.pubkeys().revocation_basepoint,
-        );
+        )
+        .map_err(|_| internal_error("failed to derive_public_revocation_key"))?;
         Ok(pubkey)
     });
-    res.unwrap()
+    res.unwrap().0
 }
 
 pub fn check_signature(
@@ -1718,7 +1726,8 @@ where
             &chan.setup.counterparty_points.funding_pubkey,
         )
         .expect("scripts");
-        let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
+        let output_witscripts: Vec<_> =
+            redeem_scripts.iter().map(|s| s.as_bytes().to_vec()).collect();
 
         let tx = commit_tx_ctx.tx.as_ref().unwrap().trust().built_transaction().transaction.clone();
 
@@ -1761,7 +1770,7 @@ pub fn hex_encode(o: &[u8]) -> String {
 pub fn make_tx(inputs: Vec<TxIn>) -> Transaction {
     Transaction {
         version: 0,
-        lock_time: PackedLockTime::ZERO,
+        lock_time: LockTime::ZERO,
         input: inputs,
         output: vec![Default::default()],
     }
@@ -1788,7 +1797,8 @@ pub fn make_header(tip: BlockHeader, merkle_root: TxMerkleNode) -> BlockHeader {
 pub fn make_block(prev_header: BlockHeader, txs: Vec<Transaction>) -> Block {
     assert!(!txs.is_empty());
     let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
-    let merkle_root = bitcoin_merkle_root(txids.iter().map(Txid::as_hash)).unwrap().into();
+    let merkle_root = merkle_tree::calculate_root(txids.into_iter()).unwrap();
+    let merkle_root = TxMerkleNode::from_raw_hash(merkle_root.into());
     let header = make_header(prev_header, merkle_root);
     Block { header, txdata: txs }
 }
@@ -1796,12 +1806,13 @@ pub fn make_block(prev_header: BlockHeader, txs: Vec<Transaction>) -> Block {
 pub fn make_testnet_header(tip: &Headers, tip_height: u32) -> (BlockHeader, TxoProof) {
     let txs: Vec<Transaction> = vec![Transaction {
         version: 0,
-        lock_time: PackedLockTime(tip_height + 1),
+        lock_time: LockTime::from_consensus(tip_height + 1),
         input: vec![],
         output: vec![],
     }];
-    let tx_ids: Vec<_> = txs.iter().map(|tx| tx.txid().as_hash()).collect();
-    let merkle_root = bitcoin_merkle_root(tx_ids.into_iter()).unwrap().into();
+    let tx_ids: Vec<_> = txs.iter().map(|tx| tx.txid().to_raw_hash()).collect();
+    let merkle_root = merkle_tree::calculate_root(tx_ids.into_iter()).unwrap();
+    let merkle_root = TxMerkleNode::from_raw_hash(merkle_root.into());
     let regtest_genesis = genesis_block(Network::Regtest);
     let bits = regtest_genesis.header.bits;
     let header = mine_header_with_bits(tip.0.block_hash(), merkle_root, bits);
@@ -1813,19 +1824,19 @@ pub fn make_testnet_header(tip: &Headers, tip_height: u32) -> (BlockHeader, TxoP
 pub fn mine_header_with_bits(
     prev_hash: BlockHash,
     merkle_root: TxMerkleNode,
-    bits: u32,
+    bits: CompactTarget,
 ) -> BlockHeader {
     let mut nonce = 0;
     loop {
         let header = BlockHeader {
-            version: 0,
+            version: Version::from_consensus(0),
             prev_blockhash: prev_hash,
             merkle_root,
             time: 0,
             bits,
             nonce,
         };
-        if header.validate_pow(&header.target()).is_ok() {
+        if header.validate_pow(header.target()).is_ok() {
             // println!("mined block with nonce {}", nonce);
             return header;
         }
@@ -1881,10 +1892,10 @@ pub fn create_test_channel_setup(dummy_pubkey: PublicKey) -> ChannelSetup {
         holder_shutdown_script: None,
         counterparty_points: ChannelPublicKeys {
             funding_pubkey: dummy_pubkey,
-            revocation_basepoint: dummy_pubkey,
+            revocation_basepoint: RevocationBasepoint(dummy_pubkey),
             payment_point: dummy_pubkey,
-            delayed_payment_basepoint: dummy_pubkey,
-            htlc_basepoint: dummy_pubkey,
+            delayed_payment_basepoint: DelayedPaymentBasepoint(dummy_pubkey),
+            htlc_basepoint: HtlcBasepoint(dummy_pubkey),
         },
         counterparty_selected_contest_delay: 11,
         counterparty_shutdown_script: None,
@@ -2059,7 +2070,7 @@ impl<'a> Listener for MockPushListener<'a> {
 
     fn on_transaction_output(&mut self, _txout: &TxOut) {}
 
-    fn on_transaction_end(&mut self, _locktime: PackedLockTime, txid: Txid) {
+    fn on_transaction_end(&mut self, _locktime: LockTime, txid: Txid) {
         let mut watch2 = self.0.watch2.lock().unwrap();
         let mut watch_delta = self.0.watch_delta.lock().unwrap();
         let watch = self.0.watch;

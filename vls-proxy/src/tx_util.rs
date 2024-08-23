@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
-use lightning_signer::bitcoin::{PackedLockTime, Script, Sequence, Transaction, TxIn, Witness};
+use lightning_signer::bitcoin::absolute::LockTime;
+use lightning_signer::bitcoin::{ScriptBuf, Sequence, Transaction, TxIn, Witness};
 use lightning_signer::lightning::sign::DelayedPaymentOutputDescriptor;
 use lightning_signer::util::transaction_utils;
 use lightning_signer::util::transaction_utils::MAX_VALUE_MSAT;
@@ -7,7 +8,7 @@ use std::collections::HashSet;
 
 pub fn create_spending_transaction(
     descriptors: &[DelayedPaymentOutputDescriptor],
-    output_script: Script,
+    output_script: ScriptBuf,
     feerate_sat_per_1000_weight: u32,
 ) -> Result<Transaction> {
     let mut input = Vec::new();
@@ -17,7 +18,7 @@ pub fn create_spending_transaction(
     for descriptor in descriptors {
         input.push(TxIn {
             previous_output: descriptor.outpoint.into_bitcoin_outpoint(),
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence(descriptor.to_self_delay as u32),
             witness: Witness::default(),
         });
@@ -30,8 +31,7 @@ pub fn create_spending_transaction(
             return Err(anyhow!("overflow"));
         }
     }
-    let mut spend_tx =
-        Transaction { version: 2, lock_time: PackedLockTime(0), input, output: vec![] };
+    let mut spend_tx = Transaction { version: 2, lock_time: LockTime::ZERO, input, output: vec![] };
     transaction_utils::maybe_add_change_output(
         &mut spend_tx,
         input_value,

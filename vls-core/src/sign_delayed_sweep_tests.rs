@@ -1,8 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin::{
-        self, OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
-    };
+    use bitcoin::absolute::{Height, LockTime};
+    use bitcoin::{self, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness};
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
     use test_log::test;
 
@@ -16,15 +15,15 @@ mod tests {
         txid: Txid,
         vout: u32,
         contest_delay: u16,
-        script_pubkey: Script,
+        script_pubkey: ScriptBuf,
         amount_sat: u64,
     ) -> Transaction {
         Transaction {
             version: 2,
-            lock_time: PackedLockTime::ZERO,
+            lock_time: LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid, vout },
-                script_sig: Script::new(),
+                script_sig: ScriptBuf::new(),
                 sequence: Sequence(contest_delay as u32),
                 witness: Witness::default(),
             }],
@@ -39,14 +38,14 @@ mod tests {
         mutate_signing_input: InputMutator,
     ) -> Result<(), Status>
     where
-        MakeDestination: Fn(&TestNodeContext) -> (Script, Vec<u32>),
+        MakeDestination: Fn(&TestNodeContext) -> (ScriptBuf, Vec<u32>),
         InputMutator: Fn(
             &mut Channel,
             &mut ChainState,
             &mut Transaction,
             &mut usize,
             &mut u64,
-            &mut Script,
+            &mut ScriptBuf,
             &mut u64,
         ),
     {
@@ -251,7 +250,7 @@ mod tests {
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.lock_time = PackedLockTime(1_000_000);
+                    tx.lock_time = LockTime::Blocks(Height::from_consensus(1_000_000).unwrap());
                 },
             ),
             "transaction format: validate_delayed_sweep: bad locktime: 1000000 > 5"

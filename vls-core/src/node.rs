@@ -6,21 +6,23 @@ use core::time::Duration;
 
 use scopeguard::defer;
 
+use bitcoin::address::Payload;
 use bitcoin::bech32::{u5, FromBase32};
-use bitcoin::hashes::hex::ToHex;
+use bitcoin::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
+use bitcoin::key::UntweakedPublicKey;
+use bitcoin::key::XOnlyPublicKey;
 use bitcoin::psbt::Prevouts;
-use bitcoin::schnorr::UntweakedPublicKey;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
 use bitcoin::secp256k1::{schnorr, Message, PublicKey, Secp256k1, SecretKey};
-use bitcoin::util::address::Payload;
-use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::util::sighash::SighashCache;
-use bitcoin::{secp256k1, Address, PrivateKey, SchnorrSighashType, Transaction, TxOut};
-use bitcoin::{EcdsaSighashType, Network, OutPoint, Script};
+use bitcoin::sighash::EcdsaSighashType;
+use bitcoin::sighash::{SighashCache, TapSighashType};
+use bitcoin::{secp256k1, Address, PrivateKey, ScriptBuf, Transaction, TxOut};
+use bitcoin::{Network, OutPoint, Script};
 use bitcoin_consensus_derive::{Decodable, Encodable};
 use lightning::chain;
 use lightning::ln::chan_utils::{
@@ -78,6 +80,7 @@ use crate::util::ser_util::DurationHandler;
 use crate::util::status::{failed_precondition, internal_error, invalid_argument, Status};
 use crate::util::velocity::VelocityControl;
 use crate::wallet::Wallet;
+use vls_common::HexEncode;
 
 /// Prune invoices expired more than this long ago
 const INVOICE_PRUNE_TIME: Duration = Duration::from_secs(60 * 60 * 24);
@@ -327,7 +330,7 @@ impl NodeState {
         let payments = preimages
             .into_iter()
             .map(|preimage| {
-                let hash = PaymentHash(Sha256Hash::hash(&preimage).into_inner());
+                let hash = PaymentHash(Sha256Hash::hash(&preimage).to_byte_array());
                 let mut payment = RoutedPayment::new();
                 payment.preimage = Some(PaymentPreimage(preimage));
                 (hash, payment)
@@ -621,7 +624,7 @@ impl NodeState {
         preimage: PaymentPreimage,
         validator: Arc<dyn Validator>,
     ) -> bool {
-        let payment_hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+        let payment_hash = PaymentHash(Sha256Hash::hash(&preimage.0).to_byte_array());
         let mut fulfilled = false;
         if let Some(payment) = self.payments.get_mut(&payment_hash) {
             // Getting an HTLC preimage moves HTLC values to the virtual balance of the recipient
@@ -815,7 +818,7 @@ impl NodeState {
 #[derive(Eq, PartialEq, Hash, Clone)]
 pub enum Allowable {
     /// A layer-1 destination
-    Script(Script),
+    Script(ScriptBuf),
     /// A layer-1 xpub destination
     XPub(ExtendedPubKey),
     /// A layer-2 payee (node_id)
@@ -835,9 +838,9 @@ impl ToStringForNetwork for Allowable {
                 let addr_res = Address::from_script(&script, network);
                 addr_res
                     .map(|a| format!("address:{}", a.to_string()))
-                    .unwrap_or_else(|_| format!("invalid_script:{}", script.to_hex()))
+                    .unwrap_or_else(|_| format!("invalid_script:{}", script.to_hex_string()))
             }
-            Allowable::Payee(pubkey) => format!("payee:{}", pubkey.to_hex()),
+            Allowable::Payee(pubkey) => format!("payee:{}", pubkey.to_string()),
             Allowable::XPub(xpub) => {
                 format!("xpub:{}", xpub.to_string())
             }
@@ -856,7 +859,7 @@ impl Allowable {
                 if address.network != network {
                     return Err(format!("{}: expected network {}", s, network));
                 }
-                Ok(Allowable::Script(address.script_pubkey()))
+                Ok(Allowable::Script(address.payload.script_pubkey()))
             } else if prefix == "payee" {
                 let pubkey = PublicKey::from_str(body).map_err(|_| s.to_string())?;
                 Ok(Allowable::Payee(pubkey))
@@ -874,13 +877,13 @@ impl Allowable {
             if address.network != network {
                 return Err(format!("{}: expected network {}", s, network));
             }
-            Ok(Allowable::Script(address.script_pubkey()))
+            Ok(Allowable::Script(address.payload.script_pubkey()))
         }
     }
 
     /// Convert to a scriptpubkey
     /// Will error if this is a bare pubkey (Lightning payee)
-    pub fn to_script(self) -> Result<Script, ()> {
+    pub fn to_script(self) -> Result<ScriptBuf, ()> {
         match self {
             Allowable::Script(script) => Ok(script),
             _ => Err(()),
@@ -938,7 +941,7 @@ impl SignedHeartbeat {
     /// Verify the heartbeat signature
     pub fn verify(&self, pubkey: &PublicKey, secp: &Secp256k1<secp256k1::All>) -> bool {
         let signature = schnorr::Signature::from_slice(&self.signature).unwrap();
-        let xpubkey = bitcoin::XOnlyPublicKey::from(pubkey.clone());
+        let xpubkey = XOnlyPublicKey::from(pubkey.clone());
         secp.verify_schnorr(&signature, &self.sighash(), &xpubkey).is_ok()
     }
 }
@@ -1022,7 +1025,7 @@ pub struct NodeServices {
 }
 
 impl Wallet for Node {
-    fn can_spend(&self, child_path: &[u32], script_pubkey: &Script) -> Result<bool, Status> {
+    fn can_spend(&self, child_path: &[u32], script_pubkey: &ScriptBuf) -> Result<bool, Status> {
         // If there is no path we can't spend it ...
         if child_path.len() == 0 {
             return Ok(false);
@@ -1075,7 +1078,7 @@ impl Wallet for Node {
         self.allowlist.lock().unwrap().contains(&Allowable::Payee(payee.clone()))
     }
 
-    fn allowlist_contains(&self, script_pubkey: &Script, path: &[u32]) -> bool {
+    fn allowlist_contains(&self, script_pubkey: &ScriptBuf, path: &[u32]) -> bool {
         if self.allowlist.lock().unwrap().contains(&Allowable::Script(script_pubkey.clone())) {
             return true;
         }
@@ -1310,7 +1313,7 @@ impl Node {
         tracker: ChainTracker<ChainMonitor>,
     ) -> Node {
         let secp_ctx = Secp256k1::new();
-        let log_prefix = &node_id.to_hex()[0..4];
+        let log_prefix = &node_id.to_string()[0..4];
 
         let persister = services.persister;
         let clock = services.clock;
@@ -1451,7 +1454,7 @@ impl Node {
 
     /// Get suitable node identity string for logging
     pub fn log_prefix(&self) -> String {
-        self.get_id().to_hex()[0..4].to_string()
+        self.get_id().to_string()[0..4].to_string()
     }
 
     /// Lock and return the node state
@@ -1948,6 +1951,7 @@ impl Node {
                             idx
                         );
                         // legacy address
+                        #[allow(deprecated)]
                         let sighash = tx.signature_hash(0, &script_code, 0x01);
                         signature_to_bitcoin_vec(ecdsa_sign(&self.secp_ctx, &privkey, &sighash))
                     }
@@ -1978,7 +1982,7 @@ impl Node {
                         let sighash = SighashCache::new(tx)
                             .segwit_signature_hash(
                                 idx,
-                                &Script::from(witness[witness.len() - 1].clone()),
+                                &ScriptBuf::from(witness[witness.len() - 1].clone()),
                                 value_sat,
                                 EcdsaSighashType::All,
                             )
@@ -2001,7 +2005,7 @@ impl Node {
                                 &prevouts,
                                 None,
                                 None,
-                                SchnorrSighashType::Default,
+                                TapSighashType::Default,
                             )
                             .unwrap();
                         let aux_rand = self.keys_manager.get_secure_random_bytes();
@@ -2100,7 +2104,7 @@ impl Node {
 
         // Compute a lower bound for the tx weight for feerate checking.
         // TODO(dual-funding) - This estimate does not include witnesses for inputs we don't sign.
-        let mut weight_lower_bound = tx.weight();
+        let mut weight_lower_bound = tx.weight().to_wu() as usize;
         for (idx, uck) in uniclosekeys.iter().enumerate() {
             let spend_type = SpendType::from_script_pubkey(&prev_outs[idx].script_pubkey);
             if spend_type == SpendType::Invalid {
@@ -2324,7 +2328,7 @@ impl Node {
 
         let invoice_preimage = construct_invoice_preimage(&hrp_bytes, &invoice_data);
         let secp_ctx = Secp256k1::signing_only();
-        let hash = Sha256Hash::hash(&invoice_preimage);
+        let hash = Sha256Hash::hash(&invoice_preimage).to_byte_array();
         let message = Message::from_slice(&hash).unwrap();
         let sig = secp_ctx.sign_ecdsa_recoverable(&message, &self.get_node_secret());
 
@@ -2378,7 +2382,7 @@ impl Node {
         &self,
         descriptors: &[&SpendableOutputDescriptor],
         outputs: Vec<TxOut>,
-        change_destination_script: Script,
+        change_destination_script: ScriptBuf,
         feerate_sat_per_1000_weight: u32,
     ) -> Result<Transaction, ()> {
         self.keys_manager.spend_spendable_outputs(
@@ -2885,11 +2889,11 @@ mod tests {
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
     use bitcoin::secp256k1::SecretKey;
-    use bitcoin::util::sighash::SighashCache;
-    use bitcoin::{secp256k1, BlockHash, PackedLockTime, Sequence, TxIn, Witness};
-    use bitcoin::{Address, EcdsaSighashType, OutPoint};
+    use bitcoin::{secp256k1, BlockHash, Sequence, TxIn, Witness};
+    use bitcoin::{Address, OutPoint};
     use lightning::ln::chan_utils;
     use lightning::ln::chan_utils::derive_private_key;
+    use lightning::ln::channel_keys::{DelayedPaymentKey, RevocationKey};
     use lightning_invoice::PaymentSecret;
     use lightning_invoice::{Currency, InvoiceBuilder};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -3398,7 +3402,7 @@ mod tests {
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
         // TODO check currency matches
         let preimage = PaymentPreimage([0; 32]);
-        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).to_byte_array());
 
         let invoice = make_test_invoice(&payee_node, "invoice", hash);
 
@@ -3433,7 +3437,7 @@ mod tests {
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
         // TODO check currency matches
         let preimage = PaymentPreimage([0; 32]);
-        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).to_byte_array());
 
         let invoice = make_test_bolt12_invoice("This is the invoice description", hash);
 
@@ -3471,7 +3475,7 @@ mod tests {
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
 
         let preimage = PaymentPreimage([0; 32]);
-        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).to_byte_array());
 
         let invoice = make_test_invoice(&payee_node, "invoice", hash);
 
@@ -3508,7 +3512,7 @@ mod tests {
         let channel_id2 = ChannelId::new(&[1; 32]);
 
         let preimage = PaymentPreimage([0; 32]);
-        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).to_byte_array());
 
         let invoice = make_test_invoice(&payee_node, "invoice", hash);
 
@@ -3595,7 +3599,7 @@ mod tests {
         let (node, _channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
         let preimage = PaymentPreimage([0; 32]);
-        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).to_byte_array());
         let raw_invoice = InvoiceBuilder::new(Currency::Bitcoin)
             .duration_since_epoch(Duration::from_secs(123456789))
             .payment_hash(Sha256Hash::from_slice(&hash.0).unwrap())
@@ -3617,7 +3621,7 @@ mod tests {
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
         // TODO check currency matches
         let preimage = PaymentPreimage([0; 32]);
-        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).into_inner());
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).to_byte_array());
 
         let (hrp, data) = build_test_invoice("invoice", &hash);
         // This records the issued invoice
@@ -3856,20 +3860,20 @@ mod tests {
         // spend the anchor
         let mut spend_tx = Transaction {
             version: 2,
-            lock_time: PackedLockTime(0),
+            lock_time: bitcoin::absolute::LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid: holder_tx.txid(), vout: idx as u32 },
                 sequence: Sequence::MAX,
                 witness: Witness::new(),
-                script_sig: Script::new(),
+                script_sig: ScriptBuf::new(),
             }],
-            output: vec![TxOut { value: 330, script_pubkey: Script::new() }],
+            output: vec![TxOut { value: 330, script_pubkey: ScriptBuf::new() }],
         };
         // sign the spend
         let sig = channel.sign_holder_anchor_input(&spend_tx, idx).unwrap();
         let anchor_redeemscript = channel.get_anchor_redeemscript();
         let witness = vec![signature_to_bitcoin_vec(sig), anchor_redeemscript.to_bytes()];
-        spend_tx.input[0].witness = Witness::from_vec(witness);
+        spend_tx.input[0].witness = Witness::from_slice(&witness);
         // verify the transaction
         spend_tx
             .verify(|point| Some(holder_tx.output[point.vout as usize].clone()))
@@ -3940,6 +3944,7 @@ mod tests {
         )
         .unwrap();
         let revocation_point = PublicKey::from_secret_key(&secp_ctx, &revocation_secret);
+        let revocation_point = RevocationKey(revocation_point);
         let commitment_secret = SecretKey::from_slice(
             hex_decode("0101010101010101010101010101010101010101010101010101010101010102")
                 .unwrap()
@@ -3957,7 +3962,11 @@ mod tests {
             derive_private_key(&secp_ctx, &commitment_point, &keys.delayed_payment_base_key);
         let pubkey = PublicKey::from_secret_key(&secp_ctx, &seckey);
 
-        let redeem_script = chan_utils::get_revokeable_redeemscript(&revocation_point, 7, &pubkey);
+        let redeem_script = chan_utils::get_revokeable_redeemscript(
+            &revocation_point,
+            7,
+            &DelayedPaymentKey(pubkey),
+        );
 
         assert_eq!(
             uck,
@@ -4128,7 +4137,7 @@ mod tests {
             .is_err());
         let a = Allowable::from_str("address:mv4rnyY3Su5gjcDNzbMLKBQkBicCtHUtFB", Network::Testnet)
             .unwrap();
-        assert_eq!(a.to_script().unwrap().to_string(), "Script(OP_DUP OP_HASH160 OP_PUSHBYTES_20 9f9a7abd600c0caa03983a77c8c3df8e062cb2fa OP_EQUALVERIFY OP_CHECKSIG)");
+        assert_eq!(a.to_script().unwrap().to_string(), "OP_DUP OP_HASH160 OP_PUSHBYTES_20 9f9a7abd600c0caa03983a77c8c3df8e062cb2fa OP_EQUALVERIFY OP_CHECKSIG");
         let x = Allowable::from_str("xpub:tpubDEQBfiy13hMZzGT4NWqNnaSWwVqYQ58kuu2pDYjkrf8F6DLKAprm8c65Pyh7PrzodXHtJuEXFu5yf6JbvYaL8rz7v28zapwbuzZzr7z4UvR", Network::Testnet).unwrap();
         assert!(x.to_script().is_err());
     }
@@ -4161,15 +4170,20 @@ mod tests {
         ])
         .unwrap();
         // check if second child matches the xpub in the allowlist
-        let script2 =
-            Address::from_str("mnTkxhNkgx7TsZrEdRcPti564yQTzynGJp").unwrap().script_pubkey();
+        let script2 = Address::from_str("mnTkxhNkgx7TsZrEdRcPti564yQTzynGJp")
+            .unwrap()
+            .payload
+            .script_pubkey();
         assert!(node.allowlist_contains(&script2, &[2]));
         // check if third child matches the xpub in the allowlist with wrong index
-        let script2 =
-            Address::from_str("mpW3iVi2Td1vqDK8Nfie29ddZXf9spmZkX").unwrap().script_pubkey();
+        let script2 = Address::from_str("mpW3iVi2Td1vqDK8Nfie29ddZXf9spmZkX")
+            .unwrap()
+            .payload
+            .script_pubkey();
         assert!(!node.allowlist_contains(&script2, &[2]));
         let p2wpkh_script = Address::from_str("tb1qfshzhu5qdyz94r4kylyrnlerq6mnhw3sjz7w8p")
             .unwrap()
+            .payload
             .script_pubkey();
         assert!(node.allowlist_contains(&p2wpkh_script, &[2]));
     }
@@ -4255,18 +4269,18 @@ mod tests {
             "6c696768746e696e672d31000000000000000000000000000000000000000000",
         );
         assert_eq!(
-            node.get_id().serialize().to_hex(),
+            hex::encode(node.get_id().serialize()),
             "0266e4598d1d3c415f572a8488830b60f7e744ed9235eb0b1ba93283b315c03518"
         );
         assert_eq!(
             node.get_account_extended_pubkey().to_string(),
             "tpubDBrTnjDZwRM6jznHEmo1sYqJWU9so1HRsGEWWjMKLRhVLtuCKYKaHPE3NzqFY3ZdTd64t65T8YrXZZ8Ugwkb7oNzQVBtokaAvtC8Km6EM2G");
         assert_eq!(
-            node.get_bolt12_pubkey().serialize().to_hex(),
+            hex::encode(node.get_bolt12_pubkey().serialize()),
             "02e25c37f1af7cb00984e594eae0f4d1d03537ffe202b7a6b2ebc1e5fcf1dfd9f4"
         );
         assert_eq!(
-            node.get_onion_reply_secret().to_hex(),
+            hex::encode(node.get_onion_reply_secret()),
             "cfd1fb341180bf3fa2f624ed7d4a809aedf388e3ba363c589faf341018cb83e1"
         );
     }

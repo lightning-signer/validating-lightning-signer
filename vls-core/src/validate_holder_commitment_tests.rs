@@ -5,9 +5,9 @@ mod tests {
     use bitcoin::hash_types::Txid;
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::ecdsa::Signature;
-    use bitcoin::util::psbt::serialize::Serialize;
     use bitcoin::{self, Transaction};
     use lightning::ln::chan_utils::TxCreationKeys;
+    use lightning::ln::channel_keys::DelayedPaymentKey;
     use lightning::ln::PaymentHash;
     use lightning::sign::ChannelSigner;
 
@@ -130,7 +130,8 @@ mod tests {
                 &chan.setup.counterparty_points.funding_pubkey,
             )
             .expect("scripts");
-            let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let output_witscripts: Vec<_> =
+                redeem_scripts.iter().map(|s| s.as_bytes().to_vec()).collect();
 
             // Call before validate fails
             assert_invalid_argument_err!(
@@ -412,7 +413,8 @@ mod tests {
                 &chan.setup.counterparty_points.funding_pubkey,
             )
             .expect("scripts");
-            let mut output_witscripts = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let mut output_witscripts =
+                redeem_scripts.iter().map(|s| s.as_bytes().to_vec()).collect();
 
             let mut tx =
                 commit_tx_ctx.tx.as_ref().unwrap().trust().built_transaction().transaction.clone();
@@ -912,17 +914,19 @@ mod tests {
     generate_failed_precondition_error_with_mutated_keys!(
         bad_delayed_pubkey,
         |kms| {
-            kms.keys.broadcaster_delayed_payment_key = make_test_pubkey(42);
+            kms.keys.broadcaster_delayed_payment_key = DelayedPaymentKey(make_test_pubkey(42));
         },
         |vs| {
             // Channel state should not advance.
             assert_eq!(vs.chan.enforcement_state.next_holder_commit_num, HOLD_COMMIT_NUM);
         },
-        |ectx: ErrMsgContext| format!(
+        |ectx: ErrMsgContext| {
+            format!(
             "transaction format: decode_commitment_tx: \
-             tx output[{}]: script pubkey doesn't match inner script",
+             tx output[{}]: script pubkey doesn't match inner script: OP_0 OP_PUSHBYTES_32 a838650404f18b3bdac3ff705fd16d9c221b4ffe46ea675f5ede586b63ae2b63 != OP_0 OP_PUSHBYTES_32 e8c680c7abd47830f5657a0f0ccd46bf3392bb472ba50e98be0ec46a88f982d3",
             if ectx.opt_anchors { 6 } else { 4 }
         )
+        }
     );
 
     // policy-revoke-new-commitment-valid

@@ -24,7 +24,6 @@ use crate::DeviceContext;
 
 use vls_protocol_signer::lightning_signer::{
     bitcoin::{
-        hashes::hex::ToHex,
         secp256k1::{PublicKey, Secp256k1},
         Network,
     },
@@ -424,7 +423,7 @@ pub fn create_node(devctx: &mut DeviceContext, setupfs: &mut SetupFS) -> String 
     let mut seed: [u8; 32] = [0u8; 32];
     let rng = devctx.rng.as_mut().unwrap();
     rng.fill_bytes(&mut seed);
-    info!("seed: {}", seed.to_hex());
+    info!("seed: {}", hex::encode(seed));
 
     let nodeid = node_id_from_seed(kdstyle, network, &seed);
     info!("nodeid: {}", nodeid);

@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
+    use bitcoin::absolute::{Height, LockTime};
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-    use bitcoin::{
-        self, OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
-    };
+    use bitcoin::{self, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness};
     use lightning::ln::chan_utils;
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
+    use lightning::ln::channel_keys::{DelayedPaymentKey, RevocationBasepoint, RevocationKey};
     use test_log::test;
 
     use crate::channel::{Channel, ChannelBase, CommitmentType, TypedSignature};
@@ -19,15 +19,15 @@ mod tests {
     fn make_test_justice_sweep_tx(
         txid: Txid,
         vout: u32,
-        script_pubkey: Script,
+        script_pubkey: ScriptBuf,
         amount_sat: u64,
     ) -> Transaction {
         Transaction {
             version: 2,
-            lock_time: PackedLockTime::ZERO,
+            lock_time: LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid, vout },
-                script_sig: Script::new(),
+                script_sig: ScriptBuf::new(),
                 sequence: Sequence::MAX,
                 witness: Witness::default(),
             }],
@@ -40,14 +40,14 @@ mod tests {
         mutate_signing_input: InputMutator,
     ) -> Result<(), Status>
     where
-        MakeDestination: Fn(&TestNodeContext) -> (Script, Vec<u32>),
+        MakeDestination: Fn(&TestNodeContext) -> (ScriptBuf, Vec<u32>),
         InputMutator: Fn(
             &mut Channel,
             &mut ChainState,
             &mut Transaction,
             &mut usize,
             &mut SecretKey,
-            &mut Script,
+            &mut ScriptBuf,
             &mut u64,
         ),
     {
@@ -96,10 +96,11 @@ mod tests {
 
                 let (revocation_base_point, revocation_base_secret) = make_test_key(42);
 
-                let revocation_pubkey = chan_utils::derive_public_revocation_key(
+                let revocation_base_point = RevocationBasepoint(revocation_base_point);
+                let revocation_pubkey = RevocationKey::from_basepoint(
                     &secp_ctx,
-                    &per_commitment_point,
                     &revocation_base_point,
+                    &per_commitment_point,
                 );
 
                 let mut revocation_secret = chan_utils::derive_private_revocation_key(
@@ -123,6 +124,7 @@ mod tests {
                 let delayed_payment_pubkey =
                     derive_public_key(&secp_ctx, &per_commitment_point, &delayed_payment_base)
                         .expect("delayed_payment_pubkey");
+                let delayed_payment_pubkey = DelayedPaymentKey(delayed_payment_pubkey);
                 let mut redeemscript = get_revokeable_redeemscript(
                     &revocation_pubkey,
                     setup.holder_selected_contest_delay,
@@ -272,7 +274,7 @@ mod tests {
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.lock_time = PackedLockTime(1_000_000);
+                    tx.lock_time = LockTime::Blocks(Height::from_consensus(1_000_000).unwrap());
                 },
             ),
             "transaction format: validate_justice_sweep: bad locktime: 1000000 > 5"

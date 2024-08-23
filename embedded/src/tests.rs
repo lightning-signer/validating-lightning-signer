@@ -8,7 +8,8 @@ use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Network, OutPoint, PrivateKey, Txid, Witness};
-use bitcoin::{PackedLockTime, Script, Sequence, TxIn, TxOut};
+use bitcoin::{ScriptBuf, Sequence, TxIn, TxOut};
+use bitcoin::absolute::LockTime;
 #[cfg(feature = "device")]
 use cortex_m_semihosting::hprintln;
 use lightning::ln::chan_utils::ChannelPublicKeys;
@@ -101,7 +102,7 @@ pub fn make_test_funding_tx_with_ins_outs(
 ) -> bitcoin::Transaction {
     bitcoin::Transaction {
         version: 2,
-        lock_time: PackedLockTime::ZERO,
+        lock_time: LockTime::ZERO,
         input: inputs,
         output: outputs,
     }
@@ -217,7 +218,7 @@ pub fn test_lightning_signer(postscript: fn()) {
     // Offer HTLC
     commit_num = 1;
     let preimage1 = PaymentPreimage([0; 32]);
-    let hash1 = PaymentHash(Sha256Hash::hash(&preimage1.0).into_inner());
+    let hash1 = PaymentHash(Sha256Hash::hash(&preimage1.0).to_byte_array());
 
     let invoice = make_test_invoice(&node1, "invoice1", hash1);
     node.add_invoice(invoice).unwrap();
@@ -271,14 +272,14 @@ fn sign_funding(node: &Arc<Node>) {
 
     let input1 = TxIn {
         previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 },
-        script_sig: Script::new(),
+        script_sig: ScriptBuf::new(),
         sequence: Sequence::ZERO,
         witness: Witness::default(),
     };
 
     let input2 = TxIn {
         previous_output: OutPoint { txid: Txid::all_zeros(), vout: 1 },
-        script_sig: Script::new(),
+        script_sig: ScriptBuf::new(),
         sequence: Sequence::ZERO,
         witness: Witness::default(),
     };

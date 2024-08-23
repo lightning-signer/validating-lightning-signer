@@ -2,28 +2,29 @@ use core::any::Any;
 use core::fmt;
 use core::fmt::{Debug, Error, Formatter};
 
-use bitcoin::hashes::hex::{self, FromHex};
+use bitcoin::hashes::hex::FromHex;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{self, ecdsa::Signature, All, Message, PublicKey, Secp256k1, SecretKey};
-use bitcoin::util::sighash::SighashCache;
-use bitcoin::{EcdsaSighashType, Network, OutPoint, Script, Transaction};
+use bitcoin::sighash::EcdsaSighashType;
+use bitcoin::sighash::SighashCache;
+use bitcoin::{Network, OutPoint, Script, ScriptBuf, Transaction};
 use lightning::chain;
 use lightning::ln::chan_utils::{
-    build_htlc_transaction, derive_private_key, derive_public_revocation_key,
-    get_htlc_redeemscript, make_funding_redeemscript, ChannelPublicKeys,
-    ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
+    build_htlc_transaction, derive_private_key, get_htlc_redeemscript, make_funding_redeemscript,
+    ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     CounterpartyChannelTransactionParameters, HTLCOutputInCommitment, HolderCommitmentTransaction,
     TxCreationKeys,
 };
+use lightning::ln::channel_keys::{DelayedPaymentKey, RevocationKey};
 use lightning::ln::features::ChannelTypeFeatures;
 use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage};
-use lightning::sign::{
-    ChannelSigner, EcdsaChannelSigner, EntropySource, InMemorySigner, SignerProvider,
-};
+use lightning::sign::ecdsa::EcdsaChannelSigner;
+use lightning::sign::{ChannelSigner, EntropySource, InMemorySigner, SignerProvider};
 use serde_derive::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as, Bytes, IfIsHumanReadable};
 use tracing::*;
+use vls_common::HexEncode;
 
 use crate::monitor::ChainMonitorBase;
 use crate::node::{Node, RoutedPayment, CHANNEL_STUB_PRUNE_BLOCKS};
@@ -34,6 +35,7 @@ use crate::signer::derive::KeyDerivationStyle;
 use crate::tx::script::ANCHOR_OUTPUT_VALUE_SATOSHI;
 use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
 use crate::util::crypto_utils::derive_public_key;
+use crate::util::crypto_utils::derive_public_revocation_key;
 use crate::util::debug_utils::{DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugVecVecU8};
 use crate::util::ser_util::{ChannelPublicKeysDef, OutPointReversedDef, ScriptDef};
 use crate::util::status::{internal_error, invalid_argument, Status};
@@ -72,13 +74,13 @@ impl ChannelId {
 
 impl Debug for ChannelId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        hex::format_hex(&self.0, f)
+        write!(f, "{}", self.0.to_hex())
     }
 }
 
 impl fmt::Display for ChannelId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        hex::format_hex(&self.0, f)
+        write!(f, "{}", self.0.to_hex())
     }
 }
 
@@ -138,7 +140,7 @@ pub struct ChannelSetup {
     pub holder_selected_contest_delay: u16,
     /// The holder's optional upfront shutdown script
     #[serde_as(as = "IfIsHumanReadable<Option<ScriptDef>>")]
-    pub holder_shutdown_script: Option<Script>,
+    pub holder_shutdown_script: Option<ScriptBuf>,
     /// The counterparty's basepoints and pubkeys
     #[serde_as(as = "ChannelPublicKeysDef")]
     pub counterparty_points: ChannelPublicKeys,
@@ -147,7 +149,7 @@ pub struct ChannelSetup {
     pub counterparty_selected_contest_delay: u16,
     /// The counterparty's optional upfront shutdown script
     #[serde_as(as = "IfIsHumanReadable<Option<ScriptDef>>")]
-    pub counterparty_shutdown_script: Option<Script>,
+    pub counterparty_shutdown_script: Option<ScriptBuf>,
     /// The negotiated commitment type
     pub commitment_type: CommitmentType,
 }
@@ -769,7 +771,12 @@ impl Channel {
         );
 
         let (sig, htlc_sigs) = catch_panic!(
-            self.keys.sign_counterparty_commitment(&commitment_tx, Vec::new(), &self.secp_ctx),
+            self.keys.sign_counterparty_commitment(
+                &commitment_tx,
+                Vec::new(),
+                Vec::new(),
+                &self.secp_ctx
+            ),
             "sign_counterparty_commitment panic {} chantype={:?}",
             self.setup.commitment_type,
         )
@@ -916,7 +923,7 @@ impl Channel {
         let htlc_pubkey = derive_public_key(
             &self.secp_ctx,
             &per_commitment_point,
-            &self.counterparty_pubkeys().htlc_basepoint,
+            &self.counterparty_pubkeys().htlc_basepoint.0,
         )
         .map_err(|err| internal_error(format!("derive_public_key failed: {}", err)))?;
 
@@ -1258,8 +1265,10 @@ impl Channel {
     /// Also returns the unilateral close key material
     pub fn sign_holder_commitment_tx_for_recovery(
         &mut self,
-    ) -> Result<(Transaction, Vec<Transaction>, Script, (SecretKey, Vec<Vec<u8>>), PublicKey), Status>
-    {
+    ) -> Result<
+        (Transaction, Vec<Transaction>, ScriptBuf, (SecretKey, Vec<Vec<u8>>), PublicKey),
+        Status,
+    > {
         let info2 = self
             .enforcement_state
             .current_holder_commit_info
@@ -1334,12 +1343,13 @@ impl Channel {
             &self.secp_ctx,
             &per_commitment_point,
             &revocation_basepoint,
-        );
+        )
+        .map_err(|_| internal_error("failure during derive_public_revocation_key"))?;
         let ck =
             self.get_unilateral_close_key(&Some(per_commitment_point), &Some(revocation_pubkey))?;
 
         self.persist()?;
-        Ok((tx, Vec::new(), revocable_redeemscript.to_v0_p2wsh(), ck, revocation_pubkey))
+        Ok((tx, Vec::new(), revocable_redeemscript.to_v0_p2wsh(), ck, revocation_pubkey.0))
     }
 
     /// Sign a holder commitment transaction after rebuilding it
@@ -1494,7 +1504,7 @@ impl Channel {
 
     /// Get the shutdown script where our funds will go when we mutual-close
     // FIXME - this method is deprecated
-    pub fn get_ldk_shutdown_script(&self) -> Script {
+    pub fn get_ldk_shutdown_script(&self) -> ScriptBuf {
         self.setup.holder_shutdown_script.clone().unwrap_or_else(|| {
             self.get_node().keys_manager.get_shutdown_scriptpubkey().unwrap().into()
         })
@@ -1509,8 +1519,8 @@ impl Channel {
         &mut self,
         to_holder_value_sat: u64,
         to_counterparty_value_sat: u64,
-        holder_script: &Option<Script>,
-        counterparty_script: &Option<Script>,
+        holder_script: &Option<ScriptBuf>,
+        counterparty_script: &Option<ScriptBuf>,
         holder_wallet_path_hint: &[u32],
     ) -> Result<Signature, Status> {
         self.validator().validate_mutual_close_tx(
@@ -1527,8 +1537,8 @@ impl Channel {
         let tx = ClosingTransaction::new(
             to_holder_value_sat,
             to_counterparty_value_sat,
-            holder_script.clone().unwrap_or_else(|| Script::new()),
-            counterparty_script.clone().unwrap_or_else(|| Script::new()),
+            holder_script.clone().unwrap_or_else(|| ScriptBuf::new()),
+            counterparty_script.clone().unwrap_or_else(|| ScriptBuf::new()),
             self.setup.funding_outpoint,
         );
 
@@ -1595,7 +1605,7 @@ impl Channel {
         tx: &Transaction,
         input: usize,
         remote_per_commitment_point: &PublicKey,
-        redeemscript: &Script,
+        redeemscript: &ScriptBuf,
         htlc_amount_sat: u64,
         wallet_path: &[u32],
     ) -> Result<Signature, Status> {
@@ -1855,7 +1865,7 @@ impl Channel {
     }
 
     /// Get the anchor redeemscript
-    pub fn get_anchor_redeemscript(&self) -> Script {
+    pub fn get_anchor_redeemscript(&self) -> ScriptBuf {
         chan_utils::get_anchor_redeemscript(&self.keys.pubkeys().funding_pubkey)
     }
 }
@@ -2499,9 +2509,9 @@ impl Channel {
         tx: &Transaction,
         commitment_number: u64,
         opt_per_commitment_point: Option<PublicKey>,
-        redeemscript: &Script,
+        redeemscript: &ScriptBuf,
         htlc_amount_sat: u64,
-        output_witscript: &Script,
+        output_witscript: &ScriptBuf,
     ) -> Result<TypedSignature, Status> {
         let per_commitment_point = if opt_per_commitment_point.is_some() {
             opt_per_commitment_point.unwrap()
@@ -2528,9 +2538,9 @@ impl Channel {
         &self,
         tx: &Transaction,
         remote_per_commitment_point: &PublicKey,
-        redeemscript: &Script,
+        redeemscript: &ScriptBuf,
         htlc_amount_sat: u64,
-        output_witscript: &Script,
+        output_witscript: &ScriptBuf,
     ) -> Result<TypedSignature, Status> {
         let txkeys = self
             .make_counterparty_tx_keys(&remote_per_commitment_point)
@@ -2552,9 +2562,9 @@ impl Channel {
         &self,
         tx: &Transaction,
         per_commitment_point: &PublicKey,
-        redeemscript: &Script,
+        redeemscript: &ScriptBuf,
         htlc_amount_sat: u64,
-        output_witscript: &Script,
+        output_witscript: &ScriptBuf,
         is_counterparty: bool,
         txkeys: TxCreationKeys,
     ) -> Result<TypedSignature, Status> {
@@ -2634,7 +2644,7 @@ impl Channel {
     pub fn get_unilateral_close_key(
         &self,
         commitment_point: &Option<PublicKey>,
-        revocation_pubkey: &Option<PublicKey>,
+        revocation_pubkey: &Option<RevocationKey>,
     ) -> Result<(SecretKey, Vec<Vec<u8>>), Status> {
         if let Some(commitment_point) = commitment_point {
             // The key is rotated via the commitment point.  Since we removed support
@@ -2651,8 +2661,12 @@ impl Channel {
             let witness_stack_prefix = if let Some(r) = revocation_pubkey {
                 // p2wsh
                 let contest_delay = self.setup.counterparty_selected_contest_delay;
-                let redeemscript =
-                    chan_utils::get_revokeable_redeemscript(r, contest_delay, &pubkey).to_bytes();
+                let redeemscript = chan_utils::get_revokeable_redeemscript(
+                    r,
+                    contest_delay,
+                    &DelayedPaymentKey(pubkey),
+                )
+                .to_bytes();
                 vec![vec![], redeemscript]
             } else {
                 return Err(invalid_argument(
@@ -2753,11 +2767,10 @@ impl CommitmentPointProvider for ChannelCommitmentPointProvider {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::hashes::hex::ToHex;
-    use bitcoin::psbt::serialize::Serialize;
     use bitcoin::secp256k1::{self, Secp256k1, SecretKey};
     use lightning::ln::chan_utils::HTLCOutputInCommitment;
     use lightning::ln::PaymentHash;
+    use lightning::util::ser::Writeable;
 
     use crate::channel::{dbid_from_ldk_channel_id, ldk_channel_id_from_dbid, ChannelBase};
     use crate::util::test_utils::{
@@ -2773,7 +2786,7 @@ mod tests {
             &SecretKey::from_slice(&[42; 32]).unwrap(),
         );
         let ser = dummy_sig.serialize_compact();
-        assert_eq!("eb299947b140c0e902243ee839ca58c71291f4cce49ac0367fb4617c4b6e890f18bc08b9be6726c090af4c6b49b2277e134b34078f710a72a5752e39f0139149", ser.to_hex());
+        assert_eq!("eb299947b140c0e902243ee839ca58c71291f4cce49ac0367fb4617c4b6e890f18bc08b9be6726c090af4c6b49b2277e134b34078f710a72a5752e39f0139149", hex::encode(ser));
     }
 
     #[test]
@@ -2794,7 +2807,7 @@ mod tests {
                 })
                 .collect();
             let tx = chan.make_holder_commitment_tx(n, &txkeys, 1, 1, 1, htlcs);
-            let tx_size = tx.trust().built_transaction().transaction.serialize().len();
+            let tx_size = tx.trust().built_transaction().transaction.serialized_length();
             assert_eq!(tx_size, 25196);
             Ok(())
         })

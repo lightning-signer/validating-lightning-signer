@@ -1,7 +1,9 @@
 use alloc::collections::BTreeSet as Set;
 
+use bitcoin::absolute::LockTime;
+use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::secp256k1::Secp256k1;
-use bitcoin::{BlockHash, BlockHeader, OutPoint, PackedLockTime, Transaction, TxIn, TxOut, Txid};
+use bitcoin::{BlockHash, OutPoint, Transaction, TxIn, TxOut, Txid};
 use log::*;
 use push_decoder::Listener as _;
 use serde_derive::{Deserialize, Serialize};
@@ -256,7 +258,7 @@ impl<'a> push_decoder::Listener for PushListener<'a> {
             // It may be either mutual or unilateral.
             let tx = Transaction {
                 version: decode_state.version,
-                lock_time: PackedLockTime::ZERO,
+                lock_time: LockTime::ZERO,
                 input: vec![input.clone()],
                 output: vec![],
             };
@@ -305,7 +307,7 @@ impl<'a> push_decoder::Listener for PushListener<'a> {
         decode_state.output_num += 1;
     }
 
-    fn on_transaction_end(&mut self, lock_time: PackedLockTime, txid: Txid) {
+    fn on_transaction_end(&mut self, lock_time: LockTime, txid: Txid) {
         if self.is_not_ready_for_push() {
             return;
         }
@@ -1020,8 +1022,10 @@ mod tests {
     use crate::node::Node;
     use crate::util::test_utils::key::{make_test_counterparty_points, make_test_pubkey};
     use crate::util::test_utils::*;
+    use bitcoin::block::Version;
+    use bitcoin::hash_types::TxMerkleNode;
     use bitcoin::hashes::Hash;
-    use bitcoin::TxMerkleNode;
+    use bitcoin::CompactTarget;
     use lightning::ln::chan_utils::HTLCOutputInCommitment;
     use lightning::ln::PaymentHash;
     use test_log::test;
@@ -1083,11 +1087,11 @@ mod tests {
         let chan_id = ChannelId::new(&[33u8; 32]);
         let monitor = ChainMonitorBase::new(outpoint, 0, &chan_id).as_monitor(cpp);
         let header = BlockHeader {
-            version: 0,
+            version: Version::from_consensus(0),
             prev_blockhash: BlockHash::all_zeros(),
             merkle_root: TxMerkleNode::all_zeros(),
             time: 0,
-            bits: 0,
+            bits: CompactTarget::from_consensus(0),
             nonce: 0,
         };
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);

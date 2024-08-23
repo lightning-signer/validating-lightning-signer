@@ -3,7 +3,7 @@ mod tests {
     use std::mem;
 
     use bitcoin::hashes::hex::FromHex;
-    use bitcoin::{self, Address, Network, OutPoint, Script, Transaction, TxOut};
+    use bitcoin::{self, Address, Network, OutPoint, ScriptBuf, Transaction, TxOut};
     use lightning::ln::chan_utils::{
         make_funding_redeemscript, ChannelPublicKeys, ClosingTransaction,
     };
@@ -21,7 +21,7 @@ mod tests {
     use crate::util::transaction_utils::mutual_close_tx_weight;
 
     macro_rules! hex (($hex:expr) => (Vec::from_hex($hex).unwrap()));
-    macro_rules! hex_script (($hex:expr) => (Script::from(hex!($hex))));
+    macro_rules! hex_script (($hex:expr) => (ScriptBuf::from(hex!($hex))));
 
     fn setup_mutual_close_tx(
         outbound: bool,
@@ -104,7 +104,7 @@ mod tests {
     ) -> Result<(), Status>
     where
         MutualCloseInputMutator:
-            Fn(&mut Channel, &mut u64, &mut u64, &mut Script, &mut Script, &mut OutPoint),
+            Fn(&mut Channel, &mut u64, &mut u64, &mut ScriptBuf, &mut ScriptBuf, &mut OutPoint),
         MutualCloseTxMutator: Fn(&mut Transaction, &mut Vec<Vec<u32>>, &mut Vec<String>),
         ChannelStateValidator: Fn(&Channel),
     {
@@ -136,7 +136,7 @@ mod tests {
             .expect("Address")
             .script_pubkey();
             let mut counterparty_shutdown_script =
-                Script::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
+                ScriptBuf::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
                     .expect("script_pubkey");
             let mut funding_outpoint = setup.funding_outpoint;
 
@@ -220,8 +220,8 @@ mod tests {
             &mut Channel,
             &mut u64,
             &mut u64,
-            &mut Script,
-            &mut Script,
+            &mut ScriptBuf,
+            &mut ScriptBuf,
             &mut OutPoint,
             &mut Vec<u32>,
             &mut Vec<String>,
@@ -255,7 +255,7 @@ mod tests {
                     .expect("Address")
                     .script_pubkey();
             let mut counterparty_shutdown_script =
-                Script::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
+                ScriptBuf::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
                     .expect("script_pubkey");
             let mut funding_outpoint = setup.funding_outpoint;
 
@@ -460,7 +460,7 @@ mod tests {
                 // from the constructed tx
                 *to_holder += *to_counterparty;
                 *to_counterparty = 0;
-                *counter_script = Script::new();
+                *counter_script = ScriptBuf::new();
             },
             |_tx, wallet_paths, _allowlist| {
                 // remove the counterparties wallet_path
@@ -501,7 +501,7 @@ mod tests {
                 // from the constructed tx
                 *to_counterparty += *to_holder - fee;
                 *to_holder = 0;
-                *holder_script = Script::new();
+                *holder_script = ScriptBuf::new();
             },
             |_tx, wallet_paths, _allowlist| {
                 // remove the holders wallet_path
@@ -546,7 +546,7 @@ mod tests {
                 // from the constructed tx
                 *to_counterparty += *to_holder - fee;
                 *to_holder = 0;
-                *holder_script = Script::new();
+                *holder_script = ScriptBuf::new();
 
                 // counterparty is using the allowlist
                 *counter_script = hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565");

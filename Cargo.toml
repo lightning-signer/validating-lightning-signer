@@ -3,8 +3,8 @@
 resolver = "2"
 
 members = [
+    "vls-common",
     "vls-core",
-    "vls-core-test",
     "vls-frontend",
     "vls-cli",
 
@@ -21,4 +21,5 @@ exclude = [
     "embedded",
     "wasm",
     "lightning-storage-server",
+    "vls-core-test",
 ]

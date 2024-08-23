@@ -1,9 +1,8 @@
 #[cfg(test)]
 mod tests {
     use bitcoin;
-    use bitcoin::hashes::hex::ToHex;
+
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-    use bitcoin::util::psbt::serialize::Serialize;
     use lightning::ln::chan_utils;
     use lightning::sign::ChannelSigner;
 
@@ -97,7 +96,8 @@ mod tests {
                 &chan.setup.counterparty_points.funding_pubkey,
             )
             .expect("scripts");
-            let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let output_witscripts: Vec<_> =
+                redeem_scripts.iter().map(|s| s.as_bytes().to_vec()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
                 keys,
@@ -164,7 +164,7 @@ mod tests {
             deferred_rv?;
 
             assert_eq!(
-                tx.txid.to_hex(),
+                tx.txid.to_string(),
                 "325f6443f45049da5a4d99cb54407ff8eaabfd8324bea18933a0ff40983275a3"
             );
 
@@ -317,7 +317,8 @@ mod tests {
                 &chan.setup.counterparty_points.funding_pubkey,
             )
             .expect("scripts");
-            let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let output_witscripts: Vec<_> =
+                redeem_scripts.iter().map(|s| s.as_bytes().to_vec()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
                 keys,
@@ -393,7 +394,8 @@ mod tests {
                 &chan.setup.counterparty_points.funding_pubkey,
             )
             .expect("scripts");
-            let output_witscripts: Vec<_> = redeem_scripts.iter().map(|s| s.serialize()).collect();
+            let output_witscripts: Vec<_> =
+                redeem_scripts.iter().map(|s| s.as_bytes().to_vec()).collect();
 
             let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(
                 keys,

@@ -4,7 +4,6 @@ extern crate log;
 use std::str::FromStr;
 use std::time::Duration;
 
-use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::{ecdsa::Signature as BitcoinSignature, PublicKey, Secp256k1, SecretKey};
 use bitcoin::{Network, OutPoint};
 use lightning::ln::chan_utils::ChannelPublicKeys;
@@ -12,6 +11,7 @@ use log::LevelFilter;
 use wasm_bindgen::prelude::*;
 use web_sys;
 
+use lightning_signer::hex;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
 use lightning_signer::node::{Node, NodeConfig, NodeServices};
 use lightning_signer::persist::{DummyPersister, Persist};
@@ -41,7 +41,7 @@ pub struct JSChannelId(ChannelId);
 impl JSChannelId {
     #[wasm_bindgen(js_name = toString)]
     pub fn to_string(&self) -> String {
-        format!("ChannelId({})", self.0.as_slice().to_hex())
+        format!("ChannelId({})", hex::encode(self.0.as_slice()))
     }
 }
 
@@ -52,7 +52,7 @@ pub struct Signature(Vec<u8>);
 impl Signature {
     #[wasm_bindgen(js_name = toString)]
     pub fn to_string(&self) -> String {
-        format!("Signature({})", self.0.to_hex())
+        format!("Signature({})", hex::encode(&self.0))
     }
 }
 
@@ -202,11 +202,11 @@ impl JSNode {
     pub fn setup_channel(&self, id: &JSChannelId, s: &JSChannelSetup) -> Result<(), JsValue> {
         let p = s.counterparty_points;
         let cp_points = ChannelPublicKeys {
-            funding_pubkey: p.funding_pubkey,
-            revocation_basepoint: p.revocation_basepoint,
-            payment_point: p.payment_point,
-            delayed_payment_basepoint: p.delayed_payment_basepoint,
-            htlc_basepoint: p.htlc_basepoint,
+            funding_pubkey: p.funding_pubkey.into(),
+            revocation_basepoint: p.revocation_basepoint.into(),
+            payment_point: p.payment_point.into(),
+            delayed_payment_basepoint: p.delayed_payment_basepoint.into(),
+            htlc_basepoint: p.htlc_basepoint.into(),
         };
         let setup = ChannelSetup {
             is_outbound: s.is_outbound,
@@ -261,7 +261,7 @@ pub fn make_node() -> JSNode {
     let starting_time_factory = RandomStartingTimeFactory::new();
 
     // TODO remove in production :)
-    debug!("SEED {}", seed.to_hex());
+    debug!("SEED {}", hex::encode(seed));
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
     let clock = Arc::new(ManualClock::new(Duration::ZERO));

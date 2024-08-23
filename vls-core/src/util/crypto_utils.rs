@@ -1,20 +1,22 @@
 use crate::prelude::*;
+use bitcoin::address::{Payload, WitnessProgram, WitnessVersion};
 use bitcoin::hashes::hash160::Hash as BitcoinHash160;
 use bitcoin::hashes::sha256::Hash as BitcoinSha256;
 use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
+use bitcoin::key::XOnlyPublicKey;
 use bitcoin::secp256k1::constants::SCHNORR_SIGNATURE_SIZE;
 use bitcoin::secp256k1::{
     self, ecdsa::Signature, schnorr, Message, PublicKey, Secp256k1, SecretKey,
 };
-use bitcoin::util::address::{Payload, WitnessVersion};
-use bitcoin::util::taproot::{TapSighashHash, TapTweakHash};
-use bitcoin::{EcdsaSighashType, Script, XOnlyPublicKey};
-use bitcoin::{PrivateKey, Sighash};
+use bitcoin::sighash::{EcdsaSighashType, LegacySighash, TapSighash};
+use bitcoin::taproot::TapTweakHash;
+use bitcoin::{PrivateKey, ScriptBuf};
+use lightning::ln::channel_keys::{RevocationBasepoint, RevocationKey};
 
 fn hkdf_extract_expand(salt: &[u8], secret: &[u8], info: &[u8], output: &mut [u8]) {
     let mut hmac = HmacEngine::<BitcoinSha256>::new(salt);
     hmac.input(secret);
-    let prk = Hmac::from_engine(hmac).into_inner();
+    let prk = Hmac::from_engine(hmac).to_byte_array();
 
     let mut t = [0; 32];
     let mut n: u8 = 0;
@@ -27,7 +29,7 @@ fn hkdf_extract_expand(salt: &[u8], secret: &[u8], info: &[u8], output: &mut [u8
         }
         hmac.input(&info);
         hmac.input(&[n]);
-        t = Hmac::from_engine(hmac).into_inner();
+        t = Hmac::from_engine(hmac).to_byte_array();
         chunk.copy_from_slice(&t);
     }
 }
@@ -53,7 +55,7 @@ pub(crate) fn derive_public_key<T: secp256k1::Signing>(
     let mut sha = BitcoinSha256::engine();
     sha.input(&per_commitment_point.serialize());
     sha.input(&base_point.serialize());
-    let res = BitcoinSha256::from_engine(sha).into_inner();
+    let res = BitcoinSha256::from_engine(sha).to_byte_array();
 
     let hashkey = PublicKey::from_secret_key(&secp_ctx, &SecretKey::from_slice(&res)?);
     base_point.combine(&hashkey)
@@ -64,19 +66,25 @@ pub(crate) fn derive_public_key<T: secp256k1::Signing>(
 pub(crate) fn payload_for_p2wpkh(key: &PublicKey) -> Payload {
     let mut hash_engine = BitcoinHash160::engine();
     hash_engine.input(&key.serialize());
-    Payload::WitnessProgram {
-        version: WitnessVersion::V0,
-        program: BitcoinHash160::from_engine(hash_engine)[..].to_vec(),
-    }
+    Payload::WitnessProgram(
+        WitnessProgram::new(
+            WitnessVersion::V0,
+            BitcoinHash160::from_engine(hash_engine)[..].to_vec(),
+        )
+        .expect("unable to calculate sha256"),
+    )
 }
 
-pub(crate) fn payload_for_p2wsh(script: &Script) -> Payload {
+pub(crate) fn payload_for_p2wsh(script: &ScriptBuf) -> Payload {
     let mut hash_engine = BitcoinSha256::engine();
-    hash_engine.input(&script[..]);
-    Payload::WitnessProgram {
-        version: WitnessVersion::V0,
-        program: BitcoinSha256::from_engine(hash_engine)[..].to_vec(),
-    }
+    hash_engine.input(&script.as_bytes());
+    Payload::WitnessProgram(
+        WitnessProgram::new(
+            WitnessVersion::V0,
+            BitcoinSha256::from_engine(hash_engine)[..].to_vec(),
+        )
+        .expect("unable to calculate sha256"),
+    )
 }
 
 /// Convert a [Signature] to Bitcoin signature bytes, with SIGHASH_ALL
@@ -137,22 +145,22 @@ pub fn sighash_from_heartbeat(ser_heartbeat: &[u8]) -> Message {
     sha.input("heartbeat".as_bytes());
     sha.input(ser_heartbeat);
     let hash = BitcoinSha256::from_engine(sha);
-    Message::from_slice(&hash).unwrap()
+    Message::from_slice(&hash.to_byte_array()).unwrap()
 }
 
-pub(crate) fn ecdsa_sign(
+pub(crate) fn ecdsa_sign<H: Hash<Bytes = <LegacySighash as bitcoin::hashes::Hash>::Bytes>>(
     secp_ctx: &Secp256k1<secp256k1::All>,
     privkey: &PrivateKey,
-    sighash: &Sighash,
+    sighash: &H,
 ) -> Signature {
-    let message = Message::from_slice(&sighash).unwrap();
+    let message = Message::from_slice(&sighash.to_byte_array()).unwrap();
     secp_ctx.sign_ecdsa(&message, &privkey.inner)
 }
 
 pub(crate) fn taproot_sign(
     secp_ctx: &Secp256k1<secp256k1::All>,
     privkey: &PrivateKey,
-    sighash: TapSighashHash,
+    sighash: TapSighash,
     aux_rand: &[u8; 32],
 ) -> schnorr::Signature {
     let message = Message::from(sighash);
@@ -164,10 +172,30 @@ pub(crate) fn taproot_sign(
     secp_ctx.sign_schnorr_with_aux_rand(&message, &tweaked_keypair, aux_rand)
 }
 
+/// Derives a per-commitment-transaction revocation public key from its constituent parts. This is
+/// the public equivalent of derive_private_revocation_key - using only public keys to derive a
+/// public key instead of private keys.
+///
+/// Only the cheating participant owns a valid witness to propagate a revoked
+/// commitment transaction, thus per_commitment_point always come from cheater
+/// and revocation_base_point always come from punisher, which is the broadcaster
+/// of the transaction spending with this key knowledge.
+pub(crate) fn derive_public_revocation_key<T: secp256k1::Verification>(
+    secp_ctx: &Secp256k1<T>,
+    per_commitment_point: &PublicKey,
+    countersignatory_revocation_base_point: &RevocationBasepoint,
+) -> Result<RevocationKey, ()> {
+    let revocation_key = RevocationKey::from_basepoint(
+        secp_ctx,
+        &countersignatory_revocation_base_point,
+        per_commitment_point,
+    );
+    Ok(revocation_key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin::hashes::hex::{FromHex, ToHex};
 
     #[test]
     fn test_hkdf() {
@@ -176,14 +204,11 @@ mod tests {
         let salt = [3u8];
         let mut output = [0u8; 32 * 6];
         hkdf_extract_expand(&salt, &secret, &info, &mut output);
-        assert_eq!(
-            output.to_vec().to_hex(),
-            "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0efbbb13e74af4687137801e1628d1d1876d251b31d1321383568a9387da7c0baa7dee83ba374bba3774ef01140e4c4293791a512e536764bf4405aea511be32d5fd71a0b7a7ef3638312e476eb323fbac5f3d549ccf0fe0eabb38fe7bc16ad01db2288e57de45eabecd561ede4dc89164099ed7f0b0db5250e2b377e2aa84f520838612dccbde870f7b06a1e03f3cd79d30da717c55e15442a0b4dd02aafcd86"
-        );
+        assert_eq!(hex::encode(output), "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0efbbb13e74af4687137801e1628d1d1876d251b31d1321383568a9387da7c0baa7dee83ba374bba3774ef01140e4c4293791a512e536764bf4405aea511be32d5fd71a0b7a7ef3638312e476eb323fbac5f3d549ccf0fe0eabb38fe7bc16ad01db2288e57de45eabecd561ede4dc89164099ed7f0b0db5250e2b377e2aa84f520838612dccbde870f7b06a1e03f3cd79d30da717c55e15442a0b4dd02aafcd86");
         let mut output = [0u8; 32];
         hkdf_extract_expand(&salt, &secret, &info, &mut output);
         assert_eq!(
-            output.to_vec().to_hex(),
+            hex::encode(output),
             "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0"
         );
     }
@@ -208,7 +233,7 @@ mod tests {
 
         assert_eq!(result, Err(secp256k1::Error::InvalidSignature));
 
-        let mut sigvec = Vec::from_hex(
+        let mut sigvec = hex::decode(
             "304402202e1f64d831e89e2b4a0dc8565cb2d0a4d6061a89f9b48f2c26d5ac0b3b9a0bb102200c8d396f8b2e9c6c623bebc015c47f1f41e8824fabe7cb028f174a0e5df3c0a0"
         ).unwrap();
 
@@ -241,14 +266,14 @@ mod tests {
         let secp = Secp256k1::new();
 
         let privkey_bytes =
-            Vec::from_hex("d8d3a3140ba89f14144b0dfe40e04220e02ed68736a5773e050a3c4116b1e31c")
+            hex::decode("d8d3a3140ba89f14144b0dfe40e04220e02ed68736a5773e050a3c4116b1e31c")
                 .unwrap();
         let secret_key =
             SecretKey::from_slice(&privkey_bytes).expect("32 bytes, within curve order");
 
         let privkey = PrivateKey::new(secret_key, bitcoin::Network::Bitcoin);
 
-        let sighash = TapSighashHash::hash(&[0]);
+        let sighash = TapSighash::hash(&[0]);
 
         let aux_rand: [u8; 32] = [0u8; 32];
 
@@ -257,6 +282,6 @@ mod tests {
         let expected_signature_hex =
             "14262eb13409cd8928536ab60f431b95193d2d9c7cc476e9f43e8b8f98a8d5a8c38d3edc7bf43c389a12c9e5fad9485ee5d59df2d35f46c3f77ca07197ee1db2";
 
-        assert_eq!(expected_signature_hex, signature.to_hex());
+        assert_eq!(expected_signature_hex, signature.to_string());
     }
 }

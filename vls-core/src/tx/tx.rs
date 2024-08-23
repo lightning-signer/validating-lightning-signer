@@ -2,16 +2,19 @@ use crate::prelude::*;
 use core::cmp;
 use core::fmt;
 
+use bitcoin::address::Payload;
 use bitcoin::blockdata::opcodes::all::{
     OP_CHECKMULTISIG, OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_CLTV, OP_CSV, OP_DROP, OP_DUP, OP_ELSE,
     OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_IFDUP, OP_NOTIF, OP_PUSHNUM_1,
     OP_PUSHNUM_16, OP_PUSHNUM_2, OP_SIZE, OP_SWAP,
 };
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::util::address::Payload;
+use bitcoin::ScriptBuf;
 use bitcoin::{Script, TxOut};
 use lightning::ln::PaymentHash;
 use lightning::sign::{ChannelSigner, InMemorySigner};
+use serde_derive::{Deserialize, Serialize};
+use serde_with::{serde_as, Bytes, IfIsHumanReadable};
 
 use crate::channel::ChannelSetup;
 use crate::policy::error::{
@@ -20,9 +23,7 @@ use crate::policy::error::{
 use crate::tx::script::{expect_data, expect_number, expect_op, expect_script_end};
 use crate::util::debug_utils::{DebugBytes, DebugPayload};
 use crate::util::AddedItemsIter;
-use bitcoin::hashes::hex::ToHex;
-use serde_derive::{Deserialize, Serialize};
-use serde_with::{serde_as, Bytes, IfIsHumanReadable};
+use vls_common::HexEncode;
 
 const MAX_DELAY: i64 = 2016;
 /// Value for anchor outputs
@@ -653,12 +654,14 @@ impl CommitmentInfo {
             if script_bytes.is_empty() {
                 return Err(transaction_format_error("missing witscript for p2wsh".to_string()));
             }
-            let script = Script::from(script_bytes.to_vec());
+            let script = ScriptBuf::from(script_bytes.to_vec());
             // FIXME - Does this need it's own policy tag?
             if out.script_pubkey != script.to_v0_p2wsh() {
-                return Err(transaction_format_error(
-                    "script pubkey doesn't match inner script".to_string(),
-                ));
+                return Err(transaction_format_error(format!(
+                    "script pubkey doesn't match inner script: {} != {}",
+                    out.script_pubkey,
+                    script.to_v0_p2wsh()
+                )));
             }
             let vals = self.parse_to_broadcaster_script(&script);
             if vals.is_ok() {
@@ -698,6 +701,7 @@ mod tests {
     use bitcoin::secp256k1::{Secp256k1, SecretKey};
     use bitcoin::{Address, Network};
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
+    use lightning::ln::channel_keys::{DelayedPaymentKey, RevocationKey};
 
     use crate::channel::CommitmentType;
     use crate::util::test_utils::key::make_test_pubkey;
@@ -746,16 +750,18 @@ mod tests {
         let out = TxOut { value: 123, script_pubkey: Default::default() };
         let revocation_pubkey =
             PublicKey::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[4u8; 32]).unwrap());
+        let revocation_pubkey = RevocationKey(revocation_pubkey);
         let delayed_pubkey =
             PublicKey::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[3u8; 32]).unwrap());
+        let delayed_pubkey = DelayedPaymentKey(delayed_pubkey);
         let script = get_revokeable_redeemscript(&revocation_pubkey, 5, &delayed_pubkey);
         let vals = info.parse_to_broadcaster_script(&script).unwrap();
         let res = info.handle_to_broadcaster_output(&out, vals);
         assert!(res.is_ok());
         assert!(info.has_to_broadcaster());
         assert!(!info.has_to_countersigner());
-        assert_eq!(info.revocation_pubkey.unwrap(), revocation_pubkey);
-        assert_eq!(info.to_broadcaster_delayed_pubkey.unwrap(), delayed_pubkey);
+        assert_eq!(info.revocation_pubkey.unwrap(), revocation_pubkey.to_public_key());
+        assert_eq!(info.to_broadcaster_delayed_pubkey.unwrap(), delayed_pubkey.to_public_key());
         assert_eq!(info.to_self_delay, 5);
         assert_eq!(info.to_broadcaster_value_sat, 123);
         // Make sure you can't do it again (can't have two to_broadcaster outputs).
@@ -902,7 +908,7 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
-            transaction_format_error("script pubkey doesn\'t match inner script".to_string())
+            transaction_format_error("script pubkey doesn't match inner script: OP_0 OP_PUSHBYTES_32 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 != OP_0 OP_PUSHBYTES_32 3588420a18eae1ca84705137f9cccc52254273e9fb36577cb0ce7ebb4dd73a06".to_string())
         );
     }
 }

@@ -3,8 +3,9 @@ use std::io::Read;
 
 use delegate::delegate;
 
+use crate::HTLCDescriptor;
 use bitcoin::bech32::u5;
-use bitcoin::{secp256k1, Script, Transaction, TxOut};
+use bitcoin::{secp256k1, Transaction, TxOut};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction,
@@ -12,18 +13,17 @@ use lightning::ln::chan_utils::{
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
 use lightning::ln::PaymentPreimage;
+use lightning::sign::ecdsa::EcdsaChannelSigner;
+use lightning::sign::ecdsa::WriteableEcdsaChannelSigner;
 use lightning::sign::ChannelSigner;
-use lightning::sign::EcdsaChannelSigner;
-use lightning::sign::HTLCDescriptor;
 use lightning::sign::InMemorySigner;
 use lightning::sign::{
     KeyMaterial, NodeSigner, Recipient, SignerProvider, SpendableOutputDescriptor,
-    WriteableEcdsaChannelSigner,
 };
 use lightning::util::ser::Readable;
 use lightning::util::ser::{Writeable, Writer};
-use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::secp256k1::All;
+use lightning_signer::bitcoin::{self, ScriptBuf};
 use lightning_signer::lightning;
 use secp256k1::ecdsa::RecoverableSignature;
 use secp256k1::{ecdh::SharedSecret, ecdsa::Signature, PublicKey, Scalar, Secp256k1, SecretKey};
@@ -70,12 +70,10 @@ impl EcdsaChannelSigner for DynSigner {
             fn sign_counterparty_commitment(
                 &self,
                 commitment_tx: &CommitmentTransaction,
-                preimages: Vec<PaymentPreimage>,
+                inbound_htlc_preimages: Vec<PaymentPreimage>,
+                outbound_htlc_preimages: Vec<PaymentPreimage>,
                 secp_ctx: &Secp256k1<secp256k1::All>,
             ) -> Result<(Signature, Vec<Signature>), ()>;
-
-            fn validate_counterparty_revocation(
-                &self, idx: u64, secret: &SecretKey) -> Result<(), ()>;
 
             fn sign_holder_commitment(
                 &self,
@@ -142,6 +140,8 @@ impl EcdsaChannelSigner for DynSigner {
 impl ChannelSigner for DynSigner {
     delegate! {
         to self.inner {
+            fn validate_counterparty_revocation(&self, idx: u64, sk: &SecretKey) -> Result<(), ()>;
+
             fn get_per_commitment_point(
                 &self,
                 idx: u64,
@@ -203,11 +203,11 @@ impl InnerSign for LoopbackChannelSigner {
 }
 
 pub struct DynKeysInterface {
-    pub inner: Box<dyn SpendableKeysInterface<Signer = DynSigner>>,
+    pub inner: Box<dyn SpendableKeysInterface<EcdsaSigner = DynSigner>>,
 }
 
 impl DynKeysInterface {
-    pub fn new(inner: Box<dyn SpendableKeysInterface<Signer = DynSigner>>) -> Self {
+    pub fn new(inner: Box<dyn SpendableKeysInterface<EcdsaSigner = DynSigner>>) -> Self {
         DynKeysInterface { inner }
     }
 }
@@ -240,19 +240,19 @@ impl NodeSigner for DynKeysInterface {
 }
 
 impl SignerProvider for DynKeysInterface {
-    type Signer = DynSigner;
+    type EcdsaSigner = DynSigner;
 
     delegate! {
         to self.inner {
-            fn get_destination_script(&self) -> Result<Script, ()>;
+            fn get_destination_script(&self, buf: [u8; 32]) -> Result<ScriptBuf, ()>;
 
             fn get_shutdown_scriptpubkey(&self) -> Result<ShutdownScript, ()>;
 
             fn generate_channel_keys_id(&self, _inbound: bool, _channel_value_satoshis: u64, _user_channel_id: u128) -> [u8; 32];
 
-            fn derive_channel_signer(&self, _channel_value_satoshis: u64, _channel_keys_id: [u8; 32]) -> Self::Signer;
+            fn derive_channel_signer(&self, _channel_value_satoshis: u64, _channel_keys_id: [u8; 32]) -> Self::EcdsaSigner;
 
-            fn read_chan_signer(&self, reader: &[u8]) -> Result<Self::Signer, DecodeError>;
+            fn read_chan_signer(&self, reader: &[u8]) -> Result<Self::EcdsaSigner, DecodeError>;
         }
     }
 }
@@ -263,7 +263,7 @@ pub trait SpendableKeysInterface: NodeSigner + SignerProvider + Send + Sync {
         &self,
         descriptors: &[&SpendableOutputDescriptor],
         outputs: Vec<TxOut>,
-        change_destination_script: Script,
+        change_destination_script: ScriptBuf,
         feerate_sat_per_1000_weight: u32,
         secp_ctx: &Secp256k1<All>,
     ) -> anyhow::Result<Transaction>;
@@ -280,7 +280,7 @@ impl SpendableKeysInterface for DynKeysInterface {
                 &self,
                 descriptors: &[&SpendableOutputDescriptor],
                 outputs: Vec<TxOut>,
-                change_destination_script: Script,
+                change_destination_script: ScriptBuf,
                 feerate_sat_per_1000_weight: u32,
                 secp_ctx: &Secp256k1<All>,
             ) -> anyhow::Result<Transaction>;

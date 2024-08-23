@@ -2,7 +2,9 @@ use crate::prelude::*;
 use crate::util::crypto_utils::{hkdf_sha256, sighash_from_heartbeat};
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
+use bitcoin::absolute::LockTime;
 use bitcoin::bech32::u5;
+use bitcoin::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
 use bitcoin::hash_types::WPubkeyHash;
@@ -11,14 +13,11 @@ use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::sha256::HashEngine as Sha256State;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::{Hash, HashEngine};
+use bitcoin::key::KeyPair;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::{All, Message, PublicKey, Scalar, Secp256k1, SecretKey, Signing};
-use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
-use bitcoin::util::key::KeyPair;
-use bitcoin::{
-    secp256k1, EcdsaSighashType, PackedLockTime, Sequence, Transaction, TxIn, TxOut, Witness,
-};
-use bitcoin::{Network, Script};
+use bitcoin::Network;
+use bitcoin::{secp256k1, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness};
 use lightning::ln::msgs::{DecodeError, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
 use lightning::sign::{
@@ -34,7 +33,7 @@ use crate::util::transaction_utils::MAX_VALUE_MSAT;
 use crate::util::{byte_utils, transaction_utils};
 use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
 use bitcoin::secp256k1::schnorr;
-use bitcoin::util::sighash;
+use bitcoin::sighash::{self, EcdsaSighashType};
 use hashbrown::HashSet as UnorderedSet;
 use lightning::util::invoice::construct_invoice_preimage;
 
@@ -51,7 +50,7 @@ pub struct MyKeysManager {
     inbound_payment_key: KeyMaterial,
     channel_seed_base: [u8; 32],
     account_extended_key: ExtendedPrivKey,
-    destination_script: Script,
+    destination_script: ScriptBuf,
     ldk_shutdown_pubkey: PublicKey,
     #[allow(dead_code)]
     channel_master_key: ExtendedPrivKey,
@@ -116,7 +115,7 @@ impl MyKeysManager {
             );
             Builder::new()
                 .push_opcode(opcodes::all::OP_PUSHBYTES_0)
-                .push_slice(&pubkey_hash160.into_inner())
+                .push_slice(&pubkey_hash160.to_byte_array())
                 .into_script()
         };
 
@@ -200,7 +199,7 @@ impl MyKeysManager {
 
     /// Persistence auth token
     pub fn get_persistence_auth_token(&self, server_pubkey: &PublicKey) -> [u8; 32] {
-        Sha256::hash(&self.get_persistence_shared_secret(server_pubkey)).into_inner()
+        Sha256::hash(&self.get_persistence_shared_secret(server_pubkey)).to_byte_array()
     }
 
     /// BOLT 12 sign
@@ -216,13 +215,13 @@ impl MyKeysManager {
         sha.input("lightning".as_bytes());
         sha.input(messagename);
         sha.input(fieldname);
-        let tag_hash = Sha256::from_engine(sha).into_inner();
+        let tag_hash = Sha256::from_engine(sha).to_byte_array();
         let mut sha = Sha256::engine();
         sha.input(&tag_hash);
         sha.input(&tag_hash);
         // BIP340 done, compute hash of message
         sha.input(merkleroot);
-        let sig_hash = Sha256::from_engine(sha).into_inner();
+        let sig_hash = Sha256::from_engine(sha).to_byte_array();
 
         let kp = if let Some(publictweak) = publictweak_opt {
             // Compute the tweaked key
@@ -231,7 +230,7 @@ impl MyKeysManager {
             let mut sha = Sha256::engine();
             sha.input(&pubkey_ser);
             sha.input(publictweak);
-            let tweak = Scalar::from_be_bytes(Sha256::from_engine(sha).into_inner()).unwrap();
+            let tweak = Scalar::from_be_bytes(Sha256::from_engine(sha).to_byte_array()).unwrap();
             let tweakedsecret = self.bolt12_secret.add_tweak(&tweak).map_err(|_| ())?;
             KeyPair::from_secret_key(&self.secp_ctx, &tweakedsecret)
         } else {
@@ -331,7 +330,7 @@ impl MyKeysManager {
             .expect("Your RNG is busted");
         sha.input(child_privkey.private_key.as_ref());
 
-        let random_bytes = Sha256::from_engine(sha).into_inner();
+        let random_bytes = Sha256::from_engine(sha).to_byte_array();
 
         ChannelId::new(&random_bytes)
     }
@@ -356,20 +355,20 @@ impl MyKeysManager {
         &self,
         descriptors: &[&SpendableOutputDescriptor],
         outputs: Vec<TxOut>,
-        change_destination_script: Script,
+        change_destination_script: ScriptBuf,
         feerate_sat_per_1000_weight: u32,
         secp_ctx: &Secp256k1<All>,
     ) -> Result<Transaction, ()> {
         let mut input = Vec::new();
         let mut input_value = 0;
-        let mut witness_weight = 0;
+        let mut witness_weight: u64 = 0;
         let mut output_set = UnorderedSet::with_capacity(descriptors.len());
         for outp in descriptors {
             match outp {
                 SpendableOutputDescriptor::StaticPaymentOutput(descriptor) => {
                     input.push(TxIn {
                         previous_output: descriptor.outpoint.into_bitcoin_outpoint(),
-                        script_sig: Script::new(),
+                        script_sig: ScriptBuf::new(),
                         sequence: Sequence::ZERO,
                         witness: Witness::default(),
                     });
@@ -382,7 +381,7 @@ impl MyKeysManager {
                 SpendableOutputDescriptor::DelayedPaymentOutput(descriptor) => {
                     input.push(TxIn {
                         previous_output: descriptor.outpoint.into_bitcoin_outpoint(),
-                        script_sig: Script::new(),
+                        script_sig: ScriptBuf::new(),
                         sequence: Sequence(descriptor.to_self_delay as u32),
                         witness: Witness::default(),
                     });
@@ -392,10 +391,10 @@ impl MyKeysManager {
                         return Err(());
                     }
                 }
-                SpendableOutputDescriptor::StaticOutput { ref outpoint, ref output } => {
+                SpendableOutputDescriptor::StaticOutput { ref outpoint, ref output, .. } => {
                     input.push(TxIn {
                         previous_output: outpoint.into_bitcoin_outpoint(),
-                        script_sig: Script::new(),
+                        script_sig: ScriptBuf::new(),
                         sequence: Sequence::ZERO,
                         witness: Witness::default(),
                     });
@@ -411,7 +410,7 @@ impl MyKeysManager {
             }
         }
         let mut spend_tx =
-            Transaction { version: 2, lock_time: PackedLockTime::ZERO, input, output: outputs };
+            Transaction { version: 2, lock_time: LockTime::ZERO, input, output: outputs };
         transaction_utils::maybe_add_change_output(
             &mut spend_tx,
             input_value,
@@ -436,8 +435,8 @@ impl MyKeysManager {
                             descriptor.channel_keys_id,
                         ));
                     }
-                    spend_tx.input[input_idx].witness = Witness::from_vec(
-                        keys_cache
+                    spend_tx.input[input_idx].witness = Witness::from_slice(
+                        &keys_cache
                             .as_ref()
                             .unwrap()
                             .0
@@ -447,7 +446,8 @@ impl MyKeysManager {
                                 &descriptor,
                                 &secp_ctx,
                             )
-                            .unwrap(),
+                            .unwrap()
+                            .to_vec(),
                     );
                 }
                 SpendableOutputDescriptor::DelayedPaymentOutput(descriptor) => {
@@ -462,14 +462,12 @@ impl MyKeysManager {
                             descriptor.channel_keys_id,
                         ));
                     }
-                    spend_tx.input[input_idx].witness = Witness::from_vec(
-                        keys_cache
-                            .as_ref()
-                            .unwrap()
-                            .0
-                            .sign_dynamic_p2wsh_input(&spend_tx, input_idx, &descriptor, &secp_ctx)
-                            .unwrap(),
-                    );
+                    spend_tx.input[input_idx].witness = keys_cache
+                        .as_ref()
+                        .unwrap()
+                        .0
+                        .sign_dynamic_p2wsh_input(&spend_tx, input_idx, &descriptor, &secp_ctx)
+                        .unwrap();
                 }
                 SpendableOutputDescriptor::StaticOutput { ref output, .. } => {
                     let derivation_idx =
@@ -540,14 +538,14 @@ impl EntropySource for MyKeysManager {
         sha.input(child_privkey.private_key.as_ref());
 
         sha.input(b"Unique Secure Random Bytes Salt");
-        Sha256::from_engine(sha).into_inner()
+        Sha256::from_engine(sha).to_byte_array()
     }
 }
 
 impl SignerProvider for MyKeysManager {
-    type Signer = InMemorySigner;
+    type EcdsaSigner = InMemorySigner;
 
-    fn get_destination_script(&self) -> Result<Script, ()> {
+    fn get_destination_script(&self, _channel_keys_id: [u8; 32]) -> Result<ScriptBuf, ()> {
         // The destination script is chosen by the local node (must be
         // in wallet or allowlisted).
         unimplemented!()
@@ -570,11 +568,11 @@ impl SignerProvider for MyKeysManager {
         &self,
         _channel_value_satoshis: u64,
         _channel_keys_id: [u8; 32],
-    ) -> Self::Signer {
+    ) -> Self::EcdsaSigner {
         unimplemented!()
     }
 
-    fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::Signer, DecodeError> {
+    fn read_chan_signer(&self, _reader: &[u8]) -> Result<Self::EcdsaSigner, DecodeError> {
         unimplemented!()
     }
 }
@@ -626,7 +624,7 @@ impl NodeSigner for MyKeysManager {
         };
         let invoice_preimage = construct_invoice_preimage(hrp_bytes, invoice_data);
         Ok(self.secp_ctx.sign_ecdsa_recoverable(
-            &Message::from_slice(&Sha256::hash(&invoice_preimage)).unwrap(),
+            &Message::from_slice(&Sha256::hash(&invoice_preimage).to_byte_array()).unwrap(),
             &self.get_node_secret(),
         ))
     }

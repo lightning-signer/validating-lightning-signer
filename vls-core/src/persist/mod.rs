@@ -436,9 +436,11 @@ impl SeedPersist for MemorySeedPersister {
 /// File system persisters
 pub mod fs {
     use crate::persist::SeedPersist;
-    use bitcoin::hashes::hex::{FromHex, ToHex};
+    use bitcoin::hashes::hex::FromHex;
     use std::fs;
     use std::path::PathBuf;
+
+    use vls_common::HexEncode;
 
     /// A file system directory seed persister
     ///
@@ -601,7 +603,7 @@ pub fn compute_shared_hmac(secret: &[u8], nonce: &[u8], kvs: &Mutations) -> [u8;
     for (key, (version, value)) in kvs.iter() {
         add_to_hmac(key, *version, value, &mut hmac_engine);
     }
-    Hmac::from_engine(hmac_engine).into_inner()
+    Hmac::from_engine(hmac_engine).to_byte_array()
 }
 
 fn add_to_hmac(key: &str, version: u64, value: &[u8], hmac: &mut HmacEngine<Sha256Hash>) {
@@ -612,8 +614,6 @@ fn add_to_hmac(key: &str, version: u64, value: &[u8], hmac: &mut HmacEngine<Sha2
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::hashes::hex::ToHex;
-
     use super::*;
 
     #[test]
@@ -634,10 +634,10 @@ mod tests {
 
         let client_secret = "2e3c1864370a95cbd641d09ae0cf7c0dd5bd0b1c30707ee5ec23775e41f19f2e";
 
-        assert_eq!(client_secret, helper.client_hmac(&kvs).to_hex());
+        assert_eq!(client_secret, hex::encode(helper.client_hmac(&kvs)));
 
         let server_secret = "8fe3d55b41ae5f1c0d2b1015e3d190ff4c6d419bd792fccf8f349505031f9fec";
 
-        assert_eq!(server_secret, helper.server_hmac(&kvs).to_hex());
+        assert_eq!(server_secret, hex::encode(helper.server_hmac(&kvs)));
     }
 }

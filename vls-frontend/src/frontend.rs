@@ -8,7 +8,8 @@ use std::time::Duration;
 use tokio::{task, time};
 use url::Url;
 
-use lightning_signer::bitcoin::{BlockHash, FilterHeader, Network};
+use lightning_signer::bitcoin::hash_types::FilterHeader;
+use lightning_signer::bitcoin::{BlockHash, Network};
 use log::info;
 
 use triggered::Listener;

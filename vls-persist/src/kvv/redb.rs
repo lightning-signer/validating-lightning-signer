@@ -264,7 +264,6 @@ mod tests {
     use crate::kvv::{JsonFormat, KVVPersister};
     use alloc::sync::Arc;
     use hex::FromHex;
-    use lightning_signer::bitcoin::hashes::hex::ToHex;
     use lightning_signer::channel::ChannelId;
     use lightning_signer::node::{Node, NodeServices};
     use lightning_signer::persist::{MemorySeedPersister, Mutations, Persist};
@@ -413,7 +412,7 @@ mod tests {
         drop(channels);
         let expected_channel_id = ChannelId::new(&hex::decode(TEST_CHANNEL_ID[0]).unwrap());
         node.with_channel(&expected_channel_id, |channel| {
-            assert_eq!(channel.setup.funding_outpoint.txid.to_hex(), expected_outpoint);
+            assert_eq!(channel.setup.funding_outpoint.txid.to_string(), expected_outpoint);
             Ok(())
         })
         .unwrap();

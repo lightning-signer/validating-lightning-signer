@@ -13,8 +13,9 @@ use serde_with::serde_as;
 use serde_with::{hex::Hex, Bytes, IfIsHumanReadable};
 
 use lightning_signer::bitcoin;
+use lightning_signer::bitcoin::blockdata::block::Header as BlockHeader;
+use lightning_signer::bitcoin::hash_types::FilterHeader;
 use lightning_signer::bitcoin::hashes::Hash;
-use lightning_signer::bitcoin::{BlockHeader, FilterHeader};
 use lightning_signer::channel::ChannelId;
 use lightning_signer::channel::ChannelSetup;
 use lightning_signer::monitor::ChainMonitor;
@@ -254,8 +255,8 @@ mod tests {
     use bitcoin::blockdata::constants::genesis_block;
     use bitcoin::Network;
     use core::iter::FromIterator;
+    use lightning_signer::bitcoin::hash_types::FilterHeader;
     use lightning_signer::bitcoin::hashes::Hash;
-    use lightning_signer::bitcoin::FilterHeader;
     use lightning_signer::chain::tracker::{ChainTracker, Error, Headers};
     use lightning_signer::monitor::ChainMonitorBase;
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;

@@ -1,9 +1,9 @@
 use alloc::boxed::Box;
 
+use bitcoin::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::{Hash, HashEngine};
 use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, secp256k1::Secp256k1, Network};
 
 use crate::channel::ChannelId;
@@ -159,13 +159,13 @@ impl KeyDerive for LdkKeyDerive {
             .expect("Your RNG is busted");
         unique_start.input(child_privkey.private_key.as_ref());
 
-        let channel_seed = Sha256::from_engine(unique_start).into_inner();
+        let channel_seed = Sha256::from_engine(unique_start).to_byte_array();
 
         let commitment_seed = {
             let mut sha = Sha256::engine();
             sha.input(&channel_seed);
             sha.input(&b"commitment seed"[..]);
-            Sha256::from_engine(sha).into_inner()
+            Sha256::from_engine(sha).to_byte_array()
         };
         macro_rules! key_step {
             ($info: expr, $prev_key: expr) => {{
@@ -173,7 +173,7 @@ impl KeyDerive for LdkKeyDerive {
                 sha.input(&channel_seed);
                 sha.input(&$prev_key[..]);
                 sha.input(&$info[..]);
-                SecretKey::from_slice(&Sha256::from_engine(sha).into_inner())
+                SecretKey::from_slice(&Sha256::from_engine(sha).to_byte_array())
                     .expect("SHA-256 is busted")
             }};
         }
@@ -415,6 +415,7 @@ pub(crate) fn derive_key_lnd(
         Network::Testnet => 1,
         Network::Regtest => 1,
         Network::Signet => 1,
+        _ => unreachable!(),
     };
     let branch = 0;
     let node_ext_prv = master
@@ -434,7 +435,6 @@ pub(crate) fn derive_key_lnd(
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::hashes::hex::ToHex;
     use bitcoin::Network::Testnet;
 
     use super::*;
@@ -446,7 +446,7 @@ mod tests {
         let (node_id, _) = derive.node_keys(&[0u8; 32], &secp_ctx);
         let node_id_bytes = node_id.serialize().to_vec();
         assert_eq!(
-            node_id_bytes.to_hex(),
+            hex::encode(node_id_bytes),
             "02058e8b6c2ad363ec59aa136429256d745164c2bdc87f98f0a68690ec2c5c9b0b"
         );
         Ok(())
@@ -459,7 +459,7 @@ mod tests {
         let (node_id, _) = derive.node_keys(&[0u8; 32], &secp_ctx);
         let node_id_bytes = node_id.serialize().to_vec();
         assert_eq!(
-            node_id_bytes.to_hex(),
+            hex::encode(node_id_bytes),
             "0287a5eab0a005ea7f08a876257b98868b1e5b5a9167385904396743faa61a4745"
         );
         Ok(())
@@ -479,7 +479,7 @@ mod tests {
 
         let seed = derive.channels_seed(&[0u8; 32]);
         assert_eq!(
-            seed.to_hex(),
+            hex::encode(seed),
             "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53"
         );
         Ok(())

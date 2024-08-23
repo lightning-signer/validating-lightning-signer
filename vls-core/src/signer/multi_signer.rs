@@ -1,4 +1,3 @@
-use bitcoin::hashes::hex::ToHex;
 #[cfg(feature = "std")]
 use bitcoin::secp256k1::rand::{rngs::OsRng, RngCore};
 use bitcoin::secp256k1::PublicKey;
@@ -10,6 +9,7 @@ use crate::persist::{Persist, SeedPersist};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::util::status::{invalid_argument, Status};
+use vls_common::HexEncode;
 
 /// A signer for multiple nodes.
 ///

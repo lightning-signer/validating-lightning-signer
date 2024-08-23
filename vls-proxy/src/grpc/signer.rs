@@ -771,8 +771,8 @@ async fn make_external_persist(uri: &Url, builder: &HandlerBuilder) -> ExternalP
     let client_id = keys_manager.get_persistence_pubkey();
     let server_pubkey =
         LssClient::get_server_pubkey(uri.as_str()).await.expect("failed to get pubkey");
-    let shared_secret = keys_manager.get_persistence_shared_secret(&server_pubkey);
-    let auth_token = keys_manager.get_persistence_auth_token(&server_pubkey);
+    let shared_secret = keys_manager.get_persistence_shared_secret(&server_pubkey.inner);
+    let auth_token = keys_manager.get_persistence_auth_token(&server_pubkey.inner);
     let helper = ExternalPersistHelper::new(shared_secret);
     let auth = Auth { client_id, token: auth_token.to_vec() };
 

@@ -4,7 +4,6 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
 use lightning_signer::{
     bitcoin::{
-        psbt::serialize::Serialize,
         secp256k1::{PublicKey, Secp256k1, SecretKey},
     },
     channel::{Channel, CommitmentType},

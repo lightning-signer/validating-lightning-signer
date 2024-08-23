@@ -35,6 +35,9 @@ pub mod transaction_utils;
 /// Velocity control
 pub mod velocity;
 
+/// Reexport the hex crate
+pub use hex;
+
 /// The initial commitment number when counting backwards
 pub const INITIAL_COMMITMENT_NUMBER: u64 = (1 << 48) - 1;
 
