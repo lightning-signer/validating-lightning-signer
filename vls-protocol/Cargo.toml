@@ -18,18 +18,10 @@ vls-core = { path = "../vls-core", version = "0.12.0", default-features = false 
 
 [dependencies.serde_bolt]
 version = "0.4.1"
-#git = "https://gitlab.com/lightning-signer/serde-bolt.git"
-#rev = "9b1c851981337cdd748cf0fdf3342ea9b51e8cce"
-#branch = "pr13"
-#path = "../../../serde-bolt"
 default-features = false
 
 [dependencies.txoo]
 version = "0.8"
-#git = "https://gitlab.com/vincenzopalazzo/txoo"
-#rev = "94ba28c5cd86a6591b4ebd9832bd45c880624dc9"
-#branch = "macros/upgrade-bitcoin"
-#path = "../../txoo"
 default-features = false
 
 [dev-dependencies]

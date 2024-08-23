@@ -87,7 +87,7 @@ version = "0.8"
 default-features = false
 
 [dev-dependencies.txoo-bitcoind-client]
-version = "0.8"
+version = "0.8.1"
 default-features = false
 features = ["dummy-source"]
 
