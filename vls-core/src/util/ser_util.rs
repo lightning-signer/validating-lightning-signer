@@ -9,8 +9,8 @@ use alloc::borrow::Cow;
 use core::fmt;
 use core::fmt::Formatter;
 use core::time::Duration;
-use vls_common::HexEncode;
 use lightning::ln::channel_keys::{DelayedPaymentBasepoint, HtlcBasepoint, RevocationBasepoint};
+use vls_common::HexEncode;
 
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;

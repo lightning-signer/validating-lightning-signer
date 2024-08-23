@@ -48,7 +48,6 @@ use crate::channel::{
     Channel, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, ChannelStub, CommitmentType,
     TypedSignature,
 };
-use vls_common::HexEncode;
 use crate::invoice::Invoice;
 use crate::node::{Node, NodeConfig};
 use crate::node::{NodeServices, SpendType};
@@ -72,6 +71,7 @@ use crate::{Arc, CommitmentPointProvider};
 use key::{
     make_test_bitcoin_pubkey, make_test_counterparty_points, make_test_privkey, make_test_pubkey,
 };
+use vls_common::HexEncode;
 
 use super::crypto_utils;
 use super::status::internal_error;

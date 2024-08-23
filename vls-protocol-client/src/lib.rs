@@ -514,9 +514,8 @@ impl KeysManagerClient {
     fn descriptor_to_utxo(d: &SpendableOutputDescriptor) -> Utxo {
         let (outpoint, amount, keyindex, close_info) = match d {
             // Mutual close - we are spending a non-delayed output to us on the shutdown key
-            SpendableOutputDescriptor::StaticOutput { output, outpoint, .. } => {
-                (outpoint.clone(), output.value, dest_wallet_path()[0], None)
-            } // FIXME this makes some assumptions
+            SpendableOutputDescriptor::StaticOutput { output, outpoint, .. } =>
+                (outpoint.clone(), output.value, dest_wallet_path()[0], None), // FIXME this makes some assumptions
             // We force-closed - we are spending a delayed output to us
             SpendableOutputDescriptor::DelayedPaymentOutput(o) => (
                 o.outpoint,

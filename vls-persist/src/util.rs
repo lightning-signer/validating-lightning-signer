@@ -12,9 +12,9 @@ pub fn do_with_channel_stub<F: Fn(&ChannelStub) -> ()>(node: &Node, channel_id: 
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
     use lightning_signer::bitcoin::secp256k1::{self, Secp256k1, SecretKey};
     use lightning_signer::bitcoin::PublicKey;
+    use serde_json::json;
 
     fn make_key() -> PublicKey {
         let secp = Secp256k1::new();
@@ -27,7 +27,10 @@ mod tests {
     fn public_key_json_test() {
         let key = make_key();
         let key_json = json!(&key);
-        assert_eq!(key_json, json!("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"));
+        assert_eq!(
+            key_json,
+            json!("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")
+        );
     }
 
     #[test]
@@ -36,6 +39,9 @@ mod tests {
         let key = make_key();
         ciborium::ser::into_writer(&key, &mut buf).unwrap();
         let key_str = hex::encode(buf);
-        assert_eq!(key_str, "5821031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f");
+        assert_eq!(
+            key_str,
+            "5821031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
+        );
     }
 }

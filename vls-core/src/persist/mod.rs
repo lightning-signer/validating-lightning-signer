@@ -488,8 +488,7 @@ pub mod fs {
     }
 
     fn write_seed(path: PathBuf, seed: &[u8]) {
-        fs::write(path.clone(), seed.to_hex())
-            .expect("unable to write the seed to file");
+        fs::write(path.clone(), seed.to_hex()).expect("unable to write the seed to file");
 
         // Set the read-only permissions
         let mut permission =

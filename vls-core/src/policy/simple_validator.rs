@@ -2,7 +2,6 @@ use bitcoin::absolute::{Height, Time};
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::sighash::{EcdsaSighashType, SegwitV0Sighash, SighashCache};
 use bitcoin::{Network, ScriptBuf, Transaction};
-use vls_common::HexEncode;
 use lightning::ln::chan_utils::{
     build_htlc_transaction, htlc_success_tx_weight, htlc_timeout_tx_weight,
     make_funding_redeemscript, ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys,
@@ -10,6 +9,7 @@ use lightning::ln::chan_utils::{
 use lightning::ln::PaymentHash;
 use lightning::sign::{ChannelSigner, InMemorySigner};
 use log::*;
+use vls_common::HexEncode;
 
 use super::error::{
     policy_error, transaction_format_error, unknown_destinations_error, ValidationError,

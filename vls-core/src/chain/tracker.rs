@@ -666,10 +666,20 @@ fn validate_retarget(prev_target: Target, target: Target, network: Network) -> R
         return Err(error_invalid_block!("target {:x} > chain_max {:x}", target, chain_max));
     }
     if target.lt(&min) {
-        return Err(error_invalid_chain!("bad transition {:x} -> target {:x} < min {:x}", prev_target, target, min));
+        return Err(error_invalid_chain!(
+            "bad transition {:x} -> target {:x} < min {:x}",
+            prev_target,
+            target,
+            min
+        ));
     }
     if target.gt(&max) {
-        return Err(error_invalid_chain!("bad transition {:x} -> target {:x} > max {:x}", prev_target, target, max));
+        return Err(error_invalid_chain!(
+            "bad transition {:x} -> target {:x} > max {:x}",
+            prev_target,
+            target,
+            max
+        ));
     }
     Ok(())
 }
@@ -780,7 +790,6 @@ pub fn max_target(network: Network) -> Target {
 #[cfg(test)]
 mod tests {
     use crate::util::test_utils::*;
-    use test_log::test;
     use bitcoin::blockdata::constants::genesis_block;
     use bitcoin::consensus::serialize;
     use bitcoin::hash_types::TxMerkleNode;
@@ -793,6 +802,7 @@ mod tests {
     use bitcoin::{Sequence, Witness};
     use bitcoind_client::dummy::DummyTxooSource;
     use core::iter::FromIterator;
+    use test_log::test;
 
     use super::*;
 

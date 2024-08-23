@@ -17,13 +17,13 @@ use serde_derive::{Deserialize, Serialize};
 use serde_with::{serde_as, Bytes, IfIsHumanReadable};
 
 use crate::channel::ChannelSetup;
-use vls_common::HexEncode;
 use crate::policy::error::{
     mismatch_error, script_format_error, transaction_format_error, ValidationError,
 };
 use crate::tx::script::{expect_data, expect_number, expect_op, expect_script_end};
 use crate::util::debug_utils::{DebugBytes, DebugPayload};
 use crate::util::AddedItemsIter;
+use vls_common::HexEncode;
 
 const MAX_DELAY: i64 = 2016;
 /// Value for anchor outputs

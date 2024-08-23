@@ -4,12 +4,12 @@ use bitcoin::secp256k1::PublicKey;
 use bitcoin::OutPoint;
 
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSlot};
-use vls_common::HexEncode;
 use crate::node::{Node, NodeConfig, NodeServices};
 use crate::persist::{Persist, SeedPersist};
 use crate::prelude::*;
 use crate::sync::Arc;
 use crate::util::status::{invalid_argument, Status};
+use vls_common::HexEncode;
 
 /// A signer for multiple nodes.
 ///

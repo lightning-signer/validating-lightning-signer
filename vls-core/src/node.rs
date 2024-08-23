@@ -52,7 +52,6 @@ use crate::channel::{
     Channel, ChannelBalance, ChannelBase, ChannelCommitmentPointProvider, ChannelId, ChannelSetup,
     ChannelSlot, ChannelStub, SlotInfo,
 };
-use vls_common::HexEncode;
 use crate::invoice::{Invoice, InvoiceAttributes};
 use crate::monitor::{ChainMonitor, ChainMonitorBase};
 use crate::persist::model::NodeEntry;
@@ -81,6 +80,7 @@ use crate::util::ser_util::DurationHandler;
 use crate::util::status::{failed_precondition, internal_error, invalid_argument, Status};
 use crate::util::velocity::VelocityControl;
 use crate::wallet::Wallet;
+use vls_common::HexEncode;
 
 /// Prune invoices expired more than this long ago
 const INVOICE_PRUNE_TIME: Duration = Duration::from_secs(60 * 60 * 24);

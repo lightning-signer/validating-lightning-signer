@@ -3,13 +3,13 @@ use crate::prelude::*;
 use bitcoin::address::Payload;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::{Address, Network, ScriptBuf};
-use vls_common::HexEncode;
 use lightning::ln::chan_utils::{
     BuiltCommitmentTransaction, ChannelPublicKeys, CommitmentTransaction, HTLCOutputInCommitment,
     TxCreationKeys,
 };
 use lightning::ln::PaymentHash;
 use lightning::sign::InMemorySigner;
+use vls_common::HexEncode;
 
 /// Debug printer for ChannelPublicKeys which doesn't have one.
 pub struct DebugChannelPublicKeys<'a>(pub &'a ChannelPublicKeys);

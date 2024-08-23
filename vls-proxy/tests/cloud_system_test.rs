@@ -32,8 +32,10 @@ async fn cloud_system_test() {
     let shared_secret = keys.get_persistence_shared_secret(&server_pubkey.inner);
     let mut helper = ExternalPersistHelper::new(shared_secret);
 
-    let auth =
-        Auth { client_id: pubkey, token: keys.get_persistence_auth_token(&server_pubkey.inner).to_vec() };
+    let auth = Auth {
+        client_id: pubkey,
+        token: keys.get_persistence_auth_token(&server_pubkey.inner).to_vec(),
+    };
     let client = LssClient::new(rpc_url, &server_pubkey, auth).await.unwrap();
 
     do_put(&cloud, &helper, &client, b"foo", false).await;

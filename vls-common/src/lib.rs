@@ -5,11 +5,11 @@ extern crate alloc;
 use alloc::string::String;
 
 pub trait HexEncode {
-	fn to_hex(&self) -> String;
+    fn to_hex(&self) -> String;
 }
 
 impl<T: hex::ToHex> HexEncode for T {
-	fn to_hex(&self) -> String {
-		self.encode_hex()
-	}
+    fn to_hex(&self) -> String {
+        self.encode_hex()
+    }
 }
