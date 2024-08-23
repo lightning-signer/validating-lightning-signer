@@ -17,7 +17,7 @@ use serde_derive::{Deserialize, Serialize};
 use serde_with::{serde_as, Bytes, IfIsHumanReadable};
 
 use crate::channel::ChannelSetup;
-use crate::hex::ToHex;
+use vls_common::HexEncode;
 use crate::policy::error::{
     mismatch_error, script_format_error, transaction_format_error, ValidationError,
 };
@@ -621,7 +621,7 @@ impl CommitmentInfo {
             // policy-commitment-anchor-match-fundingkey
             return Err(mismatch_error(format!(
                 "anchor to_pubkey {} doesn't match local or remote",
-                to_pubkey_data.encode_hex::<String>()
+                to_pubkey_data.to_hex()
             )));
         }
         Ok(())

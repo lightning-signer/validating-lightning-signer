@@ -2,7 +2,7 @@ use core::any::Any;
 use core::fmt;
 use core::fmt::{Debug, Error, Formatter};
 
-use ::hex::ToHex;
+use vls_common::HexEncode;
 use bitcoin::hashes::hex::FromHex;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
@@ -74,13 +74,13 @@ impl ChannelId {
 
 impl Debug for ChannelId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", self.0.encode_hex::<String>())
+        write!(f, "{}", self.0.to_hex())
     }
 }
 
 impl fmt::Display for ChannelId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0.encode_hex::<String>())
+        write!(f, "{}", self.0.to_hex())
     }
 }
 

@@ -4,7 +4,7 @@ use bitcoin::secp256k1::PublicKey;
 use bitcoin::OutPoint;
 
 use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSlot};
-use crate::hex::ToHex;
+use vls_common::HexEncode;
 use crate::node::{Node, NodeConfig, NodeServices};
 use crate::persist::{Persist, SeedPersist};
 use crate::prelude::*;
@@ -124,7 +124,7 @@ impl MultiSigner {
             }
         }
         node.add_allowlist(&self.initial_allowlist).expect("valid initialallowlist");
-        seed_persister.put(&node_id.serialize().encode_hex::<String>(), seed);
+        seed_persister.put(&node_id.serialize().to_hex(), seed);
         self.persister.new_node(&node_id, &node_config, &*node.get_state()).expect("new node");
         self.persister.new_tracker(&node_id, &node.get_tracker()).expect("new_chain_tracker");
         nodes.insert(node_id, Arc::new(node));

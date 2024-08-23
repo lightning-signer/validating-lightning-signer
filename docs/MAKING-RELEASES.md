@@ -81,6 +81,7 @@ These have separate release cycles and should be published first if they changed
 
 Cargo publishing should be done in this order with matching versions:
 
+- `cargo publish -p vls-common`
 - `cargo publish -p vls-core`
 - `cargo publish -p vls-persist`
 - `cargo publish -p vls-protocol`

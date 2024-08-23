@@ -9,7 +9,7 @@ use alloc::borrow::Cow;
 use core::fmt;
 use core::fmt::Formatter;
 use core::time::Duration;
-use hex::ToHex;
+use vls_common::HexEncode;
 use lightning::ln::channel_keys::{DelayedPaymentBasepoint, HtlcBasepoint, RevocationBasepoint};
 
 use bitcoin::hashes::Hash;
@@ -200,7 +200,7 @@ impl SerializeAs<Txid> for TxIdReversedDef {
     where
         S: Serializer,
     {
-        serializer.serialize_str(value.as_byte_array().encode_hex::<String>().as_str())
+        serializer.serialize_str(value.as_byte_array().to_hex().as_str())
     }
 }
 

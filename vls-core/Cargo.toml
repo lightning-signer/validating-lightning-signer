@@ -46,6 +46,7 @@ name = "lightning_signer"
 path = "src/lib.rs"
 
 [dependencies]
+vls-common = { path = "../vls-common" }
 serde = { version = "1.0", default-features = false, features = ["alloc"] }
 serde_derive = { version = "1.0" }
 bitcoin-consensus-derive = { version = "0.1.0" }

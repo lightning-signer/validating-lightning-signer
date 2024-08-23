@@ -48,7 +48,7 @@ use crate::channel::{
     Channel, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, ChannelStub, CommitmentType,
     TypedSignature,
 };
-use crate::hex::ToHex;
+use vls_common::HexEncode;
 use crate::invoice::Invoice;
 use crate::node::{Node, NodeConfig};
 use crate::node::{NodeServices, SpendType};
@@ -1764,7 +1764,7 @@ pub fn hex_decode(s: &str) -> Result<Vec<u8>, hex::Error> {
 }
 
 pub fn hex_encode(o: &[u8]) -> String {
-    o.encode_hex::<String>()
+    o.to_hex()
 }
 
 pub fn make_tx(inputs: Vec<TxIn>) -> Transaction {

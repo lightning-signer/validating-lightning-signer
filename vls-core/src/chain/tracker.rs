@@ -13,7 +13,7 @@ use bitcoin::hash_types::FilterHeader;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{BlockHash, Network, OutPoint, Target, Transaction, TxIn, TxOut, Txid};
-use hex::ToHex;
+use vls_common::HexEncode;
 
 use crate::policy::validator::ValidatorFactory;
 #[allow(unused_imports)]
@@ -595,8 +595,8 @@ impl<L: ChainListener> ChainTracker<L> {
         if header.prev_blockhash != prev_header.block_hash() {
             return Err(error_orphan_block!(
                 "header.prev_blockhash {} != self.tip.block_hash {}",
-                header.prev_blockhash.encode_hex::<String>(),
-                prev_header.block_hash().encode_hex::<String>()
+                header.prev_blockhash.to_hex(),
+                prev_header.block_hash().to_hex()
             ));
         }
         // Ensure correctly mined (hash is under target)

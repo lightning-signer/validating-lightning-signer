@@ -2,7 +2,7 @@ use bitcoin::absolute::{Height, Time};
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::sighash::{EcdsaSighashType, SegwitV0Sighash, SighashCache};
 use bitcoin::{Network, ScriptBuf, Transaction};
-use hex::ToHex;
+use vls_common::HexEncode;
 use lightning::ln::chan_utils::{
     build_htlc_transaction, htlc_success_tx_weight, htlc_timeout_tx_weight,
     make_funding_redeemscript, ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys,
@@ -197,7 +197,7 @@ impl SimpleValidator {
         let short_channel_id = self
             .channel_id
             .as_ref()
-            .map(|c| c.as_slice()[0..4].to_vec().encode_hex::<String>())
+            .map(|c| c.as_slice()[0..4].to_vec().to_hex())
             .unwrap_or("".to_string());
         format!("{}/{}", short_node_id, short_channel_id)
     }
@@ -1030,9 +1030,9 @@ impl Validator for SimpleValidator {
                      \x20  delayed_pubkey: {},\n\
                      ]",
                 &tx,
-                revocation_key.encode_hex::<String>(),
+                revocation_key.to_hex(),
                 contest_delay,
-                delayed_pubkey.encode_hex::<String>()
+                delayed_pubkey.to_hex()
             );
             debug!(
                 "RECOMPOSED_TX={:#?}\n\

@@ -2933,6 +2933,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "vls-common"
+version = "0.12.0"
+dependencies = [
+ "hex",
+]
+
+[[package]]
 name = "vls-core"
 version = "0.12.0"
 dependencies = [
@@ -2963,6 +2970,7 @@ dependencies = [
  "tracing",
  "txoo",
  "txoo-bitcoind-client",
+ "vls-common",
  "vls-core",
 ]
 

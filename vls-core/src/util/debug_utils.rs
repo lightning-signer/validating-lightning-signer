@@ -3,7 +3,7 @@ use crate::prelude::*;
 use bitcoin::address::Payload;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::{Address, Network, ScriptBuf};
-use hex::ToHex;
+use vls_common::HexEncode;
 use lightning::ln::chan_utils::{
     BuiltCommitmentTransaction, ChannelPublicKeys, CommitmentTransaction, HTLCOutputInCommitment,
     TxCreationKeys,
@@ -102,7 +102,7 @@ impl<'a> core::fmt::Debug for DebugPayload<'a> {
             Payload::WitnessProgram(ref program) => f
                 .debug_struct("WitnessProgram")
                 .field("version", &program.version())
-                .field("program", &program.program().encode_hex::<String>())
+                .field("program", &program.program().to_hex())
                 .finish(),
             _ => unreachable!(),
         }
@@ -117,7 +117,7 @@ impl<'a> core::fmt::Debug for DebugHTLCOutputInCommitment<'a> {
             .field("offered", &self.0.offered)
             .field("amount_msat", &self.0.amount_msat)
             .field("cltv_expiry", &self.0.cltv_expiry)
-            .field("payment_hash", &self.0.payment_hash.0.encode_hex::<String>())
+            .field("payment_hash", &self.0.payment_hash.0.to_hex())
             .field("transaction_output_index", &self.0.transaction_output_index)
             .finish()
     }
@@ -275,7 +275,7 @@ impl<'a> core::fmt::Debug for DebugMapPaymentSummary<'a> {
 pub fn script_debug(script: &ScriptBuf, network: Network) -> String {
     format!(
         "script={} {}={}",
-        script.encode_hex::<String>(),
+        script.to_hex(),
         network,
         match Address::from_script(script, network) {
             Ok(addr) => addr.to_string(),

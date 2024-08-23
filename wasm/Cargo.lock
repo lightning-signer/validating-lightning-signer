@@ -651,6 +651,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "301abaae475aa91687eb82514b328ab47a211a533026cb25fc3e519b86adfc3c"
 
 [[package]]
+name = "vls-common"
+version = "0.12.0"
+dependencies = [
+ "hex",
+]
+
+[[package]]
 name = "vls-core"
 version = "0.12.0"
 dependencies = [
@@ -674,6 +681,7 @@ dependencies = [
  "serde_with",
  "tracing",
  "txoo",
+ "vls-common",
 ]
 
 [[package]]

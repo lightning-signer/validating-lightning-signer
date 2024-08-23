@@ -52,7 +52,7 @@ use crate::channel::{
     Channel, ChannelBalance, ChannelBase, ChannelCommitmentPointProvider, ChannelId, ChannelSetup,
     ChannelSlot, ChannelStub, SlotInfo,
 };
-use crate::hex::ToHex;
+use vls_common::HexEncode;
 use crate::invoice::{Invoice, InvoiceAttributes};
 use crate::monitor::{ChainMonitor, ChainMonitorBase};
 use crate::persist::model::NodeEntry;
@@ -513,7 +513,7 @@ impl NodeState {
                 "policy-commitment-htlc-routing-balance",
                 "unbalanced payments on channel {}: {:?}",
                 channel_id,
-                unbalanced.into_iter().map(|h| h.0.encode_hex::<String>()).collect::<Vec<_>>()
+                unbalanced.into_iter().map(|h| h.0.to_hex()).collect::<Vec<_>>()
             );
         }
 
@@ -590,7 +590,7 @@ impl NodeState {
                 .checked_sub(balance_delta.0)
                 .expect("validation didn't catch underflow");
             for hash in fulfilled_issued_invoices.iter() {
-                debug!("mark issued invoice {} as fulfilled", hash.0.encode_hex::<String>());
+                debug!("mark issued invoice {} as fulfilled", hash.0.to_hex());
                 let payment = self.payments.get_mut(&hash).expect("already checked");
                 // Mark as fulfilled by setting a dummy preimage.
                 // This has the side-effect of the payment amount not being added
@@ -637,7 +637,7 @@ impl NodeState {
                 info!(
                     "{} duplicate preimage {} on channel {}",
                     self.log_prefix,
-                    payment_hash.0.encode_hex::<String>(),
+                    payment_hash.0.to_hex(),
                     channel_id
                 );
             } else {
@@ -647,7 +647,7 @@ impl NodeState {
                         info!(
                             "{} preimage invoice+routing {} +{} -{} msat",
                             self.log_prefix,
-                            payment_hash.0.encode_hex::<String>(),
+                            payment_hash.0.to_hex(),
                             incoming,
                             outgoing
                         )
@@ -655,7 +655,7 @@ impl NodeState {
                         info!(
                             "{} preimage invoice {} -{} msat",
                             self.log_prefix,
-                            payment_hash.0.encode_hex::<String>(),
+                            payment_hash.0.to_hex(),
                             outgoing
                         )
                     }
@@ -663,7 +663,7 @@ impl NodeState {
                     info!(
                         "{} preimage routing {} adjust excess {} +{} -{} msat",
                         self.log_prefix,
-                        payment_hash.0.encode_hex::<String>(),
+                        payment_hash.0.to_hex(),
                         self.excess_amount,
                         incoming,
                         outgoing
@@ -1685,11 +1685,11 @@ impl Node {
         let mut seeds = OrderedSet::from_iter(seed_persister.list().into_iter());
         for (node_id, node_entry) in persister.get_nodes().expect("nodes") {
             let seed = seed_persister
-                .get(&node_id.serialize().encode_hex::<String>())
+                .get(&node_id.serialize().to_hex())
                 .expect(format!("no seed for node {:?}", node_id).as_str());
             let node = Node::restore_node(&node_id, node_entry, &seed, services.clone())?;
             nodes.insert(node_id, node);
-            seeds.remove(&node_id.serialize().encode_hex::<String>());
+            seeds.remove(&node_id.serialize().to_hex());
         }
         if !seeds.is_empty() {
             warn!("some seeds had no persisted node state: {:?}", seeds);
@@ -2273,7 +2273,7 @@ impl Node {
         info!(
             "{} signing an invoice {} -> {}",
             self.log_prefix(),
-            hash.0.encode_hex::<String>(),
+            hash.0.to_hex(),
             payment_state.amount_msat
         );
 
@@ -2507,7 +2507,7 @@ impl Node {
         info!(
             "{} adding invoice {} -> {}",
             self.log_prefix(),
-            hash.0.encode_hex::<String>(),
+            hash.0.to_hex(),
             payment_state.amount_msat
         );
         defer! { trace_node_state!(self.get_state()); }
@@ -2562,7 +2562,7 @@ impl Node {
         info!(
             "{} adding keysend {} -> {}",
             self.log_prefix(),
-            payment_hash.0.encode_hex::<String>(),
+            payment_hash.0.to_hex(),
             payment_state.amount_msat
         );
         defer! { trace_node_state!(self.get_state()); }
@@ -2617,7 +2617,7 @@ impl Node {
         } else {
             Ok(false) // not found
         };
-        debug!("{} has_payment {} {:?}", self.log_prefix(), hash.0.encode_hex::<String>(), retval,);
+        debug!("{} has_payment {} {:?}", self.log_prefix(), hash.0.to_hex(), retval,);
         retval
     }
 

@@ -440,7 +440,7 @@ pub mod fs {
     use std::fs;
     use std::path::PathBuf;
 
-    use crate::hex::ToHex;
+    use vls_common::HexEncode;
 
     /// A file system directory seed persister
     ///
@@ -488,7 +488,7 @@ pub mod fs {
     }
 
     fn write_seed(path: PathBuf, seed: &[u8]) {
-        fs::write(path.clone(), seed.encode_hex::<String>())
+        fs::write(path.clone(), seed.to_hex())
             .expect("unable to write the seed to file");
 
         // Set the read-only permissions

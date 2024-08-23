@@ -1,0 +1,17 @@
+[package]
+name = "vls-common"
+license = "Apache-2.0"
+version = "0.12.0"
+authors = ["Devrandom <c1.devrandom@niftybox.net>"]
+edition = "2021"
+description = "Common code for Validating Lightning Signer"
+homepage = "https://gitlab.com/lightning-signer/docs/"
+repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
+readme = "../README.md"
+rust-version = "1.66.0"
+
+[features]
+std = []
+
+[dependencies]
+hex = { version = "0.4", default-features = false, features = ["alloc"] }

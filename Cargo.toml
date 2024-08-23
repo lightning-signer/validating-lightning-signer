@@ -3,6 +3,7 @@
 resolver = "2"
 
 members = [
+    "vls-common",
     "vls-core",
     "vls-frontend",
     "vls-cli",
