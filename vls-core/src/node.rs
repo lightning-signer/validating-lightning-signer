@@ -1503,9 +1503,9 @@ impl Node {
     /// Execute a function with an existing configured channel.
     ///
     /// An invalid_argument [Status] will be returned if the channel does not exist.
-    pub fn with_channel<F: Sized, T>(&self, channel_id: &ChannelId, mut f: F) -> Result<T, Status>
+    pub fn with_channel<F: Sized, T>(&self, channel_id: &ChannelId, f: F) -> Result<T, Status>
     where
-        F: FnMut(&mut Channel) -> Result<T, Status>,
+        F: FnOnce(&mut Channel) -> Result<T, Status>,
     {
         let slot_arc = self.get_channel(channel_id)?;
         let mut slot = slot_arc.lock().unwrap();

@@ -795,7 +795,7 @@ impl Channel {
         validator.set_next_counterparty_commit_num(
             &mut self.enforcement_state,
             commitment_number + 1,
-            remote_per_commitment_point.clone(),
+            *remote_per_commitment_point,
             info2,
         )?;
 
@@ -1088,7 +1088,7 @@ impl Channel {
             feerate_per_kw,
             to_holder_value_sat,
             to_counterparty_value_sat,
-            htlcs.clone(),
+            htlcs,
         );
 
         self.check_holder_tx_signatures(
@@ -1216,7 +1216,7 @@ impl Channel {
             .get_current_holder_commitment_info(&mut self.enforcement_state, commitment_number)?;
 
         let htlcs =
-            Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
+            Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };

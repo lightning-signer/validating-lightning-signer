@@ -213,7 +213,7 @@ impl MultiSigner {
         f: F,
     ) -> Result<T, Status>
     where
-        F: Fn(&mut Channel) -> Result<T, Status>,
+        F: FnOnce(&mut Channel) -> Result<T, Status>,
     {
         let slot_arc = self.get_channel(&node_id, &channel_id)?;
         let mut slot = slot_arc.lock().unwrap();
