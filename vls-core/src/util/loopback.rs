@@ -203,7 +203,7 @@ impl ChannelSigner for LoopbackChannelSigner {
 
         self.signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
-                chan.htlcs_fulfilled(preimages.clone());
+                chan.htlcs_fulfilled(preimages);
                 let (offered_htlcs, received_htlcs) =
                     LoopbackChannelSigner::convert_to_htlc_info2(holder_tx.htlcs());
                 chan.validate_holder_commitment_tx_phase2(
@@ -291,16 +291,16 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         let (commitment_sig, htlc_sigs) = self
             .signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
-                chan.htlcs_fulfilled(inbound_htlc_preimages.clone());
-                chan.htlcs_fulfilled(outbound_htlc_preimages.clone());
+                chan.htlcs_fulfilled(inbound_htlc_preimages);
+                chan.htlcs_fulfilled(outbound_htlc_preimages);
                 chan.sign_counterparty_commitment_tx_phase2(
                     &per_commitment_point,
                     commitment_number,
                     feerate_per_kw,
                     to_holder_value_sat,
                     to_counterparty_value_sat,
-                    offered_htlcs.clone(),
-                    received_htlcs.clone(),
+                    offered_htlcs,
+                    received_htlcs,
                 )
             })
             .map_err(|s| self.bad_status(s))?;
