@@ -442,11 +442,11 @@ impl NodeState {
 
         // Preflight check
         for hash_r in hashes.iter() {
-            let incoming_for_chan_sat =
-                incoming_payment_summary.get(hash_r).map(|a| *a).unwrap_or(0);
-            let outgoing_for_chan_sat =
-                outgoing_payment_summary.get(hash_r).map(|a| *a).unwrap_or(0);
             let hash = **hash_r;
+            let incoming_for_chan_sat =
+                incoming_payment_summary.get(&hash).map(|a| *a).unwrap_or(0);
+            let outgoing_for_chan_sat =
+                outgoing_payment_summary.get(&hash).map(|a| *a).unwrap_or(0);
             let payment = self.payments.get(&hash);
             let (incoming_sat, outgoing_sat) = if let Some(p) = payment {
                 p.updated_incoming_outgoing(
@@ -563,9 +563,9 @@ impl NodeState {
             if let Some(issued) = self.issued_invoices.get(&hash) {
                 if !payment.is_fulfilled() {
                     let incoming_for_chan_sat =
-                        incoming_payment_summary.get(hash_r).map(|a| *a).unwrap_or(0);
+                        incoming_payment_summary.get(&hash).map(|a| *a).unwrap_or(0);
                     let outgoing_for_chan_sat =
-                        outgoing_payment_summary.get(hash_r).map(|a| *a).unwrap_or(0);
+                        outgoing_payment_summary.get(&hash).map(|a| *a).unwrap_or(0);
                     let (incoming_sat, outgoing_sat) = payment.updated_incoming_outgoing(
                         channel_id,
                         incoming_for_chan_sat,
@@ -591,7 +591,7 @@ impl NodeState {
                 .expect("validation didn't catch underflow");
             for hash in fulfilled_issued_invoices.iter() {
                 debug!("mark issued invoice {} as fulfilled", hash.0.to_hex());
-                let payment = self.payments.get_mut(&hash).expect("already checked");
+                let payment = self.payments.get_mut(&*hash).expect("already checked");
                 // Mark as fulfilled by setting a dummy preimage.
                 // This has the side-effect of the payment amount not being added
                 // to the excess_amount, because we set the preimage after the balance
@@ -606,10 +606,11 @@ impl NodeState {
             channel_id, incoming_payment_summary
         );
 
-        for hash in hashes.iter() {
-            let incoming_sat = incoming_payment_summary.get(hash).map(|a| *a).unwrap_or(0);
-            let outgoing_sat = outgoing_payment_summary.get(hash).map(|a| *a).unwrap_or(0);
-            let payment = self.payments.get_mut(hash).expect("created above");
+        for hash_r in hashes.iter() {
+            let hash = **hash_r;
+            let incoming_sat = incoming_payment_summary.get(&hash).map(|a| *a).unwrap_or(0);
+            let outgoing_sat = outgoing_payment_summary.get(&hash).map(|a| *a).unwrap_or(0);
+            let payment = self.payments.get_mut(&hash).expect("created above");
             payment.apply(channel_id, incoming_sat, outgoing_sat);
         }
 
@@ -2605,7 +2606,7 @@ impl Node {
     /// Check to see if a payment has already been added
     pub fn has_payment(&self, hash: &PaymentHash, invoice_hash: &[u8; 32]) -> Result<bool, Status> {
         let mut state = self.get_state();
-        let retval = if let Some(payment_state) = state.invoices.get(&hash) {
+        let retval = if let Some(payment_state) = state.invoices.get(&*hash) {
             if payment_state.invoice_hash == *invoice_hash {
                 Ok(true)
             } else {
