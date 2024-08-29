@@ -1,0 +1,3 @@
+#!/bin/bash
+
+cargo fuzz run -j 16 --release channel -- -timeout=1

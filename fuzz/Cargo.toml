@@ -1,0 +1,33 @@
+[package]
+name = "vls-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[features]
+"repro" = []
+
+[dependencies]
+libfuzzer-sys = "0.4"
+hex = "0.4"
+base64 = "0.21"
+env_logger = "0.9"
+log = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+vls-core = { path = "../vls-core", features = ["test_utils"] }
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "channel"
+path = "fuzz_targets/channel.rs"
+test = false
+doc = false
