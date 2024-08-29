@@ -14,7 +14,7 @@ cargo afl build --release --bin channel-afl
 run_fuzz() {
     local cpu_id=$1
     local mode=$2
-    cargo afl fuzz -i afl_in/channel -o afl_out/channel -G 4096 -t 1000 -a binary -$mode fuzzer$cpu_id target/release/channel-afl
+    cargo afl fuzz -i afl_in/channel -o afl_out/channel -G 1024 -t 1000 -a binary -$mode fuzzer$cpu_id target/release/channel-afl
 }
 
 run_fuzz 0 M &
