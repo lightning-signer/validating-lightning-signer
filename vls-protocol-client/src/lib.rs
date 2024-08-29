@@ -3,8 +3,6 @@ use std::convert::{TryFrom, TryInto};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use lightning_signer::bitcoin::absolute::LockTime;
-use lightning_signer::lightning::sign::HTLCDescriptor;
 use bitcoin::bech32::u5;
 use bitcoin::bip32::ChildNumber;
 use bitcoin::bip32::ExtendedPubKey;
@@ -34,11 +32,13 @@ use lightning::sign::{EntropySource, SignerProvider};
 use lightning::sign::{KeyMaterial, Recipient, SpendableOutputDescriptor};
 use lightning::util::ser::Readable;
 use lightning::util::ser::{Writeable, Writer};
+use lightning_signer::bitcoin::absolute::LockTime;
 use lightning_signer::bitcoin::sighash::EcdsaSighashType;
 use lightning_signer::bitcoin::{self, ScriptBuf, Witness};
 use lightning_signer::channel::CommitmentType;
 use lightning_signer::channel::{dbid_from_ldk_channel_id, ldk_channel_id_from_dbid};
 use lightning_signer::lightning;
+use lightning_signer::lightning::sign::HTLCDescriptor;
 use lightning_signer::lightning::sign::OutputSpender;
 use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::util::transaction_utils::create_spending_transaction;
@@ -725,7 +725,7 @@ impl OutputSpender for KeysManagerClient {
         let mut tx = create_spending_transaction(
             descriptors,
             outputs,
-            Box::new(change_destination_script),
+            change_destination_script,
             feerate_sat_per_1000_weight,
         )
         .unwrap();

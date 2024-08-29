@@ -1,7 +1,5 @@
 // Largely cribbed from rust-lightning/lightning/src/offers/invoice.rs
 
-use core::convert::Infallible;
-
 use bitcoin::secp256k1::rand::rngs::OsRng;
 use bitcoin::secp256k1::rand::RngCore;
 use bitcoin::secp256k1::KeyPair;

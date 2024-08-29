@@ -24,7 +24,7 @@ use chain::chaininterface;
 use lightning::chain::chainmonitor::MonitorUpdateId;
 use lightning::chain::channelmonitor::MonitorEvent;
 use lightning::chain::transaction::OutPoint;
-use lightning::chain::{self, Watch};
+use lightning::chain;
 use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, derive_private_key, get_anchor_redeemscript, get_htlc_redeemscript,
@@ -32,11 +32,11 @@ use lightning::ln::chan_utils::{
     ChannelTransactionParameters, CommitmentTransaction, CounterpartyChannelTransactionParameters,
     DirectedChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
 };
-use lightning::ln::ChannelId as LnChannelId;
 use lightning::ln::channel_keys::{
     DelayedPaymentBasepoint, HtlcBasepoint, RevocationBasepoint, RevocationKey,
 };
 use lightning::ln::features::ChannelTypeFeatures;
+use lightning::ln::ChannelId as LnChannelId;
 use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning::sign::{ChannelSigner, InMemorySigner};
 use lightning::util::test_utils;
@@ -52,7 +52,7 @@ use crate::channel::{
 use crate::invoice::Invoice;
 use crate::node::{Node, NodeConfig};
 use crate::node::{NodeServices, SpendType};
-use crate::persist::{DummyPersister, Persist};
+use crate::persist::DummyPersister;
 use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::ChainState;
 use crate::prelude::*;
@@ -153,7 +153,7 @@ impl chainmonitor::Persist<LoopbackChannelSigner> for TestPersister {
         self.update_ret.lock().unwrap().clone()
     }
 
-    fn archive_persisted_channel(&self, _channel_funding_outpoint: OutPoint) { }
+    fn archive_persisted_channel(&self, _channel_funding_outpoint: OutPoint) {}
 
     fn update_persisted_channel(
         &self,

@@ -1,5 +1,8 @@
 use crate::io_extras::sink;
 use crate::prelude::*;
+use crate::tx::script::{
+    get_to_countersignatory_with_anchors_redeemscript, ANCHOR_OUTPUT_VALUE_SATOSHI,
+};
 use anyhow::anyhow;
 use bitcoin::address::Payload;
 use bitcoin::consensus::Encodable;
@@ -12,9 +15,8 @@ use lightning::ln::chan_utils::{
     get_commitment_transaction_number_obscure_factor, get_revokeable_redeemscript,
     make_funding_redeemscript, ChannelTransactionParameters, TxCreationKeys,
 };
-use lightning::sign::{SpendableOutputDescriptor, DelayedPaymentOutputDescriptor, StaticPaymentOutputDescriptor};
-use crate::tx::script::{
-    get_to_countersignatory_with_anchors_redeemscript, ANCHOR_OUTPUT_VALUE_SATOSHI,
+use lightning::sign::{
+    DelayedPaymentOutputDescriptor, SpendableOutputDescriptor, StaticPaymentOutputDescriptor,
 };
 
 /// The maximum value of an input or output in milli satoshi
@@ -279,14 +281,13 @@ pub fn decode_commitment_number(
     Some(commitment_number)
 }
 
-
 /// Create a spending transaction, helper function used in [`KeysManagerClient::spend_spendable_outputs`].
 ///
 /// [`KeysManagerClient::spend_spendable_outputsspend_spendable_outputs`] vls_protocol_client::KeysManagerClient::spend_spendable_outputsspend_spendable_outputs
 pub fn create_spending_transaction(
     descriptors: &[&SpendableOutputDescriptor],
     outputs: Vec<TxOut>,
-    change_destination_script: Box<ScriptBuf>,
+    change_destination_script: ScriptBuf,
     feerate_sats_per_1000_weight: u32,
 ) -> anyhow::Result<Transaction> {
     let mut input = Vec::new();
@@ -357,12 +358,11 @@ pub fn create_spending_transaction(
         input_value,
         witness_weight,
         feerate_sats_per_1000_weight,
-        *change_destination_script,
+        change_destination_script,
     )
     .map_err(|()| anyhow!("could not add or change"))?;
     Ok(spend_tx)
 }
-
 
 #[cfg(test)]
 mod tests {
