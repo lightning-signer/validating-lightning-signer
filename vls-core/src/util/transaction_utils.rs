@@ -1,19 +1,22 @@
 use crate::io_extras::sink;
 use crate::prelude::*;
+use crate::tx::script::{
+    get_to_countersignatory_with_anchors_redeemscript, ANCHOR_OUTPUT_VALUE_SATOSHI,
+};
+use anyhow::anyhow;
 use bitcoin::address::Payload;
 use bitcoin::consensus::Encodable;
 use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1};
 use bitcoin::sighash::EcdsaSighashType;
-use bitcoin::{PublicKey as BitcoinPublicKey, ScriptBuf};
+use bitcoin::{PublicKey as BitcoinPublicKey, ScriptBuf, Sequence, TxIn, Witness};
 use bitcoin::{Transaction, TxOut, VarInt};
 use lightning::ln::chan_utils::{
     get_commitment_transaction_number_obscure_factor, get_revokeable_redeemscript,
     make_funding_redeemscript, ChannelTransactionParameters, TxCreationKeys,
 };
-
-use crate::tx::script::{
-    get_to_countersignatory_with_anchors_redeemscript, ANCHOR_OUTPUT_VALUE_SATOSHI,
+use lightning::sign::{
+    DelayedPaymentOutputDescriptor, SpendableOutputDescriptor, StaticPaymentOutputDescriptor,
 };
 
 /// The maximum value of an input or output in milli satoshi
@@ -276,6 +279,89 @@ pub fn decode_commitment_number(
         | (tx.lock_time.to_consensus_u32() as u64 & 0xffffff))
         ^ obscure_factor;
     Some(commitment_number)
+}
+
+/// Create a spending transaction, helper function used in [`KeysManagerClient::spend_spendable_outputs`].
+///
+/// [`KeysManagerClient::spend_spendable_outputsspend_spendable_outputs`] vls_protocol_client::KeysManagerClient::spend_spendable_outputsspend_spendable_outputs
+pub fn create_spending_transaction(
+    descriptors: &[&SpendableOutputDescriptor],
+    outputs: Vec<TxOut>,
+    change_destination_script: ScriptBuf,
+    feerate_sats_per_1000_weight: u32,
+) -> anyhow::Result<Transaction> {
+    let mut input = Vec::new();
+    let mut input_value = 0;
+    let mut witness_weight = 0;
+    let mut output_set = UnorderedSet::with_capacity(descriptors.len());
+    for outp in descriptors {
+        match outp {
+            SpendableOutputDescriptor::StaticPaymentOutput(descriptor) => {
+                input.push(TxIn {
+                    previous_output: descriptor.outpoint.into_bitcoin_outpoint(),
+                    script_sig: ScriptBuf::new(),
+                    sequence: Sequence(1),
+                    witness: Witness::new(),
+                });
+                witness_weight += StaticPaymentOutputDescriptor::max_witness_length(descriptor);
+                input_value += descriptor.output.value;
+                if !output_set.insert(descriptor.outpoint) {
+                    return Err(anyhow!("duplicate"));
+                }
+            }
+            SpendableOutputDescriptor::DelayedPaymentOutput(descriptor) => {
+                input.push(TxIn {
+                    previous_output: descriptor.outpoint.into_bitcoin_outpoint(),
+                    script_sig: ScriptBuf::new(),
+                    sequence: Sequence(descriptor.to_self_delay as u32),
+                    witness: Witness::new(),
+                });
+                witness_weight += DelayedPaymentOutputDescriptor::MAX_WITNESS_LENGTH;
+                input_value += descriptor.output.value;
+                if !output_set.insert(descriptor.outpoint) {
+                    return Err(anyhow!("duplicate"));
+                }
+            }
+
+            SpendableOutputDescriptor::StaticOutput {
+                ref outpoint,
+                ref output,
+                channel_keys_id: _,
+            } => {
+                input.push(TxIn {
+                    previous_output: outpoint.into_bitcoin_outpoint(),
+                    script_sig: ScriptBuf::new(),
+                    sequence: Sequence::ZERO,
+                    witness: Witness::default(),
+                });
+                witness_weight += 1 + 73 + 34;
+                input_value += output.value;
+                if !output_set.insert(*outpoint) {
+                    return Err(anyhow!("duplicate"));
+                }
+            }
+        }
+
+        if input_value > MAX_VALUE_MSAT / 1000 {
+            return Err(anyhow!("overflow"));
+        }
+    }
+
+    let mut spend_tx = Transaction {
+        version: 2,
+        lock_time: bitcoin::absolute::LockTime::ZERO,
+        input,
+        output: outputs,
+    };
+    maybe_add_change_output(
+        &mut spend_tx,
+        input_value,
+        witness_weight,
+        feerate_sats_per_1000_weight,
+        change_destination_script,
+    )
+    .map_err(|()| anyhow!("could not add or change"))?;
+    Ok(spend_tx)
 }
 
 #[cfg(test)]

@@ -21,10 +21,10 @@ use bitcoin::sighash::SighashCache;
 use bitcoin::{self, merkle_tree, CompactTarget, ScriptBuf};
 use bitcoin::{Address, Block, BlockHash, Sequence, Transaction, TxIn, TxOut, Witness};
 use chain::chaininterface;
-use lightning::chain;
 use lightning::chain::chainmonitor::MonitorUpdateId;
 use lightning::chain::channelmonitor::MonitorEvent;
 use lightning::chain::transaction::OutPoint;
+use lightning::chain;
 use lightning::chain::{chainmonitor, channelmonitor};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, derive_private_key, get_anchor_redeemscript, get_htlc_redeemscript,
@@ -36,6 +36,7 @@ use lightning::ln::channel_keys::{
     DelayedPaymentBasepoint, HtlcBasepoint, RevocationBasepoint, RevocationKey,
 };
 use lightning::ln::features::ChannelTypeFeatures;
+use lightning::ln::ChannelId as LnChannelId;
 use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning::sign::{ChannelSigner, InMemorySigner};
 use lightning::util::test_utils;
@@ -51,7 +52,7 @@ use crate::channel::{
 use crate::invoice::Invoice;
 use crate::node::{Node, NodeConfig};
 use crate::node::{NodeServices, SpendType};
-use crate::persist::{DummyPersister, Persist};
+use crate::persist::DummyPersister;
 use crate::policy::simple_validator::SimpleValidatorFactory;
 use crate::policy::validator::ChainState;
 use crate::prelude::*;
@@ -152,6 +153,8 @@ impl chainmonitor::Persist<LoopbackChannelSigner> for TestPersister {
         self.update_ret.lock().unwrap().clone()
     }
 
+    fn archive_persisted_channel(&self, _channel_funding_outpoint: OutPoint) {}
+
     fn update_persisted_channel(
         &self,
         _channel_id: OutPoint,
@@ -208,10 +211,10 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
         funding_txo: OutPoint,
         monitor: channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
     ) -> Result<chain::ChannelMonitorUpdateStatus, ()> {
-        self.latest_monitor_update_id
-            .lock()
-            .unwrap()
-            .insert(funding_txo.to_channel_id().0, (funding_txo, monitor.get_latest_update_id()));
+        self.latest_monitor_update_id.lock().unwrap().insert(
+            LnChannelId::v1_from_funding_outpoint(funding_txo).0,
+            (funding_txo, monitor.get_latest_update_id()),
+        );
         self.added_monitors.lock().unwrap().push((funding_txo, ()));
         let watch_res = self.chain_monitor.watch_channel(funding_txo, monitor)?;
 
@@ -231,10 +234,10 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
         funding_txo: OutPoint,
         update: &channelmonitor::ChannelMonitorUpdate,
     ) -> chain::ChannelMonitorUpdateStatus {
-        self.latest_monitor_update_id
-            .lock()
-            .unwrap()
-            .insert(funding_txo.to_channel_id().0, (funding_txo, update.update_id));
+        self.latest_monitor_update_id.lock().unwrap().insert(
+            LnChannelId::v1_from_funding_outpoint(funding_txo).0,
+            (funding_txo, update.update_id),
+        );
         let update_res = self.chain_monitor.update_channel(funding_txo, update);
         self.added_monitors.lock().unwrap().push((funding_txo, ()));
 
@@ -251,7 +254,7 @@ impl<'a> chain::Watch<LoopbackChannelSigner> for TestChainMonitor<'a> {
 
     fn release_pending_monitor_events(
         &self,
-    ) -> Vec<(OutPoint, Vec<MonitorEvent>, Option<PublicKey>)> {
+    ) -> Vec<(OutPoint, LnChannelId, Vec<MonitorEvent>, Option<PublicKey>)> {
         self.chain_monitor.release_pending_monitor_events()
     }
 }
@@ -481,7 +484,7 @@ pub fn init_node(node_config: NodeConfig, seedstr: &str) -> Arc<Node> {
     let mut seed = [0; 32];
     seed.copy_from_slice(Vec::from_hex(seedstr).unwrap().as_slice());
 
-    let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
+    let persister = Arc::new(DummyPersister {});
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
     let starting_time_factory = make_genesis_starting_time_factory(node_config.network);
     let clock = Arc::new(StandardClock());
@@ -1865,7 +1868,7 @@ pub fn make_node() -> (PublicKey, Arc<Node>, [u8; 32]) {
 }
 
 pub fn make_services() -> NodeServices {
-    let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
+    let persister = Arc::new(DummyPersister {});
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
     let starting_time_factory = make_genesis_starting_time_factory(TEST_NODE_CONFIG.network);
     let clock = Arc::new(StandardClock());

@@ -2,7 +2,6 @@ use crate::prelude::*;
 use crate::util::crypto_utils::{hkdf_sha256, sighash_from_heartbeat};
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
-use bitcoin::absolute::LockTime;
 use bitcoin::bech32::u5;
 use bitcoin::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::blockdata::opcodes;
@@ -17,11 +16,10 @@ use bitcoin::key::KeyPair;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::{All, Message, PublicKey, Scalar, Secp256k1, SecretKey, Signing};
 use bitcoin::Network;
-use bitcoin::{secp256k1, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness};
+use bitcoin::{secp256k1, ScriptBuf, Transaction, TxOut, Witness};
 use lightning::ln::msgs::{DecodeError, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
-use lightning::sign::{
-    DelayedPaymentOutputDescriptor, EntropySource, InMemorySigner, KeyMaterial, NodeSigner,
+use lightning::sign::{EntropySource, InMemorySigner, KeyMaterial, NodeSigner,
     Recipient, SignerProvider, SpendableOutputDescriptor,
 };
 use lightning::util::ser::Writeable;
@@ -29,12 +27,11 @@ use lightning::util::ser::Writeable;
 use super::derive::{self, KeyDerivationStyle};
 use crate::channel::ChannelId;
 use crate::signer::StartingTimeFactory;
-use crate::util::transaction_utils::MAX_VALUE_MSAT;
-use crate::util::{byte_utils, transaction_utils};
+use crate::util::transaction_utils::create_spending_transaction;
+use crate::util::byte_utils;
 use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
 use bitcoin::secp256k1::schnorr;
 use bitcoin::sighash::{self, EcdsaSighashType};
-use hashbrown::HashSet as UnorderedSet;
 use lightning::util::invoice::construct_invoice_preimage;
 
 /// An implementation of [`NodeSigner`]
@@ -359,66 +356,14 @@ impl MyKeysManager {
         feerate_sat_per_1000_weight: u32,
         secp_ctx: &Secp256k1<All>,
     ) -> Result<Transaction, ()> {
-        let mut input = Vec::new();
-        let mut input_value = 0;
-        let mut witness_weight: u64 = 0;
-        let mut output_set = UnorderedSet::with_capacity(descriptors.len());
-        for outp in descriptors {
-            match outp {
-                SpendableOutputDescriptor::StaticPaymentOutput(descriptor) => {
-                    input.push(TxIn {
-                        previous_output: descriptor.outpoint.into_bitcoin_outpoint(),
-                        script_sig: ScriptBuf::new(),
-                        sequence: Sequence::ZERO,
-                        witness: Witness::default(),
-                    });
-                    witness_weight += descriptor.max_witness_length();
-                    input_value += descriptor.output.value;
-                    if !output_set.insert(descriptor.outpoint) {
-                        return Err(());
-                    }
-                }
-                SpendableOutputDescriptor::DelayedPaymentOutput(descriptor) => {
-                    input.push(TxIn {
-                        previous_output: descriptor.outpoint.into_bitcoin_outpoint(),
-                        script_sig: ScriptBuf::new(),
-                        sequence: Sequence(descriptor.to_self_delay as u32),
-                        witness: Witness::default(),
-                    });
-                    witness_weight += DelayedPaymentOutputDescriptor::MAX_WITNESS_LENGTH;
-                    input_value += descriptor.output.value;
-                    if !output_set.insert(descriptor.outpoint) {
-                        return Err(());
-                    }
-                }
-                SpendableOutputDescriptor::StaticOutput { ref outpoint, ref output, .. } => {
-                    input.push(TxIn {
-                        previous_output: outpoint.into_bitcoin_outpoint(),
-                        script_sig: ScriptBuf::new(),
-                        sequence: Sequence::ZERO,
-                        witness: Witness::default(),
-                    });
-                    witness_weight += 1 + 73 + 34;
-                    input_value += output.value;
-                    if !output_set.insert(*outpoint) {
-                        return Err(());
-                    }
-                }
-            }
-            if input_value > MAX_VALUE_MSAT / 1000 {
-                return Err(());
-            }
-        }
-        let mut spend_tx =
-            Transaction { version: 2, lock_time: LockTime::ZERO, input, output: outputs };
-        transaction_utils::maybe_add_change_output(
-            &mut spend_tx,
-            input_value,
-            witness_weight,
-            feerate_sat_per_1000_weight,
+        let mut spend_tx = create_spending_transaction(
+            descriptors,
+            outputs,
             change_destination_script,
-        )?;
-
+            feerate_sat_per_1000_weight,
+        )
+        .map_err(|_| ())?;
+        // Signing the tx
         let mut keys_cache: Option<(InMemorySigner, [u8; 32])> = None;
         let mut input_idx = 0;
         for outp in descriptors {
