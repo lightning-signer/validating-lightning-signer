@@ -131,3 +131,6 @@ features = ["serde", "bitcoinconsensus", "rand-std"]
 [dev-dependencies.vls-core]
 features = ["test_utils"]
 path = "."
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }

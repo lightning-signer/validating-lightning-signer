@@ -1091,6 +1091,7 @@ impl Channel {
             htlcs,
         );
 
+        #[cfg(not(fuzzing))]
         self.check_holder_tx_signatures(
             &per_commitment_point,
             &txkeys,
@@ -1099,6 +1100,9 @@ impl Channel {
             counterparty_htlc_sigs,
             recomposed_tx,
         )?;
+
+        #[cfg(fuzzing)]
+        let _ = recomposed_tx;
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(Some(&info2), None);
         state.validate_payments(
@@ -1215,8 +1219,7 @@ impl Channel {
         let info2 = validator
             .get_current_holder_commitment_info(&mut self.enforcement_state, commitment_number)?;
 
-        let htlcs =
-            Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
+        let htlcs = Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };
@@ -2363,6 +2366,7 @@ impl Channel {
         let delta =
             self.enforcement_state.claimable_balances(&*state, Some(&info2), None, &self.setup);
 
+        #[cfg(not(fuzzing))]
         self.check_holder_tx_signatures(
             &per_commitment_point,
             &txkeys,
@@ -2371,6 +2375,9 @@ impl Channel {
             counterparty_htlc_sigs,
             recomposed_tx,
         )?;
+
+        #[cfg(fuzzing)]
+        let _ = recomposed_tx;
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(Some(&info2), None);
         state.validate_payments(
