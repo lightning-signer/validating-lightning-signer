@@ -211,4 +211,23 @@ mod tests {
 			Action::Revoke,
 		]).unwrap();
 	}
+
+	#[test]
+	fn test_reproduce_revoke_old_bug() {
+		let mut channel_fuzz = ChannelFuzz::new();
+		channel_fuzz.run(vec![
+			Action::Revoke,
+			Action::Revoke,
+			Action::Revoke,
+
+			// this will move the commitment number backwards without the fix in
+			// https://gitlab.com/lightning-signer/validating-lightning-signer/-/merge_requests/686
+			Action::ValidateHolder(),
+			Action::RevokeOld(2),
+
+			// crashes without the fix
+			Action::Revoke,
+		]).unwrap();
+	}
+
 }
