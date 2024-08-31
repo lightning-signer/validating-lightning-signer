@@ -1,3 +1,6 @@
 #!/bin/bash
 
-cargo fuzz run -j 16 --release channel -- -timeout=1
+# we don't need the address sanitizer on a regular basis,
+# since we don't have unsafe code and we are mostly looking for panics
+
+cargo fuzz run -j 16 -s none channel -- -timeout=1

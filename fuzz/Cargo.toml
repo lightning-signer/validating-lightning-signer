@@ -31,3 +31,7 @@ name = "channel"
 path = "fuzz_targets/channel.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "profile_channel"
+path = "src/profile_channel.rs"
