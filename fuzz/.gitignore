@@ -1,1 +1,6 @@
 /Cargo.lock
+/coverage/
+/corpus/
+/artifacts/
+/afl_in/
+/afl_out/

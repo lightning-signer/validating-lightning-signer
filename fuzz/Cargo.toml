@@ -9,9 +9,11 @@ cargo-fuzz = true
 
 [features]
 "repro" = []
+"debug" = []
 
 [dependencies]
 libfuzzer-sys = "0.4"
+afl = "*"
 hex = "0.4"
 base64 = "0.21"
 env_logger = "0.9"
@@ -29,6 +31,12 @@ debug = 1
 [[bin]]
 name = "channel"
 path = "fuzz_targets/channel.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "channel-afl"
+path = "fuzz_targets/channel-afl.rs"
 test = false
 doc = false
 

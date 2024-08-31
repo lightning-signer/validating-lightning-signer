@@ -68,6 +68,8 @@ impl ChannelFuzz {
 
 	pub fn run(&mut self, data: Vec<Action>) -> Result<(), Status> {
 		for action in data {
+			#[cfg(feature = "debug")]
+			println!("{:?}", action);
 			match action {
 				Action::ValidateHolder() => {
 					self.validate_current();
@@ -229,5 +231,4 @@ mod tests {
 			Action::Revoke,
 		]).unwrap();
 	}
-
 }
