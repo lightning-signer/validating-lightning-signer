@@ -10,7 +10,7 @@ fn make_value(v: u8) -> Value {
 }
 
 #[tokio::test]
-async fn test_sled_database() {
+async fn test_redb_database() {
     let dir = tempfile::tempdir().unwrap();
     println!("tempdir: {}", dir.path().display());
     let db = RedbDatabase::new(dir.path().to_str().unwrap()).await.unwrap();
