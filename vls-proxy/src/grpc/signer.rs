@@ -469,7 +469,6 @@ impl HandleLoop {
                 .unwrap_or(50 * 1024);
             info!("using VLS_HEAPMON_PEAK_THRESH={}", peak_thresh);
             HEAPMON.filter("KVJsonPersister");
-            HEAPMON.filter("sled::pagecache");
             HEAPMON.filter("backtrace::symbolize");
             HEAPMON.filter("redb::");
             HEAPMON.filter("tokio_util::codec::length_delimited");
