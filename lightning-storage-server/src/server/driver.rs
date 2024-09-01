@@ -13,9 +13,9 @@ use tonic::transport::{server::ServerTlsConfig, Identity};
 
 pub const SERVER_APP_NAME: &str = "lssd";
 #[cfg(feature = "postgres")]
-const DATABASES: [&str; 2] = ["sled", "postgres"];
+const DATABASES: [&str; 2] = ["redb", "postgres"];
 #[cfg(not(feature = "postgres"))]
-const DATABASES: [&str; 1] = ["sled"];
+const DATABASES: [&str; 1] = ["redb"];
 
 fn configure_tls(
     server: tonic::transport::Server,
@@ -112,7 +112,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .long("database")
                 .help("specify DB backend")
                 .takes_value(true)
-                .default_value("sled")
+                .default_value("redb")
                 .possible_values(&DATABASES),
         );
     let matches = app.get_matches();
@@ -145,7 +145,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         Some("postgres") => Box::new(
             if clear_db { postgres::new_and_clear().await } else { postgres::new().await }.unwrap(),
         ),
-        Some("sled") => Box::new(
+        Some("redb") => Box::new(
             if clear_db {
                 RedbDatabase::new_and_clear(datadir.clone()).await
             } else {
