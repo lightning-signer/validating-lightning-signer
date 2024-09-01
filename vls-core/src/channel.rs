@@ -1438,7 +1438,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         htlcs: Vec<HTLCOutputInCommitment>,
     ) -> CommitmentTransaction {
-        let mut htlcs_with_aux = htlcs.iter().map(|h| (h.clone(), ())).collect();
+        let mut htlcs_with_aux = htlcs.into_iter().map(|h| (h, ())).collect();
         let channel_parameters = self.make_channel_parameters();
         let parameters = channel_parameters.as_holder_broadcastable();
         let mut commitment_tx = CommitmentTransaction::new_with_auxiliary_htlc_data(
