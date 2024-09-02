@@ -17,6 +17,7 @@ pub enum Error {
     MessageTooLarge,
     Eof,
     Io(String),
+    DeveloperField
 }
 
 // convert bitcoin consensus decode error to our error

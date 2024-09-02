@@ -30,11 +30,13 @@ regex = "1.5"
 env_logger = "0.9"
 test-log = "0.2.8"
 serde_bolt = { version = "0.4.1", features = ["test_utils"] }
+vls-protocol = { path = ".", features = ["developer"] }
 
 [features]
 default = ["std"]
 std = ["serde_bolt/std", "txoo/std", "vls-core/std"]
 no-std = ["serde_bolt/no-std", "txoo/no-std", "vls-core/no-std"]
+developer = []
 
 # dangerous, only for testing
 log-secrets = []

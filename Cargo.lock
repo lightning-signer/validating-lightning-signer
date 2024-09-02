@@ -3026,6 +3026,7 @@ dependencies = [
  "test-log",
  "txoo",
  "vls-core",
+ "vls-protocol",
 ]
 
 [[package]]
