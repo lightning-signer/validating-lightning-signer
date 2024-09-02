@@ -3053,6 +3053,7 @@ dependencies = [
  "test-log",
  "vls-core",
  "vls-protocol",
+ "vls-protocol-signer",
 ]
 
 [[package]]
