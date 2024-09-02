@@ -19,6 +19,7 @@ timeless_workaround = ["vls-core/timeless_workaround"]
 log_pretty_print = ["vls-core/log_pretty_print"]
 debug_node_state = []
 debug = ["vls-core/debug", "debug_node_state"]
+developer = ["vls-protocol/developer"]
 
 [dependencies]
 vls-core = { path = "../vls-core", version = "0.12.0", default-features = false }
