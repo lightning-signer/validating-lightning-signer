@@ -759,6 +759,9 @@ impl Channel {
 
         let htlcs = Self::htlcs_info2_to_oic(offered_htlcs, received_htlcs);
 
+        #[cfg(fuzzing)]
+        let htlcs_len = htlcs.len();
+
         // since we independently re-create the tx, this also performs the
         // policy-commitment-* controls
         let commitment_tx = self.make_counterparty_commitment_tx(
@@ -770,6 +773,7 @@ impl Channel {
             htlcs,
         );
 
+        #[cfg(not(fuzzing))]
         let (sig, htlc_sigs) = catch_panic!(
             self.keys.sign_counterparty_commitment(
                 &commitment_tx,
@@ -781,6 +785,13 @@ impl Channel {
             self.setup.commitment_type,
         )
         .map_err(|_| internal_error("failed to sign"))?;
+
+        #[cfg(fuzzing)]
+        let (sig, htlc_sigs, _) = (
+            Signature::from_compact(&[0; 64]).unwrap(),
+            vec![Signature::from_compact(&[0; 64]).unwrap(); htlcs_len],
+            commitment_tx,
+        );
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(None, Some(&info2));
         state.validate_payments(
@@ -2442,8 +2453,6 @@ impl Channel {
         revoke_num: u64,
         old_secret: &SecretKey,
     ) -> Result<(), Status> {
-        // TODO - need to store the revealed secret.
-
         let validator = self.validator();
         validator.validate_counterparty_revocation(
             &self.enforcement_state,
