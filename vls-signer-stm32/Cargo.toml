@@ -58,12 +58,14 @@ info = ["log/max_level_info"]
 rtt_block = []
 # dangerous, only for testing
 log-secrets = ["vls-protocol/log-secrets"]
+developer = ["vls-protocol/developer", "vls-protocol-signer/developer"]
 
 log_pretty_print = ["vls-protocol-signer/log_pretty_print"]
 
 [[bin]]
 name = "demo_signer"
 path = "src/demo_signer_main.rs"
+required-features = ["developer"]
 
 [[bin]]
 name = "test"
