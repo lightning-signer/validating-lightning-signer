@@ -1,3 +1,5 @@
+image: python:3.8
+
 cache:
   key: vls-global
   paths:
@@ -21,7 +23,6 @@ include:
 # later jobs can be flaky and cache is not written when a job fails.
 get_bitcoin:
   stage: build
-  image: python:3.8
   cache:
     key: vls-bitcoin
     paths:
