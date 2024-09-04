@@ -1,3 +1,5 @@
+image: python:3.8
+
 cache:
   key: vls-global
   paths:
@@ -12,12 +14,15 @@ before_script:
 
 stages:
   - build
+  - fuzz
+
+include:
+  - template: Coverage-Fuzzing.gitlab-ci.yml
 
 # Do this in a separate job, so that it gets cached with high probability
 # later jobs can be flaky and cache is not written when a job fails.
 get_bitcoin:
   stage: build
-  image: python:3.8
   cache:
     key: vls-bitcoin
     paths:
@@ -35,6 +40,21 @@ get_bitcoin:
     paths:
       - bin/bitcoind
     expire_in: 1 week
+
+fuzz_channel:
+  tags: [ saas-linux-large-amd64 ]
+  image: 'rustlang/rust:nightly'
+  extends: .fuzz_base
+  cache:
+    key: vls-fuzz
+    paths:
+      - .cache/cargo
+  needs:
+    - rust-msrv
+  script:
+    - cargo install cargo-fuzz
+    - cargo fuzz run channel -- -runs=0
+    - ./gitlab-cov-fuzz run --regression=$REGRESSION -- ./fuzz/target/x86_64-unknown-linux-gnu/release/channel
 
 rust-latest:
   tags: [ saas-linux-large-amd64 ]
@@ -74,7 +94,7 @@ rust-latest-extras:
     # test LSS
     - (cd lightning-storage-server && cargo test)
 
-rust-1.66.0:
+rust-msrv:
   tags: [ saas-linux-large-amd64 ]
   stage: build
   image: rust:1.66.0
@@ -89,7 +109,7 @@ rust-1.66.0:
     - rustup component add rustfmt
     - cargo test
 
-rust-1.66.0-lss:
+rust-msrv-lss:
   tags: [ saas-linux-large-amd64 ]
   stage: build
   image: rust:1.66.0

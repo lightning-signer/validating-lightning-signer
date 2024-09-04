@@ -1,0 +1,28 @@
+#!/bin/bash
+
+set -e
+
+export AFL_SKIP_CPUFREQ=1
+export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
+
+trap 'kill $(jobs -p)' SIGINT SIGTERM
+
+mkdir -p afl_out/channel afl_in/channel
+cp data/sample afl_in/channel/seed
+cargo afl build --release --bin channel-afl
+
+run_fuzz() {
+    local cpu_id=$1
+    local mode=$2
+    cargo afl fuzz -i afl_in/channel -o afl_out/channel -G 1024 -t 1000 -a binary -$mode fuzzer$cpu_id target/release/channel-afl
+}
+
+run_fuzz 0 M &
+
+# Run AFL fuzzing with slave instances on multiple CPUs
+# TODO this doesn't seem to parallelize well - per-CPU perf drops almost linearly with more procs
+for i in $(seq 1 2); do
+    run_fuzz $i S > /dev/null &
+done
+
+wait

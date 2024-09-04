@@ -759,6 +759,9 @@ impl Channel {
 
         let htlcs = Self::htlcs_info2_to_oic(offered_htlcs, received_htlcs);
 
+        #[cfg(fuzzing)]
+        let htlcs_len = htlcs.len();
+
         // since we independently re-create the tx, this also performs the
         // policy-commitment-* controls
         let commitment_tx = self.make_counterparty_commitment_tx(
@@ -770,6 +773,7 @@ impl Channel {
             htlcs,
         );
 
+        #[cfg(not(fuzzing))]
         let (sig, htlc_sigs) = catch_panic!(
             self.keys.sign_counterparty_commitment(
                 &commitment_tx,
@@ -781,6 +785,13 @@ impl Channel {
             self.setup.commitment_type,
         )
         .map_err(|_| internal_error("failed to sign"))?;
+
+        #[cfg(fuzzing)]
+        let (sig, htlc_sigs, _) = (
+            Signature::from_compact(&[0; 64]).unwrap(),
+            vec![Signature::from_compact(&[0; 64]).unwrap(); htlcs_len],
+            commitment_tx,
+        );
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(None, Some(&info2));
         state.validate_payments(
@@ -1091,6 +1102,7 @@ impl Channel {
             htlcs,
         );
 
+        #[cfg(not(fuzzing))]
         self.check_holder_tx_signatures(
             &per_commitment_point,
             &txkeys,
@@ -1099,6 +1111,9 @@ impl Channel {
             counterparty_htlc_sigs,
             recomposed_tx,
         )?;
+
+        #[cfg(fuzzing)]
+        let _ = recomposed_tx;
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(Some(&info2), None);
         state.validate_payments(
@@ -1215,8 +1230,7 @@ impl Channel {
         let info2 = validator
             .get_current_holder_commitment_info(&mut self.enforcement_state, commitment_number)?;
 
-        let htlcs =
-            Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
+        let htlcs = Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };
@@ -1435,7 +1449,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         htlcs: Vec<HTLCOutputInCommitment>,
     ) -> CommitmentTransaction {
-        let mut htlcs_with_aux = htlcs.iter().map(|h| (h.clone(), ())).collect();
+        let mut htlcs_with_aux = htlcs.into_iter().map(|h| (h, ())).collect();
         let channel_parameters = self.make_channel_parameters();
         let parameters = channel_parameters.as_holder_broadcastable();
         let mut commitment_tx = CommitmentTransaction::new_with_auxiliary_htlc_data(
@@ -2363,6 +2377,7 @@ impl Channel {
         let delta =
             self.enforcement_state.claimable_balances(&*state, Some(&info2), None, &self.setup);
 
+        #[cfg(not(fuzzing))]
         self.check_holder_tx_signatures(
             &per_commitment_point,
             &txkeys,
@@ -2371,6 +2386,9 @@ impl Channel {
             counterparty_htlc_sigs,
             recomposed_tx,
         )?;
+
+        #[cfg(fuzzing)]
+        let _ = recomposed_tx;
 
         let outgoing_payment_summary = self.enforcement_state.payments_summary(Some(&info2), None);
         state.validate_payments(
@@ -2435,8 +2453,6 @@ impl Channel {
         revoke_num: u64,
         old_secret: &SecretKey,
     ) -> Result<(), Status> {
-        // TODO - need to store the revealed secret.
-
         let validator = self.validator();
         validator.validate_counterparty_revocation(
             &self.enforcement_state,
