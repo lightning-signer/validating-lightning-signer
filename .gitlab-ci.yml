@@ -51,9 +51,9 @@ fuzz_channel:
       - .cache/cargo
   needs:
     - rust-msrv
-  timeout: 70m
+  timeout: 90m
   variables:
-    RUNNER_SCRIPT_TIMEOUT: 65m
+    RUNNER_SCRIPT_TIMEOUT: 80m
   script:
     - export RUSTFLAGS="-Zallow-features=proc_macro_span"
     - cargo install cargo-fuzz
