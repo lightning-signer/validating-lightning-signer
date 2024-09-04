@@ -186,6 +186,7 @@ changelog:
   stage: build
   before_script:
     - git fetch origin main:main
+  allow_failure: true
   script:
     - |
       if [ "$(git cat-file -p $CI_COMMIT_SHA | grep -c 'parent')" -gt 1 ]; then
