@@ -54,6 +54,8 @@ fuzz_channel:
   timeout: 90m
   variables:
     RUNNER_SCRIPT_TIMEOUT: 80m
+    COVFUZZ_USE_REGISTRY: "true"
+    COVFUZZ_CORPUS_NAME: "channel"
   script:
     - export RUSTFLAGS="-Zallow-features=proc_macro_span"
     - cargo install cargo-fuzz
