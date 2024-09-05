@@ -428,8 +428,8 @@ impl State {
         // - unilateral closed, and our output, as well as all HTLCs were swept
         // and, the last confirmation is buried
         //
-        // TODO: check 2nd level HTLCs
-        // TODO: disregard received HTLCs that we can't claim (we don't have the preimage)
+        // TODO(472) check 2nd level HTLCs
+        // TODO(472) disregard received HTLCs that we can't claim (we don't have the preimage)
 
         if self.deep_enough_and_saw_node_forget(self.funding_double_spent_height, MIN_DEPTH) {
             debug!(

@@ -316,7 +316,8 @@ pub trait Validator {
                 "retry {}: current_counterparty_point not set, this shouldn't be possible",
                 num
             );
-            // FIXME - need to compare current_commitment_info with current_counterparty_commit_info
+
+            // TODO(513) seems to be duplicate logic vs validate_counterparty_commitment_tx
             if current_point != estate.current_counterparty_point.unwrap() {
                 debug!(
                     "current_point {} != prior {}",
@@ -509,7 +510,6 @@ pub fn validate_block<T: Validator + ?Sized>(
         policy_err!(self_, "policy-chain-validated", "attestation from trusted oracles not found");
     }
 
-    // TODO validate filter header chain
     Ok(())
 }
 
@@ -594,7 +594,6 @@ impl CounterpartyCommitmentSecrets {
     /// Returns the minimum index of all stored secrets. Note that indexes start
     /// at 1 << 48 and get decremented by one for each new secret.
     pub fn get_min_seen_secret(&self) -> u64 {
-        //TODO This can be optimized?
         let mut min = 1 << 48;
         for &(_, idx) in self.old_secrets.iter() {
             if idx < min {
@@ -1095,7 +1094,7 @@ impl EnforcementState {
             channel_setup.channel_value_sat,
         );
         // Our overall balance is the lower of the two.  Use the htlc values from the same.
-        // TODO - might be more correct to check the HTLC value for each payment hash, and do
+        // TODO(514) - might be more correct to check the HTLC value for each payment hash, and do
         // Math.min on each one, then sum that.  If an htlc exists in one commitment but not the
         // other if we offered, then it would be -value, if we are receiving, it would be
         // 0. i.e. Math.min(0, value)

@@ -248,7 +248,7 @@ impl RoutedPayment {
 }
 
 /// Enforcement state for a node
-// TODO move allowlist into this struct
+// TODO(518) move allowlist into this struct
 pub struct NodeState {
     /// Added invoices for outgoing payments indexed by their payment hash
     pub invoices: Map<PaymentHash, PaymentState>,
@@ -261,7 +261,7 @@ pub struct NodeState {
     /// Accumulator of excess payment amount in satoshi, for tracking certain
     /// payment corner cases.
     /// If this falls below zero, the attempted commit is failed.
-    // TODO fee accumulation adjustment
+    // TODO(519) fee accumulation adjustment
     // As we accumulate routing fees, this value grows without bounds.  We should
     // take accumulated fees out over time to keep this bounded.
     pub excess_amount: u64,
@@ -464,7 +464,7 @@ impl NodeState {
                 invoiced_amount,
             ) {
                 if payment.is_some() && invoiced_amount.is_none() {
-                    // TODO #331 - workaround for an uninvoiced existing payment
+                    // TODO(331) workaround for an uninvoiced existing payment
                     // is allowed to go out of balance because LDK does not
                     // provide the preimage in time and removes the incoming HTLC first.
                     #[cfg(not(feature = "log_pretty_print"))]
@@ -672,7 +672,7 @@ impl NodeState {
                     if validator.enforce_balance() {
                         self.excess_amount =
                             self.excess_amount.checked_add(incoming).expect("overflow");
-                        // TODO convert to checked error
+                        // TODO(519) convert to checked error
                         self.excess_amount =
                             self.excess_amount.checked_sub(outgoing).expect("underflow");
                     }
@@ -1039,7 +1039,7 @@ impl Wallet for Node {
         let wrapped_addr = Address::p2shwpkh(&pubkey, self.network()).expect("p2shwpkh failed");
         let untweaked_pubkey = UntweakedPublicKey::from(pubkey.inner);
 
-        // FIXME it is not recommended to use the same xpub for both schnorr and ECDSA
+        // FIXME(520) it is not recommended to use the same xpub for both schnorr and ECDSA
         let taproot_addr = Address::p2tr(&self.secp_ctx, untweaked_pubkey, None, self.network());
 
         Ok(*script_pubkey == native_addr.script_pubkey()
@@ -1107,7 +1107,7 @@ impl Wallet for Node {
                     return true;
                 }
 
-                // FIXME it is not recommended to use the same xpub for both schnorr and ECDSA
+                // FIXME(520) it is not recommended to use the same xpub for both schnorr and ECDSA
                 let untweaked_pubkey = UntweakedPublicKey::from(pubkey.inner);
                 if *script_pubkey
                     == Address::p2tr(&self.secp_ctx, untweaked_pubkey, None, self.network())
@@ -1545,7 +1545,7 @@ impl Node {
         let mut channels = self.channels.lock().unwrap();
         let policy = self.policy();
         if channels.len() >= policy.max_channels() {
-            // FIXME(#3) we don't garbage collect channels
+            // FIXME(3) we don't garbage collect channels
             return Err(failed_precondition(format!(
                 "too many channels ({} >= {})",
                 channels.len(),
@@ -1572,7 +1572,7 @@ impl Node {
             id0: channel_id.clone(),
             blockheight,
         };
-        // TODO this clone is expensive
+        // TODO(507) this clone is expensive
         channels.insert(channel_id.clone(), Arc::new(Mutex::new(ChannelSlot::Stub(stub.clone()))));
         self.persister
             .new_channel(&self.get_id(), &stub)
@@ -1787,7 +1787,7 @@ impl Node {
 
         // Wrap the ready channel with an arc so we can potentially
         // refer to it multiple times.
-        // TODO this clone is expensive
+        // TODO(507) this clone is expensive
         let chan_arc = Arc::new(Mutex::new(ChannelSlot::Ready(chan.clone())));
 
         let commitment_point_provider = ChannelCommitmentPointProvider::new(chan_arc.clone());
@@ -1929,8 +1929,7 @@ impl Node {
                 let value_sat = prev_outs[idx].value;
                 let (privkey, mut witness) = match uck {
                     // There was a unilateral_close_key.
-                    // TODO we don't care about the network here
-                    Some((key, stack)) => (PrivateKey::new(key.clone(), Network::Testnet), stack),
+                    Some((key, stack)) => (PrivateKey::new(key.clone(), self.network()), stack),
                     // Derive the HD key.
                     None => {
                         let key = self.get_wallet_privkey(&ipaths[idx])?;
@@ -1941,7 +1940,7 @@ impl Node {
                     }
                 };
                 let pubkey = privkey.public_key(&self.secp_ctx);
-                let script_code = Address::p2pkh(&pubkey, privkey.network).script_pubkey();
+                let script_code = Payload::p2pkh(&pubkey).script_pubkey();
                 // the unwraps below are infallible, because sighash is always 32 bytes
                 let sigvec = match spend_type {
                     SpendType::P2pkh => {
@@ -1991,14 +1990,25 @@ impl Node {
                         signature_to_bitcoin_vec(ecdsa_sign(&self.secp_ctx, &privkey, &sighash))
                     }
                     SpendType::P2tr => {
-                        // TODO failfast here if the scriptpubkey doesn't match
                         let wallet_addr = self.get_taproot_address(&ipaths[idx])?;
+                        let script = &prev_outs[idx].script_pubkey;
                         let out_addr =
-                            Address::from_script(&prev_outs[idx].script_pubkey, self.network());
+                            Address::from_script(&script, self.network()).map_err(|_| {
+                                invalid_argument(format!(
+                                    "script {} at output {} could not be converted to address",
+                                    script, idx
+                                ))
+                            })?;
                         trace!(
                             "signing p2tr, idx {}, ipath {:?} out addr {:?}, wallet addr {} prev outs {:?}",
                             idx, ipaths[idx], out_addr, wallet_addr, prev_outs
                         );
+                        if wallet_addr != out_addr {
+                            return Err(invalid_argument(format!(
+                                "wallet address @{:?} {} does not match output address {}",
+                                ipaths[idx], wallet_addr, out_addr
+                            )));
+                        }
                         let prevouts = Prevouts::All(&prev_outs);
                         let sighash = SighashCache::new(tx)
                             .taproot_signature_hash(
@@ -2035,7 +2045,7 @@ impl Node {
         // This locks channels in a random order, so we have to keep a global
         // lock to ensure no deadlock.  We grab the self.channels mutex above
         // for this purpose.
-        // TODO(devrandom) consider sorting instead
+        // TODO(511) consider sorting instead
         for (vout, slot_opt) in channels.iter().enumerate() {
             if let Some(slot_mutex) = slot_opt {
                 let slot = slot_mutex.lock().unwrap();
@@ -2045,7 +2055,10 @@ impl Node {
                         let inputs =
                             OrderedSet::from_iter(tx.input.iter().map(|i| i.previous_output));
                         tracker.add_listener_watches(&chan.monitor.funding_outpoint, inputs);
-                        chan.funding_signed(tx, vout as u32)
+                        chan.funding_signed(tx, vout as u32);
+                        self.persister
+                            .update_channel(&self.get_id(), &chan)
+                            .map_err(|_| internal_error("persist failed"))?;
                     }
                 }
             }
@@ -2056,7 +2069,6 @@ impl Node {
             .update_tracker(&self.get_id(), &tracker)
             .map_err(|_| internal_error("tracker persist failed"))?;
 
-        // TODO(devrandom) self.persist_channel(node_id, chan);
         Ok(witvec)
     }
 
@@ -2652,16 +2664,16 @@ impl Node {
         amount_msat: u64,
         now: Duration,
     ) -> Result<(PaymentState, [u8; 32]), Status> {
-        // TODO validate the payee by generating the preimage ourselves and wrapping the inner layer
+        // TODO(281) validate the payee by generating the preimage ourselves and wrapping the inner layer
         // of the onion
-        // TODO once we validate the payee, check if payee public key is in allowlist
+        // TODO(281) once we validate the payee, check if payee public key is in allowlist
         let invoice_hash = payment_hash.0;
         let payment_state = PaymentState {
             invoice_hash,
             amount_msat,
             payee,
-            duration_since_epoch: now,                // FIXME #329
-            expiry_duration: Duration::from_secs(60), // FIXME #329
+            duration_since_epoch: now,                // FIXME(329)
+            expiry_duration: Duration::from_secs(60), // FIXME(329)
             is_fulfilled: false,
             payment_type: PaymentType::Keysend,
         };
@@ -2783,7 +2795,6 @@ pub trait NodeMonitor {
 }
 
 impl NodeMonitor for Node {
-    // TODO - lock while we sum so channels can't change until we are done
     fn channel_balance(&self) -> ChannelBalance {
         let mut sum = ChannelBalance::zero();
         let channels_lock = self.channels.lock().unwrap();
@@ -3117,7 +3128,7 @@ mod tests {
 
         assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 2 payments, excess_amount 0".to_string(), false));
 
-        // hash1 has no invoice, passes with strict validator once the payment exists (TODO #331)
+        // TODO(331) hash1 has no invoice, passes with strict validator once the payment exists
         let result = state.validate_and_apply_payments(
             &channel_id,
             &Map::new(),

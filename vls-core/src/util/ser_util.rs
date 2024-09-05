@@ -143,7 +143,6 @@ impl<'de> DeserializeAs<'de, ChannelId> for ChannelIdHandler {
 pub struct ChannelPublicKeysDef {
     #[serde_as(as = "IfIsHumanReadable<PublicKeyHandler>")]
     pub funding_pubkey: PublicKey,
-    // FIXME here and below, the binary representation needs to be restored
     #[serde_as(as = "IfIsHumanReadable<RevocationBasepointHandler, RevocationBasepointHandler>")]
     pub revocation_basepoint: RevocationBasepoint,
     #[serde_as(as = "IfIsHumanReadable<PublicKeyHandler>")]

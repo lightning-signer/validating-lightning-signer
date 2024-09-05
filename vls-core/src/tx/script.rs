@@ -67,23 +67,9 @@ pub(crate) fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, Validation
 }
 
 /// The BOLT specified anchor output size.
-// TODO - Should use the one in ln::channel, but is private
 pub const ANCHOR_OUTPUT_VALUE_SATOSHI: u64 = 330;
 
-/// Gets the redeemscript for the to_remote output when anchors are enabled.
-// TODO - Should use the one in chan_utils, need relaxed visibility
-#[inline]
-pub fn get_to_countersignatory_with_anchors_redeemscript(payment_point: &PublicKey) -> ScriptBuf {
-    Builder::new()
-        .push_slice(&payment_point.serialize())
-        .push_opcode(opcodes::all::OP_CHECKSIGVERIFY)
-        .push_int(1)
-        .push_opcode(opcodes::all::OP_CSV)
-        .into_script()
-}
-
 /// Get the p2wpkh redeemscript
-// TODO - Should use the one in chan_utils, need relaxed visibility
 pub fn get_p2wpkh_redeemscript(key: &PublicKey) -> ScriptBuf {
     Builder::new()
         .push_opcode(opcodes::all::OP_PUSHBYTES_0)

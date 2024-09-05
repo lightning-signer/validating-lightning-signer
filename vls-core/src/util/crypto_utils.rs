@@ -135,7 +135,7 @@ pub fn generate_seed() -> [u8; 32] {
         seed
     }
     #[cfg(not(feature = "std"))]
-    todo!("no RNG available in no_std environments yet");
+    unimplemented!("no RNG available in no_std environments yet");
 }
 
 /// Hash the serialized heartbeat message for signing

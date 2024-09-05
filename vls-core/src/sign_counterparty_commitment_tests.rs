@@ -8,8 +8,8 @@ mod tests {
     use bitcoin::Network;
     use bitcoin::Sequence;
     use lightning::ln::chan_utils::{
-        make_funding_redeemscript, BuiltCommitmentTransaction,
-        DirectedChannelTransactionParameters, TxCreationKeys,
+        get_to_countersignatory_with_anchors_redeemscript, make_funding_redeemscript,
+        BuiltCommitmentTransaction, DirectedChannelTransactionParameters, TxCreationKeys,
     };
     use lightning::ln::channel_keys::DelayedPaymentKey;
     use lightning::ln::channel_keys::HtlcKey;
@@ -22,7 +22,6 @@ mod tests {
     use crate::channel::{Channel, ChannelSetup, CommitmentType, TypedSignature};
     use crate::node::NodeMonitor;
     use crate::policy::validator::{ChainState, EnforcementState};
-    use crate::tx::script::get_to_countersignatory_with_anchors_redeemscript;
     use crate::tx::tx::HTLCInfo2;
     use crate::util::crypto_utils::payload_for_p2wpkh;
     use crate::util::status::{Code, Status};

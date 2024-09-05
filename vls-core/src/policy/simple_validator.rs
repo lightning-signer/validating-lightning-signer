@@ -8,6 +8,7 @@ use lightning::ln::chan_utils::{
 };
 use lightning::ln::PaymentHash;
 use lightning::sign::{ChannelSigner, InMemorySigner};
+
 use log::*;
 use vls_common::HexEncode;
 
@@ -108,8 +109,6 @@ pub struct SimplePolicy {
     /// Maximum feerate
     pub max_feerate_per_kw: u32,
     /// Enforce holder balance
-    // TODO incoming payments
-    // TODO routing
     pub enforce_balance: bool,
     /// Maximum layer-2 fee
     pub max_routing_fee_msat: u64,
@@ -354,7 +353,7 @@ impl SimpleValidator {
         }
 
         // LDK now provides multi-input txs, and we can't easily validate fees securely
-        // FIXME Since we see the tx on-chain, we should just get the input amount from there
+        // TODO(522) Since we see the tx on-chain, we should just get the input amount from there
 
         // // policy-sweep-fee-range
         // self.validate_fee(amount_sat, tx.output[0].value)
@@ -733,7 +732,6 @@ impl Validator for SimpleValidator {
         }
 
         // Is this a retry?
-        // FIXME the `+ 1` on next line is wrong
         // not a security problem, because it's OK to re-sign an old commitment
         // that the *counterparty* revoked
         if commit_num + 1 == estate.next_counterparty_commit_num {
@@ -1561,7 +1559,6 @@ impl Validator for SimpleValidator {
         )) = parse_offered_htlc_script(redeemscript, setup.is_anchors())
         {
             // It's an offered htlc (counterparty perspective)
-            // FIXME: The bitcoin Height type should implement `From<u32>`.
             if !tx.lock_time.is_satisfied_by(
                 Height::from_consensus(cstate.current_height + MAX_CHAIN_LAG)
                     .expect("Height::from_consensus"),
@@ -1782,7 +1779,7 @@ impl SimpleValidator {
                 + (info.feerate_per_kw as u64 * htlc_timeout_tx_weight(&setup.features()) / 1000)
         };
         for htlc in &info.offered_htlcs {
-            // TODO - this check should be converted into two checks, one the first time
+            // TODO(512) - this check should be converted into two checks, one the first time
             // the HTLC is introduced and the other every time it is encountered.
             //
             // policy-commitment-htlc-cltv-range
@@ -1810,7 +1807,7 @@ impl SimpleValidator {
                 + (info.feerate_per_kw as u64 * htlc_success_tx_weight(&setup.features()) / 1000)
         };
         for htlc in &info.received_htlcs {
-            // TODO - this check should be converted into two checks, one the first time
+            // TODO(512) - this check should be converted into two checks, one the first time
             // the HTLC is introduced and the other every time it is encountered.
             //
             // policy-commitment-htlc-cltv-range

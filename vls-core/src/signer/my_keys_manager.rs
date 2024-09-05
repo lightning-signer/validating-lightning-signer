@@ -19,16 +19,17 @@ use bitcoin::Network;
 use bitcoin::{secp256k1, ScriptBuf, Transaction, TxOut, Witness};
 use lightning::ln::msgs::{DecodeError, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
-use lightning::sign::{EntropySource, InMemorySigner, KeyMaterial, NodeSigner,
-    Recipient, SignerProvider, SpendableOutputDescriptor,
+use lightning::sign::{
+    EntropySource, InMemorySigner, KeyMaterial, NodeSigner, Recipient, SignerProvider,
+    SpendableOutputDescriptor,
 };
 use lightning::util::ser::Writeable;
 
 use super::derive::{self, KeyDerivationStyle};
 use crate::channel::ChannelId;
 use crate::signer::StartingTimeFactory;
-use crate::util::transaction_utils::create_spending_transaction;
 use crate::util::byte_utils;
+use crate::util::transaction_utils::create_spending_transaction;
 use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
 use bitcoin::secp256k1::schnorr;
 use bitcoin::sighash::{self, EcdsaSighashType};
@@ -572,14 +573,14 @@ impl NodeSigner for MyKeysManager {
         &self,
         _: &lightning::offers::invoice::UnsignedBolt12Invoice,
     ) -> Result<schnorr::Signature, ()> {
-        todo!()
+        todo!("issue 459")
     }
 
     fn sign_bolt12_invoice_request(
         &self,
         _: &lightning::offers::invoice_request::UnsignedInvoiceRequest,
     ) -> Result<schnorr::Signature, ()> {
-        todo!()
+        todo!("issue 459")
     }
 }
 

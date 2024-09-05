@@ -243,7 +243,6 @@ pub trait ChannelBase: Any {
     /// Get the per-commitment point for a holder commitment transaction
     fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status>;
     /// Get the per-commitment secret for a holder commitment transaction
-    // TODO leaking secret
     fn get_per_commitment_secret(&self, commitment_number: u64) -> Result<SecretKey, Status>;
     /// Get the per-commitment secret or None if the arg is out of range
     fn get_per_commitment_secret_or_none(&self, commitment_number: u64) -> Option<SecretKey>;
@@ -254,7 +253,6 @@ pub trait ChannelBase: Any {
     /// Channel information for logging
     fn chaninfo(&self) -> SlotInfo;
 
-    // TODO remove when LDK workaround is removed in LoopbackSigner
     #[allow(missing_docs)]
     #[cfg(any(test, feature = "test_utils"))]
     fn set_next_holder_commit_num_for_testing(&mut self, _num: u64) {
@@ -1248,7 +1246,7 @@ impl Channel {
         // We provide a dummy signature for the remote, since we don't require that sig
         // to be passed in to this call.  It would have been better if HolderCommitmentTransaction
         // didn't require the remote sig.
-        // TODO consider if we actually want the sig for policy checks
+        // TODO(516) remove dummy sigs here and in phase 2 protocol
         let htlcs_len = recomposed_tx.htlcs().len();
         let mut htlc_dummy_sigs = Vec::with_capacity(htlcs_len);
         htlc_dummy_sigs.resize(htlcs_len, Self::dummy_sig());
@@ -1330,7 +1328,6 @@ impl Channel {
         );
 
         // Sign the recomposed commitment.
-        // FIXME handle HTLCs
         let sig = self
             .keys
             .sign_holder_commitment(&recomposed_holder_tx, &self.secp_ctx)
@@ -1371,7 +1368,7 @@ impl Channel {
     /// Use [Channel::sign_counterparty_commitment_tx_phase2()] instead of this,
     /// since that one uses the last counter-signed holder tx, which is simpler
     /// and doesn't require re-validation of the holder tx.
-    // TODO anchors support once upstream supports it
+    // TODO(517) remove this method
     pub fn sign_holder_commitment_tx_phase2_redundant(
         &mut self,
         commitment_number: u64,
@@ -1517,7 +1514,7 @@ impl Channel {
     }
 
     /// Get the shutdown script where our funds will go when we mutual-close
-    // FIXME - this method is deprecated
+    // TODO(75) this method is deprecated
     pub fn get_ldk_shutdown_script(&self) -> ScriptBuf {
         self.setup.holder_shutdown_script.clone().unwrap_or_else(|| {
             self.get_node().keys_manager.get_shutdown_scriptpubkey().unwrap().into()
@@ -2638,7 +2635,6 @@ impl Channel {
     /// commitment_point is used to derive the key if it is Some.
     /// Since we don't support legacy channels, commitment_point must
     /// be Some iff revocation_pubkey is Some.
-    // TODO(devrandom) key leaking from this layer
     pub fn get_unilateral_close_key(
         &self,
         commitment_point: &Option<PublicKey>,

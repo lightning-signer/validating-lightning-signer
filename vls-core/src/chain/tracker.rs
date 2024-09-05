@@ -651,7 +651,7 @@ impl<L: ChainListener> ChainTracker<L> {
 }
 
 fn validate_retarget(prev_target: Target, target: Target, network: Network) -> Result<(), Error> {
-    // TODO do actual retargeting with timestamps, requires remembering start timestamp
+    // TODO(511) do actual retargeting with timestamps, requires remembering start timestamp
 
     // Round trip the target bounds, to simulate the way bitcoind checks them
     fn round_trip_target(target: Target) -> Target {

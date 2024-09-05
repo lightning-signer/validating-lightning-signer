@@ -385,8 +385,6 @@ pub(crate) fn parse_revokeable_redeemscript(
 }
 
 impl CommitmentInfo {
-    // FIXME - should the new_for_{holder,counterparty} wrappers move
-    // to Validator::make_info_for_{holder,counterparty}?
     #[cfg(test)]
     pub(crate) fn new_for_holder() -> Self {
         CommitmentInfo::new(false)
@@ -635,7 +633,6 @@ impl CommitmentInfo {
         script_bytes: &[u8],
     ) -> Result<(), ValidationError> {
         if out.script_pubkey.is_v0_p2wpkh() {
-            // FIXME - Does this need it's own policy tag?
             if setup.is_anchors() {
                 return Err(transaction_format_error(
                     "p2wpkh to_countersigner not valid with anchors".to_string(),

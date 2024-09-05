@@ -1,5 +1,4 @@
 #![allow(missing_docs)]
-// FIXME - this is copied from rust-lightning, get them to expose instead.
 
 #[inline]
 pub fn slice_to_be16(v: &[u8]) -> u16 {

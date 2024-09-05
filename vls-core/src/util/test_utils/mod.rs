@@ -21,11 +21,12 @@ use bitcoin::sighash::SighashCache;
 use bitcoin::{self, merkle_tree, CompactTarget, ScriptBuf};
 use bitcoin::{Address, Block, BlockHash, Sequence, Transaction, TxIn, TxOut, Witness};
 use chain::chaininterface;
+use lightning::chain;
 use lightning::chain::chainmonitor::MonitorUpdateId;
 use lightning::chain::channelmonitor::MonitorEvent;
 use lightning::chain::transaction::OutPoint;
-use lightning::chain;
 use lightning::chain::{chainmonitor, channelmonitor};
+use lightning::ln::chan_utils::get_to_countersignatory_with_anchors_redeemscript;
 use lightning::ln::chan_utils::{
     build_htlc_transaction, derive_private_key, get_anchor_redeemscript, get_htlc_redeemscript,
     get_revokeable_redeemscript, make_funding_redeemscript, ChannelPublicKeys,
@@ -58,10 +59,7 @@ use crate::policy::validator::ChainState;
 use crate::prelude::*;
 use crate::signer::derive::KeyDerivationStyle;
 use crate::signer::StartingTimeFactory;
-use crate::tx::script::{
-    get_p2wpkh_redeemscript, get_to_countersignatory_with_anchors_redeemscript,
-    ANCHOR_OUTPUT_VALUE_SATOSHI,
-};
+use crate::tx::script::{get_p2wpkh_redeemscript, ANCHOR_OUTPUT_VALUE_SATOSHI};
 use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
 use crate::util::clock::StandardClock;
 use crate::util::crypto_utils::{derive_public_key, payload_for_p2wpkh, payload_for_p2wsh};
@@ -2100,15 +2098,15 @@ impl SendSync for DummyCommitmentPointProvider {}
 
 impl CommitmentPointProvider for DummyCommitmentPointProvider {
     fn get_holder_commitment_point(&self, _commitment_number: u64) -> PublicKey {
-        todo!()
+        unimplemented!()
     }
 
     fn get_counterparty_commitment_point(&self, _commitment_number: u64) -> Option<PublicKey> {
-        todo!()
+        unimplemented!()
     }
 
     fn get_transaction_parameters(&self) -> ChannelTransactionParameters {
-        todo!()
+        unimplemented!()
     }
 
     fn clone_box(&self) -> Box<dyn CommitmentPointProvider> {
