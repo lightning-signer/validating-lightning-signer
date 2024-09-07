@@ -97,7 +97,7 @@ mod tests {
                 let to_countersignatory = 1_000_000;
 
                 let mut remote_per_commitment_point = make_test_pubkey(10);
-                let keys = chan.make_counterparty_tx_keys(&remote_per_commitment_point)?;
+                let keys = chan.make_counterparty_tx_keys(&remote_per_commitment_point);
 
                 let htlcs =
                     Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());

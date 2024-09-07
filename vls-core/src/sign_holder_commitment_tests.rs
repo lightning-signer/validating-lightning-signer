@@ -40,7 +40,7 @@ mod tests {
             .with_channel(&channel_id, |chan| {
                 chan.enforcement_state.set_next_holder_commit_num_for_testing(commit_num);
                 let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
-                let txkeys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+                let txkeys = chan.make_holder_tx_keys(&per_commitment_point);
                 let commitment_tx = chan.make_holder_commitment_tx(
                     commit_num,
                     &txkeys,
@@ -192,7 +192,7 @@ mod tests {
 
             let per_commitment_point =
                 chan.get_per_commitment_point(commit_tx_ctx.commit_num).expect("point");
-            let txkeys = chan.make_holder_tx_keys(&per_commitment_point)?;
+            let txkeys = chan.make_holder_tx_keys(&per_commitment_point);
 
             let htlcs = Channel::htlcs_info2_to_oic(
                 commit_tx_ctx.offered_htlcs.clone(),

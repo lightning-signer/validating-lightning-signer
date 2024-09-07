@@ -72,7 +72,7 @@ mod tests {
                 chan.set_next_holder_commit_num_for_testing(commit_num + 2);
 
                 let remote_per_commitment_point = make_test_pubkey(10);
-                let keys = chan.make_counterparty_tx_keys(&remote_per_commitment_point)?;
+                let keys = chan.make_counterparty_tx_keys(&remote_per_commitment_point);
                 let htlcs =
                     Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
                 let commitment_tx = chan.make_counterparty_commitment_tx_with_keys(

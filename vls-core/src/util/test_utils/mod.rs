@@ -1094,7 +1094,7 @@ pub fn channel_commitment(
         .node
         .with_channel(&chan_ctx.channel_id, |chan| {
             let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
-            let txkeys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+            let txkeys = chan.make_holder_tx_keys(&per_commitment_point);
 
             let tx = chan.make_holder_commitment_tx(
                 commit_num,
@@ -1193,7 +1193,7 @@ pub fn counterparty_sign_holder_commitment(
             let per_commitment_point = chan
                 .get_per_commitment_point(commit_tx_ctx.commit_num)
                 .expect("per_commitment_point");
-            let txkeys = chan.make_holder_tx_keys(&per_commitment_point).expect("txkeys");
+            let txkeys = chan.make_holder_tx_keys(&per_commitment_point);
             let commitment_txid = built_tx.txid;
 
             let counterparty_htlc_key = derive_private_key(
@@ -1268,7 +1268,7 @@ pub fn validate_holder_commitment(
         let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
         chan.enforcement_state.set_next_holder_commit_num_for_testing(save_commit_num);
 
-        let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+        let keys = chan.make_holder_tx_keys(&per_commitment_point);
 
         let redeem_scripts = build_tx_scripts(
             &keys,
@@ -1709,7 +1709,7 @@ where
         let parameters = channel_parameters.as_holder_broadcastable();
         let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
 
-        let mut keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+        let mut keys = chan.make_holder_tx_keys(&per_commitment_point);
 
         mutate_keys(&mut keys);
 

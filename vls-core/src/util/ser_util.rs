@@ -43,7 +43,7 @@ impl<'de> DeserializeAs<'de, PublicKey> for PublicKeyHandler {
     where
         D: Deserializer<'de>,
     {
-        let res = <Cow<'de, str> as Deserialize<'de>>::deserialize(deserializer).unwrap();
+        let res = <Cow<'de, str> as Deserialize<'de>>::deserialize(deserializer)?;
         let key = PublicKey::from_slice(hex::decode(&*res).unwrap().as_slice()).unwrap();
         Ok(key)
     }

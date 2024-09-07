@@ -186,10 +186,8 @@ impl ChannelSigner for LoopbackChannelSigner {
         let secret = self.signer.with_channel(&self.node_id, &self.channel_id, |chan| {
             let secret = chan
                 .get_per_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number)
-                .unwrap()[..]
-                .try_into()
                 .unwrap();
-            Ok(secret)
+            Ok(*secret.as_ref())
         });
         secret.expect("missing channel")
     }
@@ -417,7 +415,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         let sig = self
             .signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
-                let tx_keys = chan.make_counterparty_tx_keys(&per_commitment_point)?;
+                let tx_keys = chan.make_counterparty_tx_keys(&per_commitment_point);
                 let redeem_script =
                     chan_utils::get_htlc_redeemscript(&htlc, &self.features(), &tx_keys);
                 chan.sign_justice_sweep(
@@ -445,9 +443,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
             .signer
             .with_channel(&self.node_id, &self.channel_id, |channel| {
                 let per_commitment_point = &htlc_descriptor.per_commitment_point;
-                let chan_keys = channel
-                    .make_holder_tx_keys(per_commitment_point)
-                    .expect("channel.make_holder_tx_keys");
+                let chan_keys = channel.make_holder_tx_keys(per_commitment_point);
                 let witness_script = htlc_descriptor.witness_script(secp_ctx);
                 let redeem_script = chan_utils::get_htlc_redeemscript(
                     &htlc_descriptor.htlc,
@@ -484,7 +480,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         let sig = self
             .signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
-                let chan_keys = chan.make_counterparty_tx_keys(per_commitment_point)?;
+                let chan_keys = chan.make_counterparty_tx_keys(per_commitment_point);
                 let redeem_script =
                     chan_utils::get_htlc_redeemscript(htlc, &self.features(), &chan_keys);
                 chan.sign_counterparty_htlc_sweep(

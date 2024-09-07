@@ -270,7 +270,9 @@ pub trait Validator {
                 estate.next_holder_commit_num
             );
         }
-        Ok(estate.get_current_holder_commitment_info())
+        // this is safe because we must have validated a holder commitment
+        let commitment_info = estate.current_holder_commit_info.as_ref().unwrap().clone();
+        Ok(commitment_info)
     }
 
     /// Set next counterparty commitment number
@@ -318,12 +320,10 @@ pub trait Validator {
             );
 
             // TODO(513) seems to be duplicate logic vs validate_counterparty_commitment_tx
-            if current_point != estate.current_counterparty_point.unwrap() {
-                debug!(
-                    "current_point {} != prior {}",
-                    current_point,
-                    estate.current_counterparty_point.unwrap()
-                );
+            // unwrap is safe because the caller must have validated a cp commitment
+            let expected_point = estate.current_counterparty_point.unwrap();
+            if current_point != expected_point {
+                debug!("current_point {} != prior {}", current_point, expected_point);
                 policy_err!(
                     self,
                     "policy-commitment-retry-same",
@@ -784,11 +784,6 @@ impl EnforcementState {
         self.current_counterparty_signatures = Some(counterparty_signatures);
     }
 
-    /// Get the current commitment info
-    pub fn get_current_holder_commitment_info(&self) -> CommitmentInfo2 {
-        self.current_holder_commit_info.as_ref().unwrap().clone()
-    }
-
     /// Set next counterparty commitment number
     pub fn set_next_counterparty_commit_num(
         &mut self,
@@ -1081,14 +1076,17 @@ impl EnforcementState {
             return ChannelBalance::zero();
         }
 
+        let holder_info = self.current_holder_commit_info.as_ref().unwrap();
+        let counterparty_info = self.current_counterparty_commit_info.as_ref().unwrap();
+
         // Our balance in the holder commitment tx
-        let cur_holder_bal = self.current_holder_commit_info.as_ref().unwrap().claimable_balance(
+        let cur_holder_bal = holder_info.claimable_balance(
             preimage_map,
             channel_setup.is_outbound,
             channel_setup.channel_value_sat,
         );
         // Our balance in the counterparty commitment tx
-        let cur_cp_bal = self.current_counterparty_commit_info.as_ref().unwrap().claimable_balance(
+        let cur_cp_bal = counterparty_info.claimable_balance(
             preimage_map,
             channel_setup.is_outbound,
             channel_setup.channel_value_sat,
@@ -1101,11 +1099,11 @@ impl EnforcementState {
         let (cur_bal, received_htlc, offered_htlc, received_htlc_count, offered_htlc_count) =
             if cur_holder_bal < cur_cp_bal {
                 let (received_htlc, offered_htlc, received_count, offered_count) =
-                    self.current_holder_commit_info.as_ref().unwrap().htlc_balance();
+                    holder_info.htlc_balance();
                 (cur_holder_bal, received_htlc, offered_htlc, received_count, offered_count)
             } else {
                 let (received_htlc, offered_htlc, received_count, offered_count) =
-                    self.current_counterparty_commit_info.as_ref().unwrap().htlc_balance();
+                    counterparty_info.htlc_balance();
                 (cur_cp_bal, received_htlc, offered_htlc, received_count, offered_count)
             };
 

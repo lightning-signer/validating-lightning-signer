@@ -32,7 +32,6 @@ use crate::policy::error::policy_error;
 use crate::policy::validator::{ChainState, CommitmentSignatures, EnforcementState, Validator};
 use crate::prelude::*;
 use crate::signer::derive::KeyDerivationStyle;
-use crate::tx::script::ANCHOR_OUTPUT_VALUE_SATOSHI;
 use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
 use crate::util::crypto_utils::derive_public_key;
 use crate::util::crypto_utils::derive_public_revocation_key;
@@ -240,9 +239,11 @@ pub struct SlotInfo {
 pub trait ChannelBase: Any {
     /// Get the channel basepoints and public keys
     fn get_channel_basepoints(&self) -> ChannelPublicKeys;
-    /// Get the per-commitment point for a holder commitment transaction
+    /// Get the per-commitment point for a holder commitment transaction.
+    /// Errors if the commitment number is too high given the current state.
     fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status>;
     /// Get the per-commitment secret for a holder commitment transaction
+    /// Errors if the commitment number is not ready to be revoked given the current state.
     fn get_per_commitment_secret(&self, commitment_number: u64) -> Result<SecretKey, Status>;
     /// Get the per-commitment secret or None if the arg is out of range
     fn get_per_commitment_secret_or_none(&self, commitment_number: u64) -> Option<SecretKey>;
@@ -290,6 +291,7 @@ impl ChannelSlot {
 
     /// Assume this is a channel stub, and return it.
     /// Panics if it's not.
+    #[cfg(any(test, feature = "test_utils"))]
     pub fn unwrap_stub(&self) -> &ChannelStub {
         match self {
             ChannelSlot::Stub(stub) => stub,
@@ -369,8 +371,8 @@ impl ChannelBase for ChannelStub {
     }
 
     fn validator(&self) -> Arc<dyn Validator> {
-        let node = self.node.upgrade().unwrap();
-        let v = node.validator_factory.lock().unwrap().make_validator(
+        let node = self.get_node();
+        let v = node.validator_factory().make_validator(
             node.network(),
             node.get_id(),
             Some(self.id0.clone()),
@@ -435,12 +437,17 @@ impl ChannelStub {
 
     // KeyDerivationStyle dependent identifier
     fn oid(&self) -> u64 {
-        match self.node.upgrade().unwrap().node_config.key_derivation_style {
+        match self.get_node().node_config.key_derivation_style {
             KeyDerivationStyle::Native => oid_from_native_channelid(&self.id0),
             KeyDerivationStyle::Ldk => dbid_from_ldk_channel_id(&self.id0.inner()),
             // add other derivation styles here
             _ => 0,
         }
+    }
+
+    fn get_node(&self) -> Arc<Node> {
+        // this is safe because the node holds the channel, so it can't be dropped before it
+        self.node.upgrade().unwrap()
     }
 }
 
@@ -555,7 +562,7 @@ impl ChannelBase for Channel {
 
     fn validator(&self) -> Arc<dyn Validator> {
         let node = self.get_node();
-        let v = node.validator_factory.lock().unwrap().make_validator(
+        let v = node.validator_factory().make_validator(
             self.network(),
             node.get_id(),
             Some(self.id0.clone()),
@@ -585,7 +592,7 @@ impl Channel {
 
     // KeyDerivationStyle dependent identifier
     fn oid(&self) -> u64 {
-        match self.node.upgrade().unwrap().node_config.key_derivation_style {
+        match self.get_node().node_config.key_derivation_style {
             KeyDerivationStyle::Native => oid_from_native_channelid(&self.id0),
             KeyDerivationStyle::Ldk => dbid_from_ldk_channel_id(&self.id0.inner()),
             // add other derivation styles here
@@ -613,17 +620,9 @@ impl Channel {
         self.monitor.as_chain_state()
     }
 
-    /// A wrapper function around `self.keys.get_channel_parameters()`. In
-    /// recent versions of ldk, the function `get_channel_parameters()` returns an
-    /// optional value. This wrapper helps avoid calling `unwrap()` each time.
-    pub fn get_channel_parameters(&self) -> &ChannelTransactionParameters {
-        self.keys.get_channel_parameters().expect("get_channel_parameters")
-    }
-
-    /// A wrapper function around `self.keys.counterparty_pubkeys()`. In
-    /// recent versions of ldk, the function `counterparty_pubkeys()` returns an
-    /// optional value. This wrapper helps avoid calling `unwrap()` each time.
+    /// Get the counterparty's public keys
     pub fn counterparty_pubkeys(&self) -> &ChannelPublicKeys {
+        // this is safe because the channel was readied
         self.keys.counterparty_pubkeys().expect("counterparty_pubkeys")
     }
 
@@ -675,26 +674,18 @@ impl Channel {
 impl Channel {
     // Phase 2
     /// Public for testing purposes
-    pub fn make_counterparty_tx_keys(
-        &self,
-        per_commitment_point: &PublicKey,
-    ) -> Result<TxCreationKeys, Status> {
+    pub fn make_counterparty_tx_keys(&self, per_commitment_point: &PublicKey) -> TxCreationKeys {
         let holder_points = self.keys.pubkeys();
+        let counterparty_points = self.counterparty_pubkeys();
 
-        let counterparty_points = self.keys.counterparty_pubkeys().expect("counterparty_pubkeys");
-
-        Ok(self.make_tx_keys(per_commitment_point, counterparty_points, holder_points))
+        self.make_tx_keys(per_commitment_point, counterparty_points, holder_points)
     }
 
-    pub(crate) fn make_holder_tx_keys(
-        &self,
-        per_commitment_point: &PublicKey,
-    ) -> Result<TxCreationKeys, Status> {
+    pub(crate) fn make_holder_tx_keys(&self, per_commitment_point: &PublicKey) -> TxCreationKeys {
         let holder_points = self.keys.pubkeys();
+        let counterparty_points = self.counterparty_pubkeys();
 
-        let counterparty_points = self.keys.counterparty_pubkeys().expect("counterparty_pubkeys");
-
-        Ok(self.make_tx_keys(per_commitment_point, holder_points, counterparty_points))
+        self.make_tx_keys(per_commitment_point, holder_points, counterparty_points)
     }
 
     fn make_tx_keys(
@@ -880,7 +871,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         htlcs: Vec<HTLCOutputInCommitment>,
     ) -> CommitmentTransaction {
-        let keys = self.make_counterparty_tx_keys(remote_per_commitment_point).unwrap();
+        let keys = self.make_counterparty_tx_keys(remote_per_commitment_point);
         self.make_counterparty_commitment_tx_with_keys(
             keys,
             commitment_number,
@@ -906,6 +897,7 @@ impl Channel {
             &self.setup.counterparty_points.funding_pubkey,
         );
 
+        // unwrap is safe because we just created the tx and it's well formed
         let sighash = Message::from_slice(
             &SighashCache::new(&recomposed_tx.trust().built_transaction().transaction)
                 .segwit_signature_hash(
@@ -968,6 +960,7 @@ impl Channel {
                 self.setup.commitment_type
             );
 
+            // unwrap is safe because we just created the tx and it's well formed
             let recomposed_tx_sighash = Message::from_slice(
                 &SighashCache::new(&recomposed_htlc_tx)
                     .segwit_signature_hash(
@@ -1089,7 +1082,7 @@ impl Channel {
         let htlcs =
             Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
 
-        let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point);
         // policy-commitment-*
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
@@ -1180,6 +1173,7 @@ impl Channel {
             return Ok((holder_commitment_point, None));
         }
 
+        // checked above
         let (info2, sigs) = self.enforcement_state.next_holder_commit_info.take().unwrap();
         let incoming_payment_summary =
             self.enforcement_state.incoming_payments_summary(Some(&info2), None);
@@ -1232,7 +1226,7 @@ impl Channel {
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };
-        let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point);
         // policy-onchain-format-standard
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
@@ -1285,12 +1279,12 @@ impl Channel {
             .enforcement_state
             .current_holder_commit_info
             .as_ref()
-            .expect("holder commitment info should be present");
+            .ok_or_else(|| internal_error("channel was not open - commit info"))?;
         let cp_sigs = self
             .enforcement_state
             .current_counterparty_signatures
             .as_ref()
-            .expect("counterparty signatures should be present");
+            .ok_or_else(|| internal_error("channel was not open - counterparty sigs"))?;
         let commitment_number = self.enforcement_state.next_holder_commit_num - 1;
         warn!("force-closing channel for recovery at commitment number {}", commitment_number);
 
@@ -1299,7 +1293,7 @@ impl Channel {
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };
-        let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point);
         // policy-onchain-format-standard
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,
@@ -1407,7 +1401,7 @@ impl Channel {
         htlc_dummy_sigs.resize(htlcs.len(), Self::dummy_sig());
 
         let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { feerate_per_kw };
-        let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point);
         let commitment_tx = self.make_holder_commitment_tx(
             commitment_number,
             &txkeys,
@@ -1592,6 +1586,7 @@ impl Channel {
             wallet_path,
         )?;
 
+        // unwrap is safe because we just created the tx and it's well formed
         let sighash = Message::from_slice(
             &SighashCache::new(tx)
                 .segwit_signature_hash(input, &redeemscript, amount_sat, EcdsaSighashType::All)
@@ -1639,6 +1634,7 @@ impl Channel {
             wallet_path,
         )?;
 
+        // unwrap is safe because we just created the tx and it's well formed
         let htlc_sighash = Message::from_slice(
             &SighashCache::new(tx)
                 .segwit_signature_hash(input, &redeemscript, htlc_amount_sat, EcdsaSighashType::All)
@@ -1684,6 +1680,7 @@ impl Channel {
             wallet_path,
         )?;
 
+        // unwrap is safe because we just created the tx and it's well formed
         let sighash = Message::from_slice(
             &SighashCache::new(tx)
                 .segwit_signature_hash(input, &redeemscript, amount_sat, EcdsaSighashType::All)
@@ -1705,7 +1702,7 @@ impl Channel {
     /// Sign a channel announcement with both the node key and the funding key
     pub fn sign_channel_announcement_with_funding_key(&self, announcement: &[u8]) -> Signature {
         let ann_hash = Sha256dHash::hash(announcement);
-        let encmsg = secp256k1::Message::from_slice(&ann_hash[..]).expect("encmsg failed");
+        let encmsg = secp256k1::Message::from(ann_hash);
 
         self.secp_ctx.sign_ecdsa(&encmsg, &self.keys.funding_key)
     }
@@ -1770,7 +1767,7 @@ impl Channel {
             &self.counterparty_pubkeys().funding_pubkey,
         );
         let per_commitment_point = self.get_per_commitment_point(commit_num)?;
-        let txkeys = self.make_holder_tx_keys(&per_commitment_point).unwrap();
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point);
 
         let tx = self.make_holder_commitment_tx(
             commit_num,
@@ -1817,17 +1814,18 @@ impl Channel {
             } else {
                 EcdsaSighashType::All
             };
-            let htlc_sighash = Message::from_slice(
-                &SighashCache::new(&htlc_tx)
+
+            // unwrap is safe because we just created the tx and it's well formed
+            let htlc_sighash = Message::from(
+                SighashCache::new(&htlc_tx)
                     .segwit_signature_hash(
                         0,
                         &htlc_redeemscript,
                         htlc.amount_msat / 1000,
                         sig_hash_type,
                     )
-                    .unwrap()[..],
-            )
-            .unwrap();
+                    .unwrap(),
+            );
             htlc_sigs.push(self.secp_ctx.sign_ecdsa(&htlc_sighash, &counterparty_htlc_key));
         }
 
@@ -1853,7 +1851,8 @@ impl Channel {
         anchor_tx: &Transaction,
         input: usize,
     ) -> Result<Signature, Status> {
-        self.keys.sign_holder_anchor_input(anchor_tx, input, &self.secp_ctx)
+        self.keys
+            .sign_holder_anchor_input(anchor_tx, input, &self.secp_ctx)
             .map_err(|()| internal_error(format!("sign_holder_anchor_input failed")))
     }
 
@@ -2334,9 +2333,7 @@ impl Channel {
     ) -> Result<(), Status> {
         let validator = self.validator();
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
-        let txkeys = self
-            .make_holder_tx_keys(&per_commitment_point)
-            .map_err(|err| internal_error(format!("make_holder_tx_keys failed: {}", err)))?;
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point);
 
         // policy-onchain-format-standard
         let (recomposed_tx, info2, incoming_payment_summary) = self
@@ -2470,7 +2467,7 @@ impl Channel {
         tx: &Transaction,
         opaths: &[Vec<u32>],
     ) -> Result<Signature, Status> {
-        dbgvals!(tx.txid(), self.get_node().allowlist().unwrap());
+        dbgvals!(tx.txid(), self.get_node().allowlist());
         if opaths.len() != tx.output.len() {
             return Err(invalid_argument(format!(
                 "{}: bad opath len {} with tx.output len {}",
@@ -2514,8 +2511,7 @@ impl Channel {
             self.get_per_commitment_point(commitment_number)?
         };
 
-        let txkeys =
-            self.make_holder_tx_keys(&per_commitment_point).expect("failed to make txkeys");
+        let txkeys = self.make_holder_tx_keys(&per_commitment_point);
 
         self.sign_htlc_tx(
             tx,
@@ -2537,9 +2533,7 @@ impl Channel {
         htlc_amount_sat: u64,
         output_witscript: &ScriptBuf,
     ) -> Result<TypedSignature, Status> {
-        let txkeys = self
-            .make_counterparty_tx_keys(&remote_per_commitment_point)
-            .expect("failed to make txkeys");
+        let txkeys = self.make_counterparty_tx_keys(&remote_per_commitment_point);
 
         self.sign_htlc_tx(
             tx,
@@ -2713,6 +2707,7 @@ pub(crate) struct ChannelCommitmentPointProvider {
 }
 
 impl ChannelCommitmentPointProvider {
+    /// Will panic on a channel stub
     pub(crate) fn new(chan: Arc<Mutex<ChannelSlot>>) -> Self {
         match &*chan.lock().unwrap() {
             ChannelSlot::Stub(_) => panic!("unexpected stub"),
@@ -2720,13 +2715,17 @@ impl ChannelCommitmentPointProvider {
         }
         Self { chan }
     }
+
+    fn get_channel(&self) -> MutexGuard<ChannelSlot> {
+        self.chan.lock().unwrap()
+    }
 }
 
 impl SendSync for ChannelCommitmentPointProvider {}
 
 impl CommitmentPointProvider for ChannelCommitmentPointProvider {
     fn get_holder_commitment_point(&self, commitment_number: u64) -> PublicKey {
-        let slot = self.chan.lock().unwrap();
+        let slot = self.get_channel();
         let chan = match &*slot {
             ChannelSlot::Stub(_) => panic!("unexpected stub"),
             ChannelSlot::Ready(c) => c,
@@ -2735,7 +2734,7 @@ impl CommitmentPointProvider for ChannelCommitmentPointProvider {
     }
 
     fn get_counterparty_commitment_point(&self, commitment_number: u64) -> Option<PublicKey> {
-        let slot = self.chan.lock().unwrap();
+        let slot = self.get_channel();
         let chan = match &*slot {
             ChannelSlot::Stub(_) => panic!("unexpected stub"),
             ChannelSlot::Ready(c) => c,
@@ -2745,7 +2744,7 @@ impl CommitmentPointProvider for ChannelCommitmentPointProvider {
     }
 
     fn get_transaction_parameters(&self) -> ChannelTransactionParameters {
-        let slot = self.chan.lock().unwrap();
+        let slot = self.get_channel();
         let chan = match &*slot {
             ChannelSlot::Stub(_) => panic!("unexpected stub"),
             ChannelSlot::Ready(c) => c,
@@ -2790,7 +2789,7 @@ mod tests {
         node.with_channel(&channel_id, |chan| {
             let n = 1;
             let commitment_point = chan.get_per_commitment_point(n).unwrap();
-            let txkeys = chan.make_holder_tx_keys(&commitment_point).unwrap();
+            let txkeys = chan.make_holder_tx_keys(&commitment_point);
             let htlcs = (0..583)
                 .map(|i| HTLCOutputInCommitment {
                     offered: true,

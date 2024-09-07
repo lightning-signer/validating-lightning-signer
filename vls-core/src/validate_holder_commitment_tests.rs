@@ -118,7 +118,7 @@ mod tests {
             let parameters = channel_parameters.as_holder_broadcastable();
 
             let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
-            let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+            let keys = chan.make_holder_tx_keys(&per_commitment_point);
 
             let redeem_scripts = build_tx_scripts(
                 &keys,
@@ -395,7 +395,7 @@ mod tests {
             let parameters = channel_parameters.as_holder_broadcastable();
             let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
 
-            let mut keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+            let mut keys = chan.make_holder_tx_keys(&per_commitment_point);
 
             mutate_keys(&mut KeysMutationState { keys: &mut keys });
 

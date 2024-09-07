@@ -319,6 +319,7 @@ impl NodeState {
         velocity_control: VelocityControl,
         fee_velocity_control: VelocityControl,
     ) -> Self {
+        // the try_into must succeed, because we persisted hashes of the right length
         let invoices = invoices_v
             .into_iter()
             .map(|(k, v)| (PaymentHash(k.try_into().expect("payment hash decode")), v.into()))
@@ -725,6 +726,7 @@ impl NodeState {
             .filter_map(|(hash, payment_state)| {
                 let payments =
                     payments.get(hash).unwrap_or_else(|| {
+                        // we create a payment struct for each invoice
                         panic!(
                             "missing payments struct for {}",
                             payment_state.payment_type.to_string(),
@@ -853,7 +855,7 @@ impl Allowable {
     /// Convert from string, while checking that the network matches
     pub fn from_str(s: &str, network: Network) -> Result<Allowable, String> {
         let mut splits = s.splitn(2, ":");
-        let prefix = splits.next().expect("failed to parse Allowable");
+        let prefix = splits.next().ok_or_else(|| "empty Allowable")?;
         if let Some(body) = splits.next() {
             if prefix == "address" {
                 let address = Address::from_str(body).map_err(|_| s.to_string())?;
@@ -941,7 +943,11 @@ impl SignedHeartbeat {
 
     /// Verify the heartbeat signature
     pub fn verify(&self, pubkey: &PublicKey, secp: &Secp256k1<secp256k1::All>) -> bool {
-        let signature = schnorr::Signature::from_slice(&self.signature).unwrap();
+        let signature = schnorr::Signature::from_slice(&self.signature);
+        if signature.is_err() {
+            return false;
+        }
+        let signature = signature.unwrap();
         let xpubkey = XOnlyPublicKey::from(pubkey.clone());
         secp.verify_schnorr(&signature, &self.sighash(), &xpubkey).is_ok()
     }
@@ -1035,6 +1041,7 @@ impl Wallet for Node {
         let pubkey = self.get_wallet_pubkey(child_path)?;
 
         // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
+        // these can only fail with uncompressed keys, which we never generate
         let native_addr = Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed");
         let wrapped_addr = Address::p2shwpkh(&pubkey, self.network()).expect("p2shwpkh failed");
         let untweaked_pubkey = UntweakedPublicKey::from(pubkey.inner);
@@ -1053,6 +1060,7 @@ impl Wallet for Node {
         }
 
         let pubkey = self.get_wallet_pubkey(child_path)?;
+        // can only fail with uncompressed keys, which we never generate
         Ok(Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed"))
     }
 
@@ -1072,6 +1080,7 @@ impl Wallet for Node {
         }
 
         let pubkey = self.get_wallet_pubkey(child_path)?;
+        // can only fail with uncompressed keys, which we never generate
         Ok(Address::p2shwpkh(&pubkey, self.network()).expect("p2shwpkh failed"))
     }
 
@@ -1088,10 +1097,17 @@ impl Wallet for Node {
             return false;
         }
 
-        let child_path: Vec<_> =
-            path.iter().map(|i| ChildNumber::from_normal_idx(*i).unwrap()).collect();
+        let child_path: Vec<_> = path
+            .iter()
+            .map(|i| ChildNumber::from_normal_idx(*i).ok())
+            .collect::<Option<_>>()
+            .unwrap_or_default();
+        if child_path.is_empty() {
+            return false;
+        }
         for a in self.allowlist.lock().unwrap().iter() {
             if let Allowable::XPub(xp) = a {
+                // cannot fail because we did not generate hardened paths
                 let pubkey = bitcoin::PublicKey::new(
                     xp.derive_pub(&Secp256k1::new(), &child_path).unwrap().public_key,
                 );
@@ -1165,8 +1181,8 @@ impl Node {
 
     /// Update the velocity controls with any spec changes from the policy
     pub fn update_velocity_controls(&self) {
-        let policy = self.validator_factory.lock().unwrap().policy(self.network());
-        let mut state = self.state.lock().unwrap();
+        let policy = self.validator_factory().policy(self.network());
+        let mut state = self.get_state();
 
         state.velocity_control.update_spec(&policy.global_velocity_control());
         state.fee_velocity_control.update_spec(&policy.fee_velocity_control());
@@ -1198,12 +1214,12 @@ impl Node {
     ) -> Arc<Node> {
         let (keys_manager, node_id) = Self::make_keys_manager(&node_config, seed, &services);
         if node_id != *expected_node_id {
-            panic!("node_id mismatch: expected {} got {}", expected_node_id, node_id);
+            panic!("persisted node_id mismatch: expected {} got {}", expected_node_id, node_id);
         }
         let (mut tracker, listener_entries) = services
             .persister
             .get_tracker(node_id.clone(), services.validator_factory.clone())
-            .expect("get tracker from persister");
+            .expect("tracker not found for node");
         tracker.trusted_oracle_pubkeys = services.trusted_oracle_pubkeys.clone();
 
         tracker.set_allow_deep_reorgs(node_config.allow_deep_reorgs);
@@ -1225,7 +1241,7 @@ impl Node {
         let mut listeners = OrderedMap::from_iter(listener_entries.into_iter().map(|e| (e.0, e.1)));
 
         for (channel_id0, channel_entry) in
-            persister.get_node_channels(&node_id).expect("node channels")
+            persister.get_node_channels(&node_id).expect("channels not found for node")
         {
             let mut channels = node.channels.lock().unwrap();
             let channel_id = channel_entry.id;
@@ -1262,10 +1278,11 @@ impl Node {
                         );
                     keys.provide_channel_parameters(&channel_transaction_parameters);
                     let funding_outpoint = setup.funding_outpoint;
-                    // Clone the matching monitor from the chaintracker's listeners
+                    // Clone the matching monitor from the chaintracker's listeners.
+                    // Tracker is persisted with node, so this should not fail.
                     let (tracker_state, tracker_slot) =
                         listeners.remove(&funding_outpoint).unwrap_or_else(|| {
-                            panic!("No chain tracker listener for {}", setup.funding_outpoint)
+                            panic!("tracker not found for point {}", setup.funding_outpoint)
                         });
                     let monitor_base = ChainMonitorBase::new_from_persistence(
                         funding_outpoint.clone(),
@@ -1299,7 +1316,7 @@ impl Node {
             node.keys_manager.increment_channel_id_child_index();
         }
         if !listeners.is_empty() {
-            panic!("Some chain tracker listeners were not restored: {:?}", listeners);
+            panic!("some chain tracker listeners were not restored: {:?}", listeners);
         }
         node
     }
@@ -1369,6 +1386,7 @@ impl Node {
             node_config.network,
             services.starting_time_factory.borrow(),
         );
+        // infallible with Recipient::Node
         let node_id = keys_manager.get_node_id(Recipient::Node).unwrap();
         (keys_manager, node_id)
     }
@@ -1423,7 +1441,7 @@ impl Node {
 
     /// Set the node's validator factory
     pub fn set_validator_factory(&self, validator_factory: Arc<dyn ValidatorFactory>) {
-        let mut vfac = self.validator_factory.lock().unwrap();
+        let mut vfac = self.validator_factory();
         *vfac = validator_factory;
     }
 
@@ -1432,8 +1450,8 @@ impl Node {
     /// but may be useful if switching to a new persister.
     pub fn persist_all(&self) {
         let persister = &self.persister;
-        persister.new_node(&self.get_id(), &self.node_config, &self.state.lock().unwrap()).unwrap();
-        for channel in self.channels.lock().unwrap().values() {
+        persister.new_node(&self.get_id(), &self.node_config, &self.get_state()).unwrap();
+        for channel in self.channels().values() {
             let channel = channel.lock().unwrap();
             match &*channel {
                 ChannelSlot::Stub(_) => {}
@@ -1442,7 +1460,7 @@ impl Node {
                 }
             }
         }
-        persister.update_tracker(&self.get_id(), &self.tracker.lock().unwrap()).unwrap();
+        persister.update_tracker(&self.get_id(), &self.get_tracker()).unwrap();
         let alset = self.allowlist.lock().unwrap();
         let wlvec = (*alset).iter().map(|a| a.to_string(self.network())).collect();
         self.persister.update_node_allowlist(&self.get_id(), wlvec).unwrap();
@@ -1492,8 +1510,8 @@ impl Node {
     where
         F: Fn(&mut dyn ChannelBase) -> Result<T, Status>,
     {
-        let slot_arc = self.get_channel(channel_id)?;
-        let mut slot = slot_arc.lock().unwrap();
+        let slot_mutex = self.get_channel(channel_id)?;
+        let mut slot = slot_mutex.lock().unwrap();
         let base = match &mut *slot {
             ChannelSlot::Stub(stub) => stub as &mut dyn ChannelBase,
             ChannelSlot::Ready(chan) => chan as &mut dyn ChannelBase,
@@ -1522,7 +1540,7 @@ impl Node {
         &self,
         outpoint: &OutPoint,
     ) -> Option<Arc<Mutex<ChannelSlot>>> {
-        let channels_lock = self.channels.lock().unwrap();
+        let channels_lock = self.channels();
         find_channel_with_funding_outpoint(&channels_lock, outpoint)
     }
 
@@ -1542,7 +1560,7 @@ impl Node {
         arc_self: &Arc<Node>,
     ) -> Result<(ChannelId, Option<ChannelSlot>), Status> {
         let channel_id = opt_channel_id.unwrap_or_else(|| self.keys_manager.get_channel_id());
-        let mut channels = self.channels.lock().unwrap();
+        let mut channels = self.channels();
         let policy = self.policy();
         if channels.len() >= policy.max_channels() {
             // FIXME(3) we don't garbage collect channels
@@ -1594,24 +1612,22 @@ impl Node {
         seed: &[u8],
         services: NodeServices,
     ) -> Result<Arc<Node>, Status> {
-        let network = Network::from_str(node_entry.network.as_str()).expect("bad network");
+        let network = Network::from_str(node_entry.network.as_str())
+            .expect("bad node network in persistence");
         let allow_deep_reorgs = if network == Network::Testnet { true } else { false };
-        let config = NodeConfig {
-            network,
-            key_derivation_style: KeyDerivationStyle::try_from(node_entry.key_derivation_style)
-                .unwrap(),
-            use_checkpoints: true,
-            allow_deep_reorgs,
-        };
+        let key_derivation_style = KeyDerivationStyle::try_from(node_entry.key_derivation_style)
+            .expect("bad key derivation in peristence");
+        let config =
+            NodeConfig { network, key_derivation_style, use_checkpoints: true, allow_deep_reorgs };
 
         let persister = services.persister.clone();
         let allowlist = persister
             .get_node_allowlist(node_id)
-            .expect("node allowlist")
+            .expect("missing node allowlist in persistence")
             .iter()
             .map(|e| Allowable::from_str(e, network))
             .collect::<Result<_, _>>()
-            .expect("allowable parse error");
+            .expect("persisted allowable could not be parsed");
 
         let mut state = node_entry.state;
 
@@ -1642,7 +1658,7 @@ impl Node {
             // write everything to persister, to ensure that any composite
             // persister has all sub-persisters in sync
             {
-                let state = self.state.lock().unwrap();
+                let state = self.get_state();
                 // do a new_node here, because update_node doesn't store the entry,
                 // only the state
                 self.persister
@@ -1652,12 +1668,12 @@ impl Node {
             let alset = self.allowlist.lock().unwrap();
             self.update_allowlist(&alset).map_err(|_| internal_error("sync persist failed"))?;
             {
-                let tracker = self.tracker.lock().unwrap();
+                let tracker = self.get_tracker();
                 self.persister
                     .update_tracker(&self.get_id(), &tracker)
                     .map_err(|_| internal_error("tracker persist failed"))?;
             }
-            let channels = self.channels.lock().unwrap();
+            let channels = self.channels();
             for (_, slot) in channels.iter() {
                 let channel = slot.lock().unwrap();
                 match &*channel {
@@ -1684,7 +1700,9 @@ impl Node {
         let mut nodes = Map::new();
         let persister = services.persister.clone();
         let mut seeds = OrderedSet::from_iter(seed_persister.list().into_iter());
-        for (node_id, node_entry) in persister.get_nodes().expect("nodes") {
+        for (node_id, node_entry) in
+            persister.get_nodes().expect("could not get nodes from persistence")
+        {
             let seed = seed_persister
                 .get(&node_id.serialize().to_hex())
                 .expect(format!("no seed for node {:?}", node_id).as_str());
@@ -1715,8 +1733,8 @@ impl Node {
         setup: ChannelSetup,
         holder_shutdown_key_path: &[u32],
     ) -> Result<Channel, Status> {
-        let mut tracker = self.tracker.lock().unwrap();
-        let validator = self.validator_factory.lock().unwrap().make_validator(
+        let mut tracker = self.get_tracker();
+        let validator = self.validator_factory().make_validator(
             self.network(),
             self.get_id(),
             Some(channel_id0.clone()),
@@ -1727,7 +1745,7 @@ impl Node {
         let chan_id = opt_channel_id.as_ref().unwrap_or(&channel_id0);
 
         let chan = {
-            let channels = self.channels.lock().unwrap();
+            let channels = self.channels();
             let arcobj = channels.get(&channel_id0).ok_or_else(|| {
                 invalid_argument(format!("channel does not exist: {}", channel_id0))
             })?;
@@ -1783,7 +1801,7 @@ impl Node {
 
         validator.validate_setup_channel(self, &setup, holder_shutdown_key_path)?;
 
-        let mut channels = self.channels.lock().unwrap();
+        let mut channels = self.channels();
 
         // Wrap the ready channel with an arc so we can potentially
         // refer to it multiple times.
@@ -1841,7 +1859,7 @@ impl Node {
         }
         drop(state); // minimize lock time
 
-        let mut tracker = self.tracker.lock().unwrap();
+        let mut tracker = self.get_tracker();
 
         // pruned channels are persisted inside
         self.prune_channels(&mut tracker);
@@ -1901,7 +1919,7 @@ impl Node {
         prev_outs: &[TxOut],
         uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
-        let channels_lock = self.channels.lock().unwrap();
+        let channels_lock = self.channels();
 
         // Funding transactions cannot be associated with just a single channel;
         // a single transaction may fund multiple channels
@@ -1956,6 +1974,7 @@ impl Node {
                         signature_to_bitcoin_vec(ecdsa_sign(&self.secp_ctx, &privkey, &sighash))
                     }
                     SpendType::P2wpkh | SpendType::P2shP2wpkh => {
+                        // compressed pubkeys cannot fail
                         let expected_scriptpubkey = if spend_type == SpendType::P2wpkh {
                             Payload::p2wpkh(&pubkey).unwrap().script_pubkey()
                         } else {
@@ -1967,6 +1986,7 @@ impl Node {
                             idx
                         );
                         // segwit native and wrapped
+                        // unwrap cannot fail
                         let sighash = SighashCache::new(tx)
                             .segwit_signature_hash(
                                 idx,
@@ -2010,6 +2030,7 @@ impl Node {
                             )));
                         }
                         let prevouts = Prevouts::All(&prev_outs);
+                        // unwrap cannot fail
                         let sighash = SighashCache::new(tx)
                             .taproot_signature_hash(
                                 idx,
@@ -2040,7 +2061,7 @@ impl Node {
         }
 
         // The tracker may be updated for multiple channels
-        let mut tracker = self.tracker.lock().unwrap();
+        let mut tracker = self.get_tracker();
 
         // This locks channels in a random order, so we have to keep a global
         // lock to ensure no deadlock.  We grab the self.channels mutex above
@@ -2098,7 +2119,7 @@ impl Node {
         uniclosekeys: &[Option<(SecretKey, Vec<Vec<u8>>)>],
         opaths: &[Vec<u32>],
     ) -> Result<(), ValidationError> {
-        let channels_lock = self.channels.lock().unwrap();
+        let channels_lock = self.channels();
 
         // Funding transactions cannot be associated with just a single channel;
         // a single transaction may fund multiple channels
@@ -2150,7 +2171,7 @@ impl Node {
 
         let validator = self.validator();
         defer! { trace_node_state!(self.get_state()); }
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.get_state();
         let now = self.clock.now().as_secs();
         if !state.fee_velocity_control.insert(now, non_beneficial_sat * 1000) {
             policy_err!(
@@ -2167,7 +2188,7 @@ impl Node {
     }
 
     fn validator(&self) -> Arc<dyn Validator> {
-        self.validator_factory.lock().unwrap().make_validator(self.network(), self.get_id(), None)
+        self.validator_factory().make_validator(self.network(), self.get_id(), None)
     }
 
     fn channel_setup_to_channel_transaction_parameters(
@@ -2229,13 +2250,12 @@ impl Node {
     }
 
     /// Get shutdown_pubkey to use as PublicKey at channel closure
-    // FIXME - this method is deprecated
+    // FIXME(75) - this method is deprecated
     pub fn get_ldk_shutdown_scriptpubkey(&self) -> ShutdownScript {
         self.keys_manager.get_shutdown_scriptpubkey().unwrap()
     }
 
     /// Get the layer-1 xprv
-    // TODO leaking private key
     pub fn get_account_extended_key(&self) -> &ExtendedPrivKey {
         self.keys_manager.get_account_extended_key()
     }
@@ -2322,7 +2342,11 @@ impl Node {
     }
 
     fn policy(&self) -> Box<dyn Policy> {
-        self.validator_factory.lock().unwrap().policy(self.network())
+        self.validator_factory().policy(self.network())
+    }
+
+    pub(crate) fn validator_factory(&self) -> MutexGuard<Arc<dyn ValidatorFactory>> {
+        self.validator_factory.lock().unwrap()
     }
 
     // Sign a BOLT-11 invoice
@@ -2341,8 +2365,8 @@ impl Node {
 
         let invoice_preimage = construct_invoice_preimage(&hrp_bytes, &invoice_data);
         let secp_ctx = Secp256k1::signing_only();
-        let hash = Sha256Hash::hash(&invoice_preimage).to_byte_array();
-        let message = Message::from_slice(&hash).unwrap();
+        let hash = Sha256Hash::hash(&invoice_preimage);
+        let message = Message::from(hash);
         let sig = secp_ctx.sign_ecdsa_recoverable(&message, &self.get_node_secret());
 
         raw_invoice
@@ -2375,7 +2399,6 @@ impl Node {
     }
 
     /// Get the channels this node knows about.
-    /// Currently, channels are not pruned once closed, but this will change.
     pub fn channels(&self) -> MutexGuard<OrderedMap<ChannelId, Arc<Mutex<ChannelSlot>>>> {
         self.channels.lock().unwrap()
     }
@@ -2481,7 +2504,7 @@ impl Node {
 
     ///Height of chain
     pub fn get_chain_height(&self) -> u32 {
-        self.tracker.lock().unwrap().height()
+        self.get_tracker().height()
     }
 
     // Process payment preimages for offered HTLCs.
@@ -2692,7 +2715,7 @@ impl Node {
 
     /// The node tells us that it is forgetting a channel
     pub fn forget_channel(&self, channel_id: &ChannelId) -> Result<(), Status> {
-        let channels = self.channels.lock().unwrap();
+        let channels = self.channels();
         let found = channels.get(channel_id);
         if let Some(slot) = found {
             let channel = slot.lock().unwrap();
@@ -2713,7 +2736,7 @@ impl Node {
 
     fn prune_channels(&self, tracker: &mut ChainTracker<ChainMonitor>) {
         // Prune stubs/channels which are no longer needed in memory.
-        let mut channels = self.channels.lock().unwrap();
+        let mut channels = self.channels();
 
         // unfortunately `btree_drain_filter` is unstable
         // Gather a list of all channels to prune
@@ -2754,6 +2777,7 @@ impl Node {
         // Prune the channels
         let mut tracker_modified = false;
         for key in keys_to_remove {
+            // checked presence above
             let slot = channels.remove(&key).unwrap();
             match &*slot.lock().unwrap() {
                 ChannelSlot::Ready(chan) => {
@@ -2767,24 +2791,19 @@ impl Node {
             };
             self.persister
                 .delete_channel(&self.get_id(), &key)
-                .unwrap_or_else(|err| panic!("trouble deleting channel {}: {:?}", &key, err));
+                .unwrap_or_else(|err| panic!("could not delete channel {}: {:?}", &key, err));
         }
         if tracker_modified {
             self.persister
                 .update_tracker(&self.get_id(), &tracker)
-                .unwrap_or_else(|err| panic!("trouble updating tracker: {:?}", err));
+                .unwrap_or_else(|err| panic!("could not update tracker: {:?}", err));
         }
     }
 
     /// Log channel information
     pub fn chaninfo(&self) -> Vec<SlotInfo> {
         // Gather the entries
-        self.channels
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(_, slot_arc)| slot_arc.lock().unwrap().chaninfo())
-            .collect()
+        self.channels().iter().map(|(_, slot_arc)| slot_arc.lock().unwrap().chaninfo()).collect()
     }
 }
 
@@ -2797,7 +2816,7 @@ pub trait NodeMonitor {
 impl NodeMonitor for Node {
     fn channel_balance(&self) -> ChannelBalance {
         let mut sum = ChannelBalance::zero();
-        let channels_lock = self.channels.lock().unwrap();
+        let channels_lock = self.channels();
         for (_, slot_arc) in channels_lock.iter() {
             let slot = slot_arc.lock().unwrap();
             let balance = match &*slot {

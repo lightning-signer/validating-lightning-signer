@@ -103,6 +103,7 @@ use core::convert::TryInto;
 impl From<Status> for tonic::Status {
     fn from(s: Status) -> Self {
         let code = s.code() as i32;
+        // this is safe because our Status::Code enum is a subset of tonic::Code
         tonic::Status::new(code.try_into().unwrap(), s.message())
     }
 }

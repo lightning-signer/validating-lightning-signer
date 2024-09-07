@@ -83,7 +83,7 @@ mod tests {
             // commit 23: next     <- next commit
 
             let parameters = channel_parameters.as_counterparty_broadcastable();
-            let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
+            let keys = chan.make_counterparty_tx_keys(&remote_percommit_point);
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
             let redeem_scripts = build_tx_scripts(
@@ -304,7 +304,7 @@ mod tests {
             let to_countersignatory = 1_000_000;
 
             let parameters = channel_parameters.as_counterparty_broadcastable();
-            let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
+            let keys = chan.make_counterparty_tx_keys(&remote_percommit_point);
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
             let redeem_scripts = build_tx_scripts(
@@ -381,7 +381,7 @@ mod tests {
             let to_countersignatory = 1_000_900; // +900
 
             let parameters = channel_parameters.as_counterparty_broadcastable();
-            let keys = chan.make_counterparty_tx_keys(&remote_percommit_point)?;
+            let keys = chan.make_counterparty_tx_keys(&remote_percommit_point);
             let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
 
             let redeem_scripts = build_tx_scripts(

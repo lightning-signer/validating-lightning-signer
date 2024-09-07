@@ -152,6 +152,8 @@ pub(crate) fn is_tx_non_malleable(tx: &Transaction, segwit_flags: &[bool]) -> bo
 /// not be known if the signer is old, before we started collecting counterparty secrets.
 /// If it is None, then we won't be able to tell the difference between a counterparty
 /// to-self output and an HTLC output.
+///
+/// The counterparty parameters must be populated.
 pub fn decode_commitment_tx(
     tx: &Transaction,
     holder_per_commitment_point: &PublicKey,
@@ -388,7 +390,7 @@ mod tests {
             .with_channel(&channel_id, |channel| {
                 let per_commitment_point =
                     channel.get_per_commitment_point(commitment_number).unwrap();
-                let keys = channel.make_holder_tx_keys(&per_commitment_point).unwrap();
+                let keys = channel.make_holder_tx_keys(&per_commitment_point);
                 let per_commitment_point = channel.get_per_commitment_point(commitment_number)?;
                 Ok((
                     channel.make_holder_commitment_tx(
