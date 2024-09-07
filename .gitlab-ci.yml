@@ -83,6 +83,8 @@ rust-latest:
     - cargo test --package vls-proxy --lib --all-features -- util
     # ensure benches build
     - cargo bench --no-run
+    # ensure vls crates build without developer flag
+    - cargo build --release
 
 rust-latest-extras:
   tags: [ saas-linux-large-amd64 ]
