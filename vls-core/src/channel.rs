@@ -1856,26 +1856,8 @@ impl Channel {
         anchor_tx: &Transaction,
         input: usize,
     ) -> Result<Signature, Status> {
-        let witness_script = self.get_anchor_redeemscript();
-
-        // TODO use self.keys.sign_holder_anchor_input once we upgrade to LDK 0.0.116
-        let sighash = Message::from_slice(
-            &SighashCache::new(&*anchor_tx)
-                .segwit_signature_hash(
-                    input,
-                    &witness_script,
-                    ANCHOR_OUTPUT_VALUE_SATOSHI,
-                    EcdsaSighashType::All,
-                )
-                .unwrap()[..],
-        )
-        .map_err(|ve| internal_error(format!("sighash failed: {}", ve)))?;
-
-        Ok(self.secp_ctx.sign_ecdsa_with_noncedata(
-            &sighash,
-            &self.keys.funding_key,
-            &self.keys.get_secure_random_bytes(),
-        ))
+        self.keys.sign_holder_anchor_input(anchor_tx, input, &self.secp_ctx)
+            .map_err(|()| internal_error(format!("sign_holder_anchor_input failed")))
     }
 
     /// Get the anchor redeemscript
