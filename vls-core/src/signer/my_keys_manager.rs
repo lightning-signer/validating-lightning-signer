@@ -364,27 +364,22 @@ impl MyKeysManager {
         )
         .map_err(|_| ())?;
         // Signing the tx
-        let mut keys_cache: Option<(InMemorySigner, [u8; 32])> = None;
+        let mut keys_cache: Map<[u8; 32], InMemorySigner> = Map::new();
         let mut input_idx = 0;
         for outp in descriptors {
             match outp {
                 SpendableOutputDescriptor::StaticPaymentOutput(descriptor) => {
-                    if keys_cache.is_none()
-                        || keys_cache.as_ref().unwrap().1 != descriptor.channel_keys_id
-                    {
-                        keys_cache = Some((
-                            self.derive_channel_keys(
-                                descriptor.channel_value_satoshis,
-                                &descriptor.channel_keys_id,
-                            ),
-                            descriptor.channel_keys_id,
-                        ));
+                    if !keys_cache.contains_key(&descriptor.channel_keys_id) {
+                        let signer = self.derive_channel_keys(
+                            descriptor.channel_value_satoshis,
+                            &descriptor.channel_keys_id,
+                        );
+                        keys_cache.insert(descriptor.channel_keys_id, signer);
                     }
                     spend_tx.input[input_idx].witness = Witness::from_slice(
                         &keys_cache
-                            .as_ref()
+                            .get(&descriptor.channel_keys_id)
                             .unwrap()
-                            .0
                             .sign_counterparty_payment_input(
                                 &spend_tx,
                                 input_idx,
@@ -396,21 +391,16 @@ impl MyKeysManager {
                     );
                 }
                 SpendableOutputDescriptor::DelayedPaymentOutput(descriptor) => {
-                    if keys_cache.is_none()
-                        || keys_cache.as_ref().unwrap().1 != descriptor.channel_keys_id
-                    {
-                        keys_cache = Some((
-                            self.derive_channel_keys(
-                                descriptor.channel_value_satoshis,
-                                &descriptor.channel_keys_id,
-                            ),
-                            descriptor.channel_keys_id,
-                        ));
+                    if !keys_cache.contains_key(&descriptor.channel_keys_id) {
+                        let signer = self.derive_channel_keys(
+                            descriptor.channel_value_satoshis,
+                            &descriptor.channel_keys_id,
+                        );
+                        keys_cache.insert(descriptor.channel_keys_id, signer);
                     }
                     spend_tx.input[input_idx].witness = keys_cache
-                        .as_ref()
+                        .get(&descriptor.channel_keys_id)
                         .unwrap()
-                        .0
                         .sign_dynamic_p2wsh_input(&spend_tx, input_idx, &descriptor, &secp_ctx)
                         .unwrap();
                 }
