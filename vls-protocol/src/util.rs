@@ -1,3 +1,4 @@
+#![cfg(feature = "developer")]
 use serde_bolt::{io::Result, io::Write};
 
 // Used to record written length

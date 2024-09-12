@@ -16,6 +16,7 @@ use tokio::task::spawn_blocking;
 
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::Hash;
+#[cfg(feature = "developer")]
 use bitcoin::Network;
 use log::*;
 use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, SetArg};
@@ -23,14 +24,19 @@ use secp256k1::PublicKey;
 
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::secp256k1;
+#[cfg(feature = "developer")]
 use vls_protocol::model::DevSecret;
+#[cfg(feature = "developer")]
 use vls_protocol::msgs::HsmdDevPreinit2Options;
-use vls_protocol::{msgs, msgs::Message, msgs::SerialRequestHeader, serde_bolt::WireString, Error};
+use vls_protocol::{msgs, msgs::Message, msgs::SerialRequestHeader, Error};
+#[cfg(feature = "developer")]
+use vls_protocol::serde_bolt::WireString;
 use vls_protocol_client::Error as ClientError;
 use vls_protocol_client::{ClientResult as Result, SignerPort};
 use vls_protocol_signer::vls_protocol;
 
 use crate::client::Client;
+#[cfg(feature = "developer")]
 use crate::util::{read_allowlist, read_integration_test_seed};
 use crate::*;
 
@@ -58,6 +64,7 @@ impl SerialWrap {
         self.is_ready.store(true, Ordering::Relaxed);
     }
 
+    #[cfg(feature = "developer")]
     fn send_preinit(&mut self, mut options: HsmdDevPreinit2Options) -> Result<()> {
         let allowlist = read_allowlist()
             .into_iter()
@@ -215,6 +222,7 @@ pub struct SignerLoop<C: 'static + Client> {
     serial: Arc<Mutex<SerialWrap>>,
     client_id: Option<ClientId>,
     preapproval_cache: LruCache<Sha256Hash, PreapprovalCacheEntry>,
+    #[cfg(feature = "developer")]
     maybe_preinit: Option<msgs::HsmdDevPreinit2>, // CLN's, if sent
 }
 
@@ -223,7 +231,15 @@ impl<C: 'static + Client> SignerLoop<C> {
     pub fn new(client: C, serial: Arc<Mutex<SerialWrap>>) -> Self {
         let log_prefix = format!("{}/{}/{}", std::process::id(), client.id(), 0);
         let preapproval_cache = LruCache::new(NonZeroUsize::new(6).unwrap());
-        Self { client, log_prefix, serial, client_id: None, preapproval_cache, maybe_preinit: None }
+        Self {
+          client,
+          log_prefix,
+          serial,
+          client_id: None,
+          preapproval_cache,
+          #[cfg(feature = "developer")]
+          maybe_preinit: None
+        }
     }
 
     // Create a loop for a non-root connection
@@ -236,6 +252,7 @@ impl<C: 'static + Client> SignerLoop<C> {
             serial,
             client_id: Some(client_id),
             preapproval_cache,
+            #[cfg(feature = "developer")]
             maybe_preinit: None,
         }
     }
@@ -305,6 +322,7 @@ impl<C: 'static + Client> SignerLoop<C> {
                         _ => {} // allow future out-of-band reply types
                     }
                 }
+                #[cfg(feature = "developer")]
                 Message::HsmdDevPreinit2(preinit) => {
                     // Save the preinit message, we'll merge our VLS options in
                     // and send in front of the HsmdInit message.
@@ -312,6 +330,7 @@ impl<C: 'static + Client> SignerLoop<C> {
                 }
                 Message::HsmdInit(_) => {
                     // Send the HsmdDevPreinit2 message first
+                    #[cfg(feature = "developer")]
                     let options = if let Some(ref preinit) = &self.maybe_preinit {
                         // CLN sent a preinit, start with their options
                         preinit.options.clone()
@@ -319,6 +338,7 @@ impl<C: 'static + Client> SignerLoop<C> {
                         // No previous HsmdDevPreinit2, start with default options
                         HsmdDevPreinit2Options::default()
                     };
+                    #[cfg(feature = "developer")]
                     self.serial.lock().unwrap().send_preinit(options)?;
 
                     // HsmdDevPreinit2 does not have a reply, send the HsmdInit message

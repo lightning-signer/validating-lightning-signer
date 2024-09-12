@@ -220,8 +220,8 @@ fn start_test_mode(runctx: TestingContext) -> ! {
         assert_eq!(reqhdr.sequence, 0);
         assert_eq!(reqhdr.peer_id, [0u8; 33]);
         assert_eq!(reqhdr.dbid, 0);
-        let preinit: msgs::HsmdDevPreinit2 =
-            msgs::read_message(&mut devctx.serial).expect("failed to read preinit message");
+
+        let preinit: msgs::HsmdDevPreinit2 = msgs::read_message(&mut devctx.serial).expect("failed to read preinit message");
         info!("preinit {:?}", preinit);
 
         // Get the seed from preinit. If it's not available, generate a new one.

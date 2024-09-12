@@ -284,6 +284,7 @@ impl<C: 'static + Client> SignerLoop<C> {
                         _ => {} // allow future out-of-band reply types
                     }
                 }
+                #[cfg(feature = "developer")]
                 Message::HsmdDevPreinit2(_) => {
                     if !self.is_root() {
                         error!(

@@ -3026,6 +3026,7 @@ dependencies = [
  "test-log",
  "txoo",
  "vls-core",
+ "vls-protocol",
 ]
 
 [[package]]
@@ -3052,6 +3053,7 @@ dependencies = [
  "test-log",
  "vls-core",
  "vls-protocol",
+ "vls-protocol-signer",
 ]
 
 [[package]]
@@ -3108,6 +3110,7 @@ dependencies = [
  "vls-protocol",
  "vls-protocol-client",
  "vls-protocol-signer",
+ "vls-proxy",
 ]
 
 [[package]]

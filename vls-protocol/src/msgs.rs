@@ -16,7 +16,10 @@ use crate::error::{Error, Result};
 use crate::model::*;
 use crate::psbt::{PsbtWrapper, StreamedPSBT};
 use bitcoin_consensus_derive::{Decodable, Encodable};
-use bolt_derive::{ReadMessage, SerBolt, SerBoltTlvOptions};
+use bolt_derive::{ReadMessage, SerBolt};
+#[cfg(feature = "developer")]
+use bolt_derive::SerBoltTlvOptions;
+#[cfg(feature = "developer")]
 use lightning_signer::lightning;
 use lightning_signer::prelude::*;
 use serde_bolt::{
@@ -56,7 +59,7 @@ pub trait DeBolt: Debug + Sized + Encodable + Decodable {
 
 /// Developer setup for testing
 /// Must preceed `HsmdInit{,2}` message
-/// NOT FOR PRODUCTION USE
+#[cfg(feature = "developer")]
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(90)]
 pub struct HsmdDevPreinit {
@@ -66,6 +69,7 @@ pub struct HsmdDevPreinit {
     pub allowlist: Array<WireString>,
 }
 
+#[cfg(feature = "developer")]
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(190)]
 pub struct HsmdDevPreinitReply {
@@ -75,7 +79,7 @@ pub struct HsmdDevPreinitReply {
 
 /// Developer setup for testing
 /// Must preceed `HsmdInit{,2}` message
-/// NOT FOR PRODUCTION USE
+#[cfg(feature = "developer")]
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(99)]
 pub struct HsmdDevPreinit2 {
@@ -83,6 +87,7 @@ pub struct HsmdDevPreinit2 {
 }
 
 /// TLV encoded options for HsmdDevPreinit2
+#[cfg(feature = "developer")]
 #[derive(SerBoltTlvOptions, Default, Debug, Clone)]
 pub struct HsmdDevPreinit2Options {
     // CLN: allocates from 1 ascending
@@ -1077,8 +1082,11 @@ pub const UNKNOWN_PLACEHOLDER: UnknownPlaceholder = UnknownPlaceholder {};
 pub enum Message {
     Ping(Ping),
     Pong(Pong),
+    #[cfg(feature = "developer")]
     HsmdDevPreinit(HsmdDevPreinit),
+    #[cfg(feature = "developer")]
     HsmdDevPreinit2(HsmdDevPreinit2),
+    #[cfg(feature = "developer")]
     HsmdDevPreinitReply(HsmdDevPreinitReply),
     HsmdInit(HsmdInit),
     // HsmdInitReplyV1(HsmdInitReplyV1),

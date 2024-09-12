@@ -63,6 +63,8 @@ Wait for the demo_signer to finish loading and start executing, it will display
 make test-one VLS_MODE=cln:serial TEST=tests/test_plugin.py::test_forward_event_notification VLS_SERIAL_SELECT=2
 ```
 
+>Note: `demo_signer` is only for test purposes. It should only be ran with CLN in `developer` mode and has a required build feature `developer` on the binary.
+
 #### Rerunning the current image
 
 If you want to rerun the signer but do not wish to re-flash the device, perhaps after a crash:

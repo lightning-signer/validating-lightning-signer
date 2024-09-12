@@ -20,7 +20,7 @@ INSTALL_DIR = /usr/local/vls-hsmd-testnet/lib
 EXTRA_FEATURES ?=
 
 build:
-	cargo build --features stm32f413,$(EXTRA_FEATURES) --release --bin demo_signer
+	cargo build --features stm32f413,developer,$(EXTRA_FEATURES) --release --bin demo_signer
 
 run: build
 	probe-run --chip $(CHIP) $(TARGET)

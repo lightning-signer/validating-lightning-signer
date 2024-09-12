@@ -83,6 +83,8 @@ rust-latest:
     - cargo test --package vls-proxy --lib --all-features -- util
     # ensure benches build
     - cargo bench --no-run
+    # ensure vls crates build without developer flag
+    - cargo build --release
 
 rust-latest-extras:
   tags: [ saas-linux-large-amd64 ]
@@ -145,7 +147,7 @@ demo-signer:
   stage: build
   image: devrandom01/rust-qemu:nightly-1-73-2023-07-23
   script:
-    - (cd vls-signer-stm32 && cargo build --release --bin demo_signer)
+    - (cd vls-signer-stm32 && cargo build --features developer --release --bin demo_signer)
     - (cd wasm && wasm-pack test --firefox --headless && cargo test)
 
 coverage:

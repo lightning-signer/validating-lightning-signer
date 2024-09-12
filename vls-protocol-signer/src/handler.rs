@@ -538,8 +538,8 @@ impl InitHandler {
                     msgs::Pong { id: p.id, message: WireString("pong".as_bytes().to_vec()) };
                 Ok((false, Some(Box::new(reply))))
             }
+            #[cfg(feature = "developer")]
             Message::HsmdDevPreinit(m) => {
-                // FIXME - this message should be disabled in production mode
                 let node_id = self.node.get_id().serialize();
                 // the seed is extracted before this handler is called to create the node
                 let allowlist: Vec<_> = m
@@ -547,7 +547,6 @@ impl InitHandler {
                     .iter()
                     .map(|ws| String::from_utf8(ws.0.clone()).expect("utf8"))
                     .collect();
-                // FIXME disable in production
                 self.node.add_allowlist(&allowlist)?;
                 self.protocol_version = None;
                 Ok((
@@ -555,6 +554,7 @@ impl InitHandler {
                     Some(Box::new(msgs::HsmdDevPreinitReply { node_id: PubKey(node_id) })),
                 ))
             }
+            #[cfg(feature = "developer")]
             Message::HsmdDevPreinit2(m) => {
                 assert_ne!(self.node.network(), Network::Bitcoin);
                 // the seed is extracted before this handler is called to create the node
@@ -563,7 +563,6 @@ impl InitHandler {
                 } else {
                     vec![]
                 };
-                // FIXME disable in production
                 self.node.add_allowlist(&allowlist)?;
                 self.protocol_version = None;
                 Ok((
@@ -575,6 +574,10 @@ impl InitHandler {
                 let node_id = self.node.get_id().serialize();
                 let bip32 = self.node.get_account_extended_pubkey().encode();
                 let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
+                #[cfg(not(feature = "developer"))]
+                if m.dev_privkey.is_some() || m.dev_bip32_seed.is_some() || m.dev_channel_secrets.is_some() || m.dev_channel_secrets_shaseed.is_some() {
+                  return Err(Error::Protocol(ProtocolError::DeveloperField));
+                }
                 assert!(
                     m.hsm_wire_min_version <= self.max_protocol_version,
                     "node's minimum wire protocol version too large: {} > {}",
@@ -633,13 +636,20 @@ impl InitHandler {
                 let bip32 = self.node.get_account_extended_pubkey().encode();
                 let node_id = self.node.get_id().serialize();
                 let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
-                let allowlist: Vec<_> = m
-                    .dev_allowlist
-                    .iter()
-                    .map(|ws| String::from_utf8(ws.0.clone()).expect("utf8"))
-                    .collect();
-                // FIXME disable in production
-                self.node.add_allowlist(&allowlist)?;
+                #[cfg(feature = "developer")]
+                {
+                  let allowlist: Vec<_> = m
+                      .dev_allowlist
+                      .iter()
+                      .map(|ws| String::from_utf8(ws.0.clone()).expect("utf8"))
+                      .collect();
+                  self.node.add_allowlist(&allowlist)?;
+                }
+
+                #[cfg(not(feature = "developer"))]
+                if m.dev_allowlist.len() != 0 || m.dev_seed.is_some() {
+                  return Err(Error::Protocol(ProtocolError::DeveloperField));
+                }
                 self.protocol_version = Some(4);
                 Ok((
                     true,
