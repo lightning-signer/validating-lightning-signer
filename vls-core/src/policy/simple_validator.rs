@@ -8,7 +8,6 @@ use lightning::ln::chan_utils::{
 };
 use lightning::ln::PaymentHash;
 use lightning::sign::{ChannelSigner, InMemorySigner};
-
 use log::*;
 use vls_common::HexEncode;
 

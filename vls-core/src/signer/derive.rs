@@ -82,7 +82,7 @@ impl KeyDerive for NativeKeyDerive {
         _secp_ctx: &Secp256k1<secp256k1::All>,
     ) -> (SecretKey, SecretKey, SecretKey, SecretKey, SecretKey, [u8; 32]) {
         let hkdf_info = "c-lightning";
-        let keys_buf = hkdf_sha256_keys(keys_id, hkdf_info.as_bytes(), &[]);
+        let keys_buf: [u8; 192] = hkdf_sha256_keys(keys_id, hkdf_info.as_bytes(), &[]);
 
         // unwraps below are safe because the keys_buf is 192 bytes long
         let mut ndx = 0;
@@ -238,7 +238,7 @@ impl KeyDerive for LndKeyDerive {
         _secp_ctx: &Secp256k1<secp256k1::All>,
     ) -> (SecretKey, SecretKey, SecretKey, SecretKey, SecretKey, [u8; 32]) {
         let hkdf_info = "c-lightning";
-        let keys_buf = hkdf_sha256_keys(keys_id, hkdf_info.as_bytes(), &[]);
+        let keys_buf: [u8; 192] = hkdf_sha256_keys(keys_id, hkdf_info.as_bytes(), &[]);
 
         // unwraps below are safe because the keys_buf is 192 bytes long
         let mut ndx = 0;

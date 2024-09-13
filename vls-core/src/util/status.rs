@@ -16,7 +16,9 @@ pub struct Status {
     message: String,
 }
 
-/// gRPC compatible error status code
+/// gRPC compatible error status code.
+///
+/// Must be a subset of [tonic::Code], or the conversion will panic.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Code {
     /// The operation completed successfully.

@@ -943,13 +943,13 @@ impl SignedHeartbeat {
 
     /// Verify the heartbeat signature
     pub fn verify(&self, pubkey: &PublicKey, secp: &Secp256k1<secp256k1::All>) -> bool {
-        let signature = schnorr::Signature::from_slice(&self.signature);
-        if signature.is_err() {
-            return false;
+        match schnorr::Signature::from_slice(&self.signature) {
+            Ok(signature) => {
+                let xpubkey = XOnlyPublicKey::from(pubkey.clone());
+                secp.verify_schnorr(&signature, &self.sighash(), &xpubkey).is_ok()
+            },
+            Err(_) => false,
         }
-        let signature = signature.unwrap();
-        let xpubkey = XOnlyPublicKey::from(pubkey.clone());
-        secp.verify_schnorr(&signature, &self.sighash(), &xpubkey).is_ok()
     }
 }
 
