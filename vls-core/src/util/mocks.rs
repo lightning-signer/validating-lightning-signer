@@ -2,7 +2,7 @@
 
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::policy::error::ValidationError;
-use crate::policy::simple_validator::make_simple_policy;
+use crate::policy::simple_validator::make_default_simple_policy;
 use crate::policy::validator::{
     validate_block, ChainState, EnforcementState, Validator, ValidatorFactory,
 };
@@ -29,7 +29,7 @@ impl MockValidator {
     pub fn new() -> Self {
         MockValidator {
             last_validated_watches: Arc::new(Mutex::new(vec![])),
-            policy: Arc::new(make_simple_policy(Network::Regtest)),
+            policy: Arc::new(make_default_simple_policy(Network::Regtest)),
         }
     }
 }
@@ -59,7 +59,7 @@ impl ValidatorFactory for MockValidatorFactory {
     }
 
     fn policy(&self, network: Network) -> Box<dyn Policy> {
-        Box::new(make_simple_policy(Network::Regtest))
+        Box::new(make_default_simple_policy(Network::Regtest))
     }
 }
 

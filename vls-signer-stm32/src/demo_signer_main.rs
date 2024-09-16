@@ -23,7 +23,9 @@ use device::{heap_bytes_used, DeviceContext, HEAP_SIZE};
 use lightning_signer::node::NodeServices;
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::filter::{FilterRule, PolicyFilter};
-use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
+use lightning_signer::policy::simple_validator::{
+    make_default_simple_policy, SimpleValidatorFactory,
+};
 use lightning_signer::prelude::Box;
 use lightning_signer::util::clock::ManualClock;
 use lightning_signer::util::velocity::VelocityControlSpec;
@@ -408,7 +410,7 @@ pub fn pretty_thousands(i: i64) -> String {
 fn make_validator_factory(network: Network, permissive: bool) -> Arc<SimpleValidatorFactory> {
     let velocity_spec = VelocityControlSpec::UNLIMITED; // TODO - from config
 
-    let mut policy = make_simple_policy(network);
+    let mut policy = make_default_simple_policy(network);
     policy.global_velocity_control = velocity_spec;
 
     if permissive {

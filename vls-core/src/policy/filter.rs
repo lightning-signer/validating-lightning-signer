@@ -1,7 +1,9 @@
+use serde::Deserialize;
+
 use crate::prelude::*;
 
 /// A result of a filter evaluation
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Deserialize)]
 pub enum FilterResult {
     /// Policy should error
     Error,
@@ -10,7 +12,7 @@ pub enum FilterResult {
 }
 
 /// A policy filter rule
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct FilterRule {
     /// The tag or tag prefix
     pub tag: String,
@@ -34,7 +36,7 @@ impl FilterRule {
 
 /// A policy filter.
 /// The default policy is to handle all policies as errors
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct PolicyFilter {
     /// The rules, processed in the order they appear in this vector.
     /// The first match stops processing.

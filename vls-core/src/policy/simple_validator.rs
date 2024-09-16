@@ -9,6 +9,8 @@ use lightning::ln::chan_utils::{
 use lightning::ln::PaymentHash;
 use lightning::sign::{ChannelSigner, InMemorySigner};
 use log::*;
+use policy_derive::Optionized;
+use serde::Deserialize;
 use vls_common::HexEncode;
 
 use super::error::{
@@ -73,7 +75,7 @@ impl ValidatorFactory for SimpleValidatorFactory {
         channel_id: Option<ChannelId>,
     ) -> Arc<dyn Validator> {
         let validator = SimpleValidator {
-            policy: self.policy.clone().unwrap_or_else(|| make_simple_policy(network)),
+            policy: self.policy.clone().unwrap_or_else(|| make_default_simple_policy(network)),
             node_id,
             channel_id,
         };
@@ -82,12 +84,12 @@ impl ValidatorFactory for SimpleValidatorFactory {
     }
 
     fn policy(&self, network: Network) -> Box<dyn Policy> {
-        Box::new(self.policy.clone().unwrap_or_else(|| make_simple_policy(network)))
+        Box::new(self.policy.clone().unwrap_or_else(|| make_default_simple_policy(network)))
     }
 }
 
 /// A simple policy to configure a SimpleValidator
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Optionized, Deserialize)]
 pub struct SimplePolicy {
     /// Minimum delay in blocks
     pub min_delay: u16,
@@ -163,7 +165,7 @@ impl Policy for SimplePolicy {
 }
 
 /// Development flags included in SimplePolicy
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct PolicyDevFlags {
     /// Allow sending to unknown destinations
     pub disable_beneficial_balance_checks: bool,
@@ -1904,8 +1906,13 @@ impl SimpleValidator {
     }
 }
 
+/// Construct a simple policy
+pub fn make_simple_policy(network: Network, config: OptionizedSimplePolicy) -> SimplePolicy {
+    config.resolve_defaults(make_default_simple_policy(network))
+}
+
 /// Construct a default simple policy
-pub fn make_simple_policy(network: Network) -> SimplePolicy {
+pub fn make_default_simple_policy(network: Network) -> SimplePolicy {
     if network == Network::Bitcoin {
         SimplePolicy {
             min_delay: 144,  // LDK min

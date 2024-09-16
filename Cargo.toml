@@ -9,6 +9,7 @@ members = [
     "vls-cli",
 
     "bolt-derive",
+    "policy-derive",
     "vls-persist",
     "vls-protocol",
     "vls-protocol-client",
