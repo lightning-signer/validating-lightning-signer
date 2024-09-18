@@ -43,7 +43,7 @@ mod tests {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
         node.with_channel(&channel_id, |c| {
-            let params = c.get_channel_parameters();
+            let params = c.keys.get_channel_parameters().unwrap();
             assert!(params.is_outbound_from_holder);
             assert_eq!(params.holder_selected_contest_delay, 6);
             Ok(())

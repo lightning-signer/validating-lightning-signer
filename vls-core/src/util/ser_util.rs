@@ -20,7 +20,7 @@ use lightning::util::ser::Writer;
 use serde::de::SeqAccess;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_with::{serde_as, IfIsHumanReadable};
+use serde_with::serde_as;
 use serde_with::{DeserializeAs, SerializeAs};
 
 use crate::channel::ChannelId;
@@ -43,7 +43,7 @@ impl<'de> DeserializeAs<'de, PublicKey> for PublicKeyHandler {
     where
         D: Deserializer<'de>,
     {
-        let res = <Cow<'de, str> as Deserialize<'de>>::deserialize(deserializer).unwrap();
+        let res = <Cow<'de, str> as Deserialize<'de>>::deserialize(deserializer)?;
         let key = PublicKey::from_slice(hex::decode(&*res).unwrap().as_slice()).unwrap();
         Ok(key)
     }
@@ -141,18 +141,13 @@ impl<'de> DeserializeAs<'de, ChannelId> for ChannelIdHandler {
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "ChannelPublicKeys")]
 pub struct ChannelPublicKeysDef {
-    #[serde_as(as = "IfIsHumanReadable<PublicKeyHandler>")]
     pub funding_pubkey: PublicKey,
-    // FIXME here and below, the binary representation needs to be restored
-    #[serde_as(as = "IfIsHumanReadable<RevocationBasepointHandler, RevocationBasepointHandler>")]
+    #[serde_as(as = "RevocationBasepointHandler")]
     pub revocation_basepoint: RevocationBasepoint,
-    #[serde_as(as = "IfIsHumanReadable<PublicKeyHandler>")]
     pub payment_point: PublicKey,
-    #[serde_as(
-        as = "IfIsHumanReadable<DelayedPaymentBasepointHandler, DelayedPaymentBasepointHandler>"
-    )]
+    #[serde_as(as = "DelayedPaymentBasepointHandler")]
     pub delayed_payment_basepoint: DelayedPaymentBasepoint,
-    #[serde_as(as = "IfIsHumanReadable<HtlcBasepointHandler, HtlcBasepointHandler>")]
+    #[serde_as(as = "HtlcBasepointHandler")]
     pub htlc_basepoint: HtlcBasepoint,
 }
 

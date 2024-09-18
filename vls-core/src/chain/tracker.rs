@@ -37,6 +37,8 @@ pub enum Error {
     OrphanBlock(String),
     /// Block is invalid (e.g. block hash not under target)
     InvalidBlock,
+    /// Block cannot be parsed
+    BlockDecodeError,
     /// Reorg size greater than [`ChainTracker::MAX_REORG_SIZE`]
     ReorgTooDeep,
     /// The TXOO proof was incorrect
@@ -352,7 +354,7 @@ impl<L: ChainListener> ChainTracker<L> {
         let mut prev_headers = supplied_prev_headers;
 
         let tip_block_hash = prev_headers.0.block_hash();
-        self.maybe_finish_decoding_block(&proof, &tip_block_hash);
+        self.maybe_finish_decoding_block(&proof, &tip_block_hash)?;
 
         // we assume here that the external block hash and the tip block hash are the same
         // this is actually validated below in notify_listeners_remove
@@ -369,7 +371,11 @@ impl<L: ChainListener> ChainTracker<L> {
         match proof.proof {
             ProofType::Filter(_, spv_proof) =>
                 self.notify_listeners_remove(Some(spv_proof.txs.as_slice()), tip_block_hash),
-            ProofType::Block(b) => panic!("non-streamed block not supported {}", b.block_hash()),
+            ProofType::Block(b) =>
+                return Err(error_invalid_proof!(
+                    "non-streamed block not supported {}",
+                    b.block_hash()
+                )),
             ProofType::ExternalBlock() => self.notify_listeners_remove(None, tip_block_hash),
         };
 
@@ -456,7 +462,7 @@ impl<L: ChainListener> ChainTracker<L> {
         // - `validate_block` checks 2 vs 4
 
         let message_block_hash = header.block_hash();
-        self.maybe_finish_decoding_block(&proof, &message_block_hash);
+        self.maybe_finish_decoding_block(&proof, &message_block_hash)?;
 
         let filter_header = proof.filter_header();
         let headers = Headers(header, filter_header);
@@ -476,7 +482,11 @@ impl<L: ChainListener> ChainTracker<L> {
         match proof.proof {
             ProofType::Filter(_, spv_proof) =>
                 self.notify_listeners_add(Some(spv_proof.txs.as_slice()), message_block_hash),
-            ProofType::Block(b) => panic!("non-streamed block not supported {}", b.block_hash()),
+            ProofType::Block(b) =>
+                return Err(error_invalid_proof!(
+                    "non-streamed block not supported {}",
+                    b.block_hash()
+                )),
             ProofType::ExternalBlock() => self.notify_listeners_add(None, message_block_hash),
         };
 
@@ -490,7 +500,11 @@ impl<L: ChainListener> ChainTracker<L> {
 
     // if we're decoding a block, tell the decoder we are done.
     // will panic if the proof is external and we are not decoding or vice versa.
-    fn maybe_finish_decoding_block(&mut self, proof: &TxoProof, expected_block_hash: &BlockHash) {
+    fn maybe_finish_decoding_block(
+        &mut self,
+        proof: &TxoProof,
+        expected_block_hash: &BlockHash,
+    ) -> Result<(), Error> {
         assert_eq!(
             proof.proof.is_external(),
             self.decode_state.is_some(),
@@ -498,13 +512,19 @@ impl<L: ChainListener> ChainTracker<L> {
         );
         if let Some(decode_state_cell) = self.decode_state.take() {
             let decode_state = decode_state_cell.into_inner();
-            decode_state.decoder.finish().expect("decode finish failure");
-            assert_eq!(
-                decode_state.block_hash, *expected_block_hash,
-                "wrong block was sent {} != {}",
-                decode_state.block_hash, expected_block_hash
-            );
+            decode_state.decoder.finish().map_err(|e| {
+                error!("block decode error: {:?}", e);
+                Error::BlockDecodeError
+            })?;
+            if decode_state.block_hash != *expected_block_hash {
+                error!(
+                    "Block hash mismatch: expected {}, decoded {}",
+                    expected_block_hash, decode_state.block_hash
+                );
+                return Err(Error::BlockDecodeError);
+            }
         }
+        Ok(())
     }
 
     // Notify listeners of a block add.
@@ -651,7 +671,7 @@ impl<L: ChainListener> ChainTracker<L> {
 }
 
 fn validate_retarget(prev_target: Target, target: Target, network: Network) -> Result<(), Error> {
-    // TODO do actual retargeting with timestamps, requires remembering start timestamp
+    // TODO(511) do actual retargeting with timestamps, requires remembering start timestamp
 
     // Round trip the target bounds, to simulate the way bitcoind checks them
     fn round_trip_target(target: Target) -> Target {

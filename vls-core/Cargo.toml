@@ -102,7 +102,6 @@ paste = "1.0"
 test-log = "0.2.8"
 tempfile = "3.10.1"
 
-# TODO point this and lightning-invoice at next release
 [dependencies.lightning]
 version = "0.0.123"
 default-features = false

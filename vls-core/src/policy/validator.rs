@@ -270,7 +270,9 @@ pub trait Validator {
                 estate.next_holder_commit_num
             );
         }
-        Ok(estate.get_current_holder_commitment_info())
+        // this is safe because we must have validated a holder commitment
+        let commitment_info = estate.current_holder_commit_info.as_ref().unwrap().clone();
+        Ok(commitment_info)
     }
 
     /// Set next counterparty commitment number
@@ -316,13 +318,12 @@ pub trait Validator {
                 "retry {}: current_counterparty_point not set, this shouldn't be possible",
                 num
             );
-            // FIXME - need to compare current_commitment_info with current_counterparty_commit_info
-            if current_point != estate.current_counterparty_point.unwrap() {
-                debug!(
-                    "current_point {} != prior {}",
-                    current_point,
-                    estate.current_counterparty_point.unwrap()
-                );
+
+            // TODO(513) seems to be duplicate logic vs validate_counterparty_commitment_tx
+            // unwrap is safe because the caller must have validated a cp commitment
+            let expected_point = estate.current_counterparty_point.unwrap();
+            if current_point != expected_point {
+                debug!("current_point {} != prior {}", current_point, expected_point);
                 policy_err!(
                     self,
                     "policy-commitment-retry-same",
@@ -509,7 +510,6 @@ pub fn validate_block<T: Validator + ?Sized>(
         policy_err!(self_, "policy-chain-validated", "attestation from trusted oracles not found");
     }
 
-    // TODO validate filter header chain
     Ok(())
 }
 
@@ -594,7 +594,6 @@ impl CounterpartyCommitmentSecrets {
     /// Returns the minimum index of all stored secrets. Note that indexes start
     /// at 1 << 48 and get decremented by one for each new secret.
     pub fn get_min_seen_secret(&self) -> u64 {
-        //TODO This can be optimized?
         let mut min = 1 << 48;
         for &(_, idx) in self.old_secrets.iter() {
             if idx < min {
@@ -783,11 +782,6 @@ impl EnforcementState {
         self.next_holder_commit_num = num;
         self.current_holder_commit_info = Some(current_commitment_info);
         self.current_counterparty_signatures = Some(counterparty_signatures);
-    }
-
-    /// Get the current commitment info
-    pub fn get_current_holder_commitment_info(&self) -> CommitmentInfo2 {
-        self.current_holder_commit_info.as_ref().unwrap().clone()
     }
 
     /// Set next counterparty commitment number
@@ -1082,31 +1076,34 @@ impl EnforcementState {
             return ChannelBalance::zero();
         }
 
+        let holder_info = self.current_holder_commit_info.as_ref().unwrap();
+        let counterparty_info = self.current_counterparty_commit_info.as_ref().unwrap();
+
         // Our balance in the holder commitment tx
-        let cur_holder_bal = self.current_holder_commit_info.as_ref().unwrap().claimable_balance(
+        let cur_holder_bal = holder_info.claimable_balance(
             preimage_map,
             channel_setup.is_outbound,
             channel_setup.channel_value_sat,
         );
         // Our balance in the counterparty commitment tx
-        let cur_cp_bal = self.current_counterparty_commit_info.as_ref().unwrap().claimable_balance(
+        let cur_cp_bal = counterparty_info.claimable_balance(
             preimage_map,
             channel_setup.is_outbound,
             channel_setup.channel_value_sat,
         );
         // Our overall balance is the lower of the two.  Use the htlc values from the same.
-        // TODO - might be more correct to check the HTLC value for each payment hash, and do
+        // TODO(514) - might be more correct to check the HTLC value for each payment hash, and do
         // Math.min on each one, then sum that.  If an htlc exists in one commitment but not the
         // other if we offered, then it would be -value, if we are receiving, it would be
         // 0. i.e. Math.min(0, value)
         let (cur_bal, received_htlc, offered_htlc, received_htlc_count, offered_htlc_count) =
             if cur_holder_bal < cur_cp_bal {
                 let (received_htlc, offered_htlc, received_count, offered_count) =
-                    self.current_holder_commit_info.as_ref().unwrap().htlc_balance();
+                    holder_info.htlc_balance();
                 (cur_holder_bal, received_htlc, offered_htlc, received_count, offered_count)
             } else {
                 let (received_htlc, offered_htlc, received_count, offered_count) =
-                    self.current_counterparty_commit_info.as_ref().unwrap().htlc_balance();
+                    counterparty_info.htlc_balance();
                 (cur_cp_bal, received_htlc, offered_htlc, received_count, offered_count)
             };
 

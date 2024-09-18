@@ -1,8 +1,6 @@
 use crate::io_extras::sink;
 use crate::prelude::*;
-use crate::tx::script::{
-    get_to_countersignatory_with_anchors_redeemscript, ANCHOR_OUTPUT_VALUE_SATOSHI,
-};
+use crate::tx::script::ANCHOR_OUTPUT_VALUE_SATOSHI;
 use anyhow::anyhow;
 use bitcoin::address::Payload;
 use bitcoin::consensus::Encodable;
@@ -13,7 +11,8 @@ use bitcoin::{PublicKey as BitcoinPublicKey, ScriptBuf, Sequence, TxIn, Witness}
 use bitcoin::{Transaction, TxOut, VarInt};
 use lightning::ln::chan_utils::{
     get_commitment_transaction_number_obscure_factor, get_revokeable_redeemscript,
-    make_funding_redeemscript, ChannelTransactionParameters, TxCreationKeys,
+    get_to_countersignatory_with_anchors_redeemscript, make_funding_redeemscript,
+    ChannelTransactionParameters, TxCreationKeys,
 };
 use lightning::sign::{
     DelayedPaymentOutputDescriptor, SpendableOutputDescriptor, StaticPaymentOutputDescriptor,
@@ -24,16 +23,13 @@ pub const MAX_VALUE_MSAT: u64 = 21_000_000_0000_0000_000;
 
 /// The minimum value of the dust limit in satoshis - for p2wsh outputs
 /// (such as anchors)
-// FIXME - this is copied from `lightning::ln::channel, lobby to increase visibility.
 pub const MIN_DUST_LIMIT_SATOSHIS: u64 = 330;
 /// The minimum value of the dust limit in satoshis - for segwit in general
 /// This is also the minimum negotiated dust limit
-// FIXME - this is copied from `lightning::ln::channel, lobby to increase visibility.
 pub const MIN_CHAN_DUST_LIMIT_SATOSHIS: u64 = 354;
 
 /// The expected weight of a commitment transaction
 pub(crate) fn expected_commitment_tx_weight(opt_anchors: bool, num_untrimmed_htlc: usize) -> usize {
-    /// FIXME - these are copied from `lightning::ln:channel, lobby to increase visibility.
     const COMMITMENT_TX_BASE_WEIGHT: usize = 724;
     const COMMITMENT_TX_BASE_ANCHOR_WEIGHT: usize = 1124;
     const COMMITMENT_TX_WEIGHT_PER_HTLC: usize = 172;
@@ -156,6 +152,8 @@ pub(crate) fn is_tx_non_malleable(tx: &Transaction, segwit_flags: &[bool]) -> bo
 /// not be known if the signer is old, before we started collecting counterparty secrets.
 /// If it is None, then we won't be able to tell the difference between a counterparty
 /// to-self output and an HTLC output.
+///
+/// The counterparty parameters must be populated.
 pub fn decode_commitment_tx(
     tx: &Transaction,
     holder_per_commitment_point: &PublicKey,
@@ -392,7 +390,7 @@ mod tests {
             .with_channel(&channel_id, |channel| {
                 let per_commitment_point =
                     channel.get_per_commitment_point(commitment_number).unwrap();
-                let keys = channel.make_holder_tx_keys(&per_commitment_point).unwrap();
+                let keys = channel.make_holder_tx_keys(&per_commitment_point);
                 let per_commitment_point = channel.get_per_commitment_point(commitment_number)?;
                 Ok((
                     channel.make_holder_commitment_tx(

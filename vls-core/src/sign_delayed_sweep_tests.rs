@@ -75,7 +75,7 @@ mod tests {
 
                 let mut commit_num = HOLD_COMMIT_NUM;
                 let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
-                let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+                let keys = chan.make_holder_tx_keys(&per_commitment_point);
 
                 let contest_delay = chan.setup.counterparty_selected_contest_delay;
                 let mut redeemscript = get_revokeable_redeemscript(

@@ -119,7 +119,7 @@ mod tests {
             counterparty_points,
         ) = setup_mutual_close_tx(outbound)?;
 
-        // FIXME - wish that `setup_mutual_close_tx` set the monitor state so the
+        // TODO wish that `setup_mutual_close_tx` set the monitor state so the
         // channels appeared ready instead of unconfirmed.
         assert_eq!(
             node.channel_balance(),

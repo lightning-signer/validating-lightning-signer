@@ -108,8 +108,6 @@ pub struct SimplePolicy {
     /// Maximum feerate
     pub max_feerate_per_kw: u32,
     /// Enforce holder balance
-    // TODO incoming payments
-    // TODO routing
     pub enforce_balance: bool,
     /// Maximum layer-2 fee
     pub max_routing_fee_msat: u64,
@@ -354,7 +352,7 @@ impl SimpleValidator {
         }
 
         // LDK now provides multi-input txs, and we can't easily validate fees securely
-        // FIXME Since we see the tx on-chain, we should just get the input amount from there
+        // TODO(522) Since we see the tx on-chain, we should just get the input amount from there
 
         // // policy-sweep-fee-range
         // self.validate_fee(amount_sat, tx.output[0].value)
@@ -606,11 +604,16 @@ impl Validator for SimpleValidator {
                                 "channel push not allowed: dual-funding not supported yet",
                             );
                         }
-                        let our_value = chan
-                            .setup
-                            .channel_value_sat
-                            .checked_sub(push_val_sat)
-                            .expect("push value underflow checked in setup_channel");
+                        let our_value =
+                            chan.setup.channel_value_sat.checked_sub(push_val_sat).ok_or_else(
+                                || {
+                                    // no tag for this, since it's a programming error and cannot result in a valid commitment tx anyway
+                                    policy_error(format!(
+                                        "channel value underflow: {} - {}",
+                                        chan.setup.channel_value_sat, push_val_sat
+                                    ))
+                                },
+                            )?;
                         debug!("output {} ({}) funds channel {}", outndx, output.value, chan.id());
                         beneficial_sum =
                             add_beneficial_output!(beneficial_sum, our_value, "channel value")?;
@@ -643,6 +646,7 @@ impl Validator for SimpleValidator {
         Ok(non_beneficial)
     }
 
+    /// panics if `keys` doesn't have counterparty keys populated
     fn decode_commitment_tx(
         &self,
         keys: &InMemorySigner,
@@ -733,7 +737,6 @@ impl Validator for SimpleValidator {
         }
 
         // Is this a retry?
-        // FIXME the `+ 1` on next line is wrong
         // not a security problem, because it's OK to re-sign an old commitment
         // that the *counterparty* revoked
         if commit_num + 1 == estate.next_counterparty_commit_num {
@@ -833,6 +836,7 @@ impl Validator for SimpleValidator {
         // Is this a retry?
         if commit_num + 1 == estate.next_holder_commit_num {
             // The CommitmentInfo2 must be the same as previously
+            // unwrap is safe, because commitment number can't be > 0 without a holder commitment_info
             let holder_commit_info =
                 &estate.current_holder_commit_info.as_ref().expect("current_holder_commit_info");
             if info2 != *holder_commit_info {
@@ -949,7 +953,7 @@ impl Validator for SimpleValidator {
         };
         let original_tx_sighash = SighashCache::new(tx)
             .segwit_signature_hash(0, &redeemscript, htlc_amount_sat, sighash_type)
-            .unwrap();
+            .map_err(|_| policy_error("could not compute sighash on provided HTLC tx"))?;
 
         let offered = if parse_offered_htlc_script(redeemscript, setup.is_anchors()).is_ok() {
             true
@@ -1005,6 +1009,7 @@ impl Validator for SimpleValidator {
             &txkeys.revocation_key,
         );
 
+        // unwrap is safe because we know the tx is valid
         let recomposed_tx_sighash = SighashCache::new(&recomposed_tx)
             .segwit_signature_hash(0, &redeemscript, htlc_amount_sat, sighash_type)
             .unwrap();
@@ -1477,6 +1482,7 @@ impl Validator for SimpleValidator {
         self.validate_sweep(wallet, tx, input, amount_sat, wallet_path)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
+        // this is safe because we know that the current height is reasonable
         if !tx.lock_time.is_satisfied_by(
             Height::from_consensus(cstate.current_height + MAX_CHAIN_LAG)
                 .expect("Height::from_consensus"),
@@ -1561,8 +1567,8 @@ impl Validator for SimpleValidator {
         )) = parse_offered_htlc_script(redeemscript, setup.is_anchors())
         {
             // It's an offered htlc (counterparty perspective)
-            // FIXME: The bitcoin Height type should implement `From<u32>`.
             if !tx.lock_time.is_satisfied_by(
+                // this is safe because we know that the current height is reasonable
                 Height::from_consensus(cstate.current_height + MAX_CHAIN_LAG)
                     .expect("Height::from_consensus"),
                 // We are only interested in checking the height, and not the time. So we can put here any value.
@@ -1624,6 +1630,7 @@ impl Validator for SimpleValidator {
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         if !tx.lock_time.is_satisfied_by(
+            // this is safe because we know that the current height is reasonable
             Height::from_consensus(cstate.current_height + MAX_CHAIN_LAG)
                 .expect("Height::from_consensus"),
             // We are only interested in checking the height, and not the time. So we can put here any value.
@@ -1782,7 +1789,7 @@ impl SimpleValidator {
                 + (info.feerate_per_kw as u64 * htlc_timeout_tx_weight(&setup.features()) / 1000)
         };
         for htlc in &info.offered_htlcs {
-            // TODO - this check should be converted into two checks, one the first time
+            // TODO(512) - this check should be converted into two checks, one the first time
             // the HTLC is introduced and the other every time it is encountered.
             //
             // policy-commitment-htlc-cltv-range
@@ -1810,7 +1817,7 @@ impl SimpleValidator {
                 + (info.feerate_per_kw as u64 * htlc_success_tx_weight(&setup.features()) / 1000)
         };
         for htlc in &info.received_htlcs {
-            // TODO - this check should be converted into two checks, one the first time
+            // TODO(512) - this check should be converted into two checks, one the first time
             // the HTLC is introduced and the other every time it is encountered.
             //
             // policy-commitment-htlc-cltv-range

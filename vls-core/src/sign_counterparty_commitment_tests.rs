@@ -8,8 +8,8 @@ mod tests {
     use bitcoin::Network;
     use bitcoin::Sequence;
     use lightning::ln::chan_utils::{
-        make_funding_redeemscript, BuiltCommitmentTransaction,
-        DirectedChannelTransactionParameters, TxCreationKeys,
+        get_to_countersignatory_with_anchors_redeemscript, make_funding_redeemscript,
+        BuiltCommitmentTransaction, DirectedChannelTransactionParameters, TxCreationKeys,
     };
     use lightning::ln::channel_keys::DelayedPaymentKey;
     use lightning::ln::channel_keys::HtlcKey;
@@ -22,7 +22,6 @@ mod tests {
     use crate::channel::{Channel, ChannelSetup, CommitmentType, TypedSignature};
     use crate::node::NodeMonitor;
     use crate::policy::validator::{ChainState, EnforcementState};
-    use crate::tx::script::get_to_countersignatory_with_anchors_redeemscript;
     use crate::tx::tx::HTLCInfo2;
     use crate::util::crypto_utils::payload_for_p2wpkh;
     use crate::util::status::{Code, Status};
@@ -59,7 +58,7 @@ mod tests {
             .with_channel(&channel_id, |chan| {
                 let channel_parameters = chan.make_channel_parameters();
                 let parameters = channel_parameters.as_counterparty_broadcastable();
-                let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point).unwrap();
+                let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point);
                 // fee = 1000
                 let commit_num = 23;
                 let feerate_per_kw = 0;
@@ -168,7 +167,7 @@ mod tests {
                 let parameters = channel_parameters.as_counterparty_broadcastable();
                 let mut htlcs =
                     Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
-                let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point).unwrap();
+                let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point);
                 let to_broadcaster_value_sat = 1_000_000;
                 let to_countersignatory_value_sat = 1_979_997;
                 let redeem_scripts = build_tx_scripts(
@@ -367,7 +366,7 @@ mod tests {
             statemut(&mut chan.enforcement_state);
 
             let parameters = channel_parameters.as_counterparty_broadcastable();
-            let mut keys = chan.make_counterparty_tx_keys(&remote_percommitment_point)?;
+            let mut keys = chan.make_counterparty_tx_keys(&remote_percommitment_point);
 
             // Mutate the tx creation keys.
             keysmut(&mut keys);
@@ -858,7 +857,7 @@ mod tests {
             chan.enforcement_state.set_next_counterparty_revoke_num_for_testing(commit_num - 1);
 
             let parameters = channel_parameters.as_counterparty_broadcastable();
-            let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point)?;
+            let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point);
 
             let (output_witscripts, tx) = create_tx(
                 chan,
@@ -915,7 +914,7 @@ mod tests {
                 received_htlcs: &mut received_htlcs,
             });
 
-            let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point)?;
+            let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point);
             let (output_witscripts, tx) = create_tx(
                 chan,
                 &offered_htlcs,

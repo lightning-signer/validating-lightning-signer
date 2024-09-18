@@ -49,8 +49,7 @@ mod tests {
             .with_channel(&channel_id, |chan| {
                 chan.enforcement_state.set_next_holder_commit_num_for_testing(n);
                 let per_commitment_point = chan.get_per_commitment_point(n).expect("point");
-                let txkeys =
-                    chan.make_holder_tx_keys(&per_commitment_point).expect("failed to make txkeys");
+                let txkeys = chan.make_holder_tx_keys(&per_commitment_point);
                 let to_self_delay =
                     chan.make_channel_parameters().as_holder_broadcastable().contest_delay();
                 Ok((per_commitment_point, txkeys, to_self_delay))
@@ -157,7 +156,7 @@ mod tests {
                 param: &mut channel_parameters,
             });
 
-            let mut keys = chan.make_counterparty_tx_keys(&remote_per_commitment_point)?;
+            let mut keys = chan.make_counterparty_tx_keys(&remote_per_commitment_point);
 
             // Mutate the tx creation keys.
             keysmut(&mut KeysMutationState { keys: &mut keys });
@@ -278,7 +277,7 @@ mod tests {
 
                 let per_commitment_point =
                     chan.get_per_commitment_point(commit_num).expect("point");
-                let mut keys = chan.make_holder_tx_keys(&per_commitment_point)?;
+                let mut keys = chan.make_holder_tx_keys(&per_commitment_point);
 
                 // Mutate the tx creation keys.
                 keysmut(&mut KeysMutationState { keys: &mut keys });

@@ -374,7 +374,7 @@ impl Persist for DummyPersister {
     }
 
     fn signer_id(&self) -> [u8; 16] {
-        todo!()
+        unimplemented!("unused in tests")
     }
 }
 

@@ -33,7 +33,8 @@ impl StartingTimeFactory for ClockStartingTimeFactory {
     // absolutely, without a doubt, be unique to this instance
     fn starting_time(&self) -> (u64, u32) {
         use std::time::SystemTime;
-        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
+        let now =
+            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("is this the future?");
         (now.as_secs(), now.subsec_nanos())
     }
 }

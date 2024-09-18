@@ -2,11 +2,12 @@
 
 set -e
 
-#llvm-cov show  \
-#    --format=html -Xdemangler=rustfilt \
-#     ./target/x86_64-unknown-linux-gnu/coverage/x86_64-unknown-linux-gnu/release/push_decoder \
-#    -instr-profile=coverage/push_decoder/coverage.profdata \
-#    > index.html
+# requires:
+# - `cargo install cargo-kcov`
 
-mkdir -p cov
-kcov ./cov ./target/x86_64-unknown-linux-gnu/release/channel corpus/channel/*
+mkdir -p coverage
+export RUSTFLAGS=--cfg=fuzzing
+cargo build --bin channel
+kcov --exclude-pattern=/usr/include,.cargo/registry ./coverage ./target/debug/channel corpus/channel/*
+
+echo "coverage generated in ./coverage/index.html"

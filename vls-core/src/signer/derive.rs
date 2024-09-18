@@ -82,7 +82,9 @@ impl KeyDerive for NativeKeyDerive {
         _secp_ctx: &Secp256k1<secp256k1::All>,
     ) -> (SecretKey, SecretKey, SecretKey, SecretKey, SecretKey, [u8; 32]) {
         let hkdf_info = "c-lightning";
-        let keys_buf = hkdf_sha256_keys(keys_id, hkdf_info.as_bytes(), &[]);
+        let keys_buf: [u8; 192] = hkdf_sha256_keys(keys_id, hkdf_info.as_bytes(), &[]);
+
+        // unwraps below are safe because the keys_buf is 192 bytes long
         let mut ndx = 0;
         let funding_key = SecretKey::from_slice(&keys_buf[ndx..ndx + 32]).unwrap();
         ndx += 32;
@@ -173,8 +175,7 @@ impl KeyDerive for LdkKeyDerive {
                 sha.input(&channel_seed);
                 sha.input(&$prev_key[..]);
                 sha.input(&$info[..]);
-                SecretKey::from_slice(&Sha256::from_engine(sha).to_byte_array())
-                    .expect("SHA-256 is busted")
+                SecretKey::from(Sha256::from_engine(sha))
             }};
         }
         let funding_key = key_step!(b"funding key", commitment_seed);
@@ -237,7 +238,9 @@ impl KeyDerive for LndKeyDerive {
         _secp_ctx: &Secp256k1<secp256k1::All>,
     ) -> (SecretKey, SecretKey, SecretKey, SecretKey, SecretKey, [u8; 32]) {
         let hkdf_info = "c-lightning";
-        let keys_buf = hkdf_sha256_keys(keys_id, hkdf_info.as_bytes(), &[]);
+        let keys_buf: [u8; 192] = hkdf_sha256_keys(keys_id, hkdf_info.as_bytes(), &[]);
+
+        // unwraps below are safe because the keys_buf is 192 bytes long
         let mut ndx = 0;
         ndx += 32;
         ndx += 32;

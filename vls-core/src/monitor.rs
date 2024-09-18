@@ -56,12 +56,14 @@ impl ClosingOutpoints {
     }
 
     fn set_our_output_spent(&mut self, vout: u32, spent: bool) {
+        // safe due to PushListener logic
         let p = self.our_output.as_mut().unwrap();
         assert_eq!(p.0, vout);
         p.1 = spent;
     }
 
     fn set_htlc_output_spent(&mut self, vout: u32, spent: bool) {
+        // safe due to PushListener logic
         let i = self.htlc_outputs.iter().position(|&x| x == vout).unwrap();
         self.htlc_spents[i] = spent;
     }
@@ -107,7 +109,8 @@ pub struct State {
     // Whether the node has forgotten this channel
     #[serde(default)]
     saw_forget_channel: bool,
-    // The associated channel_id for logging and debugging
+    // The associated channel_id for logging and debugging.
+    // Not persisted, but explicitly populated by new_from_persistence
     #[serde(skip)]
     channel_id: Option<ChannelId>,
 }
@@ -375,6 +378,7 @@ impl<'a> push_decoder::Listener for PushListener<'a> {
 
 impl State {
     fn channel_id(&self) -> &ChannelId {
+        // safe because populated by new_from_persistence
         self.channel_id.as_ref().expect("missing associated channel_id in monitor::State")
     }
 
@@ -428,8 +432,8 @@ impl State {
         // - unilateral closed, and our output, as well as all HTLCs were swept
         // and, the last confirmation is buried
         //
-        // TODO: check 2nd level HTLCs
-        // TODO: disregard received HTLCs that we can't claim (we don't have the preimage)
+        // TODO(472) check 2nd level HTLCs
+        // TODO(472) disregard received HTLCs that we can't claim (we don't have the preimage)
 
         if self.deep_enough_and_saw_node_forget(self.funding_double_spent_height, MIN_DEPTH) {
             debug!(
@@ -596,6 +600,7 @@ impl State {
         removes: &mut Vec<OutPoint>,
         change: StateChange,
     ) {
+        // unwraps below on self.closing_outpoints are safe due to PushListener logic
         match change {
             StateChange::FundingConfirmed(outpoint) => {
                 self.funding_height = Some(self.height);
@@ -774,7 +779,7 @@ impl ChainMonitorBase {
     /// Add a funding transaction to keep track of
     /// For single-funding
     pub fn add_funding_outpoint(&self, outpoint: &OutPoint) {
-        let mut state = self.state.lock().expect("lock");
+        let mut state = self.get_state();
         assert!(state.funding_txids.is_empty(), "only a single funding tx currently supported");
         assert_eq!(state.funding_txids.len(), state.funding_vouts.len());
         state.funding_txids.push(outpoint.txid);
@@ -784,13 +789,13 @@ impl ChainMonitorBase {
     /// Add a funding input
     /// For single-funding
     pub fn add_funding_inputs(&self, tx: &Transaction) {
-        let mut state = self.state.lock().expect("lock");
+        let mut state = self.get_state();
         state.funding_inputs.extend(tx.input.iter().map(|i| i.previous_output));
     }
 
     /// Convert to a ChainState, to be used for validation
     pub fn as_chain_state(&self) -> ChainState {
-        let state = self.state.lock().expect("lock");
+        let state = self.get_state();
         ChainState {
             current_height: state.height,
             funding_depth: state.funding_height.map(|h| state.height + 1 - h).unwrap_or(0),
@@ -808,30 +813,33 @@ impl ChainMonitorBase {
 
     /// Whether this channel can be forgotten
     pub fn is_done(&self) -> bool {
-        let state = self.state.lock().expect("lock");
-        state.is_done()
+        self.get_state().is_done()
     }
 
     /// Called when the node tells us it forgot the channel
     pub fn forget_channel(&self) {
-        let mut state = self.state.lock().expect("lock");
+        let mut state = self.get_state();
         state.saw_forget_channel = true;
     }
 
     /// Returns the actual funding outpoint on-chain
     pub fn funding_outpoint(&self) -> Option<OutPoint> {
-        self.state.lock().expect("lock").funding_outpoint
+        self.get_state().funding_outpoint
     }
 
     /// Return whether forget_channel was seen
     pub fn forget_seen(&self) -> bool {
-        self.state.lock().expect("lock").saw_forget_channel
+        self.get_state().saw_forget_channel
     }
 
     /// Return string describing the state
     pub fn diagnostic(&self, is_closed: bool) -> String {
-        let state = self.state.lock().expect("lock");
-        state.diagnostic(is_closed)
+        self.get_state().diagnostic(is_closed)
+    }
+
+    // Add this getter method
+    fn get_state(&self) -> MutexGuard<State> {
+        self.state.lock().expect("lock")
     }
 }
 
@@ -857,14 +865,14 @@ impl ChainMonitor {
     }
 
     /// Get the locked state
-    pub fn get_state(&self) -> MutexGuard<'_, State> {
+    pub fn get_state(&self) -> MutexGuard<State> {
         self.state.lock().expect("lock")
     }
 
     /// Add a funding transaction to keep track of
     /// For dual-funding
     pub fn add_funding(&self, tx: &Transaction, vout: u32) {
-        let mut state = self.state.lock().expect("lock");
+        let mut state = self.get_state();
         assert!(state.funding_txids.is_empty(), "only a single funding tx currently supported");
         assert_eq!(state.funding_txids.len(), state.funding_vouts.len());
         state.funding_txids.push(tx.txid());
@@ -875,20 +883,20 @@ impl ChainMonitor {
     /// Returns the number of confirmations of the funding transaction, or zero
     /// if it wasn't confirmed yet.
     pub fn funding_depth(&self) -> u32 {
-        let state = self.state.lock().expect("lock");
+        let state = self.get_state();
         state.depth_of(state.funding_height)
     }
 
     /// Returns the number of confirmations of a double-spend of the funding transaction
     /// or zero if it wasn't double-spent.
     pub fn funding_double_spent_depth(&self) -> u32 {
-        let state = self.state.lock().expect("lock");
+        let state = self.get_state();
         state.depth_of(state.funding_double_spent_height)
     }
 
     /// Returns the number of confirmations of the closing transaction, or zero
     pub fn closing_depth(&self) -> u32 {
-        let state = self.state.lock().expect("lock");
+        let state = self.get_state();
         let closing_height = state.unilateral_closing_height.or(state.mutual_closing_height);
         state.depth_of(closing_height)
     }
@@ -899,13 +907,12 @@ impl ChainMonitor {
     /// - funding transaction is double-spent
     /// and enough confirmations have passed
     pub fn is_done(&self) -> bool {
-        let state = self.state.lock().expect("lock");
-        state.is_done()
+        self.get_state().is_done()
     }
 
     // push compact proof transactions through, simulating a streamed block
     fn push_transactions(&self, block_hash: &BlockHash, txs: &[Transaction]) -> BlockDecodeState {
-        let mut state = self.state.lock().expect("lock");
+        let mut state = self.get_state();
 
         // we are synced if we see a compact proof
         state.saw_block = true;
@@ -950,17 +957,18 @@ impl ChainListener for ChainMonitor {
         debug!("on_add_block for {}", self.funding_outpoint);
         let mut decode_state = self.push_transactions(block_hash, txs);
 
-        let mut state = self.state.lock().expect("lock");
+        let mut state = self.get_state();
         state.on_add_block_end(block_hash, &mut decode_state)
     }
 
     fn on_add_streamed_block_end(&self, block_hash: &BlockHash) -> (Vec<OutPoint>, Vec<OutPoint>) {
-        let mut state = self.state.lock().expect("lock");
+        let mut state = self.get_state();
         let mut decode_state = self.decode_state.lock().expect("lock").take();
         if !state.saw_block {
             // not ready yet, bail
             return (Vec::new(), Vec::new());
         }
+        // safe because `on_push` must have been called first
         state.on_add_block_end(block_hash, decode_state.as_mut().unwrap())
     }
 
@@ -972,7 +980,7 @@ impl ChainListener for ChainMonitor {
         debug!("on_remove_block for {}", self.funding_outpoint);
         let mut decode_state = self.push_transactions(block_hash, txs);
 
-        let mut state = self.state.lock().expect("lock");
+        let mut state = self.get_state();
         state.on_remove_block_end(block_hash, &mut decode_state)
     }
 
@@ -980,12 +988,13 @@ impl ChainListener for ChainMonitor {
         &self,
         block_hash: &BlockHash,
     ) -> (Vec<OutPoint>, Vec<OutPoint>) {
-        let mut state = self.state.lock().expect("lock");
+        let mut state = self.get_state();
         let mut decode_state = self.decode_state.lock().expect("lock").take();
         if !state.saw_block {
             // not ready yet, bail
             return (Vec::new(), Vec::new());
         }
+        // safe because `on_push` must have been called first
         state.on_remove_block_end(block_hash, decode_state.as_mut().unwrap())
     }
 
@@ -993,7 +1002,7 @@ impl ChainListener for ChainMonitor {
     where
         F: FnOnce(&mut dyn push_decoder::Listener),
     {
-        let mut state = self.state.lock().expect("lock");
+        let mut state = self.get_state();
         let saw_block = state.saw_block;
 
         let mut decode_state_lock = self.decode_state.lock().expect("lock");
@@ -1291,7 +1300,7 @@ mod tests {
             .with_channel(&channel_id, |chan| {
                 chan.set_next_holder_commit_num_for_testing(commit_num);
                 let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
-                let txkeys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+                let txkeys = chan.make_holder_tx_keys(&per_commitment_point);
 
                 Ok(chan.make_holder_commitment_tx(
                     commit_num,

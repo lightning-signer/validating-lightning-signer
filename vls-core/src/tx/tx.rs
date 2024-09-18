@@ -116,6 +116,8 @@ pub struct CommitmentInfo2 {
 
 impl CommitmentInfo2 {
     /// Construct a normalized CommitmentInfo2
+    /// The caller is responsible for checking that the values are valid (e.g. do not overflow/
+    /// underflow).
     pub fn new(
         is_counterparty_broadcaster: bool,
         to_countersigner_value_sat: u64,
@@ -385,8 +387,6 @@ pub(crate) fn parse_revokeable_redeemscript(
 }
 
 impl CommitmentInfo {
-    // FIXME - should the new_for_{holder,counterparty} wrappers move
-    // to Validator::make_info_for_{holder,counterparty}?
     #[cfg(test)]
     pub(crate) fn new_for_holder() -> Self {
         CommitmentInfo::new(false)
@@ -635,7 +635,6 @@ impl CommitmentInfo {
         script_bytes: &[u8],
     ) -> Result<(), ValidationError> {
         if out.script_pubkey.is_v0_p2wpkh() {
-            // FIXME - Does this need it's own policy tag?
             if setup.is_anchors() {
                 return Err(transaction_format_error(
                     "p2wpkh to_countersigner not valid with anchors".to_string(),
@@ -663,26 +662,21 @@ impl CommitmentInfo {
                     script.to_v0_p2wsh()
                 )));
             }
-            let vals = self.parse_to_broadcaster_script(&script);
-            if vals.is_ok() {
-                return self.handle_to_broadcaster_output(out, vals.unwrap());
+            if let Ok(vals) = self.parse_to_broadcaster_script(&script) {
+                return self.handle_to_broadcaster_output(out, vals);
             }
-            let vals = parse_received_htlc_script(&script, setup.is_anchors());
-            if vals.is_ok() {
-                return self.handle_received_htlc_output(out, vals.unwrap());
+            if let Ok(vals) = parse_received_htlc_script(&script, setup.is_anchors()) {
+                return self.handle_received_htlc_output(out, vals);
             }
-            let vals = parse_offered_htlc_script(&script, setup.is_anchors());
-            if vals.is_ok() {
-                return self.handle_offered_htlc_output(out, vals.unwrap());
+            if let Ok(vals) = parse_offered_htlc_script(&script, setup.is_anchors()) {
+                return self.handle_offered_htlc_output(out, vals);
             }
-            let vals = self.parse_anchor_script(&script);
-            if vals.is_ok() {
-                return self.handle_anchor_output(keys, out, vals.unwrap());
+            if let Ok(vals) = self.parse_anchor_script(&script) {
+                return self.handle_anchor_output(keys, out, vals);
             }
             if setup.is_anchors() {
-                let vals = self.parse_to_countersigner_delayed_script(&script);
-                if vals.is_ok() {
-                    return self.handle_to_countersigner_delayed_output(out, vals.unwrap());
+                if let Ok(vals) = self.parse_to_countersigner_delayed_script(&script) {
+                    return self.handle_to_countersigner_delayed_output(out, vals);
                 }
             }
             // policy-commitment-no-unrecognized-outputs

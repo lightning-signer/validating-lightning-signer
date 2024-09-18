@@ -6,9 +6,9 @@ use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
 use bitcoin::key::XOnlyPublicKey;
 use bitcoin::secp256k1::constants::SCHNORR_SIGNATURE_SIZE;
 use bitcoin::secp256k1::{
-    self, ecdsa::Signature, schnorr, Message, PublicKey, Secp256k1, SecretKey,
+    self, ecdsa::Signature, schnorr, Message, PublicKey, Secp256k1, SecretKey, ThirtyTwoByteHash,
 };
-use bitcoin::sighash::{EcdsaSighashType, LegacySighash, TapSighash};
+use bitcoin::sighash::{EcdsaSighashType, TapSighash};
 use bitcoin::taproot::TapTweakHash;
 use bitcoin::{PrivateKey, ScriptBuf};
 use lightning::ln::channel_keys::{RevocationBasepoint, RevocationKey};
@@ -135,7 +135,7 @@ pub fn generate_seed() -> [u8; 32] {
         seed
     }
     #[cfg(not(feature = "std"))]
-    todo!("no RNG available in no_std environments yet");
+    unimplemented!("no RNG available in no_std environments yet");
 }
 
 /// Hash the serialized heartbeat message for signing
@@ -145,15 +145,15 @@ pub fn sighash_from_heartbeat(ser_heartbeat: &[u8]) -> Message {
     sha.input("heartbeat".as_bytes());
     sha.input(ser_heartbeat);
     let hash = BitcoinSha256::from_engine(sha);
-    Message::from_slice(&hash.to_byte_array()).unwrap()
+    Message::from(hash)
 }
 
-pub(crate) fn ecdsa_sign<H: Hash<Bytes = <LegacySighash as bitcoin::hashes::Hash>::Bytes>>(
+pub(crate) fn ecdsa_sign<H: Hash + ThirtyTwoByteHash>(
     secp_ctx: &Secp256k1<secp256k1::All>,
     privkey: &PrivateKey,
     sighash: &H,
 ) -> Signature {
-    let message = Message::from_slice(&sighash.to_byte_array()).unwrap();
+    let message = Message::from(*sighash);
     secp_ctx.sign_ecdsa(&message, &privkey.inner)
 }
 

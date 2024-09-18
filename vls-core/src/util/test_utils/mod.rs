@@ -21,11 +21,12 @@ use bitcoin::sighash::SighashCache;
 use bitcoin::{self, merkle_tree, CompactTarget, ScriptBuf};
 use bitcoin::{Address, Block, BlockHash, Sequence, Transaction, TxIn, TxOut, Witness};
 use chain::chaininterface;
+use lightning::chain;
 use lightning::chain::chainmonitor::MonitorUpdateId;
 use lightning::chain::channelmonitor::MonitorEvent;
 use lightning::chain::transaction::OutPoint;
-use lightning::chain;
 use lightning::chain::{chainmonitor, channelmonitor};
+use lightning::ln::chan_utils::get_to_countersignatory_with_anchors_redeemscript;
 use lightning::ln::chan_utils::{
     build_htlc_transaction, derive_private_key, get_anchor_redeemscript, get_htlc_redeemscript,
     get_revokeable_redeemscript, make_funding_redeemscript, ChannelPublicKeys,
@@ -58,10 +59,7 @@ use crate::policy::validator::ChainState;
 use crate::prelude::*;
 use crate::signer::derive::KeyDerivationStyle;
 use crate::signer::StartingTimeFactory;
-use crate::tx::script::{
-    get_p2wpkh_redeemscript, get_to_countersignatory_with_anchors_redeemscript,
-    ANCHOR_OUTPUT_VALUE_SATOSHI,
-};
+use crate::tx::script::{get_p2wpkh_redeemscript, ANCHOR_OUTPUT_VALUE_SATOSHI};
 use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
 use crate::util::clock::StandardClock;
 use crate::util::crypto_utils::{derive_public_key, payload_for_p2wpkh, payload_for_p2wsh};
@@ -1096,7 +1094,7 @@ pub fn channel_commitment(
         .node
         .with_channel(&chan_ctx.channel_id, |chan| {
             let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
-            let txkeys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+            let txkeys = chan.make_holder_tx_keys(&per_commitment_point);
 
             let tx = chan.make_holder_commitment_tx(
                 commit_num,
@@ -1195,7 +1193,7 @@ pub fn counterparty_sign_holder_commitment(
             let per_commitment_point = chan
                 .get_per_commitment_point(commit_tx_ctx.commit_num)
                 .expect("per_commitment_point");
-            let txkeys = chan.make_holder_tx_keys(&per_commitment_point).expect("txkeys");
+            let txkeys = chan.make_holder_tx_keys(&per_commitment_point);
             let commitment_txid = built_tx.txid;
 
             let counterparty_htlc_key = derive_private_key(
@@ -1270,7 +1268,7 @@ pub fn validate_holder_commitment(
         let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
         chan.enforcement_state.set_next_holder_commit_num_for_testing(save_commit_num);
 
-        let keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+        let keys = chan.make_holder_tx_keys(&per_commitment_point);
 
         let redeem_scripts = build_tx_scripts(
             &keys,
@@ -1711,7 +1709,7 @@ where
         let parameters = channel_parameters.as_holder_broadcastable();
         let per_commitment_point = chan.get_per_commitment_point(commit_tx_ctx.commit_num)?;
 
-        let mut keys = chan.make_holder_tx_keys(&per_commitment_point).unwrap();
+        let mut keys = chan.make_holder_tx_keys(&per_commitment_point);
 
         mutate_keys(&mut keys);
 
@@ -2100,15 +2098,15 @@ impl SendSync for DummyCommitmentPointProvider {}
 
 impl CommitmentPointProvider for DummyCommitmentPointProvider {
     fn get_holder_commitment_point(&self, _commitment_number: u64) -> PublicKey {
-        todo!()
+        unimplemented!()
     }
 
     fn get_counterparty_commitment_point(&self, _commitment_number: u64) -> Option<PublicKey> {
-        todo!()
+        unimplemented!()
     }
 
     fn get_transaction_parameters(&self) -> ChannelTransactionParameters {
-        todo!()
+        unimplemented!()
     }
 
     fn clone_box(&self) -> Box<dyn CommitmentPointProvider> {
