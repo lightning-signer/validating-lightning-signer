@@ -5,6 +5,7 @@ use syn::{parse_macro_input, Data, DeriveInput, Fields};
 /// Derives a new struct and a merge function for a given struct.
 /// The new struct has the same fields as the original, but each field is wrapped in an `Option`.
 /// See generated `merge` and `resolve_defaults` functions for more information.
+/// The struct must implement `Clone`.
 #[proc_macro_derive(Optionized)]
 pub fn derive_optionized(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
@@ -39,7 +40,7 @@ pub fn derive_optionized(input: TokenStream) -> TokenStream {
     let optionized_struct = quote! {
         /// An optionized version of #struct_name.
         /// Each field is wrapped in an Option.
-        /// See [merge] and [resolve_defaults] for more information.
+        /// See `merge` and `resolve_defaults` for more information.
         #[derive(Deserialize, Debug, Default, Clone)]
         #[allow(missing_docs)]
         pub struct #optionized_struct_name {
@@ -77,9 +78,9 @@ fn generate_merge_function(
         }
     });
     quote! {
-        /// Implementation of the merge function
         impl #struct_name {
-            /// merge function
+            /// Merge all fields from `other` into `self`: for each field,
+            /// if `other` has a `Some` value for that field, set the field in `self` to that value.
             pub fn merge(&mut self, other: Self) {
                 #(#field_assignments)*
             }

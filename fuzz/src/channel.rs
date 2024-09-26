@@ -6,7 +6,7 @@ use lightning_signer::lightning::ln::chan_utils::MAX_HTLCS;
 use lightning_signer::lightning::ln::PaymentHash;
 use lightning_signer::node::Node;
 use lightning_signer::policy::filter::PolicyFilter;
-use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
+use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory, OptionizedSimplePolicy};
 use lightning_signer::tx::tx::{CommitmentInfo2, HTLCInfo2};
 use lightning_signer::util::status::Status;
 use lightning_signer::util::test_utils::{
@@ -249,7 +249,8 @@ impl ChannelFuzz {
 fn init() -> (Arc<Node>, ChannelId) {
     let (node, channel_id) =
         init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
-    let mut permissive_policy = make_simple_policy(bitcoin::Network::Testnet);
+    let mut permissive_policy = make_simple_policy(bitcoin::Network::Testnet,
+        OptionizedSimplePolicy::new());
     permissive_policy.filter = PolicyFilter::new_permissive();
     let permissive_factory = SimpleValidatorFactory::new_with_policy(permissive_policy);
     node.set_validator_factory(Arc::new(permissive_factory));
