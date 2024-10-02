@@ -2,6 +2,7 @@ use clap::{ErrorKind, Parser};
 use lightning_signer::bitcoin::secp256k1::PublicKey;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::policy::filter::{FilterResult, FilterRule};
+use lightning_signer::policy::simple_validator::OptionizedSimplePolicy;
 use lightning_signer::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
 use std::ffi::OsStr;
 use std::net::{IpAddr, Ipv4Addr};
@@ -166,6 +167,9 @@ pub struct SignerArgs {
 
     #[clap(short, help = "public key of trusted TXO oracle", value_parser)]
     pub trusted_oracle_pubkey: Vec<PublicKey>,
+
+    #[clap(skip)]
+    pub policy: OptionizedSimplePolicy,
 }
 
 impl HasSignerArgs for SignerArgs {

@@ -23,7 +23,9 @@ use lightning_signer::lightning_invoice::{
 };
 use lightning_signer::node::{Node, NodeConfig, NodeServices};
 use lightning_signer::persist::{DummyPersister, Persist};
-use lightning_signer::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
+use lightning_signer::policy::simple_validator::{
+    make_default_simple_policy, SimpleValidatorFactory,
+};
 use lightning_signer::prelude::SendSync;
 use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::signer::StartingTimeFactory;
@@ -160,7 +162,7 @@ pub fn test_lightning_signer(postscript: fn()) {
     let seed = [0u8; 32];
     let seed1 = [1u8; 32];
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister {});
-    let mut policy = make_simple_policy(Network::Signet);
+    let mut policy = make_default_simple_policy(Network::Signet);
     policy.enforce_balance = true;
     let validator_factory = Arc::new(SimpleValidatorFactory::new_with_policy(policy));
     let starting_time_factory = FixedStartingTimeFactory::new(1, 1);
@@ -291,9 +293,8 @@ fn sign_funding(node: &Arc<Node>) {
     node.check_onchain_tx(&tx, &input_txs, &prev_outs, &uniclosekeys, &vec![opath])
         .expect("good sigs");
 
-    let witvec = node
-        .unchecked_sign_onchain_tx(&tx, &ipaths, &prev_outs, uniclosekeys)
-        .expect("good sigs");
+    let witvec =
+        node.unchecked_sign_onchain_tx(&tx, &ipaths, &prev_outs, uniclosekeys).expect("good sigs");
     assert_eq!(witvec.len(), 2);
 }
 

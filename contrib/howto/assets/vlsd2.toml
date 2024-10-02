@@ -2,3 +2,20 @@ log-level = "info"
 datadir = "/home/vls/.lightning-signer"
 network = "testnet"
 connect = "http://127.0.0.1:17701"
+
+[policy]
+min_delay = 144
+max_delay = 2016
+max_channel_size_sat = 1000000001
+epsilon_sat = 10000
+max_htlcs = 1000
+max_htlc_value_sat = 16777216
+use_chain_state = false
+min_feerate_per_kw = 253
+max_feerate_per_kw = 25000
+enforce_balance = false
+max_routing_fee_msat = 10000
+max_feerate_percentage = 10
+
+[policy.dev_flags]
+disable_beneficial_balance_checks = true

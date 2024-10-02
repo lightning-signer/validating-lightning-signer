@@ -2932,7 +2932,7 @@ mod tests {
 
     use crate::channel::{ChannelBase, CommitmentType};
     use crate::policy::filter::{FilterRule, PolicyFilter};
-    use crate::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
+    use crate::policy::simple_validator::{make_default_simple_policy, SimpleValidatorFactory};
     use crate::tx::tx::ANCHOR_SAT;
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::invoice::make_test_bolt12_invoice;
@@ -3069,13 +3069,13 @@ mod tests {
         let channel_id2 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
 
         // Create a strict invoice validator
-        let strict_policy = make_simple_policy(Network::Testnet);
+        let strict_policy = make_default_simple_policy(Network::Testnet);
         let max_fee = strict_policy.max_routing_fee_msat / 1000;
         let strict_validator = SimpleValidatorFactory::new_with_policy(strict_policy)
             .make_validator(Network::Testnet, node.get_id(), None);
 
         // Create a lenient invoice validator
-        let mut lenient_policy = make_simple_policy(Network::Testnet);
+        let mut lenient_policy = make_default_simple_policy(Network::Testnet);
         let lenient_filter = PolicyFilter {
             rules: vec![FilterRule::new_warn("policy-commitment-htlc-routing-balance")],
         };
@@ -3269,7 +3269,7 @@ mod tests {
     #[test]
     fn percentage_fee_exceeded_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let policy = make_simple_policy(Network::Testnet);
+        let policy = make_default_simple_policy(Network::Testnet);
         let validator = SimpleValidatorFactory::new_with_policy(policy).make_validator(
             Network::Testnet,
             node.get_id(),
@@ -3439,7 +3439,7 @@ mod tests {
 
         assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 
-        let mut policy = make_simple_policy(Network::Testnet);
+        let mut policy = make_default_simple_policy(Network::Testnet);
         policy.enforce_balance = true;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
@@ -3476,7 +3476,7 @@ mod tests {
 
         assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 
-        let mut policy = make_simple_policy(Network::Testnet);
+        let mut policy = make_default_simple_policy(Network::Testnet);
         policy.enforce_balance = true;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
@@ -3512,7 +3512,7 @@ mod tests {
 
         assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 
-        let mut policy = make_simple_policy(Network::Testnet);
+        let mut policy = make_default_simple_policy(Network::Testnet);
         policy.enforce_balance = true;
         let max_fee = policy.max_routing_fee_msat / 1000;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
@@ -3549,7 +3549,7 @@ mod tests {
 
         assert_eq!(node.add_invoice(invoice).expect("add invoice"), true);
 
-        let policy = make_simple_policy(Network::Testnet);
+        let policy = make_default_simple_policy(Network::Testnet);
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
         node.set_validator_factory(Arc::new(factory));
@@ -3594,7 +3594,7 @@ mod tests {
         let (node, channel_id) =
             init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
 
-        let mut policy = make_simple_policy(Network::Testnet);
+        let mut policy = make_default_simple_policy(Network::Testnet);
         policy.enforce_balance = true;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
@@ -3658,7 +3658,7 @@ mod tests {
         // This records the issued invoice
         node.sign_invoice(&hrp, &data).unwrap();
 
-        let mut policy = make_simple_policy(Network::Testnet);
+        let mut policy = make_default_simple_policy(Network::Testnet);
         policy.enforce_balance = true;
         let factory = SimpleValidatorFactory::new_with_policy(policy);
         let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
@@ -4351,7 +4351,7 @@ mod tests {
         }
 
         let mut validator_factory = SimpleValidatorFactory::new();
-        let mut policy = make_simple_policy(Network::Testnet);
+        let mut policy = make_default_simple_policy(Network::Testnet);
         let spec = VelocityControlSpec {
             limit_msat: 100,
             interval_type: VelocityControlIntervalType::Hourly,

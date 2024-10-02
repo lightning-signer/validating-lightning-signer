@@ -22,7 +22,6 @@ use lightning_signer::util::crypto_utils::generate_seed;
 use lightning_signer::util::status::Status;
 use lightning_signer::util::velocity::VelocityControlSpec;
 use std::convert::TryInto;
-use std::env;
 use std::error::Error as _;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
@@ -53,6 +52,7 @@ use lightning_storage_server::client::Auth;
 #[cfg(feature = "heapmon_requests")]
 use std::alloc::System;
 use std::fmt::Debug;
+use std::env;
 use tokio::sync::mpsc::Sender;
 use tonic::Streaming;
 use url::Url;
@@ -147,11 +147,13 @@ pub fn make_handler_builder(
     let velocity_control_spec = args.velocity_control.unwrap_or(VelocityControlSpec::UNLIMITED);
     let fee_velocity_control_spec =
         args.fee_velocity_control.unwrap_or(DEFAULT_FEE_VELOCITY_CONTROL);
+
     let validator_factory = make_validator_factory_with_filter_and_velocity(
         network,
         filter_opt,
         velocity_control_spec,
         fee_velocity_control_spec,
+        args.policy.clone(),
     );
     let clock = Arc::new(StandardClock());
     let services = NodeServices {

@@ -30,14 +30,14 @@ mod tests {
 
     use crate::node::Node;
     use crate::policy::filter::PolicyFilter;
-    use crate::policy::simple_validator::{make_simple_policy, SimpleValidatorFactory};
+    use crate::policy::simple_validator::{make_default_simple_policy, SimpleValidatorFactory};
     use paste::paste;
 
     #[allow(unused_imports)]
     use log::debug;
 
     fn disable_policies(node: &Arc<Node>) {
-        let mut policy = make_simple_policy(Network::Testnet);
+        let mut policy = make_default_simple_policy(Network::Testnet);
         policy.filter = PolicyFilter::new_permissive();
         *node.validator_factory.lock().unwrap() =
             Arc::new(SimpleValidatorFactory::new_with_policy(policy));

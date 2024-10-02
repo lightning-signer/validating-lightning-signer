@@ -1,3 +1,5 @@
+use serde::Deserialize;
+
 use crate::prelude::*;
 use core::cmp::min;
 use core::fmt::{self, Debug, Formatter};
@@ -30,7 +32,7 @@ impl Debug for VelocityControl {
 }
 
 /// The total interval in which to track velocity
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 pub enum VelocityControlIntervalType {
     /// Tracked in 5 minute sub-intervals
     Hourly,
@@ -41,7 +43,7 @@ pub enum VelocityControlIntervalType {
 }
 
 /// A specifier for creating velocity controls
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 pub struct VelocityControlSpec {
     /// The limit per interval in msat
     pub limit_msat: u64,
