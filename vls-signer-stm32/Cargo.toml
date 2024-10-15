@@ -12,7 +12,7 @@ cortex-m = "0.7"
 cortex-m-rt = "0.7"
 alloc-cortex-m = { version = "0.4.1" }
 display-interface = { version = "0.4.1", optional = true }
-stm32f4 = "0.14.0"
+stm32f4 = "0.15.1"
 embedded-graphics = "0.7.1"
 st7789 = { version = "0.6.1", default-features = false, features = ["graphics", "buffer"] }
 rtt-target = { version = "0.3.1", features = ["cortex-m"] }
@@ -44,7 +44,7 @@ features = [
 ]
 
 [dependencies.stm32f4xx-hal]
-version = "0.13"
+version = "0.14"
 features = ["fsmc_lcd", "fsmc", "sdio", "sdio-host", "otg-fs", "usb_fs"]
 
 [features]
