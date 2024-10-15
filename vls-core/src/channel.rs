@@ -391,8 +391,8 @@ impl ChannelBase for ChannelStub {
     }
 }
 
-/// The CLN dbid is encoded in little-endian in the last 8 bytes of the ChannelId
-fn oid_from_native_channelid(cid: &ChannelId) -> u64 {
+/// The CLN original id is encoded in little-endian in the last 8 bytes of the ChannelId
+pub fn oid_from_native_channel_id(cid: &ChannelId) -> u64 {
     let chanidvec = &cid.0;
     assert!(chanidvec.len() >= 8);
     let bytes_slice = &chanidvec[chanidvec.len() - 8..];
@@ -401,19 +401,27 @@ fn oid_from_native_channelid(cid: &ChannelId) -> u64 {
     u64::from_le_bytes(bytes_array)
 }
 
-/// The LDK dbid is enconded in big endian in the first 8 bytes of the ChannelId
-pub fn dbid_from_ldk_channel_id(channel_id: &[u8]) -> u64 {
-    assert!(channel_id.len() >= 8);
-    let mut dbid_slice = [0; 8];
-    dbid_slice.copy_from_slice(&channel_id[0..8]);
-    u64::from_be_bytes(dbid_slice)
+/// The CLN channel id is formed from 33 bytes of the node id joined with an original id (called dbid)
+pub fn native_channel_id_from_oid(oid: u64, node_id: &[u8; 33]) -> ChannelId {
+    let mut nonce = [0u8; 33 + 8];
+    nonce[0..33].copy_from_slice(node_id);
+    nonce[33..].copy_from_slice(&oid.to_le_bytes());
+    ChannelId::new(&nonce)
 }
 
-///The LDK channel id is formed by 8 bytes of dbid followed by zeroed out bytes
-pub fn ldk_channel_id_from_dbid(dbid: u64) -> [u8; 32] {
+/// The LDK original id is encoded in big endian in the first 8 bytes of the ChannelId
+pub fn oid_from_ldk_channel_id(channel_id: &[u8]) -> u64 {
+    assert!(channel_id.len() >= 8);
+    let mut oid_slice = [0; 8];
+    oid_slice.copy_from_slice(&channel_id[0..8]);
+    u64::from_be_bytes(oid_slice)
+}
+
+/// The LDK channel id is formed from 8 bytes of an original id followed by zeroed out bytes
+pub fn ldk_channel_id_from_oid(oid: u64) -> [u8; 32] {
     let mut channel_id = [0u8; 32];
-    let dbid_slice = dbid.to_be_bytes();
-    channel_id[..8].copy_from_slice(&dbid_slice);
+    let oid_slice = oid.to_be_bytes();
+    channel_id[..8].copy_from_slice(&oid_slice);
     channel_id
 }
 
@@ -435,11 +443,11 @@ impl ChannelStub {
         )
     }
 
-    // KeyDerivationStyle dependent identifier
-    fn oid(&self) -> u64 {
+    /// Return the original id used to create the channel
+    pub fn oid(&self) -> u64 {
         match self.get_node().node_config.key_derivation_style {
-            KeyDerivationStyle::Native => oid_from_native_channelid(&self.id0),
-            KeyDerivationStyle::Ldk => dbid_from_ldk_channel_id(&self.id0.inner()),
+            KeyDerivationStyle::Native => oid_from_native_channel_id(&self.id0),
+            KeyDerivationStyle::Ldk => oid_from_ldk_channel_id(&self.id0.inner()),
             // add other derivation styles here
             _ => 0,
         }
@@ -590,11 +598,11 @@ impl Channel {
         self.id.clone().unwrap_or(self.id0.clone())
     }
 
-    // KeyDerivationStyle dependent identifier
-    fn oid(&self) -> u64 {
+    /// Return the original id used to create the channel
+    pub fn oid(&self) -> u64 {
         match self.get_node().node_config.key_derivation_style {
-            KeyDerivationStyle::Native => oid_from_native_channelid(&self.id0),
-            KeyDerivationStyle::Ldk => dbid_from_ldk_channel_id(&self.id0.inner()),
+            KeyDerivationStyle::Native => oid_from_native_channel_id(&self.id0),
+            KeyDerivationStyle::Ldk => oid_from_ldk_channel_id(&self.id0.inner()),
             // add other derivation styles here
             _ => 0,
         }
@@ -2765,7 +2773,7 @@ mod tests {
     use lightning::ln::PaymentHash;
     use lightning::util::ser::Writeable;
 
-    use crate::channel::{dbid_from_ldk_channel_id, ldk_channel_id_from_dbid, ChannelBase};
+    use crate::channel::{oid_from_ldk_channel_id, ldk_channel_id_from_oid, ChannelBase};
     use crate::util::test_utils::{
         init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
     };
@@ -2808,13 +2816,13 @@ mod tests {
     }
 
     #[test]
-    fn test_ldk_dbid() {
-        let dbid: u64 = 42;
+    fn test_ldk_oid() {
+        let oid: u64 = 42;
         let mut channel_id_inner = [0u8; 32];
-        channel_id_inner[..8].copy_from_slice(&dbid.to_be_bytes());
+        channel_id_inner[..8].copy_from_slice(&oid.to_be_bytes());
         let channel_id = ChannelId(channel_id_inner.to_vec());
 
-        assert_eq!(dbid, dbid_from_ldk_channel_id(&channel_id.inner()));
-        assert_eq!(channel_id, ChannelId(ldk_channel_id_from_dbid(dbid).to_vec()));
+        assert_eq!(oid, oid_from_ldk_channel_id(&channel_id.inner()));
+        assert_eq!(channel_id, ChannelId(ldk_channel_id_from_oid(oid).to_vec()));
     }
 }

@@ -288,6 +288,7 @@ impl<S: KVVStore, F: ValueFormat> Persist for KVVPersister<S, F> {
                 0,
                 state_entry.velocity_control.into(),
                 state_entry.fee_velocity_control.into(),
+                state_entry.dbid_high_water_mark.into(),
             );
             let node_entry = CoreNodeEntry {
                 key_derivation_style: entry.key_derivation_style as u8,

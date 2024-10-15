@@ -36,7 +36,7 @@ use lightning_signer::bitcoin::absolute::LockTime;
 use lightning_signer::bitcoin::sighash::EcdsaSighashType;
 use lightning_signer::bitcoin::{self, ScriptBuf, Witness};
 use lightning_signer::channel::CommitmentType;
-use lightning_signer::channel::{dbid_from_ldk_channel_id, ldk_channel_id_from_dbid};
+use lightning_signer::channel::{oid_from_ldk_channel_id, ldk_channel_id_from_oid};
 use lightning_signer::lightning;
 use lightning_signer::lightning::sign::HTLCDescriptor;
 use lightning_signer::lightning::sign::OutputSpender;
@@ -387,7 +387,7 @@ impl ChannelSigner for SignerClient {
     }
 
     fn channel_keys_id(&self) -> [u8; 32] {
-        ldk_channel_id_from_dbid(self.dbid)
+        ldk_channel_id_from_oid(self.dbid)
     }
 
     fn provide_channel_parameters(&mut self, p: &ChannelTransactionParameters) {
@@ -524,7 +524,7 @@ impl KeysManagerClient {
                 o.output.value,
                 0,
                 Some(CloseInfo {
-                    channel_id: dbid_from_ldk_channel_id(&o.channel_keys_id),
+                    channel_id: oid_from_ldk_channel_id(&o.channel_keys_id),
                     peer_id: PubKey([0; 33]),
                     commitment_point: Some(to_pubkey(o.per_commitment_point)),
                     is_anchors: false,
@@ -537,7 +537,7 @@ impl KeysManagerClient {
                 o.output.value,
                 0,
                 Some(CloseInfo {
-                    channel_id: dbid_from_ldk_channel_id(&o.channel_keys_id),
+                    channel_id: oid_from_ldk_channel_id(&o.channel_keys_id),
                     peer_id: PubKey([0; 33]),
                     commitment_point: None,
                     is_anchors: false,
@@ -654,7 +654,7 @@ impl SignerProvider for KeysManagerClient {
         _user_channel_id: u128,
     ) -> [u8; 32] {
         let dbid = self.next_dbid.fetch_add(1, Ordering::AcqRel);
-        ldk_channel_id_from_dbid(dbid)
+        ldk_channel_id_from_oid(dbid)
     }
 
     fn derive_channel_signer(
@@ -665,7 +665,7 @@ impl SignerProvider for KeysManagerClient {
         // We don't use the peer_id, because it's not easy to get at this point within the LDK framework.
         // The dbid is unique, so that's enough for our purposes.
         let peer_id = [0u8; 33];
-        let dbid = dbid_from_ldk_channel_id(&channel_keys_id);
+        let dbid = oid_from_ldk_channel_id(&channel_keys_id);
 
         let message = NewChannel { node_id: PubKey(peer_id.clone()), dbid };
         let _: NewChannelReply = self.call(message).expect("NewChannel");

@@ -407,7 +407,7 @@ mod tests {
         let nodes = Node::restore_nodes(node_services, seed_persister).unwrap();
         assert_eq!(nodes.len(), 1);
         let node = nodes.values().next().unwrap();
-        let channels = node.channels();
+        let channels = node.get_channels();
         assert_eq!(channels.len(), 1);
         drop(channels);
         let expected_channel_id = ChannelId::new(&hex::decode(TEST_CHANNEL_ID[0]).unwrap());

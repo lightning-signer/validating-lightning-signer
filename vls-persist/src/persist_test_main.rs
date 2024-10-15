@@ -17,7 +17,7 @@ pub fn main() {
     let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
     let channel_id1 = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
 
-    let (node_id, node_arc, stub, _seed) = test_utils::make_node_and_channel(channel_id.clone());
+    let (node_id, node_arc, stub, _seed) = test_utils::make_node_and_channel(channel_id);
     let node = &*node_arc;
     let payment_state = PaymentState {
         invoice_hash: [2; 32],
@@ -36,7 +36,7 @@ pub fn main() {
 
     let dummy_pubkey = make_test_key(0x12).0;
     let setup = test_utils::create_test_channel_setup(dummy_pubkey);
-    let channel = node.setup_channel(channel_id, Some(channel_id1), setup, &vec![]).unwrap();
+    let channel = node.setup_channel(stub.id0, Some(channel_id1), setup, &vec![]).unwrap();
 
     for (id, entry) in persister.get_node_channels(&node_id).unwrap() {
         println!("{} {:?}", id, entry);

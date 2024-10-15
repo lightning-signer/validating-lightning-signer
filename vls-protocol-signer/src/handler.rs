@@ -29,7 +29,7 @@ use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::key::XOnlyPublicKey;
 use lightning_signer::bitcoin::sighash::EcdsaSighashType;
 use lightning_signer::channel::{
-    ChannelBalance, ChannelBase, ChannelId, ChannelSetup, SlotInfo, SlotInfoVariant, TypedSignature,
+    ChannelBalance, ChannelBase, ChannelId, ChannelSetup, SlotInfo, SlotInfoVariant, TypedSignature, native_channel_id_from_oid
 };
 use lightning_signer::dbgvals;
 use lightning_signer::invoice::Invoice;
@@ -369,11 +369,7 @@ impl HandlerBuilder {
 
 impl RootHandler {
     fn channel_id(node_id: &PubKey, dbid: u64) -> ChannelId {
-        let mut nonce = [0u8; 33 + 8];
-        nonce[0..33].copy_from_slice(&node_id.0);
-        nonce[33..].copy_from_slice(&dbid.to_le_bytes());
-        let channel_id = ChannelId::new(&nonce);
-        channel_id
+        native_channel_id_from_oid(dbid, &node_id.0)
     }
 
     /// Log channel information
@@ -728,8 +724,7 @@ impl Handler for RootHandler {
                 Ok(Box::new(msgs::EcdhReply { secret: Secret(secret) }))
             }
             Message::NewChannel(m) => {
-                let channel_id = Self::channel_id(&m.node_id, m.dbid);
-                self.node.new_channel(Some(channel_id), &self.node)?;
+                self.node.new_channel_with_dbid(m.dbid, &self.node)?;
                 Ok(Box::new(msgs::NewChannelReply {}))
             }
             Message::ForgetChannel(m) => {

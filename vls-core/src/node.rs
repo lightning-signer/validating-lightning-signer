@@ -50,7 +50,7 @@ use crate::chain::tracker::ChainTracker;
 use crate::chain::tracker::Headers;
 use crate::channel::{
     Channel, ChannelBalance, ChannelBase, ChannelCommitmentPointProvider, ChannelId, ChannelSetup,
-    ChannelSlot, ChannelStub, SlotInfo,
+    ChannelSlot, ChannelStub, SlotInfo, native_channel_id_from_oid
 };
 use crate::invoice::{Invoice, InvoiceAttributes};
 use crate::monitor::{ChainMonitor, ChainMonitorBase};
@@ -273,6 +273,8 @@ pub struct NodeState {
     pub fee_velocity_control: VelocityControl,
     /// Last summary string
     pub last_summary: String,
+    /// dbid high water mark
+    pub dbid_high_water_mark: u64,
 }
 
 impl Debug for NodeState {
@@ -285,6 +287,7 @@ impl Debug for NodeState {
             .field("log_prefix", &self.log_prefix)
             .field("velocity_control", &self.velocity_control)
             .field("last_summary", &self.last_summary)
+            .field("dbid_high_water_mark", &self.dbid_high_water_mark)
             .finish()
     }
 }
@@ -307,6 +310,7 @@ impl NodeState {
             velocity_control,
             fee_velocity_control,
             last_summary: String::new(),
+            dbid_high_water_mark: 0,
         }
     }
 
@@ -318,6 +322,7 @@ impl NodeState {
         excess_amount: u64,
         velocity_control: VelocityControl,
         fee_velocity_control: VelocityControl,
+        dbid_high_water_mark: u64,
     ) -> Self {
         // the try_into must succeed, because we persisted hashes of the right length
         let invoices = invoices_v
@@ -346,6 +351,7 @@ impl NodeState {
             velocity_control,
             fee_velocity_control,
             last_summary: String::new(),
+            dbid_high_water_mark,
         }
     }
 
@@ -364,18 +370,20 @@ impl NodeState {
             velocity_control,
             fee_velocity_control,
             last_summary: String::new(),
+            dbid_high_water_mark: self.dbid_high_water_mark,
         }
     }
 
     /// Return a summary for debugging and whether it changed since last call
     pub fn summary(&mut self) -> (String, bool) {
         let summary = format!(
-            "NodeState::summary {}: {} invoices, {} issued_invoices, {} payments, excess_amount {}",
+            "NodeState::summary {}: {} invoices, {} issued_invoices, {} payments, excess_amount {}, dbid_high_water_mark {}",
             self.log_prefix,
             self.invoices.len(),
             self.issued_invoices.len(),
             self.payments.len(),
-            self.excess_amount
+            self.excess_amount,
+            self.dbid_high_water_mark,
         );
         if self.last_summary != summary {
             self.last_summary = summary.clone();
@@ -989,7 +997,7 @@ impl SignedHeartbeat {
 /// };
 /// let node = Arc::new(Node::new(config, &seed, vec![], services));
 /// // TODO: persist the seed
-/// let (channel_id, opt_stub) = node.new_channel(None, &node).expect("new channel");
+/// let (channel_id, opt_stub) = node.new_channel(&node).expect("new channel");
 /// assert!(opt_stub.is_some());
 /// let channel_slot_mutex = node.get_channel(&channel_id).expect("get channel");
 /// let channel_slot = channel_slot_mutex.lock().expect("lock");
@@ -1451,7 +1459,7 @@ impl Node {
     pub fn persist_all(&self) {
         let persister = &self.persister;
         persister.new_node(&self.get_id(), &self.node_config, &self.get_state()).unwrap();
-        for channel in self.channels().values() {
+        for channel in self.get_channels().values() {
             let channel = channel.lock().unwrap();
             match &*channel {
                 ChannelSlot::Stub(_) => {}
@@ -1495,7 +1503,7 @@ impl Node {
 
     /// Get the [Mutex] protected channel slot
     pub fn get_channel(&self, channel_id: &ChannelId) -> Result<Arc<Mutex<ChannelSlot>>, Status> {
-        let mut guard = self.channels();
+        let mut guard = self.get_channels();
         let elem = guard.get_mut(channel_id);
         let slot_arc =
             elem.ok_or_else(|| invalid_argument(format!("no such channel: {}", &channel_id)))?;
@@ -1540,27 +1548,65 @@ impl Node {
         &self,
         outpoint: &OutPoint,
     ) -> Option<Arc<Mutex<ChannelSlot>>> {
-        let channels_lock = self.channels();
+        let channels_lock = self.get_channels();
         find_channel_with_funding_outpoint(&channels_lock, outpoint)
     }
 
     /// Create a new channel, which starts out as a stub.
     ///
-    /// The initial channel ID may be specified in `opt_channel_id`.  If the channel
-    /// with this ID already exists, the existing stub is returned.
-    ///
-    /// If unspecified, a channel ID will be generated.
-    ///
-    /// Returns the channel ID and the stub.
-    ///
-    /// If there was already a channel with this ID, it is returned.
+    /// Returns a generated channel ID and the stub.
     pub fn new_channel(
         &self,
-        opt_channel_id: Option<ChannelId>,
         arc_self: &Arc<Node>,
     ) -> Result<(ChannelId, Option<ChannelSlot>), Status> {
-        let channel_id = opt_channel_id.unwrap_or_else(|| self.keys_manager.get_channel_id());
-        let mut channels = self.channels();
+        let channel_id = self.keys_manager.get_channel_id();
+        self.find_or_create_channel(channel_id, arc_self)
+    }
+
+    /// Create a new channel from a seed identifier (aka a dbid)
+    ///
+    /// The seed id must never be reused as revocation secrets may
+    /// be publicly known. Rather than store all historical ids,
+    /// this method requires seed ids to increase monotonically,
+    /// checked against a high-water mark which is set when
+    /// forgetting channels.
+    ///
+    /// Setting the high-water mark on forgetting rather than creating
+    /// channels allows for some slack in the system to accomodate reordered
+    /// requests.
+    ///
+    /// If the seed id is not monotonic the method returns an error.
+    /// Otherwise, it returns the new channel id and stub.
+    pub fn new_channel_with_dbid(
+        &self,
+        dbid: u64,
+        arc_self: &Arc<Node>,
+    ) -> Result<(ChannelId, Option<ChannelSlot>), Status> {
+        if self.get_state().dbid_high_water_mark >= dbid {
+            return Err(Status::invalid_argument("dbid not above the high water mark"));
+        }
+
+        let channel_id = native_channel_id_from_oid(dbid, &self.get_id().serialize());
+        self.find_or_create_channel(channel_id, arc_self)
+    }
+
+    /// Create a new channel with a specified channel id.
+    /// Only used for testing.
+    #[cfg(any(test, feature = "test_utils"))]
+    pub(crate) fn new_channel_with_id(
+        &self,
+        channel_id: ChannelId,
+        arc_self: &Arc<Node>,
+    ) -> Result<(ChannelId, Option<ChannelSlot>), Status> {
+        self.find_or_create_channel(channel_id, arc_self)
+    }
+
+    fn find_or_create_channel(
+        &self,
+        channel_id: ChannelId,
+        arc_self: &Arc<Node>
+    ) -> Result<(ChannelId, Option<ChannelSlot>), Status> {
+        let mut channels = self.get_channels();
         let policy = self.policy();
         if channels.len() >= policy.max_channels() {
             // FIXME(3) we don't garbage collect channels
@@ -1673,7 +1719,7 @@ impl Node {
                     .update_tracker(&self.get_id(), &tracker)
                     .map_err(|_| internal_error("tracker persist failed"))?;
             }
-            let channels = self.channels();
+            let channels = self.get_channels();
             for (_, slot) in channels.iter() {
                 let channel = slot.lock().unwrap();
                 match &*channel {
@@ -1745,7 +1791,7 @@ impl Node {
         let chan_id = opt_channel_id.as_ref().unwrap_or(&channel_id0);
 
         let chan = {
-            let channels = self.channels();
+            let channels = self.get_channels();
             let arcobj = channels.get(&channel_id0).ok_or_else(|| {
                 invalid_argument(format!("channel does not exist: {}", channel_id0))
             })?;
@@ -1801,7 +1847,7 @@ impl Node {
 
         validator.validate_setup_channel(self, &setup, holder_shutdown_key_path)?;
 
-        let mut channels = self.channels();
+        let mut channels = self.get_channels();
 
         // Wrap the ready channel with an arc so we can potentially
         // refer to it multiple times.
@@ -1919,7 +1965,7 @@ impl Node {
         prev_outs: &[TxOut],
         uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
-        let channels_lock = self.channels();
+        let channels_lock = self.get_channels();
 
         // Funding transactions cannot be associated with just a single channel;
         // a single transaction may fund multiple channels
@@ -2119,7 +2165,7 @@ impl Node {
         uniclosekeys: &[Option<(SecretKey, Vec<Vec<u8>>)>],
         opaths: &[Vec<u32>],
     ) -> Result<(), ValidationError> {
-        let channels_lock = self.channels();
+        let channels_lock = self.get_channels();
 
         // Funding transactions cannot be associated with just a single channel;
         // a single transaction may fund multiple channels
@@ -2398,8 +2444,8 @@ impl Node {
         self.sign_tagged_message(&tag, message)
     }
 
-    /// Get the channels this node knows about.
-    pub fn channels(&self) -> MutexGuard<OrderedMap<ChannelId, Arc<Mutex<ChannelSlot>>>> {
+    /// Lock and return all the channels this node knows about.
+    pub fn get_channels(&self) -> MutexGuard<OrderedMap<ChannelId, Arc<Mutex<ChannelSlot>>>> {
         self.channels.lock().unwrap()
     }
 
@@ -2502,7 +2548,7 @@ impl Node {
         self.tracker.lock().unwrap()
     }
 
-    ///Height of chain
+    /// Height of chain
     pub fn get_chain_height(&self) -> u32 {
         self.get_tracker().height()
     }
@@ -2715,28 +2761,55 @@ impl Node {
 
     /// The node tells us that it is forgetting a channel
     pub fn forget_channel(&self, channel_id: &ChannelId) -> Result<(), Status> {
-        let channels = self.channels();
+        let mut stub_found = false;
+        // As per devrandom the lock order should be node_state -> channels -> channel
+        let mut node_state: MutexGuard<'_, NodeState> = self.get_state();
+        let mut channels = self.get_channels();
         let found = channels.get(channel_id);
         if let Some(slot) = found {
+            // Acquire a lock on the node state to potentially update the high water mark.
+            // This is the only place the high water mark could be updated so any changes
+            // to the node state since acquiring the channels lock are irrelevant.
             let channel = slot.lock().unwrap();
-            match &*channel {
-                ChannelSlot::Stub(_) => {
+            let oid = match &*channel {
+                ChannelSlot::Stub(chan) => {
                     info!("forget_channel stub {}", channel_id);
+                    // We can't update the channels map here as it's immutably borrowed
+                    // so we set a flag to remove it after the borrow is released.
+                    stub_found = true;
+                    chan.oid()
                 }
                 ChannelSlot::Ready(chan) => {
                     info!("forget_channel {}", channel_id);
                     chan.forget()?;
+                    chan.oid()
                 }
+            };
+            if oid > node_state.dbid_high_water_mark {
+                node_state.dbid_high_water_mark = oid;
+                self.persister
+                    .update_node(&self.get_id(), &node_state)
+                    .unwrap_or_else(|err| {
+                        panic!("could not update node state: {:?}", err)
+                    });
             }
         } else {
             debug!("forget_channel didn't find {}", channel_id);
+        }
+        if stub_found {
+            channels.remove(&channel_id).unwrap();
+            self.persister
+                .delete_channel(&self.get_id(), &channel_id)
+                .unwrap_or_else(|err| {
+                    panic!("could not delete channel {}: {:?}", &channel_id, err)
+                });
         }
         return Ok(());
     }
 
     fn prune_channels(&self, tracker: &mut ChainTracker<ChainMonitor>) {
         // Prune stubs/channels which are no longer needed in memory.
-        let mut channels = self.channels();
+        let mut channels = self.get_channels();
 
         // unfortunately `btree_drain_filter` is unstable
         // Gather a list of all channels to prune
@@ -2803,7 +2876,7 @@ impl Node {
     /// Log channel information
     pub fn chaninfo(&self) -> Vec<SlotInfo> {
         // Gather the entries
-        self.channels().iter().map(|(_, slot_arc)| slot_arc.lock().unwrap().chaninfo()).collect()
+        self.get_channels().iter().map(|(_, slot_arc)| slot_arc.lock().unwrap().chaninfo()).collect()
     }
 }
 
@@ -2816,7 +2889,7 @@ pub trait NodeMonitor {
 impl NodeMonitor for Node {
     fn channel_balance(&self) -> ChannelBalance {
         let mut sum = ChannelBalance::zero();
-        let channels_lock = self.channels();
+        let channels_lock = self.get_channels();
         for (_, slot_arc) in channels_lock.iter() {
             let slot = slot_arc.lock().unwrap();
             let balance = match &*slot {
@@ -2977,16 +3050,74 @@ mod tests {
     fn new_channel_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
 
-        let (channel_id, _) = node.new_channel(None, &node).unwrap();
+        let (channel_id, _) = node.new_channel(&node).unwrap();
         assert!(node.get_channel(&channel_id).is_ok());
+    }
+
+    #[test]
+    fn new_channel_with_dbid_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let dbid: u64 = 1234;
+
+        let (channel_id, _) = node.new_channel_with_dbid(dbid, &node).unwrap();
+        assert!(node.get_channel(&channel_id).is_ok());
+    }
+
+    #[test]
+    fn new_channel_with_dbid_should_fail_for_forgotten_channel_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let dbid = 1234;
+
+        let (channel_id, _) = node.new_channel_with_dbid(dbid, &node).unwrap();
+        let _ = node.forget_channel(&channel_id);
+
+        let res = node.new_channel_with_dbid(dbid, &node);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn new_channel_with_dbid_should_fail_for_dbid_below_previously_forgotten_dbid_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let dbid = 1234;
+
+        let (channel_id, _) = node.new_channel_with_dbid(dbid, &node).unwrap();
+        let _ = node.forget_channel(&channel_id);
+
+        let res = node.new_channel_with_dbid(dbid - 1, &node);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn new_channel_with_dbid_should_work_for_dbid_below_highest_but_above_last_forgotten_test() {
+        let node: Arc<Node> = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let dbid_1 = 1000;
+        let dbid_2 = 1001;
+        let dbid_3 = 1002;
+
+        let (channel_id_1, _) = node.new_channel_with_dbid(dbid_1, &node).unwrap();
+        let _ = node.new_channel_with_dbid(dbid_3, &node);
+        let _ = node.forget_channel(&channel_id_1);
+
+        let res = node.new_channel_with_dbid(dbid_2, &node);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn forget_channel_should_remove_stubs_from_the_channels_map_test() {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+        let (channel_id, _) = node.new_channel(&node).unwrap();
+        let _ = node.forget_channel(&channel_id);
+
+        let channels = node.get_channels();
+        assert!(channels.get(&channel_id).is_none());
     }
 
     #[test]
     fn commitment_point_provider_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let node1 = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let (channel_id, _) = node.new_channel(None, &node).unwrap();
-        let (channel_id1, _) = node1.new_channel(None, &node1).unwrap();
+        let (channel_id, _) = node.new_channel(&node).unwrap();
+        let (channel_id1, _) = node1.new_channel(&node1).unwrap();
         let points =
             node.get_channel(&channel_id).unwrap().lock().unwrap().get_channel_basepoints();
         let points1 =
@@ -3084,7 +3215,7 @@ mod tests {
             .make_validator(Network::Testnet, node.get_id(), None);
 
         // Now there's an invoice
-        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0".to_string(), false));
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0, dbid_high_water_mark 0".to_string(), false));
 
         state
             .validate_and_apply_payments(
@@ -3096,7 +3227,7 @@ mod tests {
             )
             .expect("channel1");
 
-        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0".to_string(), false));
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0, dbid_high_water_mark 0".to_string(), false));
 
         let result = state.validate_and_apply_payments(
             &channel_id,
@@ -3107,7 +3238,7 @@ mod tests {
         );
         assert_eq!(result, Err(policy_error("validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"0202020202020202020202020202020202020202020202020202020202020202\"]")));
 
-        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0".to_string(), false));
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0, dbid_high_water_mark 0".to_string(), false));
 
         // we should decrease the `max_fee` value otherwise we overpay in fee percentage
         // in this case we take the 5% of the max_fee
@@ -3121,7 +3252,7 @@ mod tests {
         );
         assert_validation_ok!(result);
 
-        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0".to_string(), false));
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0, dbid_high_water_mark 0".to_string(), false));
 
         // hash1 has no invoice, fails with strict validator, but only initially
         let result = state.validate_and_apply_payments(
@@ -3133,7 +3264,7 @@ mod tests {
         );
         assert_policy_err!(result, "validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"0101010101010101010101010101010101010101010101010101010101010101\"]");
 
-        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0".to_string(), false));
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0, dbid_high_water_mark 0".to_string(), false));
 
         // hash1 has no invoice, ok with lenient validator
         let result = state.validate_and_apply_payments(
@@ -3145,7 +3276,7 @@ mod tests {
         );
         assert_validation_ok!(result);
 
-        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 2 payments, excess_amount 0".to_string(), false));
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 2 payments, excess_amount 0, dbid_high_water_mark 0".to_string(), false));
 
         // TODO(331) hash1 has no invoice, passes with strict validator once the payment exists
         let result = state.validate_and_apply_payments(
@@ -3157,7 +3288,7 @@ mod tests {
         );
         assert_validation_ok!(result);
 
-        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 2 payments, excess_amount 0".to_string(), false));
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 2 payments, excess_amount 0, dbid_high_water_mark 0".to_string(), false));
 
         // pretend this payment failed and went away
         let result = state.validate_and_apply_payments(
@@ -3171,7 +3302,7 @@ mod tests {
 
         // payment is still there
         assert_eq!(state.payments.len(), 2);
-        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 2 payments, excess_amount 0".to_string(), false));
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 2 payments, excess_amount 0, dbid_high_water_mark 0".to_string(), false));
 
         // have to drop the state over the heartbeat because deadlock
         drop(state);
@@ -3183,7 +3314,7 @@ mod tests {
 
         // payment is pruned
         assert_eq!(state.payments.len(), 1);
-        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0".to_string(), false));
+        assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0, dbid_high_water_mark 0".to_string(), false));
     }
 
     fn make_test_invoice(
@@ -3236,7 +3367,7 @@ mod tests {
     fn with_channel_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
-        node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
+        node.new_channel_with_id(channel_id.clone(), &node).expect("new_channel");
         assert!(node
             .with_channel(&channel_id, |_channel| {
                 panic!("should not be called");
@@ -3248,22 +3379,12 @@ mod tests {
     }
 
     #[test]
-    fn double_new_test() {
-        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
-        node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
-        let (id, slot) = node.new_channel(Some(channel_id.clone()), &node).unwrap();
-        assert_eq!(id, channel_id);
-        assert!(slot.is_some());
-    }
-
-    #[test]
     fn too_many_channels_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         for _ in 0..node.policy().max_channels() {
-            node.new_channel(None, &node).expect("new_channel");
+            node.new_channel(&node).expect("new_channel");
         }
-        assert!(node.new_channel(None, &node).is_err());
+        assert!(node.new_channel(&node).is_err());
     }
 
     #[test]
@@ -3854,8 +3975,8 @@ mod tests {
     fn spend_anchor_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let node1 = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let (channel_id, _) = node.new_channel(None, &node).unwrap();
-        let (channel_id1, _) = node1.new_channel(None, &node1).unwrap();
+        let (channel_id, _) = node.new_channel(&node).unwrap();
+        let (channel_id1, _) = node1.new_channel(&node1).unwrap();
         let points =
             node.get_channel(&channel_id).unwrap().lock().unwrap().get_channel_basepoints();
         let points1 =
@@ -3914,7 +4035,7 @@ mod tests {
     #[test]
     fn get_unilateral_close_key_anchors_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let (channel_id, chan) = node.new_channel(None, &node).unwrap();
+        let (channel_id, chan) = node.new_channel(&node).unwrap();
 
         let mut setup = make_test_channel_setup();
         setup.commitment_type = CommitmentType::AnchorsZeroFeeHtlc;
@@ -3944,7 +4065,7 @@ mod tests {
     #[test]
     fn get_unilateral_close_key_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let (channel_id, chan) = node.new_channel(None, &node).unwrap();
+        let (channel_id, chan) = node.new_channel(&node).unwrap();
 
         node.setup_channel(channel_id.clone(), None, make_test_channel_setup(), &vec![])
             .expect("ready channel");
@@ -4375,7 +4496,7 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
 
         // Create a channel stub
-        let (channel_id, _) = node.new_channel(None, &node).unwrap();
+        let (channel_id, _) = node.new_channel(&node).unwrap();
         assert!(node.get_channel(&channel_id).is_ok());
 
         // Do a heartbeat
