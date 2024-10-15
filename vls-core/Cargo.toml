@@ -73,9 +73,8 @@ backtrace = { version = "0.3", optional = true }
 tonic = { version = "0.9", optional = true, default-features = false }
 
 # match hashbrown dependency version via lightning
-# pin ahash - latest doesn't work with the current nightly compiler we use
 hashbrown = "0.13.2"
-ahash = { version = "=0.8.4", default-features = false }
+ahash = { version = "0.8.7", default-features = false }
 
 itertools = { version = "0.10", default-features = false }
 

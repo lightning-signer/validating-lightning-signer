@@ -23,18 +23,18 @@ build:
 	cargo build --features stm32f413,developer,$(EXTRA_FEATURES) --release --bin demo_signer
 
 run: build
-	probe-run --chip $(CHIP) $(TARGET)
+	probe-rs run --chip $(CHIP) $(TARGET)
 
 rerun:
-	probe-run --chip $(CHIP) $(TARGET) --no-flash
+	probe-rs attach --chip $(CHIP) $(TARGET)
 
 install-testnet: build
 	sudo cp $(TARGET) $(INSTALL_DIR)
 
 load-testnet:
-	probe-run --chip $(CHIP) $(INSTALL_DIR)/demo_signer
+	probe-rs run --chip $(CHIP) $(INSTALL_DIR)/demo_signer
 
 rerun-testnet:
-	probe-run --chip $(CHIP) $(INSTALL_DIR)/demo_signer --no-flash
+	probe-rs attach --chip $(CHIP) $(INSTALL_DIR)/demo_signer
 
 .PHONY: build run rerun install-testnet load-testnet rerun-testnet
