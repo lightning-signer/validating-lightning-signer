@@ -478,6 +478,7 @@ impl Persist for FatJsonPersister {
                 0,
                 state_e.velocity_control.into(),
                 state_e.fee_velocity_control.into(),
+                state_e.dbid_high_water_mark.into(),
             );
             let entry = CoreNodeEntry {
                 key_derivation_style: e.key_derivation_style,

@@ -517,7 +517,7 @@ pub fn init_channel(setup: ChannelSetup, node: Arc<Node>) -> ChannelId {
         }
     }
     let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
-    node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
+    node.new_channel_with_id(channel_id.clone(), &node).expect("new_channel");
     let holder_shutdown_key_path = vec![];
     node.setup_channel(channel_id.clone(), None, setup, &holder_shutdown_key_path)
         .expect("ready channel");
@@ -770,7 +770,7 @@ pub fn test_chan_ctx_with_push_val(
         commitment_type: CommitmentType::StaticRemoteKey,
     };
 
-    node_ctx.node.new_channel(Some(channel_id.clone()), &node_ctx.node).expect("new_channel");
+    node_ctx.node.new_channel_with_id(channel_id.clone(), &node_ctx.node).expect("new_channel");
 
     // Make counterparty keys that match.
     let counterparty_keys = make_test_counterparty_keys(&node_ctx, &channel_id, channel_value_sat);
@@ -1850,7 +1850,7 @@ pub fn make_node_and_channel(
 ) -> (PublicKey, Arc<Node>, ChannelStub, [u8; 32]) {
     let (node_id, node, seed) = make_node();
 
-    let (_, channel) = node.new_channel(Some(channel_id), &Arc::clone(&node)).unwrap();
+    let (_, channel) = node.new_channel_with_id(channel_id, &Arc::clone(&node)).unwrap();
     (node_id, node, channel.unwrap().unwrap_stub().clone(), seed)
 }
 

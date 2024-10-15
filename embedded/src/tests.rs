@@ -187,8 +187,8 @@ pub fn test_lightning_signer(postscript: fn()) {
 
     assert_eq!(node.ecdh(&node1.get_id()), node1.ecdh(&node.get_id()));
 
-    let (channel_id, _) = node.new_channel(None, &node).unwrap();
-    let (channel_id1, _) = node1.new_channel(None, &node).unwrap();
+    let (channel_id, _) = node.new_channel(&node).unwrap();
+    let (channel_id1, _) = node1.new_channel(&node).unwrap();
     myprintln!("stub channel IDs: {} {}", channel_id, channel_id1);
 
     sign_funding(&node);

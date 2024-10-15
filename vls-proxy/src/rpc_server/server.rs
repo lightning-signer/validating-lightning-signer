@@ -48,7 +48,7 @@ pub async fn start_rpc_server(
     module.register_method(RpcMethods::Info.as_str(), |_, context| {
         info!("rpc_server: info");
         let height = context.get_chain_height();
-        let channels = context.channels().values().len() as u32;
+        let channels = context.get_channels().values().len() as u32;
         Ok::<_, ErrorObject>(InfoModel::new(height, channels, GIT_DESC.to_string()))
     })?;
 

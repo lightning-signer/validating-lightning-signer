@@ -78,7 +78,7 @@ mod tests {
     fn setup_channel_dual_channelid_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
-        node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
+        node.new_channel_with_id(channel_id.clone(), &node).expect("new_channel");
 
         // Issue setup_channel w/ an alternate id.
         let channel_id_x = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
@@ -119,7 +119,7 @@ mod tests {
     fn channel_stub_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
-        node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
+        node.new_channel_with_id(channel_id.clone(), &node).expect("new_channel");
 
         // with_channel should return not ready.
         let result: Result<(), Status> = node.with_channel(&channel_id, |_chan| {
@@ -190,7 +190,7 @@ mod tests {
 
         // Try and create the channel again.
         let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
-        let result = node.new_channel(Some(channel_id), &node);
+        let result = node.new_channel_with_id(channel_id, &node);
         let err = result.err().unwrap();
         assert_eq!(err.code(), Code::InvalidArgument);
         assert_eq!(err.message(), format!("channel already exists: {}", TEST_CHANNEL_ID[0]));
@@ -218,7 +218,7 @@ mod tests {
     fn setup_channel_unknown_holder_shutdown_script() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
-        node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
+        node.new_channel_with_id(channel_id.clone(), &node).expect("new_channel");
         let mut setup = make_test_channel_setup();
         setup.holder_shutdown_script =
             Some(hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565"));
@@ -235,7 +235,7 @@ mod tests {
     fn setup_channel_holder_shutdown_script_in_allowlist() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
-        node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
+        node.new_channel_with_id(channel_id.clone(), &node).expect("new_channel");
         let mut setup = make_test_channel_setup();
         setup.holder_shutdown_script =
             Some(hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565"));
@@ -250,7 +250,7 @@ mod tests {
     fn setup_channel_holder_shutdown_script_in_wallet() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
-        node.new_channel(Some(channel_id.clone()), &node).expect("new_channel");
+        node.new_channel_with_id(channel_id.clone(), &node).expect("new_channel");
         let mut setup = make_test_channel_setup();
         setup.holder_shutdown_script =
             Some(hex_script!("0014b76dd61e41b5ef052af21cda3260888c070bb9af"));

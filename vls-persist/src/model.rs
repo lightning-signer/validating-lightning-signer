@@ -71,6 +71,8 @@ pub struct NodeStateEntry {
     #[serde(default)]
     #[serde_as(as = "IfIsHumanReadable<_, Vec<Bytes>>")]
     pub preimages: Vec<[u8; 32]>,
+    #[serde(default)]
+    pub dbid_high_water_mark: u64,
     // TODO(devrandom): add routing control fields, once they stabilize
 }
 
@@ -88,12 +90,14 @@ impl From<&NodeState> for NodeStateEntry {
         let fee_velocity_control = state.fee_velocity_control.clone().into();
         // extract preimages from payments
         let preimages = state.payments.values().filter_map(|p| p.preimage.map(|p| p.0)).collect();
+        let dbid_high_water_mark = state.dbid_high_water_mark;
         NodeStateEntry {
             invoices,
             issued_invoices,
             velocity_control,
             fee_velocity_control,
             preimages,
+            dbid_high_water_mark,
         }
     }
 }

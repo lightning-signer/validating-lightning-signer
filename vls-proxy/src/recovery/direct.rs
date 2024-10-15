@@ -19,7 +19,7 @@ impl RecoveryKeys for DirectRecoveryKeys {
     fn iter(&self) -> Iter<Self::Signer> {
         let signers: Vec<_> = self
             .node
-            .channels()
+            .get_channels()
             .iter()
             .map(|(_id, channel)| Arc::clone(channel))
             .filter_map(|channel| {
