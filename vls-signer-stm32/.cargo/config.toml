@@ -1,6 +1,5 @@
 [target.thumbv7em-none-eabihf]
-# runner = 'probe-run --chip STM32F412ZGTx'
-runner = 'probe-run --chip STM32F413ZHTx'
+runner = 'probe-rs run --chip STM32F413ZHTx'
 rustflags = [
   "-C", "link-arg=-Tlink.x",
 ]
@@ -9,4 +8,4 @@ rustflags = [
 target = "thumbv7em-none-eabihf"
 
 [env]
-DEFMT_LOG = "info"
+DEFMT_LOG = "trace"
