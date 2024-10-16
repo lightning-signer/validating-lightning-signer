@@ -7,6 +7,7 @@ cache:
 
 variables:
   CARGO_HOME: "$CI_PROJECT_DIR/.cache/cargo"
+  VLS_REGISTRY: $CI_REGISTRY/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME
 
 before_script:
   - ls -al
@@ -135,7 +136,7 @@ rust-msrv-lss:
 embedded:
   tags: [ saas-linux-medium-amd64 ]
   stage: build
-  image: devrandom01/rust-qemu:nightly-1-84-2024-10-13
+  image: $VLS_REGISTRY/rust-qemu:nightly-1-84-2024-10-13
   variables:
     RUSTFLAGS: "-C link-arg=-Tlink.x"
     CARGO_TARGET_THUMBV7M_NONE_EABI_RUNNER: "qemu-system-arm -cpu cortex-m3 -machine mps2-an385 -nographic -semihosting-config enable=on,target=native -kernel"
@@ -145,7 +146,7 @@ embedded:
 demo-signer:
   tags: [ saas-linux-large-amd64 ]
   stage: build
-  image: devrandom01/rust-qemu:nightly-1-84-2024-10-13
+  image: $VLS_REGISTRY/rust-qemu:nightly-1-84-2024-10-13
   script:
     - (cd vls-signer-stm32 && cargo build --features developer --release --bin demo_signer)
     - (cd wasm && wasm-pack test --firefox --headless && cargo test)
