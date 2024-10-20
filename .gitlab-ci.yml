@@ -8,6 +8,7 @@ cache:
 variables:
   CARGO_HOME: "$CI_PROJECT_DIR/.cache/cargo"
   VLS_REGISTRY: $CI_REGISTRY/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME
+  RUST_QEMU_NIGHTLY_VERSION: "nightly-1-84-2024-10-13"
 
 before_script:
   - ls -al
@@ -136,20 +137,38 @@ rust-msrv-lss:
 embedded:
   tags: [ saas-linux-medium-amd64 ]
   stage: build
-  image: $VLS_REGISTRY/rust-qemu:nightly-1-84-2024-10-13
+  image: $VLS_REGISTRY/rust-qemu:$RUST_QEMU_NIGHTLY_VERSION
+  cache:
+    key: vls-embedded
+    paths:
+      - .cache/cargo
   variables:
     RUSTFLAGS: "-C link-arg=-Tlink.x"
     CARGO_TARGET_THUMBV7M_NONE_EABI_RUNNER: "qemu-system-arm -cpu cortex-m3 -machine mps2-an385 -nographic -semihosting-config enable=on,target=native -kernel"
   script:
     - cd embedded && cargo run --release --target thumbv7m-none-eabi
 
-demo-signer:
-  tags: [ saas-linux-large-amd64 ]
+stm32:
+  tags: [ saas-linux-medium-amd64 ]
   stage: build
-  image: $VLS_REGISTRY/rust-qemu:nightly-1-84-2024-10-13
+  image: $VLS_REGISTRY/rust-qemu:$RUST_QEMU_NIGHTLY_VERSION
+  cache:
+    key: vls-stm32
+    paths:
+      - .cache/cargo
   script:
-    - (cd vls-signer-stm32 && cargo build --features developer --release --bin demo_signer)
-    - (cd wasm && wasm-pack test --firefox --headless && cargo test)
+    - cd vls-signer-stm32 && cargo build --features developer --release --bin demo_signer
+
+wasm:
+  tags: [ saas-linux-medium-amd64 ]
+  stage: build
+  image: $VLS_REGISTRY/rust-qemu:$RUST_QEMU_NIGHTLY_VERSION
+  cache:
+    key: vls-wasm
+    paths:
+      - .cache/cargo
+  script:
+    - cd wasm && wasm-pack test --firefox --headless && cargo test
 
 coverage:
   tags: [ saas-linux-large-amd64 ]
