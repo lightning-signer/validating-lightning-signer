@@ -184,6 +184,10 @@ cargo-audit:
   tags: [ saas-linux-medium-amd64 ]
   stage: build
   image: rust:latest
+  cache:
+    key: vls-audit
+    paths:
+      - .cache/cargo
   script:
     - rustup component add rustfmt
     - cargo install --locked cargo-audit
