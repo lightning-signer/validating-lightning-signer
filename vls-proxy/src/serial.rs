@@ -28,9 +28,9 @@ use lightning_signer::bitcoin::secp256k1;
 use vls_protocol::model::DevSecret;
 #[cfg(feature = "developer")]
 use vls_protocol::msgs::HsmdDevPreinit2Options;
-use vls_protocol::{msgs, msgs::Message, msgs::SerialRequestHeader, Error};
 #[cfg(feature = "developer")]
 use vls_protocol::serde_bolt::WireString;
+use vls_protocol::{msgs, msgs::Message, msgs::SerialRequestHeader, Error};
 use vls_protocol_client::Error as ClientError;
 use vls_protocol_client::{ClientResult as Result, SignerPort};
 use vls_protocol_signer::vls_protocol;
@@ -232,13 +232,13 @@ impl<C: 'static + Client> SignerLoop<C> {
         let log_prefix = format!("{}/{}/{}", std::process::id(), client.id(), 0);
         let preapproval_cache = LruCache::new(NonZeroUsize::new(6).unwrap());
         Self {
-          client,
-          log_prefix,
-          serial,
-          client_id: None,
-          preapproval_cache,
-          #[cfg(feature = "developer")]
-          maybe_preinit: None
+            client,
+            log_prefix,
+            serial,
+            client_id: None,
+            preapproval_cache,
+            #[cfg(feature = "developer")]
+            maybe_preinit: None,
         }
     }
 

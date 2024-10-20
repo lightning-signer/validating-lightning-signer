@@ -16,9 +16,9 @@ use crate::error::{Error, Result};
 use crate::model::*;
 use crate::psbt::{PsbtWrapper, StreamedPSBT};
 use bitcoin_consensus_derive::{Decodable, Encodable};
-use bolt_derive::{ReadMessage, SerBolt};
 #[cfg(feature = "developer")]
 use bolt_derive::SerBoltTlvOptions;
+use bolt_derive::{ReadMessage, SerBolt};
 #[cfg(feature = "developer")]
 use lightning_signer::lightning;
 use lightning_signer::prelude::*;

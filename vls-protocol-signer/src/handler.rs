@@ -29,7 +29,8 @@ use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::key::XOnlyPublicKey;
 use lightning_signer::bitcoin::sighash::EcdsaSighashType;
 use lightning_signer::channel::{
-    ChannelBalance, ChannelBase, ChannelId, ChannelSetup, SlotInfo, SlotInfoVariant, TypedSignature, native_channel_id_from_oid
+    native_channel_id_from_oid, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, SlotInfo,
+    SlotInfoVariant, TypedSignature,
 };
 use lightning_signer::dbgvals;
 use lightning_signer::invoice::Invoice;
@@ -571,8 +572,12 @@ impl InitHandler {
                 let bip32 = self.node.get_account_extended_pubkey().encode();
                 let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
                 #[cfg(not(feature = "developer"))]
-                if m.dev_privkey.is_some() || m.dev_bip32_seed.is_some() || m.dev_channel_secrets.is_some() || m.dev_channel_secrets_shaseed.is_some() {
-                  return Err(Error::Protocol(ProtocolError::DeveloperField));
+                if m.dev_privkey.is_some()
+                    || m.dev_bip32_seed.is_some()
+                    || m.dev_channel_secrets.is_some()
+                    || m.dev_channel_secrets_shaseed.is_some()
+                {
+                    return Err(Error::Protocol(ProtocolError::DeveloperField));
                 }
                 assert!(
                     m.hsm_wire_min_version <= self.max_protocol_version,
@@ -634,17 +639,17 @@ impl InitHandler {
                 let bolt12_pubkey = self.node.get_bolt12_pubkey().serialize();
                 #[cfg(feature = "developer")]
                 {
-                  let allowlist: Vec<_> = m
-                      .dev_allowlist
-                      .iter()
-                      .map(|ws| String::from_utf8(ws.0.clone()).expect("utf8"))
-                      .collect();
-                  self.node.add_allowlist(&allowlist)?;
+                    let allowlist: Vec<_> = m
+                        .dev_allowlist
+                        .iter()
+                        .map(|ws| String::from_utf8(ws.0.clone()).expect("utf8"))
+                        .collect();
+                    self.node.add_allowlist(&allowlist)?;
                 }
 
                 #[cfg(not(feature = "developer"))]
                 if m.dev_allowlist.len() != 0 || m.dev_seed.is_some() {
-                  return Err(Error::Protocol(ProtocolError::DeveloperField));
+                    return Err(Error::Protocol(ProtocolError::DeveloperField));
                 }
                 self.protocol_version = Some(4);
                 Ok((

@@ -77,7 +77,6 @@ rust-latest:
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
-    - rustup component add rustfmt
     - cargo test
     # ensure vls-persist builds with no-std
     - cargo build -p vls-persist --no-default-features --features no-std,kvv
@@ -100,7 +99,6 @@ rust-latest-extras:
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
-    - rustup component add rustfmt
     # test LSS
     - (cd lightning-storage-server && cargo test)
 
@@ -116,7 +114,6 @@ rust-msrv:
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
-    - rustup component add rustfmt
     - cargo test
 
 rust-msrv-lss:
@@ -131,7 +128,6 @@ rust-msrv-lss:
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
-    - rustup component add rustfmt
     - (cd lightning-storage-server && cargo test)
 
 embedded:
@@ -183,7 +179,6 @@ coverage:
   coverage: '/^CORE_LINE_COVERAGE: \d+.\d+$/'
   script:
     - rustup show
-    - rustup component add rustfmt
     - cargo install cargo-llvm-cov
     - apt-get update
     - apt-get install -y protobuf-compiler
@@ -207,9 +202,8 @@ cargo-audit:
   cache:
     key: vls-audit
     paths:
-      - .cache/cargo
+      - .cache/cargo/bin
   script:
-    - rustup component add rustfmt
     - cargo install --locked cargo-audit
     - cargo audit
     - (cd lightning-storage-server && cargo audit)
@@ -234,3 +228,21 @@ changelog:
           exit 1;
         fi
       fi
+
+cargo-fmt:
+  tags: [ saas-linux-small-amd64 ]
+  stage: build
+  image: rust:latest
+  cache:
+    key: vls-fmt
+    paths:
+      - .cache/rustup
+      - .cache/cargo
+  variables:
+    RUSTUP_HOME: "$CI_PROJECT_DIR/.cache/rustup"
+  script:
+    # rustup otherwise searches for its own binary in CARGO_HOME which fails
+    - rustup set auto-self-update disable
+    - rustup toolchain install nightly-2024-10-14
+    - rustup component add --toolchain nightly-2024-10-14 rustfmt
+    - cargo +nightly-2024-10-14 fmt --check

@@ -36,7 +36,7 @@ use lightning_signer::bitcoin::absolute::LockTime;
 use lightning_signer::bitcoin::sighash::EcdsaSighashType;
 use lightning_signer::bitcoin::{self, ScriptBuf, Witness};
 use lightning_signer::channel::CommitmentType;
-use lightning_signer::channel::{oid_from_ldk_channel_id, ldk_channel_id_from_oid};
+use lightning_signer::channel::{ldk_channel_id_from_oid, oid_from_ldk_channel_id};
 use lightning_signer::lightning;
 use lightning_signer::lightning::sign::HTLCDescriptor;
 use lightning_signer::lightning::sign::OutputSpender;
