@@ -167,6 +167,7 @@ wasm:
     key: vls-wasm
     paths:
       - .cache/cargo
+      - wasm/target
   script:
     - cd wasm && wasm-pack test --firefox --headless && cargo test
 
