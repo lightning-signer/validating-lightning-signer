@@ -77,6 +77,8 @@ rust-latest:
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
+    # check if Cargo.lock is upto date
+    - cargo update -w --locked
     - cargo test
     # ensure vls-persist builds with no-std
     - cargo build -p vls-persist --no-default-features --features no-std,kvv
@@ -100,7 +102,9 @@ rust-latest-extras:
     - apt-get update
     - apt-get install -y protobuf-compiler
     # test LSS
-    - (cd lightning-storage-server && cargo test)
+    - cd lightning-storage-server
+    - cargo update -w --locked
+    - cargo test
 
 rust-msrv:
   tags: [ saas-linux-large-amd64 ]
@@ -142,7 +146,9 @@ embedded:
     RUSTFLAGS: "-C link-arg=-Tlink.x"
     CARGO_TARGET_THUMBV7M_NONE_EABI_RUNNER: "qemu-system-arm -cpu cortex-m3 -machine mps2-an385 -nographic -semihosting-config enable=on,target=native -kernel"
   script:
-    - cd embedded && cargo run --release --target thumbv7m-none-eabi
+    - cd embedded
+    - cargo update -w --locked
+    - cargo run --release --target thumbv7m-none-eabi
 
 stm32:
   tags: [ saas-linux-medium-amd64 ]
@@ -153,7 +159,9 @@ stm32:
     paths:
       - .cache/cargo
   script:
-    - cd vls-signer-stm32 && cargo build --features developer --release --bin demo_signer
+    - cd vls-signer-stm32
+    - cargo update -w --locked
+    - cargo build --features developer --release --bin demo_signer
 
 wasm:
   tags: [ saas-linux-medium-amd64 ]
@@ -165,7 +173,9 @@ wasm:
       - .cache/cargo
       - wasm/target
   script:
-    - cd wasm && wasm-pack test --firefox --headless && cargo test
+    - cd wasm
+    - cargo update -w --locked
+    - wasm-pack test --firefox --headless && cargo test
 
 coverage:
   tags: [ saas-linux-large-amd64 ]
