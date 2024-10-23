@@ -8,6 +8,7 @@ cache:
 variables:
   CARGO_HOME: "$CI_PROJECT_DIR/.cache/cargo"
   VLS_REGISTRY: $CI_REGISTRY/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME
+  RUST_QEMU_NIGHTLY_VERSION: "nightly-1-84-2024-10-13"
 
 before_script:
   - ls -al
@@ -76,7 +77,8 @@ rust-latest:
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
-    - rustup component add rustfmt
+    # check if Cargo.lock is upto date
+    - cargo update -w --locked
     - cargo test
     # ensure vls-persist builds with no-std
     - cargo build -p vls-persist --no-default-features --features no-std,kvv
@@ -99,9 +101,10 @@ rust-latest-extras:
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
-    - rustup component add rustfmt
     # test LSS
-    - (cd lightning-storage-server && cargo test)
+    - cd lightning-storage-server
+    - cargo update -w --locked
+    - cargo test
 
 rust-msrv:
   tags: [ saas-linux-large-amd64 ]
@@ -115,7 +118,6 @@ rust-msrv:
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
-    - rustup component add rustfmt
     - cargo test
 
 rust-msrv-lss:
@@ -130,26 +132,50 @@ rust-msrv-lss:
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
-    - rustup component add rustfmt
     - (cd lightning-storage-server && cargo test)
 
 embedded:
   tags: [ saas-linux-medium-amd64 ]
   stage: build
-  image: $VLS_REGISTRY/rust-qemu:nightly-1-84-2024-10-13
+  image: $VLS_REGISTRY/rust-qemu:$RUST_QEMU_NIGHTLY_VERSION
+  cache:
+    key: vls-embedded
+    paths:
+      - .cache/cargo
   variables:
     RUSTFLAGS: "-C link-arg=-Tlink.x"
     CARGO_TARGET_THUMBV7M_NONE_EABI_RUNNER: "qemu-system-arm -cpu cortex-m3 -machine mps2-an385 -nographic -semihosting-config enable=on,target=native -kernel"
   script:
-    - cd embedded && cargo run --release --target thumbv7m-none-eabi
+    - cd embedded
+    - cargo update -w --locked
+    - cargo run --release --target thumbv7m-none-eabi
 
-demo-signer:
-  tags: [ saas-linux-large-amd64 ]
+stm32:
+  tags: [ saas-linux-medium-amd64 ]
   stage: build
-  image: $VLS_REGISTRY/rust-qemu:nightly-1-84-2024-10-13
+  image: $VLS_REGISTRY/rust-qemu:$RUST_QEMU_NIGHTLY_VERSION
+  cache:
+    key: vls-stm32
+    paths:
+      - .cache/cargo
   script:
-    - (cd vls-signer-stm32 && cargo build --features developer --release --bin demo_signer)
-    - (cd wasm && wasm-pack test --firefox --headless && cargo test)
+    - cd vls-signer-stm32
+    - cargo update -w --locked
+    - cargo build --features developer --release --bin demo_signer
+
+wasm:
+  tags: [ saas-linux-medium-amd64 ]
+  stage: build
+  image: $VLS_REGISTRY/rust-qemu:$RUST_QEMU_NIGHTLY_VERSION
+  cache:
+    key: vls-wasm
+    paths:
+      - .cache/cargo
+      - wasm/target
+  script:
+    - cd wasm
+    - cargo update -w --locked
+    - wasm-pack test --firefox --headless && cargo test
 
 coverage:
   tags: [ saas-linux-large-amd64 ]
@@ -163,7 +189,6 @@ coverage:
   coverage: '/^CORE_LINE_COVERAGE: \d+.\d+$/'
   script:
     - rustup show
-    - rustup component add rustfmt
     - cargo install cargo-llvm-cov
     - apt-get update
     - apt-get install -y protobuf-compiler
@@ -184,8 +209,11 @@ cargo-audit:
   tags: [ saas-linux-medium-amd64 ]
   stage: build
   image: rust:latest
+  cache:
+    key: vls-audit
+    paths:
+      - .cache/cargo/bin
   script:
-    - rustup component add rustfmt
     - cargo install --locked cargo-audit
     - cargo audit
     - (cd lightning-storage-server && cargo audit)
@@ -210,3 +238,21 @@ changelog:
           exit 1;
         fi
       fi
+
+cargo-fmt:
+  tags: [ saas-linux-small-amd64 ]
+  stage: build
+  image: rust:latest
+  cache:
+    key: vls-fmt
+    paths:
+      - .cache/rustup
+      - .cache/cargo
+  variables:
+    RUSTUP_HOME: "$CI_PROJECT_DIR/.cache/rustup"
+  script:
+    # rustup otherwise searches for its own binary in CARGO_HOME which fails
+    - rustup set auto-self-update disable
+    - rustup toolchain install nightly-2024-10-14
+    - rustup component add --toolchain nightly-2024-10-14 rustfmt
+    - cargo +nightly-2024-10-14 fmt --check

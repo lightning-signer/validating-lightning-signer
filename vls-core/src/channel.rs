@@ -2773,7 +2773,7 @@ mod tests {
     use lightning::ln::PaymentHash;
     use lightning::util::ser::Writeable;
 
-    use crate::channel::{oid_from_ldk_channel_id, ldk_channel_id_from_oid, ChannelBase};
+    use crate::channel::{ldk_channel_id_from_oid, oid_from_ldk_channel_id, ChannelBase};
     use crate::util::test_utils::{
         init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
     };

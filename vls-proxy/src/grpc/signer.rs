@@ -51,8 +51,8 @@ use heapmon::{self, HeapMon, SummaryOrder};
 use lightning_storage_server::client::Auth;
 #[cfg(feature = "heapmon_requests")]
 use std::alloc::System;
-use std::fmt::Debug;
 use std::env;
+use std::fmt::Debug;
 use tokio::sync::mpsc::Sender;
 use tonic::Streaming;
 use url::Url;

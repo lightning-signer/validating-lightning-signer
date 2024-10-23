@@ -49,8 +49,8 @@ use serde_bolt::to_vec;
 use crate::chain::tracker::ChainTracker;
 use crate::chain::tracker::Headers;
 use crate::channel::{
-    Channel, ChannelBalance, ChannelBase, ChannelCommitmentPointProvider, ChannelId, ChannelSetup,
-    ChannelSlot, ChannelStub, SlotInfo, native_channel_id_from_oid
+    native_channel_id_from_oid, Channel, ChannelBalance, ChannelBase,
+    ChannelCommitmentPointProvider, ChannelId, ChannelSetup, ChannelSlot, ChannelStub, SlotInfo,
 };
 use crate::invoice::{Invoice, InvoiceAttributes};
 use crate::monitor::{ChainMonitor, ChainMonitorBase};
@@ -955,7 +955,7 @@ impl SignedHeartbeat {
             Ok(signature) => {
                 let xpubkey = XOnlyPublicKey::from(pubkey.clone());
                 secp.verify_schnorr(&signature, &self.sighash(), &xpubkey).is_ok()
-            },
+            }
             Err(_) => false,
         }
     }
@@ -1604,7 +1604,7 @@ impl Node {
     fn find_or_create_channel(
         &self,
         channel_id: ChannelId,
-        arc_self: &Arc<Node>
+        arc_self: &Arc<Node>,
     ) -> Result<(ChannelId, Option<ChannelSlot>), Status> {
         let mut channels = self.get_channels();
         let policy = self.policy();
@@ -2789,20 +2789,16 @@ impl Node {
                 node_state.dbid_high_water_mark = oid;
                 self.persister
                     .update_node(&self.get_id(), &node_state)
-                    .unwrap_or_else(|err| {
-                        panic!("could not update node state: {:?}", err)
-                    });
+                    .unwrap_or_else(|err| panic!("could not update node state: {:?}", err));
             }
         } else {
             debug!("forget_channel didn't find {}", channel_id);
         }
         if stub_found {
             channels.remove(&channel_id).unwrap();
-            self.persister
-                .delete_channel(&self.get_id(), &channel_id)
-                .unwrap_or_else(|err| {
-                    panic!("could not delete channel {}: {:?}", &channel_id, err)
-                });
+            self.persister.delete_channel(&self.get_id(), &channel_id).unwrap_or_else(|err| {
+                panic!("could not delete channel {}: {:?}", &channel_id, err)
+            });
         }
         return Ok(());
     }
@@ -2876,7 +2872,10 @@ impl Node {
     /// Log channel information
     pub fn chaninfo(&self) -> Vec<SlotInfo> {
         // Gather the entries
-        self.get_channels().iter().map(|(_, slot_arc)| slot_arc.lock().unwrap().chaninfo()).collect()
+        self.get_channels()
+            .iter()
+            .map(|(_, slot_arc)| slot_arc.lock().unwrap().chaninfo())
+            .collect()
     }
 }
 
