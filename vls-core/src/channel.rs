@@ -2534,6 +2534,16 @@ impl Channel {
         )
     }
 
+    pub fn sign_holder_htlc_tx_phase2(&self,
+        tx: &Transaction,
+        commitment_number: u64,
+        feerate: u32,
+        is_offered: bool,
+        cltv_expiry: u32,
+        payment_hash: PaymentHash) -> Result<TypedSignature, Status> {
+        todo!()
+    }
+
     /// Phase 1
     pub fn sign_counterparty_htlc_tx(
         &self,

@@ -814,10 +814,9 @@ impl Handler for RootHandler {
                 } else {
                     // We ignore everything in the message other than the commitment number,
                     // since the signer already has this info.
-                    self.node
-                        .with_channel(&channel_id, |chan| {
-                            chan.sign_holder_commitment_tx_phase2(m.commitment_number)
-                        })?
+                    self.node.with_channel(&channel_id, |chan| {
+                        chan.sign_holder_commitment_tx_phase2(m.commitment_number)
+                    })?
                 };
                 Ok(Box::new(msgs::SignCommitmentTxReply { signature: to_bitcoin_sig(sig) }))
             }
@@ -1252,6 +1251,19 @@ impl Handler for ChannelHandler {
 
                 Ok(Box::new(msgs::SignTxReply { signature: typed_to_bitcoin_sig(sig) }))
             }
+            Message::SignLocalHtlcTx2(m) => {
+                let signature = self.node.with_channel(&self.channel_id, |chan| {
+                    chan.sign_holder_htlc_tx_phase2(
+                        &m.tx.0,
+                        m.per_commitment_number,
+                        m.feerate_per_kw,
+                        m.offered,
+                        m.cltv_expiry,
+                        PaymentHash(m.payment_hash.0),
+                    )
+                })?;
+                Ok(Box::new(msgs::SignTxReply { signature: typed_to_bitcoin_sig(signature) }))
+            }
             Message::SignRemoteCommitmentTx(m) => {
                 let psbt = &m.psbt.inner;
                 let witscripts = extract_psbt_witscripts(&psbt);
@@ -1497,9 +1509,7 @@ impl Handler for ChannelHandler {
                 let sig = self.node.with_channel(&self.channel_id, |chan| {
                     chan.sign_holder_commitment_tx_phase2(m.commitment_number)
                 })?;
-                Ok(Box::new(msgs::SignCommitmentTxReply {
-                    signature: to_bitcoin_sig(sig),
-                }))
+                Ok(Box::new(msgs::SignCommitmentTxReply { signature: to_bitcoin_sig(sig) }))
             }
             Message::ValidateRevocation(m) => {
                 let revoke_num = m.commitment_number;
@@ -1630,7 +1640,8 @@ fn sign_local_htlc_tx(
     let input = input as usize;
     let htlc_amount_sat =
         psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
-    let output_witscript = psbt.outputs[0].witness_script.as_ref().expect("output witscript");
+    let output_witscript: &ScriptBuf =
+        psbt.outputs[0].witness_script.as_ref().expect("output witscript");
     let sig = node.with_channel(channel_id, |chan| {
         chan.sign_holder_htlc_tx(
             &tx,

@@ -904,6 +904,19 @@ pub struct SignRemoteHtlcTx {
     pub option_anchors: bool,
 }
 
+/// LDK message to sign a local HTLC transaction.
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(20)]
+pub struct SignLocalHtlcTx2 {
+    pub tx: WithSize<Transaction>,
+    pub input: u64,
+    pub per_commitment_number: u64,
+    pub feerate_per_kw: u32,
+    pub offered: bool,
+    pub cltv_expiry: u32,
+    pub payment_hash: Sha256,
+}
+
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(14)]
@@ -1169,6 +1182,7 @@ pub enum Message {
     NewChannel(NewChannel),
     NewChannelReply(NewChannelReply),
     SignRemoteHtlcTx(SignRemoteHtlcTx),
+    SignLocalHtlcTx2(SignLocalHtlcTx2),
     SignPenaltyToUs(SignPenaltyToUs),
     SignAnyPenaltyToUs(SignAnyPenaltyToUs),
     SignSpliceTx(SignSpliceTx),

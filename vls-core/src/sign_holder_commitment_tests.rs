@@ -223,8 +223,7 @@ mod tests {
                 tx: &tx.transaction,
             });
 
-            let sig =
-                chan.sign_holder_commitment_tx_phase2(commit_tx_ctx.commit_num)?;
+            let sig = chan.sign_holder_commitment_tx_phase2(commit_tx_ctx.commit_num)?;
 
             let build_feerate =
                 if chan_ctx.setup.is_zero_fee_htlc() { 0 } else { commit_tx_ctx.feerate_per_kw };

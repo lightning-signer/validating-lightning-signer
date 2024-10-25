@@ -49,11 +49,19 @@ use vls_protocol::model::{
     Basepoints, BitcoinSignature, CloseInfo, DisclosedSecret, Htlc, PubKey, Utxo,
 };
 use vls_protocol::msgs::{
-    DeBolt, Ecdh, EcdhReply, GetChannelBasepoints, GetChannelBasepointsReply, GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply, GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, SerBolt, SetupChannel, SetupChannelReply, SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxReply, SignCommitmentTxWithHtlcsReply, SignGossipMessage, SignGossipMessageReply, SignInvoice, SignInvoiceReply, SignLocalCommitmentTx2, SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal, SignWithdrawalReply, ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply
+    DeBolt, Ecdh, EcdhReply, GetChannelBasepoints, GetChannelBasepointsReply,
+    GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply,
+    GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, SignLocalHtlcTx2, NewChannel,
+    NewChannelReply, SerBolt, SetupChannel, SetupChannelReply, SignChannelAnnouncement,
+    SignChannelAnnouncementReply, SignCommitmentTxReply, SignCommitmentTxWithHtlcsReply,
+    SignGossipMessage, SignGossipMessageReply, SignInvoice, SignInvoiceReply,
+    SignLocalCommitmentTx2, SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply,
+    SignWithdrawal, SignWithdrawalReply, ValidateCommitmentTx2, ValidateCommitmentTxReply,
+    ValidateRevocation, ValidateRevocationReply,
 };
 #[cfg(feature = "developer")]
 use vls_protocol::msgs::{HsmdDevPreinit, HsmdDevPreinitReply};
-use vls_protocol::serde_bolt::{Array, ArrayBE, Octets, WireString};
+use vls_protocol::serde_bolt::{Array, ArrayBE, Octets, WireString, WithSize};
 use vls_protocol::{model, Error as ProtocolError};
 use vls_protocol_signer::util::commitment_type_to_channel_type;
 
@@ -260,12 +268,23 @@ impl EcdsaChannelSigner for SignerClient {
 
     fn sign_holder_htlc_transaction(
         &self,
-        _htlc_tx: &Transaction,
-        _input: usize,
-        _htlc_descriptor: &HTLCDescriptor,
+        htlc_tx: &Transaction,
+        input: usize,
+        htlc_descriptor: &HTLCDescriptor,
         _secp_ctx: &Secp256k1<All>,
     ) -> Result<Signature, ()> {
-        todo!("sign_holder_htlc_transaction - #381")
+        let htlc = &htlc_descriptor.htlc;
+        let message = SignLocalHtlcTx2 {
+            per_commitment_number: htlc_descriptor.per_commitment_number,
+            feerate_per_kw: htlc_descriptor.feerate_per_kw,
+            offered: htlc.offered,
+            cltv_expiry: htlc.cltv_expiry,
+            tx: WithSize(htlc_tx.clone()),
+            input: input as u64,
+            payment_hash: model::Sha256(htlc.payment_hash.0),
+        };
+        let result: SignTxReply = self.call(message).map_err(|_| ())?;
+        Ok(Signature::from_compact(&result.signature.signature.0).unwrap())
     }
 
     #[allow(unused)]
