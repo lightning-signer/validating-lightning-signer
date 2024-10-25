@@ -1,0 +1,18 @@
+#!/bin/bash
+
+set -e
+set -x
+
+CARGO="cargo +nightly-2024-10-14"
+
+# Note that some of these need additional cargo components installed for build - see respective READMEs
+
+$CARGO fmt --all $1
+
+(cd lightning-storage-server && $CARGO fmt $1)
+
+(cd vls-signer-stm32 && $CARGO fmt $1)
+
+(cd embedded && $CARGO fmt $1)
+(cd wasm && $CARGO fmt $1)
+(cd fuzz && $CARGO fmt $1)

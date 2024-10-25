@@ -42,7 +42,8 @@ impl Client {
 
         let response = client.info(info_request).await?.into_inner();
         debug!("info result {:?}", response);
-        let pubkey = PublicKey::from_slice(&response.server_id).map_err(|_| ClientError::InvalidResponse)?;
+        let pubkey =
+            PublicKey::from_slice(&response.server_id).map_err(|_| ClientError::InvalidResponse)?;
         let version = response.version;
         Ok((pubkey, version))
     }
@@ -79,7 +80,11 @@ impl Client {
         Ok((kvs, response.hmac))
     }
 
-    pub async fn put(&mut self, kvs: Vec<(String, Value)>, client_hmac: &[u8]) -> Result<Vec<u8>, ClientError> {
+    pub async fn put(
+        &mut self,
+        kvs: Vec<(String, Value)>,
+        client_hmac: &[u8],
+    ) -> Result<Vec<u8>, ClientError> {
         let kvs_proto = kvs
             .into_iter()
             .map(|(k, v)| proto::KeyValue {
@@ -175,14 +180,13 @@ impl PrivClient {
         let server_hmac = compute_shared_hmac(&self.auth.shared_secret, &[0x02], &kvs);
 
         match self.client.put(kvs, &client_hmac).await {
-            Ok(received_server_hmac) => {
+            Ok(received_server_hmac) =>
                 if received_server_hmac == server_hmac {
-                    return Ok(())
+                    return Ok(());
                 } else {
                     error!("put hmac mismatch");
-                    return Err(ClientError::InvalidServerHmac())
-                }
-            },
+                    return Err(ClientError::InvalidServerHmac());
+                },
             Err(ClientError::PutConflict(mut conflicts)) => {
                 remove_and_check_hmacs(&hmac_secret, &mut conflicts)?;
                 error!("put conflicts {:?}", conflicts);

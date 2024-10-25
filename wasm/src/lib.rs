@@ -11,8 +11,8 @@ use log::LevelFilter;
 use wasm_bindgen::prelude::*;
 use web_sys;
 
-use lightning_signer::hex;
 use lightning_signer::channel::{ChannelId, ChannelSetup, CommitmentType};
+use lightning_signer::hex;
 use lightning_signer::node::{Node, NodeConfig, NodeServices};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
@@ -265,7 +265,13 @@ pub fn make_node() -> JSNode {
     let persister: Arc<dyn Persist> = Arc::new(DummyPersister);
     let validator_factory = Arc::new(SimpleValidatorFactory::new());
     let clock = Arc::new(ManualClock::new(Duration::ZERO));
-    let services = NodeServices { validator_factory, starting_time_factory, persister, clock, trusted_oracle_pubkeys: vec![] };
+    let services = NodeServices {
+        validator_factory,
+        starting_time_factory,
+        persister,
+        clock,
+        trusted_oracle_pubkeys: vec![],
+    };
     let node = Node::new(config, &seed, vec![], services);
     JSNode { node: Arc::new(node) }
 }

@@ -47,7 +47,13 @@ fn alloc_error(_layout: Layout) -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     let loc = info.location().unwrap();
-    hprintln!("panic {:?} occurred in file '{}' at line {}", info.message(), loc.file(), loc.line()).unwrap();
+    hprintln!(
+        "panic {:?} occurred in file '{}' at line {}",
+        info.message(),
+        loc.file(),
+        loc.line()
+    )
+    .unwrap();
     debug::exit(debug::EXIT_FAILURE);
     loop {}
 }
