@@ -3,13 +3,13 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::time::Duration;
 
+use bitcoin::absolute::LockTime;
 use bitcoin::bech32::{u5, FromBase32, ToBase32};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Network, OutPoint, PrivateKey, Txid, Witness};
 use bitcoin::{ScriptBuf, Sequence, TxIn, TxOut};
-use bitcoin::absolute::LockTime;
 #[cfg(feature = "device")]
 use cortex_m_semihosting::hprintln;
 use lightning::ln::chan_utils::ChannelPublicKeys;
@@ -102,12 +102,7 @@ pub fn make_test_funding_tx_with_ins_outs(
     inputs: Vec<TxIn>,
     outputs: Vec<TxOut>,
 ) -> bitcoin::Transaction {
-    bitcoin::Transaction {
-        version: 2,
-        lock_time: LockTime::ZERO,
-        input: inputs,
-        output: outputs,
-    }
+    bitcoin::Transaction { version: 2, lock_time: LockTime::ZERO, input: inputs, output: outputs }
 }
 
 pub fn make_test_channel_setup(
@@ -181,7 +176,7 @@ pub fn test_lightning_signer(postscript: fn()) {
         starting_time_factory: starting_time_factory2,
         persister,
         clock,
-        trusted_oracle_pubkeys: vec![]
+        trusted_oracle_pubkeys: vec![],
     };
     let node1 = Arc::new(Node::new(config, &seed1, Vec::new(), services2));
 

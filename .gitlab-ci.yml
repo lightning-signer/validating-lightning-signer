@@ -255,4 +255,4 @@ cargo-fmt:
     - rustup set auto-self-update disable
     - rustup toolchain install nightly-2024-10-14
     - rustup component add --toolchain nightly-2024-10-14 rustfmt
-    - cargo +nightly-2024-10-14 fmt --check
+    - ./scripts/fmt-all --check
