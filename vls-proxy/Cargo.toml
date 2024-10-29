@@ -19,7 +19,7 @@ debug = ["vls-core/debug", "vls-protocol-signer/debug"]
 system-test = ["serde_json", "tempfile", "vls-core/test_utils"]
 heapmon_requests = []
 otlp = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "opentelemetry-semantic-conventions", "tracing-opentelemetry"]
-developer = ["vls-protocol/developer", "vls-protocol-signer/developer"]
+developer = ["vls-protocol/developer", "vls-protocol-signer/developer", "vls-protocol-client/developer"]
 
 [dependencies]
 vls-core = { path = "../vls-core", version = "0.12.0", features = ["use_backtrace"] }

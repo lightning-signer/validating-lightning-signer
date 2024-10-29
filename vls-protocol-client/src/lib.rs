@@ -442,15 +442,38 @@ pub struct KeysManagerClient {
 
 impl KeysManagerClient {
     /// Create a new VLS client with the given transport
-    pub fn new(transport: Arc<dyn Transport>, network: String) -> Self {
+    pub fn new(
+        transport: Arc<dyn Transport>,
+        network: String,
+        key_derivation_style: Option<KeyDerivationStyle>,
+        dev_allowlist: Option<Array<WireString>>,
+    ) -> Self {
         let mut rng = OsRng;
         let mut key_material_bytes = [0; 32];
         rng.fill_bytes(&mut key_material_bytes);
 
+        let key_derivation_style = key_derivation_style.unwrap_or(KeyDerivationStyle::Native);
+
+        #[cfg(not(feature = "developer"))]
+        assert!(dev_allowlist.is_none(), "dev_allowlist is only available in developer mode");
+
+        #[cfg(feature = "developer")]
+        if let Some(allowlist) = dev_allowlist {
+            use vls_protocol::msgs::{HsmdDevPreinit, HsmdDevPreinitReply};
+            let preinit_message = HsmdDevPreinit {
+                derivation_style: key_derivation_style as u8,
+                network_name: WireString(network.clone().into_bytes()),
+                seed: None,
+                allowlist,
+            };
+            let _: HsmdDevPreinitReply =
+                node_call(&*transport, preinit_message).expect("HsmdDevPreinit should succeed");
+        }
+
         let init_message = HsmdInit2 {
-            derivation_style: KeyDerivationStyle::Native as u8,
-            dev_seed: None,
+            derivation_style: key_derivation_style as u8,
             network_name: WireString(network.into_bytes()),
+            dev_seed: None,
             dev_allowlist: Array::new(),
         };
         let result: HsmdInit2Reply = node_call(&*transport, init_message).expect("HsmdInit");
