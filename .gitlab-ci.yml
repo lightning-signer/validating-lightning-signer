@@ -212,7 +212,7 @@ cargo-audit:
   cache:
     key: vls-audit
     paths:
-      - .cache/cargo/bin
+      - .cache/cargo
   script:
     - cargo install --locked cargo-audit
     - cargo audit
