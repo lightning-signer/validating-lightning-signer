@@ -58,6 +58,8 @@ use vls_protocol::msgs::{
     SignTxReply, SignWithdrawal, SignWithdrawalReply, ValidateCommitmentTx2,
     ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply,
 };
+#[cfg(feature = "developer")]
+use vls_protocol::msgs::{HsmdDevPreinit, HsmdDevPreinitReply};
 use vls_protocol::serde_bolt::{Array, ArrayBE, Octets, WireString};
 use vls_protocol::{model, Error as ProtocolError};
 use vls_protocol_signer::util::commitment_type_to_channel_type;
@@ -459,7 +461,6 @@ impl KeysManagerClient {
 
         #[cfg(feature = "developer")]
         if let Some(allowlist) = dev_allowlist {
-            use vls_protocol::msgs::{HsmdDevPreinit, HsmdDevPreinitReply};
             let preinit_message = HsmdDevPreinit {
                 derivation_style: key_derivation_style as u8,
                 network_name: WireString(network.clone().into_bytes()),
