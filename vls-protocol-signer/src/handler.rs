@@ -369,8 +369,8 @@ impl HandlerBuilder {
 }
 
 impl RootHandler {
-    fn channel_id(node_id: &PubKey, dbid: u64) -> ChannelId {
-        native_channel_id_from_oid(dbid, &node_id.0)
+    fn channel_id(peer_node_id: &PubKey, dbid: u64) -> ChannelId {
+        native_channel_id_from_oid(dbid, &peer_node_id.0)
     }
 
     /// Log channel information
@@ -729,7 +729,7 @@ impl Handler for RootHandler {
                 Ok(Box::new(msgs::EcdhReply { secret: Secret(secret) }))
             }
             Message::NewChannel(m) => {
-                self.node.new_channel_with_dbid(m.dbid, &self.node)?;
+                self.node.new_channel_from_seed(m.dbid, &m.node_id.0, &self.node)?;
                 Ok(Box::new(msgs::NewChannelReply {}))
             }
             Message::ForgetChannel(m) => {

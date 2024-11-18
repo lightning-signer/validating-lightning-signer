@@ -1563,7 +1563,8 @@ impl Node {
         self.find_or_create_channel(channel_id, arc_self)
     }
 
-    /// Create a new channel from a seed identifier (aka a dbid)
+    /// Create a new channel from a seed identifier (aka a dbid) and
+    /// a peer node id
     ///
     /// The seed id must never be reused as revocation secrets may
     /// be publicly known. Rather than store all historical ids,
@@ -1577,16 +1578,17 @@ impl Node {
     ///
     /// If the seed id is not monotonic the method returns an error.
     /// Otherwise, it returns the new channel id and stub.
-    pub fn new_channel_with_dbid(
+    pub fn new_channel_from_seed(
         &self,
         dbid: u64,
+        peer_node_id: &[u8; 33], // FIXME this should be properly typed as a PubKey from the vls-protocol crate
         arc_self: &Arc<Node>,
     ) -> Result<(ChannelId, Option<ChannelSlot>), Status> {
         if self.get_state().dbid_high_water_mark >= dbid {
             return Err(Status::invalid_argument("dbid not above the high water mark"));
         }
 
-        let channel_id = native_channel_id_from_oid(dbid, &self.get_id().serialize());
+        let channel_id = native_channel_id_from_oid(dbid, peer_node_id);
         self.find_or_create_channel(channel_id, arc_self)
     }
 
@@ -3057,8 +3059,9 @@ mod tests {
     fn new_channel_with_dbid_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let dbid: u64 = 1234;
+        let peer_node_id: [u8; 33] = [0; 33];
 
-        let (channel_id, _) = node.new_channel_with_dbid(dbid, &node).unwrap();
+        let (channel_id, _) = node.new_channel_from_seed(dbid, &peer_node_id, &node).unwrap();
         assert!(node.get_channel(&channel_id).is_ok());
     }
 
@@ -3066,11 +3069,12 @@ mod tests {
     fn new_channel_with_dbid_should_fail_for_forgotten_channel_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let dbid = 1234;
+        let peer_node_id: [u8; 33] = [0; 33];
 
-        let (channel_id, _) = node.new_channel_with_dbid(dbid, &node).unwrap();
+        let (channel_id, _) = node.new_channel_from_seed(dbid, &peer_node_id, &node).unwrap();
         let _ = node.forget_channel(&channel_id);
 
-        let res = node.new_channel_with_dbid(dbid, &node);
+        let res = node.new_channel_from_seed(dbid, &peer_node_id, &node);
         assert!(res.is_err());
     }
 
@@ -3078,11 +3082,12 @@ mod tests {
     fn new_channel_with_dbid_should_fail_for_dbid_below_previously_forgotten_dbid_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let dbid = 1234;
+        let peer_node_id: [u8; 33] = [0; 33];
 
-        let (channel_id, _) = node.new_channel_with_dbid(dbid, &node).unwrap();
+        let (channel_id, _) = node.new_channel_from_seed(dbid, &peer_node_id, &node).unwrap();
         let _ = node.forget_channel(&channel_id);
 
-        let res = node.new_channel_with_dbid(dbid - 1, &node);
+        let res = node.new_channel_from_seed(dbid - 1, &peer_node_id, &node);
         assert!(res.is_err());
     }
 
@@ -3092,12 +3097,13 @@ mod tests {
         let dbid_1 = 1000;
         let dbid_2 = 1001;
         let dbid_3 = 1002;
+        let peer_node_id: [u8; 33] = [0; 33];
 
-        let (channel_id_1, _) = node.new_channel_with_dbid(dbid_1, &node).unwrap();
-        let _ = node.new_channel_with_dbid(dbid_3, &node);
+        let (channel_id_1, _) = node.new_channel_from_seed(dbid_1, &peer_node_id, &node).unwrap();
+        let _ = node.new_channel_from_seed(dbid_3, &peer_node_id, &node);
         let _ = node.forget_channel(&channel_id_1);
 
-        let res = node.new_channel_with_dbid(dbid_2, &node);
+        let res = node.new_channel_from_seed(dbid_2, &peer_node_id, &node);
         assert!(res.is_ok());
     }
 

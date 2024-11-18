@@ -868,7 +868,7 @@ pub struct SignTxReply {
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(30)]
 pub struct NewChannel {
-    pub node_id: PubKey,
+    pub node_id: PubKey, // FIXME should this be `peer_id` or `peer_node_id`?
     pub dbid: u64,
 }
 
