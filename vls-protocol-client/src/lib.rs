@@ -691,7 +691,7 @@ impl SignerProvider for KeysManagerClient {
         let peer_id = [0u8; 33];
         let dbid = oid_from_ldk_channel_id(&channel_keys_id);
 
-        let message = NewChannel { node_id: PubKey(peer_id.clone()), dbid };
+        let message = NewChannel { peer_id: PubKey(peer_id.clone()), dbid };
         let _: NewChannelReply = self.call(message).expect("NewChannel");
 
         let channel_keys = self.get_channel_basepoints(dbid, peer_id);
