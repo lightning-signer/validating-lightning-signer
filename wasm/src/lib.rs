@@ -195,7 +195,7 @@ impl JSNode {
 
     #[wasm_bindgen]
     pub fn new_channel(&self) -> JSChannelId {
-        let (channel_id, _) = self.node.new_channel(&self.node).unwrap();
+        let (channel_id, _) = self.node.new_channel_with_random_id(&self.node).unwrap();
         JSChannelId(channel_id)
     }
 

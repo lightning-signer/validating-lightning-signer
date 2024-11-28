@@ -401,10 +401,12 @@ pub fn oid_from_native_channel_id(cid: &ChannelId) -> u64 {
     u64::from_le_bytes(bytes_array)
 }
 
-/// The CLN channel id is formed from 33 bytes of the node id joined with an original id (called dbid)
-pub fn native_channel_id_from_oid(oid: u64, node_id: &[u8; 33]) -> ChannelId {
+/// The CLN channel id is formed from a original seed id (called dbid) joined with
+/// 33 bytes of the peer node id
+// TODO the peer node id should have a more specific type
+pub fn native_channel_id_from_oid(oid: u64, peer_id: &[u8; 33]) -> ChannelId {
     let mut nonce = [0u8; 33 + 8];
-    nonce[0..33].copy_from_slice(node_id);
+    nonce[0..33].copy_from_slice(peer_id);
     nonce[33..].copy_from_slice(&oid.to_le_bytes());
     ChannelId::new(&nonce)
 }

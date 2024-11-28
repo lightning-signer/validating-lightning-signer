@@ -997,7 +997,7 @@ impl SignedHeartbeat {
 /// };
 /// let node = Arc::new(Node::new(config, &seed, vec![], services));
 /// // TODO: persist the seed
-/// let (channel_id, opt_stub) = node.new_channel(&node).expect("new channel");
+/// let (channel_id, opt_stub) = node.new_channel_with_random_id(&node).expect("new channel");
 /// assert!(opt_stub.is_some());
 /// let channel_slot_mutex = node.get_channel(&channel_id).expect("get channel");
 /// let channel_slot = channel_slot_mutex.lock().expect("lock");
@@ -1555,7 +1555,7 @@ impl Node {
     /// Create a new channel, which starts out as a stub.
     ///
     /// Returns a generated channel ID and the stub.
-    pub fn new_channel(
+    pub fn new_channel_with_random_id(
         &self,
         arc_self: &Arc<Node>,
     ) -> Result<(ChannelId, Option<ChannelSlot>), Status> {
@@ -1563,7 +1563,8 @@ impl Node {
         self.find_or_create_channel(channel_id, arc_self)
     }
 
-    /// Create a new channel from a seed identifier (aka a dbid)
+    /// Create a new channel from a seed identifier (aka a dbid) and
+    /// a peer node id
     ///
     /// The seed id must never be reused as revocation secrets may
     /// be publicly known. Rather than store all historical ids,
@@ -1577,16 +1578,17 @@ impl Node {
     ///
     /// If the seed id is not monotonic the method returns an error.
     /// Otherwise, it returns the new channel id and stub.
-    pub fn new_channel_with_dbid(
+    pub fn new_channel(
         &self,
         dbid: u64,
+        peer_id: &[u8; 33], // TODO figure out a more specific type
         arc_self: &Arc<Node>,
     ) -> Result<(ChannelId, Option<ChannelSlot>), Status> {
         if self.get_state().dbid_high_water_mark >= dbid {
             return Err(Status::invalid_argument("dbid not above the high water mark"));
         }
 
-        let channel_id = native_channel_id_from_oid(dbid, &self.get_id().serialize());
+        let channel_id = native_channel_id_from_oid(dbid, peer_id);
         self.find_or_create_channel(channel_id, arc_self)
     }
 
@@ -3049,7 +3051,7 @@ mod tests {
     fn new_channel_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
 
-        let (channel_id, _) = node.new_channel(&node).unwrap();
+        let (channel_id, _) = node.new_channel_with_random_id(&node).unwrap();
         assert!(node.get_channel(&channel_id).is_ok());
     }
 
@@ -3057,8 +3059,9 @@ mod tests {
     fn new_channel_with_dbid_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let dbid: u64 = 1234;
+        let peer_id: [u8; 33] = [0; 33];
 
-        let (channel_id, _) = node.new_channel_with_dbid(dbid, &node).unwrap();
+        let (channel_id, _) = node.new_channel(dbid, &peer_id, &node).unwrap();
         assert!(node.get_channel(&channel_id).is_ok());
     }
 
@@ -3066,11 +3069,12 @@ mod tests {
     fn new_channel_with_dbid_should_fail_for_forgotten_channel_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let dbid = 1234;
+        let peer_id: [u8; 33] = [0; 33];
 
-        let (channel_id, _) = node.new_channel_with_dbid(dbid, &node).unwrap();
+        let (channel_id, _) = node.new_channel(dbid, &peer_id, &node).unwrap();
         let _ = node.forget_channel(&channel_id);
 
-        let res = node.new_channel_with_dbid(dbid, &node);
+        let res = node.new_channel(dbid, &peer_id, &node);
         assert!(res.is_err());
     }
 
@@ -3078,11 +3082,12 @@ mod tests {
     fn new_channel_with_dbid_should_fail_for_dbid_below_previously_forgotten_dbid_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let dbid = 1234;
+        let peer_id: [u8; 33] = [0; 33];
 
-        let (channel_id, _) = node.new_channel_with_dbid(dbid, &node).unwrap();
+        let (channel_id, _) = node.new_channel(dbid, &peer_id, &node).unwrap();
         let _ = node.forget_channel(&channel_id);
 
-        let res = node.new_channel_with_dbid(dbid - 1, &node);
+        let res = node.new_channel(dbid - 1, &peer_id, &node);
         assert!(res.is_err());
     }
 
@@ -3092,19 +3097,20 @@ mod tests {
         let dbid_1 = 1000;
         let dbid_2 = 1001;
         let dbid_3 = 1002;
+        let peer_id: [u8; 33] = [0; 33];
 
-        let (channel_id_1, _) = node.new_channel_with_dbid(dbid_1, &node).unwrap();
-        let _ = node.new_channel_with_dbid(dbid_3, &node);
+        let (channel_id_1, _) = node.new_channel(dbid_1, &peer_id, &node).unwrap();
+        let _ = node.new_channel(dbid_3, &peer_id, &node);
         let _ = node.forget_channel(&channel_id_1);
 
-        let res = node.new_channel_with_dbid(dbid_2, &node);
+        let res = node.new_channel(dbid_2, &peer_id, &node);
         assert!(res.is_ok());
     }
 
     #[test]
     fn forget_channel_should_remove_stubs_from_the_channels_map_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let (channel_id, _) = node.new_channel(&node).unwrap();
+        let (channel_id, _) = node.new_channel_with_random_id(&node).unwrap();
         let _ = node.forget_channel(&channel_id);
 
         let channels = node.get_channels();
@@ -3115,8 +3121,8 @@ mod tests {
     fn commitment_point_provider_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let node1 = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let (channel_id, _) = node.new_channel(&node).unwrap();
-        let (channel_id1, _) = node1.new_channel(&node1).unwrap();
+        let (channel_id, _) = node.new_channel_with_random_id(&node).unwrap();
+        let (channel_id1, _) = node1.new_channel_with_random_id(&node1).unwrap();
         let points =
             node.get_channel(&channel_id).unwrap().lock().unwrap().get_channel_basepoints();
         let points1 =
@@ -3381,9 +3387,9 @@ mod tests {
     fn too_many_channels_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         for _ in 0..node.policy().max_channels() {
-            node.new_channel(&node).expect("new_channel");
+            node.new_channel_with_random_id(&node).expect("new_channel");
         }
-        assert!(node.new_channel(&node).is_err());
+        assert!(node.new_channel_with_random_id(&node).is_err());
     }
 
     #[test]
@@ -3974,8 +3980,8 @@ mod tests {
     fn spend_anchor_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let node1 = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let (channel_id, _) = node.new_channel(&node).unwrap();
-        let (channel_id1, _) = node1.new_channel(&node1).unwrap();
+        let (channel_id, _) = node.new_channel_with_random_id(&node).unwrap();
+        let (channel_id1, _) = node1.new_channel_with_random_id(&node1).unwrap();
         let points =
             node.get_channel(&channel_id).unwrap().lock().unwrap().get_channel_basepoints();
         let points1 =
@@ -4034,7 +4040,7 @@ mod tests {
     #[test]
     fn get_unilateral_close_key_anchors_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let (channel_id, chan) = node.new_channel(&node).unwrap();
+        let (channel_id, chan) = node.new_channel_with_random_id(&node).unwrap();
 
         let mut setup = make_test_channel_setup();
         setup.commitment_type = CommitmentType::AnchorsZeroFeeHtlc;
@@ -4064,7 +4070,7 @@ mod tests {
     #[test]
     fn get_unilateral_close_key_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let (channel_id, chan) = node.new_channel(&node).unwrap();
+        let (channel_id, chan) = node.new_channel_with_random_id(&node).unwrap();
 
         node.setup_channel(channel_id.clone(), None, make_test_channel_setup(), &vec![])
             .expect("ready channel");
@@ -4495,7 +4501,7 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
 
         // Create a channel stub
-        let (channel_id, _) = node.new_channel(&node).unwrap();
+        let (channel_id, _) = node.new_channel_with_random_id(&node).unwrap();
         assert!(node.get_channel(&channel_id).is_ok());
 
         // Do a heartbeat
