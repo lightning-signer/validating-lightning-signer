@@ -403,7 +403,7 @@ pub fn oid_from_native_channel_id(cid: &ChannelId) -> u64 {
 
 /// The CLN channel id is formed from a original seed id (called dbid) joined with
 /// 33 bytes of the peer node id
-// FIXME the peer node id should be properly typed
+// TODO the peer node id should have a more specific type
 pub fn native_channel_id_from_oid(oid: u64, peer_id: &[u8; 33]) -> ChannelId {
     let mut nonce = [0u8; 33 + 8];
     nonce[0..33].copy_from_slice(peer_id);

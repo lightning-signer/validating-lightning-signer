@@ -1581,7 +1581,7 @@ impl Node {
     pub fn new_channel(
         &self,
         dbid: u64,
-        peer_id: &[u8; 33], // FIXME this should be properly typed as a PubKey from the vls-protocol crate
+        peer_id: &[u8; 33], // TODO figure out a more specific type
         arc_self: &Arc<Node>,
     ) -> Result<(ChannelId, Option<ChannelSlot>), Status> {
         if self.get_state().dbid_high_water_mark >= dbid {
