@@ -10,7 +10,7 @@ use tokio_postgres::{IsolationLevel, NoTls};
 pub async fn new_and_clear() -> Result<PostgresDatabase, Error> {
     let db = new().await?;
     let client = db.pool.get().await.unwrap();
-    client.batch_execute("TRUNCATE data").await?;
+    client.execute("TRUNCATE data", &vec![]).await?;
     Ok(db)
 }
 
@@ -51,12 +51,23 @@ pub struct PostgresDatabase {
 impl Database for PostgresDatabase {
     async fn put(&self, client_id: &[u8], kvs: &Vec<(String, Value)>) -> Result<(), Error> {
         let mut client = self.pool.get().await.unwrap();
+
         let insert_statement = client
-            .prepare("INSERT INTO data (client, key, version, value) VALUES ($1, $2, 0, $3) ON CONFLICT DO NOTHING RETURNING key")
-            .await?;
+            .prepare_typed("INSERT INTO data (client, key, version, value) VALUES ($1, $2, 0, $3) ON CONFLICT DO NOTHING",
+              &[Type::BYTEA, Type::VARCHAR, Type::BYTEA]).await?;
         let update_statement = client
-            .prepare_typed("UPDATE data SET version = $3, value = $4 WHERE client = $1 AND key = $2 AND version = $3 - 1 RETURNING key",
-            &[Type::BYTEA, Type::VARCHAR, Type::INT8, Type::BYTEA]).await?;
+            .prepare_typed("UPDATE data SET version = $4, value = $3 WHERE client = $1 AND key = $2 AND version = $4 - 1",
+            &[Type::BYTEA, Type::VARCHAR, Type::BYTEA, Type::INT8]).await?;
+
+        // insert might fail due to already existing key
+        // update might fail due to version check fail or non existence of key
+        let conflict_statement = client
+            .prepare_typed(
+                "SELECT key, value, version FROM data WHERE client = $1 AND key = $2",
+                &[Type::BYTEA, Type::VARCHAR],
+            )
+            .await?;
+
         let tx = client
             .build_transaction()
             .isolation_level(IsolationLevel::RepeatableRead)
@@ -70,30 +81,38 @@ impl Database for PostgresDatabase {
                 let is_new = value.version == 0;
                 params.push(&client_id);
                 params.push(key);
-                if is_new {
-                    params.push(&value.value);
-                } else {
+                params.push(&value.value);
+                if !is_new {
                     params.push(&value.version);
-                    params.push(&value.value);
                 }
+
                 (is_new, params)
             })
             .collect::<Vec<_>>();
         let mut futs = Vec::new();
         for (is_new, param) in params.iter() {
             let fut = if *is_new {
-                tx.query(&insert_statement, param)
+                tx.execute(&insert_statement, param)
             } else {
-                tx.query(&update_statement, param)
+                tx.execute(&update_statement, param)
             };
-            // each query will return one row if successful, or zero if not
-            futs.push(fut.map_ok(|res| !res.is_empty()));
+            // each execute will return number of rows updated if successful, or zero if not
+            futs.push(fut.map_ok(|res| res != 0));
         }
 
         for (idx, res) in futures::future::join_all(futs).await.into_iter().enumerate() {
             if !res? {
                 let kv = kvs.get(idx).unwrap();
-                conflicts.push(((*kv).0.clone(), None));
+                let conflicting_row =
+                    tx.query_opt(&conflict_statement, &[&client_id, &kv.0]).await?;
+
+                let value = if let Some(row) = conflicting_row {
+                    Some(Value { value: row.get("value"), version: row.get("version") })
+                } else {
+                    None
+                };
+
+                conflicts.push((kv.0.clone(), value));
             }
         }
         if conflicts.len() > 0 {
