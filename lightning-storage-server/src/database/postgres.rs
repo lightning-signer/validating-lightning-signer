@@ -101,6 +101,10 @@ impl Database for PostgresDatabase {
         }
 
         for (idx, res) in futures::future::join_all(futs).await.into_iter().enumerate() {
+            if res.is_err() {
+                tx.rollback().await?;
+                return Err(Error::from(res.err().unwrap()));
+            }
             if !res? {
                 let kv = kvs.get(idx).unwrap();
                 let conflicting_row =
@@ -116,6 +120,7 @@ impl Database for PostgresDatabase {
             }
         }
         if conflicts.len() > 0 {
+            tx.rollback().await?;
             return Err(Error::Conflict(conflicts));
         }
         tx.commit().await?;
