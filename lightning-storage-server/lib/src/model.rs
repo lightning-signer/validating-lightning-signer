@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 
-#[derive(Serialize, Deserialize)]
+use crate::proto;
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Value {
     /// The version of the value.  These must be strictly increasing with no gaps.
     /// This is used to detect concurrent updates.
@@ -23,5 +25,29 @@ impl Debug for Value {
                 &String::from_utf8(self.value.clone()).unwrap_or_else(|_| hex::encode(&self.value)),
             )
             .finish()
+    }
+}
+
+impl Into<(String, Value)> for proto::KeyValue {
+    fn into(self) -> (String, Value) {
+        (self.key, Value { version: self.version, value: self.value })
+    }
+}
+
+// convert a conflict to proto
+impl Into<proto::KeyValue> for (String, Option<Value>) {
+    fn into(self) -> proto::KeyValue {
+        let (key, v) = self;
+        let version = v.as_ref().map(|v| v.version).unwrap_or(-1);
+        let value = v.as_ref().map(|v| v.value.clone()).unwrap_or_default();
+        proto::KeyValue { key, version, value }
+    }
+}
+
+// convert get result to proto
+impl Into<proto::KeyValue> for (String, Value) {
+    fn into(self) -> proto::KeyValue {
+        let (key, v) = self;
+        proto::KeyValue { key, version: v.version, value: v.value }
     }
 }

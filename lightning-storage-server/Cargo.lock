@@ -243,26 +243,11 @@ checksum = "4ea181bf566f71cb9a5d17a59e1871af638180a18fb0035c92ae62b705207123"
 dependencies = [
  "atty",
  "bitflags 1.3.2",
- "clap_derive",
  "clap_lex",
  "indexmap 1.9.3",
- "once_cell",
  "strsim",
  "termcolor",
  "textwrap",
-]
-
-[[package]]
-name = "clap_derive"
-version = "3.2.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae6371b8bdc8b7d3959e9cf7b22d4435ef3e79e138688421ec654acf8c81b008"
-dependencies = [
- "heck",
- "proc-macro-error",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -816,31 +801,20 @@ checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
 name = "lightning-storage-server"
 version = "0.3.1"
 dependencies = [
- "anyhow",
- "async-trait",
  "bitcoin_hashes",
- "ciborium",
  "clap",
- "ctrlc",
- "deadpool-postgres",
  "dirs",
  "fern",
- "futures",
  "hex",
- "itertools",
  "log",
  "prost",
- "redb",
  "secp256k1",
  "serde",
- "tempfile",
  "thiserror",
  "time",
  "tokio",
- "tokio-postgres",
  "tonic",
  "tonic-build",
- "triggered",
  "url",
 ]
 
@@ -865,6 +839,34 @@ name = "log"
 version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
+
+[[package]]
+name = "lssd"
+version = "0.3.1"
+dependencies = [
+ "async-trait",
+ "bitcoin_hashes",
+ "ciborium",
+ "clap",
+ "ctrlc",
+ "deadpool-postgres",
+ "dirs",
+ "futures",
+ "hex",
+ "itertools",
+ "lightning-storage-server",
+ "log",
+ "lssd",
+ "prost",
+ "redb",
+ "secp256k1",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-postgres",
+ "tonic",
+ "triggered",
+]
 
 [[package]]
 name = "matchit"
@@ -1093,30 +1095,6 @@ checksum = "6c8646e95016a7a6c4adea95bafa8a16baab64b583356217f2c85db4a39d9a86"
 dependencies = [
  "proc-macro2",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "proc-macro-error"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da25490ff9892aab3fcf7c36f08cfb902dd3e71ca0f9f9517bea02a73a5ce38c"
-dependencies = [
- "proc-macro-error-attr",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
- "version_check",
-]
-
-[[package]]
-name = "proc-macro-error-attr"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1be40180e52ecc98ad80b184934baf3d0d29f979574e439af5a55274b35f869"
-dependencies = [
- "proc-macro2",
- "quote",
- "version_check",
 ]
 
 [[package]]

@@ -1,14 +1,17 @@
+pub mod database;
 pub mod driver;
+pub use database::{Database, Error};
 
-use crate::client::PrivAuth;
-use crate::proto::lightning_storage_server::{LightningStorage, LightningStorageServer};
-use crate::proto::{
+use itertools::Itertools;
+use lightning_storage_server::client::PrivAuth;
+use lightning_storage_server::proto::lightning_storage_server::{
+    LightningStorage, LightningStorageServer,
+};
+use lightning_storage_server::proto::{
     self, GetReply, GetRequest, InfoReply, InfoRequest, PingReply, PingRequest, PutReply,
     PutRequest,
 };
-use crate::util::compute_shared_hmac;
-use crate::{Database, Error, Value};
-use itertools::Itertools;
+use lightning_storage_server::util::compute_shared_hmac;
 use log::{debug, error};
 use secp256k1::{PublicKey, SecretKey};
 use tonic::{Request, Response, Status};
@@ -17,30 +20,6 @@ pub struct StorageServer {
     database: Box<dyn Database>,
     public_key: PublicKey,
     secret_key: SecretKey,
-}
-
-impl Into<(String, Value)> for proto::KeyValue {
-    fn into(self) -> (String, Value) {
-        (self.key, Value { version: self.version, value: self.value })
-    }
-}
-
-// convert a conflict to proto
-impl Into<proto::KeyValue> for (String, Option<Value>) {
-    fn into(self) -> proto::KeyValue {
-        let (key, v) = self;
-        let version = v.as_ref().map(|v| v.version).unwrap_or(-1);
-        let value = v.as_ref().map(|v| v.value.clone()).unwrap_or_default();
-        proto::KeyValue { key, version, value }
-    }
-}
-
-// convert get result to proto
-impl Into<proto::KeyValue> for (String, Value) {
-    fn into(self) -> proto::KeyValue {
-        let (key, v) = self;
-        proto::KeyValue { key, version: v.version, value: v.value }
-    }
 }
 
 fn into_status(s: Error) -> Status {

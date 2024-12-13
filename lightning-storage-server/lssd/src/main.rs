@@ -1,4 +1,4 @@
-use lightning_storage_server::server;
+use lssd::driver;
 
 fn abort_on_panic() {
     let old = std::panic::take_hook();
@@ -10,5 +10,5 @@ fn abort_on_panic() {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     abort_on_panic();
-    server::driver::start()
+    driver::start()
 }

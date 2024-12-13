@@ -1,14 +1,19 @@
 use std::process;
 
 use clap::{App, Arg};
-use log::{error, info, warn};
+use log::{info, warn};
+
+#[cfg(not(feature = "dangerous-flags"))]
+use log::error;
 
 #[cfg(feature = "postgres")]
 use crate::database::postgres;
 use crate::database::redb::RedbDatabase;
-use crate::server::LightningStorageServer;
-use crate::server::StorageServer;
-use crate::util::{init_secret_key, read_public_key, read_secret_key, setup_logging};
+use crate::LightningStorageServer;
+use crate::StorageServer;
+use lightning_storage_server::util::{
+    init_secret_key, read_public_key, read_secret_key, setup_logging,
+};
 use tonic::transport::{server::ServerTlsConfig, Identity};
 
 pub const SERVER_APP_NAME: &str = "lssd";

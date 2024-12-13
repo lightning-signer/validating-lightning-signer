@@ -1,8 +1,8 @@
 use super::{Database, Error};
-use crate::Value;
 use async_trait::async_trait;
 use deadpool_postgres::RecyclingMethod;
 use futures::TryFutureExt;
+use lightning_storage_server::model::Value;
 use tokio_postgres::types::{ToSql, Type};
 pub use tokio_postgres::Error as PgError;
 use tokio_postgres::{IsolationLevel, NoTls};

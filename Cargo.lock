@@ -751,7 +751,6 @@ checksum = "23342abe12aba583913b2e62f22225ff9c950774065e4bfb61a19cd9770fec40"
 dependencies = [
  "futures-channel",
  "futures-core",
- "futures-executor",
  "futures-io",
  "futures-sink",
  "futures-task",
@@ -1341,29 +1340,18 @@ dependencies = [
 name = "lightning-storage-server"
 version = "0.3.1"
 dependencies = [
- "anyhow",
- "async-trait",
  "bitcoin_hashes 0.11.0",
- "ciborium",
- "clap",
- "ctrlc",
  "dirs",
  "fern",
- "futures",
  "hex",
- "itertools",
  "log",
  "prost",
- "redb",
  "secp256k1",
  "serde",
  "thiserror",
  "time",
- "tokio",
  "tonic",
  "tonic-build",
- "triggered",
- "url",
 ]
 
 [[package]]
@@ -2625,7 +2613,6 @@ version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3082666a3a6433f7f511c7192923fa1fe07c69332d3c6a2e6bb040b569199d5a"
 dependencies = [
- "async-stream",
  "async-trait",
  "axum",
  "base64 0.21.7",
@@ -2640,9 +2627,7 @@ dependencies = [
  "percent-encoding",
  "pin-project",
  "prost",
- "rustls-pemfile",
  "tokio",
- "tokio-rustls",
  "tokio-stream",
  "tower",
  "tower-layer",

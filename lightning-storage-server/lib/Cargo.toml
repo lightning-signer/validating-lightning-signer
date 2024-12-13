@@ -1,0 +1,39 @@
+[package]
+name = "lightning-storage-server"
+license = "Apache-2.0"
+version = "0.3.1"
+authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
+edition = "2021"
+description = "A client library for interacting with lightning storage server"
+homepage = "https://gitlab.com/lightning-signer/docs/"
+repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
+rust-version = "1.66.0"
+
+[features]
+default = ["crypt"]
+crypt = []
+cli = ["clap", "tokio", "url"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+prost = { workspace = true }
+log = { workspace = true }
+time = { version = "=0.3.17", features = [ "formatting", "macros" ] }
+tonic = { workspace = true }
+url = { version = "2.3", optional = true }
+hex = { workspace = true }
+dirs = "4"
+secp256k1 = { workspace = true, features = ["rand"]}
+bitcoin_hashes = { workspace = true }
+thiserror = { workspace = true }
+clap = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+fern = { version = "0.6", features = ["colored"] }
+
+[build-dependencies]
+tonic-build = "0.9"
+
+[[bin]]
+name = "lss-cli"
+path = "src/client_main.rs"
+required-features = ["cli"]
