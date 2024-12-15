@@ -615,6 +615,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "443144c8cdadd93ebf52ddb4056d257f5b52c04d3c804e657d19eb73fc33668b"
 
 [[package]]
+name = "hermit-abi"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fbf6a919d6cf397374f7dfeeea91d974c7c0a7221d0d0f4f20d859d329e53fcc"
+
+[[package]]
 name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -752,13 +758,13 @@ dependencies = [
 
 [[package]]
 name = "is-terminal"
-version = "0.4.9"
+version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb0889898416213fab133e1d33a0e5858a48177452750691bde3666d0fdbaf8b"
+checksum = "261f68e344040fbd0edea105bef17c66edf46f984ddb1115b775ce31be948f4b"
 dependencies = [
- "hermit-abi 0.3.2",
- "rustix",
- "windows-sys 0.48.0",
+ "hermit-abi 0.4.0",
+ "libc",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -802,21 +808,14 @@ name = "lightning-storage-server"
 version = "0.3.1"
 dependencies = [
  "bitcoin_hashes",
- "clap",
- "dirs",
- "fern",
  "hex",
  "log",
  "prost",
  "secp256k1",
  "serde",
  "thiserror",
- "time",
- "tokio",
- "tokio-stream",
  "tonic",
  "tonic-build",
- "url",
 ]
 
 [[package]]
@@ -852,6 +851,7 @@ dependencies = [
  "ctrlc",
  "deadpool-postgres",
  "dirs",
+ "fern",
  "futures",
  "hex",
  "itertools",
@@ -863,10 +863,12 @@ dependencies = [
  "secp256k1",
  "tempfile",
  "thiserror",
+ "time",
  "tokio",
  "tokio-postgres",
  "tonic",
  "triggered",
+ "url",
 ]
 
 [[package]]

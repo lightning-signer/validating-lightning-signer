@@ -9,11 +9,10 @@ use log::error;
 #[cfg(feature = "postgres")]
 use crate::database::postgres;
 use crate::database::redb::RedbDatabase;
+use crate::util::setup_logging;
+use crate::util::{init_secret_key, read_public_key, read_secret_key};
 use crate::LightningStorageServer;
 use crate::StorageServer;
-use lightning_storage_server::util::{
-    init_secret_key, read_public_key, read_secret_key, setup_logging,
-};
 use tonic::transport::{server::ServerTlsConfig, Identity};
 
 pub const SERVER_APP_NAME: &str = "lssd";

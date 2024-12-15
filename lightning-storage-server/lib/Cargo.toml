@@ -17,25 +17,11 @@ crypt = []
 serde = { version = "1.0", features = ["derive"] }
 prost = { workspace = true }
 log = { workspace = true }
-time = { version = "=0.3.17", features = [ "formatting", "macros" ] }
 tonic = { workspace = true }
 hex = { workspace = true }
-dirs = "4"
-secp256k1 = { workspace = true, features = ["rand"]}
+secp256k1 = { workspace = true, features = ["rand"] }
 bitcoin_hashes = { workspace = true }
 thiserror = { workspace = true }
-fern = { version = "0.6", features = ["colored"] }
-
-[dev-dependencies]
-tokio = { workspace = true, features = ["rt-multi-thread"] }
-clap = { workspace = true }
-url = { version = "2.3" }
-tokio-stream = "=0.1.15"
-# beyond 0.1.15 tokio stream bumps msrv
 
 [build-dependencies]
 tonic-build = "0.9"
-
-[[example]]
-name = "lss-cli"
-path = "examples/client_main.rs"

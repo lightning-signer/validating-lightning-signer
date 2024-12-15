@@ -13,6 +13,7 @@ rust-version = "1.66.0"
 dangerous-flags = []
 postgres = ["tokio-postgres", "deadpool-postgres"]
 test-postgres = ["postgres"]
+cli = ["bitcoin_hashes", "url"]
 
 [dependencies]
 redb = "1.3"
@@ -34,8 +35,17 @@ itertools = "0.10"
 lightning-storage-server = { path = "../lib", version = "0.3.1" }
 clap = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+time = { version = "=0.3.17", features = [ "formatting", "macros" ] }
+fern = { version = "0.6", features = ["colored"] }
+url = { version = "2.3", optional = true }
+bitcoin_hashes = { workspace = true, optional = true }
 
 [dev-dependencies]
 lssd = { path = ".", features = ["postgres", "dangerous-flags"] }
 tempfile = "3"
 bitcoin_hashes = { workspace = true }
+
+[[bin]]
+name = "lss-cli"
+path = "src/client_main.rs"
+required-features = ["cli"]

@@ -1,6 +1,7 @@
 pub mod database;
 pub mod driver;
 pub use database::{Database, Error};
+pub mod util;
 
 use itertools::Itertools;
 use lightning_storage_server::client::PrivAuth;
