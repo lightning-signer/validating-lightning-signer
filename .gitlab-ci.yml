@@ -101,9 +101,9 @@ rust-latest-extras:
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
-    # test LSS
     - cd lightning-storage-server
     - cargo update -w --locked
+    - cargo build --all-features
     - cargo test
 
 rust-msrv:
