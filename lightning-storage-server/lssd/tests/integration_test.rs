@@ -1,7 +1,8 @@
+use lightning_storage_server::Value;
 #[cfg(feature = "test-postgres")]
-use lightning_storage_server::database::postgres;
-use lightning_storage_server::database::redb::RedbDatabase;
-use lightning_storage_server::{Database, Error, Value};
+use lssd::database::postgres;
+use lssd::database::redb::RedbDatabase;
+use lssd::{Database, Error};
 use std::sync::Arc;
 use tempfile;
 

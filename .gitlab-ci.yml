@@ -101,9 +101,9 @@ rust-latest-extras:
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
-    # test LSS
     - cd lightning-storage-server
     - cargo update -w --locked
+    - cargo build --all-features
     - cargo test
 
 rust-msrv:
@@ -132,7 +132,8 @@ rust-msrv-lss:
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
-    - (cd lightning-storage-server && cargo test)
+    # only lss library should be msrv compatible
+    - (cd lightning-storage-server/lib && cargo test)
 
 embedded:
   tags: [ saas-linux-medium-amd64 ]

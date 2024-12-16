@@ -1,0 +1,27 @@
+[package]
+name = "lightning-storage-server"
+license = "Apache-2.0"
+version = "0.3.1"
+authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
+edition = "2021"
+description = "A client library for interacting with lightning storage server"
+homepage = "https://gitlab.com/lightning-signer/docs/"
+repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
+rust-version = "1.66.0"
+
+[features]
+default = ["crypt"]
+crypt = []
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+prost = { workspace = true }
+log = { workspace = true }
+tonic = { workspace = true }
+hex = { workspace = true }
+secp256k1 = { workspace = true, features = ["rand"] }
+bitcoin_hashes = { workspace = true }
+thiserror = { workspace = true }
+
+[build-dependencies]
+tonic-build = "0.9"

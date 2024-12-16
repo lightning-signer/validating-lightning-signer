@@ -1,6 +1,6 @@
 use super::Error;
-use crate::model::Value;
 use async_trait::async_trait;
+use lightning_storage_server::model::Value;
 use log::*;
 use redb::{Database, ReadableTable, TableDefinition};
 use std::path::Path;

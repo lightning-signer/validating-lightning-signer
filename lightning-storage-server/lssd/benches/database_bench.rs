@@ -1,7 +1,7 @@
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::{Hash, HashEngine};
-use lightning_storage_server::database::postgres;
-use lightning_storage_server::{Database, Value};
+use lightning_storage_server::Value;
+use lssd::database::{postgres, Database};
 use std::sync::Arc;
 use std::time::Instant;
 

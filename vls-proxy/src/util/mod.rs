@@ -169,6 +169,7 @@ pub fn abort_on_panic() {
 
 // Would prefer to use now_local but https://rustsec.org/advisories/RUSTSEC-2020-0071
 // Also, https://time-rs.github.io/api/time/struct.OffsetDateTime.html#method.now_local
+#[cfg(feature = "main")]
 pub fn tstamp() -> String {
     OffsetDateTime::now_utc()
         .format(format_description!(

@@ -2,7 +2,7 @@
 pub mod postgres;
 pub mod redb;
 
-use crate::model::Value;
+use lightning_storage_server::model::Value;
 use thiserror::Error;
 use tonic::async_trait;
 
