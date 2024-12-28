@@ -51,13 +51,13 @@ use vls_protocol::model::{
 use vls_protocol::msgs::{
     DeBolt, Ecdh, EcdhReply, GetChannelBasepoints, GetChannelBasepointsReply,
     GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply,
-    GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, SignLocalHtlcTx2, NewChannel,
-    NewChannelReply, SerBolt, SetupChannel, SetupChannelReply, SignChannelAnnouncement,
-    SignChannelAnnouncementReply, SignCommitmentTxReply, SignCommitmentTxWithHtlcsReply,
-    SignGossipMessage, SignGossipMessageReply, SignInvoice, SignInvoiceReply,
-    SignLocalCommitmentTx2, SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply,
-    SignWithdrawal, SignWithdrawalReply, ValidateCommitmentTx2, ValidateCommitmentTxReply,
-    ValidateRevocation, ValidateRevocationReply,
+    GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, SerBolt,
+    SetupChannel, SetupChannelReply, SignChannelAnnouncement, SignChannelAnnouncementReply,
+    SignCommitmentTxReply, SignCommitmentTxWithHtlcsReply, SignGossipMessage,
+    SignGossipMessageReply, SignInvoice, SignInvoiceReply, SignLocalCommitmentTx2,
+    SignLocalHtlcTx2, SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal,
+    SignWithdrawalReply, ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation,
+    ValidateRevocationReply,
 };
 #[cfg(feature = "developer")]
 use vls_protocol::msgs::{HsmdDevPreinit, HsmdDevPreinitReply};
@@ -280,8 +280,9 @@ impl EcdsaChannelSigner for SignerClient {
             offered: htlc.offered,
             cltv_expiry: htlc.cltv_expiry,
             tx: WithSize(htlc_tx.clone()),
-            input: input as u64,
+            input: input as u32,
             payment_hash: model::Sha256(htlc.payment_hash.0),
+            htlc_amount_msat: htlc_descriptor.htlc.amount_msat,
         };
         let result: SignTxReply = self.call(message).map_err(|_| ())?;
         Ok(Signature::from_compact(&result.signature.signature.0).unwrap())

@@ -1255,10 +1255,12 @@ impl Handler for ChannelHandler {
                 let signature = self.node.with_channel(&self.channel_id, |chan| {
                     chan.sign_holder_htlc_tx_phase2(
                         &m.tx.0,
+                        m.input,
                         m.per_commitment_number,
                         m.feerate_per_kw,
                         m.offered,
                         m.cltv_expiry,
+                        m.htlc_amount_msat,
                         PaymentHash(m.payment_hash.0),
                     )
                 })?;
