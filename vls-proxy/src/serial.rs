@@ -1,7 +1,6 @@
 #![macro_use]
 
 use std::fs::File;
-use std::io;
 use std::num::NonZeroUsize;
 use std::os::unix::io::AsRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,6 +15,7 @@ use tokio::task::spawn_blocking;
 
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::Hash;
+use bitcoin::io;
 #[cfg(feature = "developer")]
 use bitcoin::Network;
 use log::*;

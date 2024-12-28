@@ -65,7 +65,7 @@ mod tests {
             })
             .expect("sign");
         assert_eq!(
-            tx.txid().to_string(),
+            tx.compute_txid().to_string(),
             if setup.commitment_type == CommitmentType::AnchorsZeroFeeHtlc {
                 "35d42554e19cc82267c29b813d8a9465b762c730a1958b31f147080d302b6fbd"
             } else {
@@ -233,7 +233,7 @@ mod tests {
                 .iter()
                 .map(|htlc| {
                     build_htlc_transaction(
-                        &tx.transaction.txid(),
+                        &tx.transaction.compute_txid(),
                         build_feerate,
                         chan_ctx.setup.counterparty_selected_contest_delay,
                         &htlc,
@@ -253,7 +253,7 @@ mod tests {
 
             let (tx_r, _htlc_txs_r, _revocable_script_r, _uck_r, _revocation_pubkey_r) =
                 chan.sign_holder_commitment_tx_for_recovery()?;
-            assert_eq!(tx_r.txid(), tx.transaction.txid());
+            assert_eq!(tx_r.compute_txid(), tx.transaction.compute_txid());
             // TODO(303) HTLC recovery is not implemented yet
 
             Ok((sig, tx.transaction.clone()))
@@ -263,7 +263,7 @@ mod tests {
         assert_eq!(node_ctx.node.channel_balance(), ChannelBalanceBuilder::new().build());
 
         assert_eq!(
-            tx.txid().to_string(),
+            tx.compute_txid().to_string(),
             if chan_ctx.setup.commitment_type == CommitmentType::StaticRemoteKey {
                 "54cb4849bc8cb6474bc0209665ad88519121a1a2c35b0ac59aa1c0f0e42a772e"
             } else {

@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use lightning_signer::bitcoin::absolute::LockTime;
+use lightning_signer::bitcoin::transaction::Version;
 use lightning_signer::bitcoin::{ScriptBuf, Sequence, Transaction, TxIn, Witness};
 use lightning_signer::lightning::sign::DelayedPaymentOutputDescriptor;
 use lightning_signer::util::transaction_utils;
@@ -23,7 +24,7 @@ pub fn create_spending_transaction(
             witness: Witness::default(),
         });
         witness_weight += DelayedPaymentOutputDescriptor::MAX_WITNESS_LENGTH;
-        input_value += descriptor.output.value;
+        input_value += descriptor.output.value.to_sat();
         if !output_set.insert(descriptor.outpoint) {
             return Err(anyhow!("duplicate"));
         }
@@ -31,7 +32,8 @@ pub fn create_spending_transaction(
             return Err(anyhow!("overflow"));
         }
     }
-    let mut spend_tx = Transaction { version: 2, lock_time: LockTime::ZERO, input, output: vec![] };
+    let mut spend_tx =
+        Transaction { version: Version::TWO, lock_time: LockTime::ZERO, input, output: vec![] };
     transaction_utils::maybe_add_change_output(
         &mut spend_tx,
         input_value,

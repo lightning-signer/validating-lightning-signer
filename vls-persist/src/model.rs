@@ -270,7 +270,7 @@ mod tests {
     #[test]
     fn test_chain_tracker() -> Result<(), Error> {
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);
-        let outpoint = OutPoint::new(tx.txid(), 0);
+        let outpoint = OutPoint::new(tx.compute_txid(), 0);
         let commitment_point_provider = Box::new(DummyCommitmentPointProvider {});
         let chan_id = ChannelId::new(&[33u8; 32]);
         let monitor =

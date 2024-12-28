@@ -95,10 +95,10 @@ pub struct ListenSlot {
 pub struct Headers(pub BlockHeader, pub FilterHeader);
 
 impl Encodable for Headers {
-    fn consensus_encode<S: crate::io::Write + ?Sized>(
+    fn consensus_encode<S: bitcoin::io::Write + ?Sized>(
         &self,
         s: &mut S,
-    ) -> Result<usize, crate::io::Error> {
+    ) -> Result<usize, bitcoin::io::Error> {
         let mut len = 0;
         len += self.0.consensus_encode(s)?;
         len += self.1.consensus_encode(s)?;
@@ -107,7 +107,7 @@ impl Encodable for Headers {
 }
 
 impl Decodable for Headers {
-    fn consensus_decode<D: crate::io::Read + ?Sized>(
+    fn consensus_decode<D: bitcoin::io::Read + ?Sized>(
         d: &mut D,
     ) -> Result<Self, bitcoin::consensus::encode::Error> {
         let header = BlockHeader::consensus_decode(d)?;
@@ -678,8 +678,8 @@ fn validate_retarget(prev_target: Target, target: Target, network: Network) -> R
         Target::from_compact(target.to_compact_lossy())
     }
 
-    let min = round_trip_target(prev_target.min_difficulty_transition_threshold());
-    let max = round_trip_target(prev_target.max_difficulty_transition_threshold());
+    let min = round_trip_target(prev_target.min_transition_threshold());
+    let max = round_trip_target(prev_target.max_transition_threshold(network.params()));
     let chain_max = max_target(network);
 
     if target.gt(&chain_max) {
@@ -815,9 +815,9 @@ mod tests {
     use bitcoin::hash_types::TxMerkleNode;
     use bitcoin::hashes::Hash;
     use bitcoin::key::Secp256k1;
-    use bitcoin::network::constants::Network;
+    use bitcoin::network::Network;
     use bitcoin::secp256k1::SecretKey;
-    use bitcoin::string::FromHexStr;
+    use bitcoin::transaction::Version;
     use bitcoin::{merkle_tree, Block, CompactTarget, TxIn};
     use bitcoin::{Sequence, Witness};
     use bitcoind_client::dummy::DummyTxooSource;
@@ -907,7 +907,7 @@ mod tests {
 
         let tx = make_tx(vec![make_txin(1)]);
         let initial_watch = make_outpoint(1);
-        let second_watch = OutPoint::new(tx.txid(), 0);
+        let second_watch = OutPoint::new(tx.compute_txid(), 0);
         let listener = MockListener::new(initial_watch);
 
         tracker.add_listener(listener.clone(), OrderedSet::new());
@@ -983,7 +983,7 @@ mod tests {
 
         let tx = make_tx(vec![make_txin(1)]);
         let initial_watch = make_outpoint(1);
-        let second_watch = OutPoint::new(tx.txid(), 0);
+        let second_watch = OutPoint::new(tx.compute_txid(), 0);
         let listener = MockListener::new(initial_watch);
 
         tracker.add_listener(listener.clone(), OrderedSet::new());
@@ -1054,8 +1054,8 @@ mod tests {
     #[test]
     fn test_retarget_rounding() -> Result<(), Error> {
         validate_retarget(
-            Target::from_compact(CompactTarget::from_hex_str("0x1c063051").unwrap()),
-            Target::from_compact(CompactTarget::from_hex_str("0x1c018c14").unwrap()),
+            Target::from_compact(CompactTarget::from_hex("0x1c063051").unwrap()),
+            Target::from_compact(CompactTarget::from_hex("0x1c018c14").unwrap()),
             Network::Testnet,
         )?;
         Ok(())
@@ -1096,7 +1096,7 @@ mod tests {
         source.on_new_block(height, &block).await;
         let (attestation, filter_header) = source.get(height, &block).await.unwrap();
         let pubkey = source.oracle_setup().await.public_key;
-        let txid_watches: Vec<_> = block.txdata.iter().map(|tx| tx.txid()).collect();
+        let txid_watches: Vec<_> = block.txdata.iter().map(|tx| tx.compute_txid()).collect();
         let proof = TxoProof::prove(
             vec![(pubkey, attestation)],
             &filter_header,
@@ -1123,7 +1123,7 @@ mod tests {
         source.on_new_block(height, &block).await;
         let (attestation, filter_header) = source.get(height, &block).await.unwrap();
         let pubkey = source.oracle_setup().await.public_key;
-        let txid_watches: Vec<_> = block.txdata.iter().map(|tx| tx.txid()).collect();
+        let txid_watches: Vec<_> = block.txdata.iter().map(|tx| tx.compute_txid()).collect();
         let proof = TxoProof::prove(
             vec![(pubkey, attestation)],
             &filter_header,
@@ -1150,13 +1150,13 @@ mod tests {
         do_add: bool,
     ) -> Result<BlockHeader, Error> {
         let txs = txs_with_coinbase(&[]);
-        let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
+        let txids: Vec<Txid> = txs.iter().map(|tx| tx.compute_txid()).collect();
 
         let merkle_root = merkle_tree::calculate_root(txids.into_iter()).unwrap();
         let merkle_root_node = TxMerkleNode::from_raw_hash(merkle_root.into());
         let header = mine_header_with_bits(tracker.tip().0.block_hash(), merkle_root_node, bits);
 
-        let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
+        let txids: Vec<Txid> = txs.iter().map(|tx| tx.compute_txid()).collect();
         let block = Block { header, txdata: txs };
         let height = tracker.height() + 1;
 
@@ -1194,7 +1194,7 @@ mod tests {
         let height = tracker.height();
         let (attestation, filter_header) = source.get(height, &block).await.unwrap();
         let pubkey = source.oracle_setup().await.public_key;
-        let txid_watches: Vec<_> = block.txdata.iter().map(|tx| tx.txid()).collect();
+        let txid_watches: Vec<_> = block.txdata.iter().map(|tx| tx.compute_txid()).collect();
         let proof = TxoProof::prove(
             vec![(pubkey, attestation)],
             &filter_header,
@@ -1215,10 +1215,13 @@ mod tests {
         txs.insert(
             0,
             Transaction {
-                version: 0,
+                version: Version::non_standard(0),
                 lock_time: LockTime::ZERO,
                 input: vec![],
-                output: vec![Default::default()],
+                output: vec![TxOut {
+                    value: Default::default(),
+                    script_pubkey: Default::default(),
+                }],
             },
         );
         txs

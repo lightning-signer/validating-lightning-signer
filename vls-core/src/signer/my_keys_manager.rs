@@ -2,28 +2,24 @@ use crate::prelude::*;
 use crate::util::crypto_utils::{hkdf_sha256, sighash_from_heartbeat};
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
-use bitcoin::bech32::u5;
-use bitcoin::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use bitcoin::bip32::{ChildNumber, Xpriv, Xpub};
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
-use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::hash160::Hash as Hash160;
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::sha256::HashEngine as Sha256State;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::{Hash, HashEngine};
-use bitcoin::key::KeyPair;
+use bitcoin::key::Keypair;
 use bitcoin::secp256k1::ecdh::SharedSecret;
-use bitcoin::secp256k1::{
-    All, Message, PublicKey, Scalar, Secp256k1, SecretKey, Signing, ThirtyTwoByteHash,
-};
+use bitcoin::secp256k1::{All, Message, PublicKey, Scalar, Secp256k1, SecretKey, Signing};
 use bitcoin::Network;
+use bitcoin::WPubkeyHash;
 use bitcoin::{secp256k1, ScriptBuf, Transaction, TxOut, Witness};
 use lightning::ln::msgs::{DecodeError, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
 use lightning::sign::{
-    EntropySource, InMemorySigner, KeyMaterial, NodeSigner, Recipient, SignerProvider,
-    SpendableOutputDescriptor,
+    EntropySource, InMemorySigner, NodeSigner, Recipient, SignerProvider, SpendableOutputDescriptor,
 };
 use lightning::util::ser::Writeable;
 
@@ -35,7 +31,8 @@ use crate::util::transaction_utils::create_spending_transaction;
 use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
 use bitcoin::secp256k1::schnorr;
 use bitcoin::sighash::{self, EcdsaSighashType};
-use lightning::util::invoice::construct_invoice_preimage;
+use lightning::ln::inbound_payment::ExpandedKey;
+use lightning_invoice::RawBolt11Invoice;
 
 /// An implementation of [`NodeSigner`]
 pub struct MyKeysManager {
@@ -43,21 +40,21 @@ pub struct MyKeysManager {
     seed: Vec<u8>,
     key_derivation_style: KeyDerivationStyle,
     network: Network,
-    master_key: ExtendedPrivKey,
+    master_key: Xpriv,
     node_secret: SecretKey,
     bolt12_secret: SecretKey,
     persistence_secret: SecretKey,
-    inbound_payment_key: KeyMaterial,
+    inbound_payment_key: ExpandedKey,
     channel_seed_base: [u8; 32],
-    account_extended_key: ExtendedPrivKey,
+    account_extended_key: Xpriv,
     destination_script: ScriptBuf,
     ldk_shutdown_pubkey: PublicKey,
     #[allow(dead_code)]
-    channel_master_key: ExtendedPrivKey,
-    channel_id_master_key: ExtendedPrivKey,
+    channel_master_key: Xpriv,
+    channel_id_master_key: Xpriv,
     channel_id_child_index: AtomicUsize,
 
-    rand_bytes_master_key: ExtendedPrivKey,
+    rand_bytes_master_key: Xpriv,
     rand_bytes_child_index: AtomicUsize,
     rand_bytes_unique_start: Sha256State,
 
@@ -82,10 +79,10 @@ impl MyKeysManager {
         let master_key = key_derive.master_key(seed);
         let (_, node_secret) = key_derive.node_keys(seed, &secp_ctx);
         let channel_master_key = master_key
-            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(3).unwrap())
+            .derive_priv(&secp_ctx, &[ChildNumber::from_hardened_idx(3).unwrap()])
             .expect("Your RNG is busted");
         let channel_id_master_key = master_key
-            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(5).unwrap())
+            .derive_priv(&secp_ctx, &[ChildNumber::from_hardened_idx(5).unwrap()])
             .expect("Your RNG is busted");
 
         let (starting_time_secs, starting_time_nanos) = starting_time_factory.starting_time();
@@ -99,19 +96,19 @@ impl MyKeysManager {
             key_derivation_style.get_account_extended_key(&secp_ctx, network, seed);
 
         let ldk_shutdown_key = account_extended_key
-            .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(2).unwrap())
+            .derive_priv(&secp_ctx, &[ChildNumber::from_normal_idx(2).unwrap()])
             .expect("Your RNG is busted")
             .to_priv()
             .inner;
         let ldk_shutdown_pubkey = PublicKey::from_secret_key(&secp_ctx, &ldk_shutdown_key);
 
         let destination_key = account_extended_key
-            .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(1).unwrap())
+            .derive_priv(&secp_ctx, &[ChildNumber::from_normal_idx(1).unwrap()])
             .expect("Your RNG is busted");
 
         let destination_script = {
             let pubkey_hash160 = Hash160::hash(
-                &ExtendedPubKey::from_priv(&secp_ctx, &destination_key).public_key.serialize()[..],
+                &Xpub::from_priv(&secp_ctx, &destination_key).public_key.serialize()[..],
             );
             Builder::new()
                 .push_opcode(opcodes::all::OP_PUSHBYTES_0)
@@ -120,10 +117,10 @@ impl MyKeysManager {
         };
 
         let rand_bytes_master_key = master_key
-            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(4).unwrap())
+            .derive_priv(&secp_ctx, &[ChildNumber::from_hardened_idx(4).unwrap()])
             .expect("Your RNG is busted");
         let inbound_payment_key: SecretKey = master_key
-            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(5).unwrap())
+            .derive_priv(&secp_ctx, &[ChildNumber::from_hardened_idx(5).unwrap()])
             .expect("Your RNG is busted")
             .private_key;
         let mut inbound_pmt_key_bytes = [0; 32];
@@ -135,12 +132,12 @@ impl MyKeysManager {
         rand_bytes_unique_start.input(seed);
 
         let bolt12_secret = master_key
-            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(9735).unwrap())
+            .derive_priv(&secp_ctx, &[ChildNumber::from_hardened_idx(9735).unwrap()])
             .expect("Your RNG is busted")
             .private_key;
 
         let persistence_secret = master_key
-            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(9736).unwrap())
+            .derive_priv(&secp_ctx, &[ChildNumber::from_hardened_idx(9736).unwrap()])
             .expect("Your RNG is busted")
             .private_key;
 
@@ -153,7 +150,7 @@ impl MyKeysManager {
             node_secret,
             bolt12_secret,
             persistence_secret,
-            inbound_payment_key: KeyMaterial(inbound_pmt_key_bytes),
+            inbound_payment_key: ExpandedKey::new(inbound_pmt_key_bytes),
             channel_seed_base,
             account_extended_key,
             destination_script,
@@ -230,14 +227,14 @@ impl MyKeysManager {
             let mut sha = Sha256::engine();
             sha.input(&pubkey_ser);
             sha.input(publictweak);
-            let tweak = Scalar::from_be_bytes(Sha256::from_engine(sha).into_32())
+            let tweak = Scalar::from_be_bytes(*Sha256::from_engine(sha).as_ref())
                 .expect("your RNG is busted");
             let tweakedsecret = self.bolt12_secret.add_tweak(&tweak).map_err(|_| ())?;
-            KeyPair::from_secret_key(&self.secp_ctx, &tweakedsecret)
+            Keypair::from_secret_key(&self.secp_ctx, &tweakedsecret)
         } else {
-            KeyPair::from_secret_key(&self.secp_ctx, &self.node_secret)
+            Keypair::from_secret_key(&self.secp_ctx, &self.node_secret)
         };
-        let msg = Message::from(sig_hash);
+        let msg = Message::from_digest(sig_hash.to_byte_array());
         Ok(self.secp_ctx.sign_schnorr_no_aux_rand(&msg, &kp))
     }
 
@@ -251,7 +248,7 @@ impl MyKeysManager {
     }
 
     /// Get the layer-1 xpub
-    pub fn get_account_extended_key(&self) -> &ExtendedPrivKey {
+    pub fn get_account_extended_key(&self) -> &Xpriv {
         &self.account_extended_key
     }
 
@@ -326,9 +323,9 @@ impl MyKeysManager {
         let child_ix = self.increment_channel_id_child_index();
         let child_privkey = self
             .channel_id_master_key
-            .ckd_priv(
+            .derive_priv(
                 &self.secp_ctx,
-                ChildNumber::from_hardened_idx(child_ix as u32).expect("key space exhausted"),
+                &[ChildNumber::from_hardened_idx(child_ix as u32).expect("key space exhausted")],
             )
             .expect("Your RNG is busted");
         sha.input(child_privkey.private_key.as_ref());
@@ -419,15 +416,14 @@ impl MyKeysManager {
                         &self.seed,
                     );
                     let secret_key = account_extended_key
-                        .ckd_priv(
+                        .derive_priv(
                             &secp_ctx,
-                            ChildNumber::from_normal_idx(derivation_idx)
-                                .expect("key space exhausted"),
+                            &[ChildNumber::from_normal_idx(derivation_idx)
+                                .expect("key space exhausted")],
                         )
                         .expect("Your RNG is busted");
-                    let pubkey = bitcoin::PublicKey::new(
-                        ExtendedPubKey::from_priv(&secp_ctx, &secret_key).public_key,
-                    );
+                    let pubkey =
+                        bitcoin::PublicKey::new(Xpub::from_priv(&secp_ctx, &secret_key).public_key);
                     if derivation_idx == 2 {
                         assert_eq!(pubkey.inner, self.ldk_shutdown_pubkey);
                     }
@@ -436,7 +432,7 @@ impl MyKeysManager {
                     // unwrap is safe because we formatted the tx ourselves
                     let sighash = Message::from(
                         sighash::SighashCache::new(&spend_tx)
-                            .segwit_signature_hash(
+                            .p2wsh_signature_hash(
                                 input_idx,
                                 &witness_script,
                                 output.value,
@@ -458,7 +454,7 @@ impl MyKeysManager {
 
     /// Sign a heartbeat object
     pub fn sign_heartbeat(&self, ser_heartbeat: &[u8]) -> schnorr::Signature {
-        let kp = KeyPair::from_secret_key(&self.secp_ctx, &self.account_extended_key.private_key);
+        let kp = Keypair::from_secret_key(&self.secp_ctx, &self.account_extended_key.private_key);
         let msg = sighash_from_heartbeat(ser_heartbeat);
         self.secp_ctx.sign_schnorr_no_aux_rand(&msg, &kp)
     }
@@ -471,9 +467,9 @@ impl EntropySource for MyKeysManager {
         let child_ix = self.rand_bytes_child_index.fetch_add(1, Ordering::AcqRel);
         let child_privkey = self
             .rand_bytes_master_key
-            .ckd_priv(
+            .derive_priv(
                 &self.secp_ctx,
-                ChildNumber::from_hardened_idx(child_ix as u32).expect("key space exhausted"),
+                &[ChildNumber::from_hardened_idx(child_ix as u32).expect("key space exhausted")],
             )
             .expect("Your RNG is busted");
         sha.input(child_privkey.private_key.as_ref());
@@ -531,7 +527,7 @@ impl NodeSigner for MyKeysManager {
 
     fn sign_gossip_message(&self, msg: UnsignedGossipMessage) -> Result<Signature, ()> {
         let msg_hash = Sha256dHash::hash(&msg.encode()[..]);
-        let encmsg = secp256k1::Message::from_slice(&msg_hash[..]).map_err(|_| ())?;
+        let encmsg = secp256k1::Message::from_digest(msg_hash.to_byte_array());
         let sig = self.secp_ctx.sign_ecdsa(&encmsg, &self.get_node_secret());
         Ok(sig)
     }
@@ -555,35 +551,27 @@ impl NodeSigner for MyKeysManager {
 
     fn sign_invoice(
         &self,
-        hrp_bytes: &[u8],
-        invoice_data: &[u5],
+        invoice: &RawBolt11Invoice,
         recipient: Recipient,
     ) -> Result<RecoverableSignature, ()> {
         match recipient {
             Recipient::Node => (),
             Recipient::PhantomNode => return Err(()),
         };
-        let invoice_preimage = construct_invoice_preimage(hrp_bytes, invoice_data);
+        let invoice_preimage = invoice.signable_hash();
         Ok(self.secp_ctx.sign_ecdsa_recoverable(
-            &Message::from(Sha256::hash(&invoice_preimage)),
+            &Message::from_digest(Sha256::hash(&invoice_preimage).to_byte_array()),
             &self.get_node_secret(),
         ))
     }
 
-    fn get_inbound_payment_key_material(&self) -> KeyMaterial {
+    fn get_inbound_payment_key(&self) -> ExpandedKey {
         self.inbound_payment_key
     }
 
     fn sign_bolt12_invoice(
         &self,
         _: &lightning::offers::invoice::UnsignedBolt12Invoice,
-    ) -> Result<schnorr::Signature, ()> {
-        todo!("issue 459")
-    }
-
-    fn sign_bolt12_invoice_request(
-        &self,
-        _: &lightning::offers::invoice_request::UnsignedInvoiceRequest,
     ) -> Result<schnorr::Signature, ()> {
         todo!("issue 459")
     }
@@ -752,7 +740,7 @@ mod tests {
         let secp_ctx = Secp256k1::signing_only();
         let per_commit_point = MyKeysManager::per_commitment_point(
             &secp_ctx,
-            &keys.release_commitment_secret(INITIAL_COMMITMENT_NUMBER - 3),
+            &keys.release_commitment_secret(INITIAL_COMMITMENT_NUMBER - 3).unwrap(),
         );
         assert_eq!(
             hex_encode(&per_commit_point.serialize().to_vec()),

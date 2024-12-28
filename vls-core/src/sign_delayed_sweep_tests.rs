@@ -1,7 +1,10 @@
 #[cfg(test)]
 mod tests {
     use bitcoin::absolute::{Height, LockTime};
-    use bitcoin::{self, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness};
+    use bitcoin::transaction::Version;
+    use bitcoin::{
+        self, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
+    };
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
     use test_log::test;
 
@@ -19,7 +22,7 @@ mod tests {
         amount_sat: u64,
     ) -> Transaction {
         Transaction {
-            version: 2,
+            version: Version::TWO,
             lock_time: LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid, vout },
@@ -27,7 +30,10 @@ mod tests {
                 sequence: Sequence(contest_delay as u32),
                 witness: Witness::default(),
             }],
-            output: vec![TxOut { script_pubkey: script_pubkey, value: amount_sat }],
+            output: vec![TxOut {
+                script_pubkey: script_pubkey,
+                value: Amount::from_sat(amount_sat),
+            }],
         }
     }
 
@@ -84,7 +90,7 @@ mod tests {
                     &keys.broadcaster_delayed_payment_key,
                 );
                 let to_local_outndx = 4;
-                let mut amount_sat = built_commit_tx.output[to_local_outndx].value;
+                let mut amount_sat = built_commit_tx.output[to_local_outndx].value.to_sat();
                 assert_eq!(amount_sat, 1979997);
 
                 let (script_pubkey, wallet_path) = make_dest(&node_ctx);
@@ -236,7 +242,7 @@ mod tests {
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.version = 3;
+                    tx.version = Version::non_standard(3);
                 },
             ),
             "transaction format: validate_delayed_sweep: validate_sweep: bad version: 3"
@@ -294,7 +300,7 @@ mod tests {
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, amount_sat| {
-                    *amount_sat = tx.output[0].value; // fee = 0
+                    *amount_sat = tx.output[0].value.to_sat(); // fee = 0
                 },
             ),
             "policy failure: validate_delayed_sweep: validate_sweep: validate_fee: \
@@ -310,7 +316,7 @@ mod tests {
             sign_delayed_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.output[0].value = 1_000;
+                    tx.output[0].value = Amount::from_sat(1_000);
                 },
             ),
             "policy failure: validate_delayed_sweep: validate_sweep: validate_fee: \

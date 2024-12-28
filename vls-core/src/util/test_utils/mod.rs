@@ -6,23 +6,25 @@ use std::time::{Duration, SystemTime};
 use core::cmp;
 
 use bitcoin::absolute::LockTime;
-use bitcoin::block::Version;
+use bitcoin::bech32::Fe32;
+use bitcoin::block::Version as BlockVersion;
 use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::blockdata::script::Script;
 use bitcoin::hash_types::TxMerkleNode;
 use bitcoin::hash_types::Txid;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
-use bitcoin::hashes::{hex, hex::FromHex, Hash};
-use bitcoin::network::constants::Network;
+use bitcoin::hashes::{hex::FromHex, Hash};
+use bitcoin::hex::HexToBytesError;
+use bitcoin::network::Network;
 use bitcoin::secp256k1::{self, ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey};
 use bitcoin::sighash::EcdsaSighashType;
 use bitcoin::sighash::SighashCache;
-use bitcoin::{self, merkle_tree, CompactTarget, ScriptBuf};
+use bitcoin::transaction::Version;
+use bitcoin::{self, merkle_tree, Amount, CompactTarget, ScriptBuf};
 use bitcoin::{Address, Block, BlockHash, Sequence, Transaction, TxIn, TxOut, Witness};
 use chain::chaininterface;
 use lightning::chain;
-use lightning::chain::chainmonitor::MonitorUpdateId;
 use lightning::chain::channelmonitor::MonitorEvent;
 use lightning::chain::transaction::OutPoint;
 use lightning::chain::{chainmonitor, channelmonitor};
@@ -36,10 +38,10 @@ use lightning::ln::chan_utils::{
 use lightning::ln::channel_keys::{
     DelayedPaymentBasepoint, HtlcBasepoint, RevocationBasepoint, RevocationKey,
 };
-use lightning::ln::features::ChannelTypeFeatures;
-use lightning::ln::ChannelId as LnChannelId;
-use lightning::ln::{PaymentHash, PaymentPreimage};
+use lightning::ln::types::ChannelId as LnChannelId;
 use lightning::sign::{ChannelSigner, InMemorySigner};
+use lightning::types::features::ChannelTypeFeatures;
+use lightning::types::payment::{PaymentHash, PaymentPreimage};
 use lightning::util::test_utils;
 use lightning_invoice::{Currency, InvoiceBuilder, PaymentSecret};
 use push_decoder::Listener;
@@ -62,7 +64,7 @@ use crate::signer::StartingTimeFactory;
 use crate::tx::script::{get_p2wpkh_redeemscript, ANCHOR_OUTPUT_VALUE_SATOSHI};
 use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
 use crate::util::clock::StandardClock;
-use crate::util::crypto_utils::{derive_public_key, payload_for_p2wpkh, payload_for_p2wsh};
+use crate::util::crypto_utils::derive_public_key;
 use crate::util::loopback::LoopbackChannelSigner;
 use crate::util::status::Status;
 use crate::wallet::Wallet;
@@ -146,7 +148,6 @@ impl chainmonitor::Persist<LoopbackChannelSigner> for TestPersister {
         &self,
         _funding_txo: OutPoint,
         _data: &channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
-        _id: MonitorUpdateId,
     ) -> chain::ChannelMonitorUpdateStatus {
         self.update_ret.lock().unwrap().clone()
     }
@@ -158,7 +159,6 @@ impl chainmonitor::Persist<LoopbackChannelSigner> for TestPersister {
         _channel_id: OutPoint,
         _update: Option<&channelmonitor::ChannelMonitorUpdate>,
         _data: &channelmonitor::ChannelMonitor<LoopbackChannelSigner>,
-        _update_id: MonitorUpdateId,
     ) -> chain::ChannelMonitorUpdateStatus {
         self.update_ret.lock().unwrap().clone()
     }
@@ -529,8 +529,8 @@ pub fn make_test_funding_wallet_addr(node: &Node, i: u32, stype: SpendType) -> A
     let pubkey = node.get_wallet_pubkey(&child_path).unwrap();
     match stype {
         SpendType::P2pkh => Address::p2pkh(&pubkey, node.network()),
-        SpendType::P2wpkh => Address::p2wpkh(&pubkey, node.network()).unwrap(),
-        SpendType::P2shP2wpkh => Address::p2shwpkh(&pubkey, node.network()).unwrap(),
+        SpendType::P2wpkh => Address::p2wpkh(&pubkey, node.network()),
+        SpendType::P2shP2wpkh => Address::p2shwpkh(&pubkey, node.network()),
         _ => panic!("unexpected SpendType {:?}", stype),
     }
 }
@@ -541,7 +541,7 @@ pub fn make_test_previous_tx(
     values: &Vec<(u32, u64, SpendType)>,
 ) -> (Transaction, Txid) {
     let tx = Transaction {
-        version: 2,
+        version: Version::TWO,
         lock_time: LockTime::ZERO,
         input: vec![TxIn {
             previous_output: bitcoin::OutPoint { txid: Txid::all_zeros(), vout: 0 },
@@ -552,13 +552,13 @@ pub fn make_test_previous_tx(
         output: values
             .iter()
             .map(|(wallet_ndx, val, stype)| TxOut {
-                value: *val,
+                value: Amount::from_sat(*val),
                 script_pubkey: make_test_funding_wallet_addr(&node, *wallet_ndx, *stype)
                     .script_pubkey(),
             })
             .collect(),
     };
-    let txid = tx.txid();
+    let txid = tx.compute_txid();
     (tx, txid)
 }
 
@@ -587,12 +587,12 @@ pub fn make_test_funding_wallet_output(node: &Node, i: u32, value: u64, stype: S
 
     // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
     let addr = match stype {
-        SpendType::P2wpkh => Address::p2wpkh(&pubkey, node.network()).unwrap(),
-        SpendType::P2shP2wpkh => Address::p2shwpkh(&pubkey, node.network()).unwrap(),
+        SpendType::P2wpkh => Address::p2wpkh(&pubkey, node.network()),
+        SpendType::P2shP2wpkh => Address::p2shwpkh(&pubkey, node.network()),
         _ => panic!("unexpected SpendType {:?}", stype),
     };
 
-    TxOut { value, script_pubkey: addr.script_pubkey() }
+    TxOut { value: Amount::from_sat(value), script_pubkey: addr.script_pubkey() }
 }
 
 pub fn make_test_funding_channel_outpoint(
@@ -606,14 +606,15 @@ pub fn make_test_funding_channel_outpoint(
             &base.get_channel_basepoints().funding_pubkey,
             &setup.counterparty_points.funding_pubkey,
         );
-        let script_pubkey = payload_for_p2wsh(&funding_redeemscript).script_pubkey();
-        Ok(TxOut { value, script_pubkey })
+        let address = Address::p2wsh(&funding_redeemscript, node.network());
+        let script_pubkey = address.script_pubkey();
+        Ok(TxOut { value: Amount::from_sat(value), script_pubkey })
     })
     .expect("TxOut")
 }
 
 pub fn make_test_funding_tx_with_ins_outs(inputs: Vec<TxIn>, outputs: Vec<TxOut>) -> Transaction {
-    Transaction { version: 2, lock_time: LockTime::ZERO, input: inputs, output: outputs }
+    Transaction { version: Version::TWO, lock_time: LockTime::ZERO, input: inputs, output: outputs }
 }
 
 pub fn make_test_wallet_dest(
@@ -629,7 +630,6 @@ pub fn make_test_wallet_dest(
         SpendType::P2shP2wpkh => Address::p2shwpkh(&pubkey, node_ctx.node.network()),
         _ => panic!("unexpected SpendType {:?}", stype),
     }
-    .unwrap()
     .script_pubkey();
 
     (script_pubkey, vec![wallet_index])
@@ -646,7 +646,6 @@ pub fn make_test_nonwallet_dest(
         SpendType::P2shP2wpkh => Address::p2shwpkh(&pubkey, node_ctx.node.network()),
         _ => panic!("unexpected SpendType {:?}", stype),
     }
-    .unwrap()
     .script_pubkey();
 
     (script_pubkey, vec![])
@@ -918,7 +917,7 @@ impl TestFundingTxContext {
         self.opaths.push(vec![]); // don't consider wallet
         let child_path = vec![wallet_ndx];
         let pubkey = node_ctx.node.get_wallet_pubkey(&child_path).unwrap();
-        let addr = Address::p2wpkh(&pubkey, node_ctx.node.network()).unwrap();
+        let addr = Address::p2wpkh(&pubkey, node_ctx.node.network());
         node_ctx.node.add_allowlist(&vec![addr.to_string()]).expect("add_allowlist");
     }
 
@@ -966,7 +965,7 @@ impl TestFundingTxContext {
     ) {
         // Index the input_txs by their txid
         let in_tx_map: OrderedMap<_, _> =
-            self.input_txs.iter().map(|in_tx| (in_tx.txid(), in_tx)).collect();
+            self.input_txs.iter().map(|in_tx| (in_tx.compute_txid(), in_tx)).collect();
 
         for ndx in 0..tx.input.len() {
             tx.input[ndx].witness = Witness::from_slice(&witvec[ndx])
@@ -987,7 +986,7 @@ pub fn funding_tx_setup_channel(
     tx: &Transaction,
     vout: u32,
 ) -> Option<Status> {
-    let txid = tx.txid();
+    let txid = tx.compute_txid();
     chan_ctx.setup.funding_outpoint = bitcoin::OutPoint { txid, vout };
     let holder_shutdown_key_path = vec![];
     node_ctx
@@ -1223,17 +1222,17 @@ pub fn counterparty_sign_holder_commitment(
                 } else {
                     EcdsaSighashType::All
                 };
-                let htlc_sighash = Message::from_slice(
-                    &SighashCache::new(&htlc_tx)
-                        .segwit_signature_hash(
+                let htlc_sighash = Message::from_digest(
+                    SighashCache::new(&htlc_tx)
+                        .p2wsh_signature_hash(
                             0,
                             &htlc_redeemscript,
-                            htlc.amount_msat / 1000,
+                            Amount::from_sat(htlc.amount_msat / 1000),
                             sig_hash_type,
                         )
-                        .unwrap()[..],
-                )
-                .unwrap();
+                        .unwrap()
+                        .to_byte_array(),
+                );
                 htlc_sigs.push(node_ctx.secp_ctx.sign_ecdsa(&htlc_sighash, &counterparty_htlc_key));
             }
             Ok((commitment_sig, htlc_sigs))
@@ -1327,15 +1326,15 @@ pub fn make_test_funding_tx_with_change(
     opath: Vec<u32>,
     change_addr: &Address,
 ) -> (Vec<u32>, Transaction) {
-    let outputs = vec![TxOut { value, script_pubkey: change_addr.script_pubkey() }];
+    let outputs =
+        vec![TxOut { value: Amount::from_sat(value), script_pubkey: change_addr.script_pubkey() }];
     let tx = make_test_funding_tx_with_ins_outs(inputs, outputs);
     (opath, tx)
 }
 
 pub fn make_test_funding_tx(node: &Node, inputs: Vec<TxIn>, value: u64) -> (Vec<u32>, Transaction) {
     let opath = vec![0];
-    let change_addr =
-        Address::p2wpkh(&node.get_wallet_pubkey(&opath).unwrap(), Network::Testnet).unwrap();
+    let change_addr = Address::p2wpkh(&node.get_wallet_pubkey(&opath).unwrap(), Network::Testnet);
     make_test_funding_tx_with_change(inputs, value, opath, &change_addr)
 }
 
@@ -1345,8 +1344,7 @@ pub fn make_test_funding_tx_with_p2shwpkh_change(
     value: u64,
 ) -> (Vec<u32>, Transaction) {
     let opath = vec![0];
-    let change_addr =
-        Address::p2shwpkh(&node.get_wallet_pubkey(&opath).unwrap(), Network::Testnet).unwrap();
+    let change_addr = Address::p2shwpkh(&node.get_wallet_pubkey(&opath).unwrap(), Network::Testnet);
     make_test_funding_tx_with_change(inputs, value, opath, &change_addr)
 }
 
@@ -1357,13 +1355,14 @@ pub fn make_test_commitment_tx() -> Transaction {
         sequence: Sequence::ZERO,
         witness: Witness::default(),
     };
+    let address = Address::p2wpkh(&make_test_bitcoin_pubkey(1), Network::Testnet);
     Transaction {
-        version: 2,
+        version: Version::TWO,
         lock_time: LockTime::ZERO,
         input: vec![input],
         output: vec![TxOut {
-            script_pubkey: payload_for_p2wpkh(&make_test_bitcoin_pubkey(1).inner).script_pubkey(),
-            value: 300,
+            script_pubkey: address.script_pubkey(),
+            value: Amount::from_sat(300),
         }],
     }
 }
@@ -1427,12 +1426,12 @@ pub fn build_tx_scripts(
             let script = get_to_countersignatory_with_anchors_redeemscript(
                 &countersignatory_pubkeys.payment_point,
             );
-            (script.clone(), script.to_v0_p2wsh())
+            (script.clone(), script.to_p2wsh())
         } else {
             (ScriptBuf::new(), get_p2wpkh_redeemscript(&countersignatory_pubkeys.payment_point))
         };
         txouts.push((
-            TxOut { script_pubkey, value: to_countersignatory_value_sat },
+            TxOut { script_pubkey, value: Amount::from_sat(to_countersignatory_value_sat) },
             (None, redeem_script),
         ))
     }
@@ -1444,7 +1443,10 @@ pub fn build_tx_scripts(
             &keys.broadcaster_delayed_payment_key,
         );
         txouts.push((
-            TxOut { script_pubkey: redeem_script.to_v0_p2wsh(), value: to_broadcaster_value_sat },
+            TxOut {
+                script_pubkey: redeem_script.to_p2wsh(),
+                value: Amount::from_sat(to_broadcaster_value_sat),
+            },
             (None, redeem_script),
         ));
     }
@@ -1454,7 +1456,7 @@ pub fn build_tx_scripts(
             let anchor_script = get_anchor_redeemscript(broadcaster_funding_key);
             txouts.push((
                 TxOut {
-                    script_pubkey: anchor_script.to_v0_p2wsh(),
+                    script_pubkey: anchor_script.to_p2wsh(),
                     value: ANCHOR_OUTPUT_VALUE_SATOSHI,
                 },
                 (None, anchor_script),
@@ -1465,7 +1467,7 @@ pub fn build_tx_scripts(
             let anchor_script = get_anchor_redeemscript(countersignatory_funding_key);
             txouts.push((
                 TxOut {
-                    script_pubkey: anchor_script.to_v0_p2wsh(),
+                    script_pubkey: anchor_script.to_p2wsh(),
                     value: ANCHOR_OUTPUT_VALUE_SATOSHI,
                 },
                 (None, anchor_script),
@@ -1475,7 +1477,10 @@ pub fn build_tx_scripts(
 
     for htlc in htlcs {
         let script = get_htlc_redeemscript(&htlc, features, &keys);
-        let txout = TxOut { script_pubkey: script.to_v0_p2wsh(), value: htlc.amount_msat / 1000 };
+        let txout = TxOut {
+            script_pubkey: script.to_p2wsh(),
+            value: Amount::from_sat(htlc.amount_msat / 1000),
+        };
         txouts.push((txout, (Some(htlc.clone()), script)));
     }
 
@@ -1618,12 +1623,17 @@ pub fn check_signature_with_sighash_type(
     redeemscript: &Script,
     sighash_type: EcdsaSighashType,
 ) {
-    let sighash = Message::from_slice(
-        &SighashCache::new(tx)
-            .segwit_signature_hash(input, &redeemscript, input_value_sat, sighash_type)
-            .unwrap()[..],
-    )
-    .expect("sighash");
+    let sighash = Message::from_digest(
+        SighashCache::new(tx)
+            .p2wsh_signature_hash(
+                input,
+                &redeemscript,
+                Amount::from_sat(input_value_sat),
+                sighash_type,
+            )
+            .unwrap()
+            .to_byte_array(),
+    );
     assert_eq!(signature.typ, sighash_type);
     let secp_ctx = Secp256k1::new();
     secp_ctx.verify_ecdsa(&sighash, &signature.sig, &pubkey).expect("verify");
@@ -1760,7 +1770,7 @@ where
     })
 }
 
-pub fn hex_decode(s: &str) -> Result<Vec<u8>, hex::Error> {
+pub fn hex_decode(s: &str) -> Result<Vec<u8>, HexToBytesError> {
     Vec::from_hex(s)
 }
 
@@ -1770,10 +1780,10 @@ pub fn hex_encode(o: &[u8]) -> String {
 
 pub fn make_tx(inputs: Vec<TxIn>) -> Transaction {
     Transaction {
-        version: 0,
+        version: Version::non_standard(0),
         lock_time: LockTime::ZERO,
         input: inputs,
-        output: vec![Default::default()],
+        output: vec![TxOut { value: Amount::from_sat(0), script_pubkey: ScriptBuf::new() }],
     }
 }
 
@@ -1797,7 +1807,7 @@ pub fn make_header(tip: BlockHeader, merkle_root: TxMerkleNode) -> BlockHeader {
 
 pub fn make_block(prev_header: BlockHeader, txs: Vec<Transaction>) -> Block {
     assert!(!txs.is_empty());
-    let txids: Vec<Txid> = txs.iter().map(|tx| tx.txid()).collect();
+    let txids: Vec<Txid> = txs.iter().map(|tx| tx.compute_txid()).collect();
     let merkle_root = merkle_tree::calculate_root(txids.into_iter()).unwrap();
     let merkle_root = TxMerkleNode::from_raw_hash(merkle_root.into());
     let header = make_header(prev_header, merkle_root);
@@ -1806,12 +1816,12 @@ pub fn make_block(prev_header: BlockHeader, txs: Vec<Transaction>) -> Block {
 
 pub fn make_testnet_header(tip: &Headers, tip_height: u32) -> (BlockHeader, TxoProof) {
     let txs: Vec<Transaction> = vec![Transaction {
-        version: 0,
+        version: Version::non_standard(0),
         lock_time: LockTime::from_consensus(tip_height + 1),
         input: vec![],
         output: vec![],
     }];
-    let tx_ids: Vec<_> = txs.iter().map(|tx| tx.txid().to_raw_hash()).collect();
+    let tx_ids: Vec<_> = txs.iter().map(|tx| tx.compute_txid().to_raw_hash()).collect();
     let merkle_root = merkle_tree::calculate_root(tx_ids.into_iter()).unwrap();
     let merkle_root = TxMerkleNode::from_raw_hash(merkle_root.into());
     let regtest_genesis = genesis_block(Network::Regtest);
@@ -1830,7 +1840,7 @@ pub fn mine_header_with_bits(
     let mut nonce = 0;
     loop {
         let header = BlockHeader {
-            version: Version::from_consensus(0),
+            version: BlockVersion::from_consensus(0),
             prev_blockhash: prev_hash,
             merkle_root,
             time: 0,
@@ -2007,7 +2017,7 @@ impl ChainListener for MockListener {
             for input in tx.input.iter() {
                 let mut watch2 = self.watch2.lock().unwrap();
                 if input.previous_output == self.watch {
-                    let add = bitcoin::OutPoint { txid: tx.txid(), vout: 0 };
+                    let add = bitcoin::OutPoint { txid: tx.compute_txid(), vout: 0 };
                     *watch2 = Some(add);
                     return (vec![add], vec![self.watch]);
                 }
@@ -2111,5 +2121,15 @@ impl CommitmentPointProvider for DummyCommitmentPointProvider {
 
     fn clone_box(&self) -> Box<dyn CommitmentPointProvider> {
         Box::new(DummyCommitmentPointProvider {})
+    }
+}
+
+pub trait CheckBase32 {
+    fn check_base32(self) -> Result<Vec<Fe32>, ()>;
+}
+
+impl CheckBase32 for Vec<u8> {
+    fn check_base32(self) -> Result<Vec<Fe32>, ()> {
+        self.into_iter().map(|x| Fe32::try_from(x).map_err(|_| ())).collect()
     }
 }

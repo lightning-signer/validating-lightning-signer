@@ -292,7 +292,7 @@ fn debug_block_txs(block: &Block) -> Vec<DebugTransactionSummary> {
 #[allow(dead_code)]
 fn debug_transaction_summary(tx: &Transaction) -> DebugTransactionSummary {
     DebugTransactionSummary {
-        txid: tx.txid(),
+        txid: tx.compute_txid(),
         inputs: tx.input.iter().map(|inp| inp.previous_output).collect(),
         outputs: tx.output.clone(),
     }

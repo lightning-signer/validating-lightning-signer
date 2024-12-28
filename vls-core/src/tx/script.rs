@@ -3,10 +3,10 @@ use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::opcodes::Class;
 use bitcoin::blockdata::opcodes::ClassifyContext::Legacy;
 use bitcoin::blockdata::script::{read_scriptint, Builder, Instruction, Instructions};
-use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{blockdata, ScriptBuf};
+use bitcoin::{Amount, WPubkeyHash};
 
 use crate::policy::error::{mismatch_error, ValidationError};
 
@@ -18,10 +18,13 @@ fn expect_next<'a>(iter: &'a mut Instructions) -> Result<Instruction<'a>, Valida
 }
 
 #[inline]
-pub(crate) fn expect_op(iter: &mut Instructions, op: opcodes::All) -> Result<(), ValidationError> {
+pub(crate) fn expect_op(
+    iter: &mut Instructions,
+    op: opcodes::Opcode,
+) -> Result<(), ValidationError> {
     let ins = expect_next(iter)?;
     match ins {
-        blockdata::script::Instruction::Op(o) =>
+        Instruction::Op(o) =>
             if o == op {
                 Ok(())
             } else {
@@ -67,7 +70,7 @@ pub(crate) fn expect_data(iter: &mut Instructions) -> Result<Vec<u8>, Validation
 }
 
 /// The BOLT specified anchor output size.
-pub const ANCHOR_OUTPUT_VALUE_SATOSHI: u64 = 330;
+pub const ANCHOR_OUTPUT_VALUE_SATOSHI: Amount = Amount::from_sat(330);
 
 /// Get the p2wpkh redeemscript
 pub fn get_p2wpkh_redeemscript(key: &PublicKey) -> ScriptBuf {

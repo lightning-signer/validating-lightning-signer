@@ -2,17 +2,16 @@ use crate::prelude::*;
 use core::cmp;
 use core::fmt;
 
-use bitcoin::address::Payload;
 use bitcoin::blockdata::opcodes::all::{
     OP_CHECKMULTISIG, OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_CLTV, OP_CSV, OP_DROP, OP_DUP, OP_ELSE,
     OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_IFDUP, OP_NOTIF, OP_PUSHNUM_1,
     OP_PUSHNUM_16, OP_PUSHNUM_2, OP_SIZE, OP_SWAP,
 };
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::ScriptBuf;
+use bitcoin::{Address, Amount, Network, ScriptBuf};
 use bitcoin::{Script, TxOut};
-use lightning::ln::PaymentHash;
 use lightning::sign::{ChannelSigner, InMemorySigner};
+use lightning::types::payment::PaymentHash;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::{serde_as, Bytes, IfIsHumanReadable};
 
@@ -27,7 +26,7 @@ use vls_common::HexEncode;
 
 const MAX_DELAY: i64 = 2016;
 /// Value for anchor outputs
-pub(crate) const ANCHOR_SAT: u64 = 330;
+pub(crate) const ANCHOR_SAT: Amount = Amount::from_sat(330);
 
 /// Phase 1 HTLC info
 #[derive(Clone)]
@@ -241,7 +240,7 @@ impl CommitmentInfo2 {
 #[allow(missing_docs)]
 pub struct CommitmentInfo {
     pub is_counterparty_broadcaster: bool,
-    pub to_countersigner_address: Option<Payload>,
+    pub to_countersigner_address: Option<Address>,
     pub to_countersigner_pubkey: Option<PublicKey>,
     pub to_countersigner_value_sat: u64,
     pub to_countersigner_anchor_count: u16,
@@ -255,15 +254,15 @@ pub struct CommitmentInfo {
     pub received_htlcs: Vec<HTLCInfo>,
 }
 
-// Define manually because Payload's fmt::Debug is lame.
+// Define manually because AddressData's fmt::Debug is lame.
 impl fmt::Debug for CommitmentInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CommitmentInfo")
             .field("is_counterparty_broadcaster", &self.is_counterparty_broadcaster)
-            // Wrap the to_countersigner_address Payload w/ a nicer printing one.
+            // Wrap the to_countersigner_address AddressData w/ a nicer printing one.
             .field(
                 "to_countersigner_address",
-                &self.to_countersigner_address.as_ref().map(|p| DebugPayload(&p)),
+                &self.to_countersigner_address.as_ref().map(|p| DebugPayload(p)),
             )
             .field("to_countersigner_pubkey", &self.to_countersigner_pubkey)
             .field("to_countersigner_value_sat", &self.to_countersigner_value_sat)
@@ -424,20 +423,20 @@ impl CommitmentInfo {
     }
 
     /// The amount used by the broadcaster anchor
-    pub fn to_broadcaster_anchor_value_sat(&self) -> u64 {
+    pub fn to_broadcaster_anchor_value_sat(&self) -> Amount {
         if self.to_broadcaster_anchor_count == 1 {
             ANCHOR_SAT
         } else {
-            0
+            Amount::ZERO
         }
     }
 
     /// The amount used by the countersigner anchor
-    pub fn to_countersigner_anchor_value_sat(&self) -> u64 {
+    pub fn to_countersigner_anchor_value_sat(&self) -> Amount {
         if self.to_countersigner_anchor_count == 1 {
             ANCHOR_SAT
         } else {
-            0
+            Amount::ZERO
         }
     }
 
@@ -482,7 +481,7 @@ impl CommitmentInfo {
 
         // This is safe because we checked for negative
         self.to_self_delay = delay as u16;
-        self.to_broadcaster_value_sat = out.value;
+        self.to_broadcaster_value_sat = out.value.to_sat();
         self.to_broadcaster_delayed_pubkey = Some(
             PublicKey::from_slice(delayed_pubkey.as_slice())
                 .map_err(|err| mismatch_error(format!("delayed_pubkey malformed: {}", err)))?,
@@ -525,7 +524,7 @@ impl CommitmentInfo {
             Some(PublicKey::from_slice(to_countersigner_delayed_pubkey_data.as_slice()).map_err(
                 |err| mismatch_error(format!("to_countersigner delayed pubkey malformed: {}", err)),
             )?);
-        self.to_countersigner_value_sat = out.value;
+        self.to_countersigner_value_sat = out.value.to_sat();
         Ok(())
     }
 
@@ -552,7 +551,7 @@ impl CommitmentInfo {
 
         let cltv_expiry = cltv_expiry as u32;
 
-        let htlc = HTLCInfo { value_sat: out.value, payment_hash_hash, cltv_expiry };
+        let htlc = HTLCInfo { value_sat: out.value.to_sat(), payment_hash_hash, cltv_expiry };
         self.received_htlcs.push(htlc);
 
         Ok(())
@@ -570,7 +569,7 @@ impl CommitmentInfo {
             .try_into()
             .map_err(|_| mismatch_error("payment hash RIPEMD160 must be length 20".to_string()))?;
 
-        let htlc = HTLCInfo { value_sat: out.value, payment_hash_hash, cltv_expiry: 0 };
+        let htlc = HTLCInfo { value_sat: out.value.to_sat(), payment_hash_hash, cltv_expiry: 0 };
         self.offered_htlcs.push(htlc);
 
         Ok(())
@@ -608,7 +607,7 @@ impl CommitmentInfo {
 
         // policy-commitment-anchor-amount
         if out.value != ANCHOR_SAT {
-            return Err(mismatch_error(format!("anchor wrong size: {}", out.value)));
+            return Err(mismatch_error(format!("anchor wrong size: {}", out.value.to_sat())));
         }
 
         if to_pubkey == to_broadcaster_funding_pubkey {
@@ -634,7 +633,7 @@ impl CommitmentInfo {
         out: &TxOut,
         script_bytes: &[u8],
     ) -> Result<(), ValidationError> {
-        if out.script_pubkey.is_v0_p2wpkh() {
+        if out.script_pubkey.is_p2wpkh() {
             if setup.is_anchors() {
                 return Err(transaction_format_error(
                     "p2wpkh to_countersigner not valid with anchors".to_string(),
@@ -647,19 +646,20 @@ impl CommitmentInfo {
                     "more than one to_countersigner output".to_string(),
                 ));
             }
-            self.to_countersigner_address = Payload::from_script(&out.script_pubkey).ok();
-            self.to_countersigner_value_sat = out.value;
-        } else if out.script_pubkey.is_v0_p2wsh() {
+            let address = Address::from_script(&out.script_pubkey, Network::Bitcoin);
+            self.to_countersigner_address = address.ok();
+            self.to_countersigner_value_sat = out.value.to_sat();
+        } else if out.script_pubkey.is_p2wsh() {
             if script_bytes.is_empty() {
                 return Err(transaction_format_error("missing witscript for p2wsh".to_string()));
             }
             let script = ScriptBuf::from(script_bytes.to_vec());
             // FIXME - Does this need it's own policy tag?
-            if out.script_pubkey != script.to_v0_p2wsh() {
+            if out.script_pubkey != script.to_p2wsh() {
                 return Err(transaction_format_error(format!(
                     "script pubkey doesn't match inner script: {} != {}",
                     out.script_pubkey,
-                    script.to_v0_p2wsh()
+                    script.to_p2wsh()
                 )));
             }
             if let Ok(vals) = self.parse_to_broadcaster_script(&script) {
@@ -693,7 +693,7 @@ impl CommitmentInfo {
 mod tests {
     use bitcoin::blockdata::script::Builder;
     use bitcoin::secp256k1::{Secp256k1, SecretKey};
-    use bitcoin::{Address, Network};
+    use bitcoin::{Address, Amount, CompressedPublicKey, Network};
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
     use lightning::ln::channel_keys::{DelayedPaymentKey, RevocationKey};
 
@@ -741,7 +741,7 @@ mod tests {
     fn parse_test() {
         let secp_ctx = Secp256k1::signing_only();
         let mut info = CommitmentInfo::new_for_holder();
-        let out = TxOut { value: 123, script_pubkey: Default::default() };
+        let out = TxOut { value: Amount::from_sat(123), script_pubkey: Default::default() };
         let revocation_pubkey =
             PublicKey::from_secret_key(&secp_ctx, &SecretKey::from_slice(&[4u8; 32]).unwrap());
         let revocation_pubkey = RevocationKey(revocation_pubkey);
@@ -774,11 +774,14 @@ mod tests {
     fn handle_anchor_wrong_size_test() {
         let mut info = CommitmentInfo::new_for_holder();
         let keys = make_test_channel_keys();
-        let out = TxOut { value: 329, script_pubkey: Default::default() };
+        let out = TxOut { value: Amount::from_sat(329), script_pubkey: Default::default() };
         let to_pubkey_data = keys.pubkeys().funding_pubkey.serialize().to_vec();
         let res = info.handle_anchor_output(&keys, &out, to_pubkey_data);
         assert!(res.is_err());
-        assert_eq!(res.unwrap_err(), mismatch_error(format!("anchor wrong size: {}", out.value)));
+        assert_eq!(
+            res.unwrap_err(),
+            mismatch_error(format!("anchor wrong size: {}", out.value.to_sat()))
+        );
     }
 
     // policy-commitment-anchor-match-fundingkey
@@ -786,7 +789,7 @@ mod tests {
     fn handle_anchor_not_local_or_remote_test() {
         let mut info = CommitmentInfo::new_for_holder();
         let keys = make_test_channel_keys();
-        let out = TxOut { value: 330, script_pubkey: Default::default() };
+        let out = TxOut { value: Amount::from_sat(330), script_pubkey: Default::default() };
         let to_pubkey_data = make_test_pubkey(42).serialize().to_vec(); // doesn't match
         let res = info.handle_anchor_output(&keys, &out, to_pubkey_data.clone());
         assert!(res.is_err());
@@ -805,7 +808,7 @@ mod tests {
         let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
         let setup = make_test_channel_setup();
-        let out = TxOut { value: 42, script_pubkey: Default::default() };
+        let out = TxOut { value: Amount::from_sat(42), script_pubkey: Default::default() };
         let script_bytes = [3u8; 30];
         let res = info.handle_output(&keys, &setup, &out, &script_bytes);
         assert!(res.is_err());
@@ -822,7 +825,7 @@ mod tests {
             .push_slice(&[0u8; 42]) // invalid
             .into_script();
         let out = TxOut {
-            value: 42,
+            value: Amount::from_sat(42),
             script_pubkey: Address::p2wsh(&script, Network::Testnet).script_pubkey(),
         };
         let res = info.handle_output(&keys, &setup, &out, script.as_bytes());
@@ -836,10 +839,11 @@ mod tests {
         let keys = make_test_channel_keys();
         let mut setup = make_test_channel_setup();
         setup.commitment_type = CommitmentType::AnchorsZeroFeeHtlc;
-        let pubkey = bitcoin::PublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
+        let pubkey =
+            CompressedPublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
         let out = TxOut {
-            value: 42,
-            script_pubkey: Address::p2wpkh(&pubkey, Network::Testnet).unwrap().script_pubkey(),
+            value: Amount::from_sat(42),
+            script_pubkey: Address::p2wpkh(&pubkey, Network::Testnet).script_pubkey(),
         };
         let res = info.handle_output(&keys, &setup, &out, &[0u8; 0]);
         assert!(res.is_err());
@@ -854,12 +858,13 @@ mod tests {
         let mut info = CommitmentInfo::new_for_counterparty();
         let keys = make_test_channel_keys();
         let setup = make_test_channel_setup();
-        let pubkey = bitcoin::PublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
-        let address = Address::p2wpkh(&pubkey, Network::Testnet).unwrap();
-        let out = TxOut { value: 42, script_pubkey: address.script_pubkey() };
+        let pubkey =
+            CompressedPublicKey::from_slice(&make_test_pubkey(43).serialize()[..]).unwrap();
+        let address = Address::p2wpkh(&pubkey, Network::Testnet);
+        let out = TxOut { value: Amount::from_sat(42), script_pubkey: address.script_pubkey() };
 
         // Make the info look like a to_remote has already been seen.
-        info.to_countersigner_address = Some(address.payload);
+        info.to_countersigner_address = Some(address);
 
         let res = info.handle_output(&keys, &setup, &out, &[0u8; 0]);
         assert!(res.is_err());
@@ -876,7 +881,7 @@ mod tests {
         let setup = make_test_channel_setup();
         let script = Builder::new().into_script();
         let out = TxOut {
-            value: 42,
+            value: Amount::from_sat(42),
             script_pubkey: Address::p2wsh(&script, Network::Testnet).script_pubkey(),
         };
         let res = info.handle_output(&keys, &setup, &out, script.as_bytes());
@@ -895,7 +900,7 @@ mod tests {
         let script0 = Builder::new().into_script();
         let script1 = Builder::new().push_slice(&[0u8; 42]).into_script();
         let out = TxOut {
-            value: 42,
+            value: Amount::from_sat(42),
             script_pubkey: Address::p2wsh(&script0, Network::Testnet).script_pubkey(),
         };
         let res = info.handle_output(&keys, &setup, &out, script1.as_bytes());

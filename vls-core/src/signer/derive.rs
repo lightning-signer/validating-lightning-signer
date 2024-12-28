@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 
-use bitcoin::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use bitcoin::bip32::{ChildNumber, Xpriv, Xpub};
 use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::{Hash, HashEngine};
 use bitcoin::secp256k1::{PublicKey, SecretKey};
@@ -13,7 +13,7 @@ use crate::util::crypto_utils::{hkdf_sha256, hkdf_sha256_keys};
 /// Derive keys for nodes and channels
 pub trait KeyDerive {
     /// Derive master key
-    fn master_key(&self, seed: &[u8]) -> ExtendedPrivKey;
+    fn master_key(&self, seed: &[u8]) -> Xpriv;
     /// Derive node key
     fn node_keys(
         &self,
@@ -38,7 +38,7 @@ pub trait KeyDerive {
         seed: &[u8],
         keys_id: &[u8; 32],
         basepoint_index: u32,
-        master_key: &ExtendedPrivKey,
+        master_key: &Xpriv,
         secp_ctx: &Secp256k1<secp256k1::All>,
     ) -> (SecretKey, SecretKey, SecretKey, SecretKey, SecretKey, [u8; 32]);
 }
@@ -57,9 +57,9 @@ impl NativeKeyDerive {
 }
 
 impl KeyDerive for NativeKeyDerive {
-    fn master_key(&self, seed: &[u8]) -> ExtendedPrivKey {
+    fn master_key(&self, seed: &[u8]) -> Xpriv {
         let master_seed = hkdf_sha256(seed, "bip32 seed".as_bytes(), &[]);
-        ExtendedPrivKey::new_master(self.network, &master_seed).expect("Your RNG is busted")
+        Xpriv::new_master(self.network, &master_seed).expect("Your RNG is busted")
     }
 
     fn node_keys(
@@ -78,7 +78,7 @@ impl KeyDerive for NativeKeyDerive {
         _seed: &[u8],
         keys_id: &[u8; 32],
         _basepoint_index: u32,
-        _master_key: &ExtendedPrivKey,
+        _master_key: &Xpriv,
         _secp_ctx: &Secp256k1<secp256k1::All>,
     ) -> (SecretKey, SecretKey, SecretKey, SecretKey, SecretKey, [u8; 32]) {
         let hkdf_info = "c-lightning";
@@ -114,8 +114,8 @@ pub struct LdkKeyDerive {
 }
 
 impl KeyDerive for LdkKeyDerive {
-    fn master_key(&self, seed: &[u8]) -> ExtendedPrivKey {
-        ExtendedPrivKey::new_master(self.network, &seed).expect("Your RNG is busted")
+    fn master_key(&self, seed: &[u8]) -> Xpriv {
+        Xpriv::new_master(self.network, &seed).expect("Your RNG is busted")
     }
 
     fn node_keys(
@@ -125,7 +125,7 @@ impl KeyDerive for LdkKeyDerive {
     ) -> (PublicKey, SecretKey) {
         let master = self.master_key(seed);
         let node_secret_key = master
-            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(0).unwrap())
+            .derive_priv(&secp_ctx, &[ChildNumber::from_hardened_idx(0).unwrap()])
             .expect("Your RNG is busted")
             .private_key;
         let node_id = PublicKey::from_secret_key(&secp_ctx, &node_secret_key);
@@ -137,7 +137,7 @@ impl KeyDerive for LdkKeyDerive {
         seed: &[u8],
         keys_id: &[u8; 32],
         _basepoint_index: u32,
-        master_key: &ExtendedPrivKey,
+        master_key: &Xpriv,
         secp_ctx: &Secp256k1<secp256k1::All>,
     ) -> (SecretKey, SecretKey, SecretKey, SecretKey, SecretKey, [u8; 32]) {
         let chan_id = byte_utils::slice_to_be64(&keys_id[0..8]);
@@ -147,16 +147,16 @@ impl KeyDerive for LdkKeyDerive {
         unique_start.input(seed);
 
         let channel_master_key = master_key
-            .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(3).unwrap())
+            .derive_priv(&secp_ctx, &[ChildNumber::from_hardened_idx(3).unwrap()])
             .expect("Your RNG is busted");
 
         // We only seriously intend to rely on the channel_master_key for true secure
         // entropy, everything else just ensures uniqueness. We rely on the unique_start (ie
         // starting_time provided in the constructor) to be unique.
         let child_privkey = channel_master_key
-            .ckd_priv(
+            .derive_priv(
                 secp_ctx,
-                ChildNumber::from_hardened_idx(chan_id as u32).expect("key space exhausted"),
+                &[ChildNumber::from_hardened_idx(chan_id as u32).expect("key space exhausted")],
             )
             .expect("Your RNG is busted");
         unique_start.input(child_privkey.private_key.as_ref());
@@ -175,7 +175,7 @@ impl KeyDerive for LdkKeyDerive {
                 sha.input(&channel_seed);
                 sha.input(&$prev_key[..]);
                 sha.input(&$info[..]);
-                SecretKey::from(Sha256::from_engine(sha))
+                SecretKey::from_slice(Sha256::from_engine(sha).as_ref()).unwrap()
             }};
         }
         let funding_key = key_step!(b"funding key", commitment_seed);
@@ -214,8 +214,8 @@ pub struct LndKeyDerive {
 }
 
 impl KeyDerive for LndKeyDerive {
-    fn master_key(&self, seed: &[u8]) -> ExtendedPrivKey {
-        ExtendedPrivKey::new_master(self.network, seed).expect("Your RNG is busted")
+    fn master_key(&self, seed: &[u8]) -> Xpriv {
+        Xpriv::new_master(self.network, seed).expect("Your RNG is busted")
     }
 
     fn node_keys(
@@ -234,7 +234,7 @@ impl KeyDerive for LndKeyDerive {
         _seed: &[u8],
         keys_id: &[u8; 32],
         basepoint_index: u32,
-        master_key: &ExtendedPrivKey,
+        master_key: &Xpriv,
         _secp_ctx: &Secp256k1<secp256k1::All>,
     ) -> (SecretKey, SecretKey, SecretKey, SecretKey, SecretKey, [u8; 32]) {
         let hkdf_info = "c-lightning";
@@ -358,7 +358,7 @@ impl KeyDerivationStyle {
         secp_ctx: &Secp256k1<secp256k1::All>,
         network: Network,
         seed: &[u8],
-    ) -> ExtendedPrivKey {
+    ) -> Xpriv {
         match self {
             KeyDerivationStyle::Native => get_account_extended_key_native(secp_ctx, network, seed),
             KeyDerivationStyle::Ldk => get_account_extended_key_native(secp_ctx, network, seed),
@@ -367,47 +367,47 @@ impl KeyDerivationStyle {
     }
 }
 
-// This function will panic if the ExtendedPrivKey::new_master fails.
+// This function will panic if the Xpriv::new_master fails.
 // Only use where failure is an option (ie, startup).
 pub(crate) fn get_account_extended_key_native(
     secp_ctx: &Secp256k1<secp256k1::All>,
     network: Network,
     node_seed: &[u8],
-) -> ExtendedPrivKey {
+) -> Xpriv {
     let bip32_seed = hkdf_sha256(node_seed, "bip32 seed".as_bytes(), &[]);
-    let master = ExtendedPrivKey::new_master(network, &bip32_seed).unwrap();
+    let master = Xpriv::new_master(network, &bip32_seed).unwrap();
     master
-        .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(0).unwrap())
+        .derive_priv(&secp_ctx, &[ChildNumber::from_normal_idx(0).unwrap()])
         .unwrap()
-        .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(0).unwrap())
+        .derive_priv(&secp_ctx, &[ChildNumber::from_normal_idx(0).unwrap()])
         .unwrap()
 }
 
-// This function will panic if the ExtendedPrivKey::new_master fails.
+// This function will panic if the Xpriv::new_master fails.
 // Only use where failure is an option (ie, startup).
 pub(crate) fn get_account_extended_key_lnd(
     secp_ctx: &Secp256k1<secp256k1::All>,
     network: Network,
     node_seed: &[u8],
-) -> ExtendedPrivKey {
+) -> Xpriv {
     // Must match btcsuite/btcwallet/waddrmgr/scoped_manager.go
-    let master = ExtendedPrivKey::new_master(network, node_seed).unwrap();
+    let master = Xpriv::new_master(network, node_seed).unwrap();
     let purpose = 84;
     let cointype = 0;
     let account = 0;
     master
-        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(purpose).unwrap())
+        .derive_priv(&secp_ctx, &[ChildNumber::from_hardened_idx(purpose).unwrap()])
         .unwrap()
-        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(cointype).unwrap())
+        .derive_priv(&secp_ctx, &[ChildNumber::from_hardened_idx(cointype).unwrap()])
         .unwrap()
-        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(account).unwrap())
+        .derive_priv(&secp_ctx, &[ChildNumber::from_hardened_idx(account).unwrap()])
         .unwrap()
 }
 
 pub(crate) fn derive_key_lnd(
     secp_ctx: &Secp256k1<secp256k1::All>,
     network: Network,
-    master: &ExtendedPrivKey,
+    master: &Xpriv,
     key_family: u32,
     index: u32,
 ) -> (PublicKey, SecretKey) {
@@ -422,17 +422,17 @@ pub(crate) fn derive_key_lnd(
     };
     let branch = 0;
     let node_ext_prv = master
-        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(bip43purpose).unwrap())
+        .derive_priv(&secp_ctx, &[ChildNumber::from_hardened_idx(bip43purpose).unwrap()])
         .unwrap()
-        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(coin_type).unwrap())
+        .derive_priv(&secp_ctx, &[ChildNumber::from_hardened_idx(coin_type).unwrap()])
         .unwrap()
-        .ckd_priv(&secp_ctx, ChildNumber::from_hardened_idx(key_family).unwrap())
+        .derive_priv(&secp_ctx, &[ChildNumber::from_hardened_idx(key_family).unwrap()])
         .unwrap()
-        .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(branch).unwrap())
+        .derive_priv(&secp_ctx, &[ChildNumber::from_normal_idx(branch).unwrap()])
         .unwrap()
-        .ckd_priv(&secp_ctx, ChildNumber::from_normal_idx(index).unwrap())
+        .derive_priv(&secp_ctx, &[ChildNumber::from_normal_idx(index).unwrap()])
         .unwrap();
-    let node_ext_pub = &ExtendedPubKey::from_priv(&secp_ctx, &node_ext_prv);
+    let node_ext_pub = &Xpub::from_priv(&secp_ctx, &node_ext_prv);
     (node_ext_pub.public_key, node_ext_prv.private_key)
 }
 

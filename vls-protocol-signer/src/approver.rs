@@ -6,7 +6,7 @@ use lightning_signer::Arc;
 use log::*;
 
 use lightning_signer::invoice::{Invoice, InvoiceAttributes};
-use lightning_signer::lightning::ln::PaymentHash;
+use lightning_signer::lightning::types::payment::PaymentHash;
 use lightning_signer::node::Node;
 use lightning_signer::policy::error::ValidationErrorKind;
 use lightning_signer::util::clock::Clock;
@@ -456,9 +456,10 @@ mod tests {
     use crate::approver::{
         Approve, NegativeApprover, PositiveApprover, VelocityApprover, WarningPositiveApprover,
     };
+    use lightning::types::payment::PaymentHash;
     use lightning_signer::bitcoin::secp256k1::PublicKey;
     use lightning_signer::invoice::InvoiceAttributes;
-    use lightning_signer::lightning::ln::PaymentHash;
+    use lightning_signer::lightning;
     use lightning_signer::node::{Node, PaymentState};
     use lightning_signer::util::clock::Clock;
     use lightning_signer::util::clock::ManualClock;

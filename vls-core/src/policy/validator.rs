@@ -14,8 +14,8 @@ use bitcoin::sighash::{EcdsaSighashType, SegwitV0Sighash};
 use bitcoin::{BlockHash, Network, OutPoint, Transaction};
 use core::time::Duration;
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
-use lightning::ln::PaymentHash;
 use lightning::sign::InMemorySigner;
+use lightning::types::payment::PaymentHash;
 use log::{debug, error};
 use serde_derive::{Deserialize, Serialize};
 use serde_with::{serde_as, Bytes, IfIsHumanReadable};
@@ -1157,7 +1157,7 @@ fn min_opt(a_opt: Option<u64>, b_opt: Option<u64>) -> Option<u64> {
 mod tests {
     use super::*;
     use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
-    use lightning::ln::PaymentHash;
+    use lightning::types::payment::PaymentHash;
 
     #[test]
     fn test_per_commitment_storage() {

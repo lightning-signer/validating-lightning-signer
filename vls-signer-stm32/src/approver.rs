@@ -17,7 +17,7 @@ use vls_protocol_signer::lightning_signer::{
     bitcoin::secp256k1::PublicKey,
     bitcoin::TxOut,
     invoice::{Invoice, InvoiceAttributes},
-    lightning::ln::PaymentHash,
+    lightning::types::payment::PaymentHash,
     prelude::SendSync,
     Arc,
 };
@@ -102,7 +102,7 @@ impl Approve for ScreenApprover {
         );
         let devctx: &mut DeviceContext = &mut self.devctx.borrow_mut();
         for (ord, &ndx) in unknown_indices.iter().enumerate() {
-            let amount_sat = tx.output[ndx].value;
+            let amount_sat = tx.output[ndx].value.to_sat();
             let script = &tx.output[ndx].script_pubkey;
             let mut lines = vec![
                 format!("{: ^19}", format!("Destination {}/{}?", ord + 1, unknown_indices.len())),

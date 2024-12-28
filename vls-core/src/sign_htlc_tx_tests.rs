@@ -3,14 +3,14 @@ mod tests {
     use bitcoin::absolute::{Height, LockTime};
     use bitcoin::hashes::Hash;
     use bitcoin::sighash::EcdsaSighashType;
-    use bitcoin::Sequence;
-    use bitcoin::{self, Transaction};
+    use bitcoin::transaction::Version;
+    use bitcoin::{self, Amount, Sequence, Transaction};
     use lightning::ln::chan_utils::{
         build_htlc_transaction, get_htlc_redeemscript, get_revokeable_redeemscript,
         ChannelTransactionParameters, HTLCOutputInCommitment, TxCreationKeys,
     };
     use lightning::ln::channel_keys::{DelayedPaymentKey, RevocationKey};
-    use lightning::ln::PaymentHash;
+    use lightning::types::payment::PaymentHash;
     use test_log::test;
 
     use crate::channel::{ChannelBase, ChannelSetup, CommitmentType};
@@ -227,7 +227,7 @@ mod tests {
         } else {
             panic!("unknown commitment_type");
         };
-        assert_eq!(htlc_tx.txid().to_string(), expected_txid);
+        assert_eq!(htlc_tx.compute_txid().to_string(), expected_txid);
 
         let htlc_pubkey = get_channel_htlc_pubkey(&node, &channel_id, &remote_per_commitment_point);
 
@@ -345,7 +345,7 @@ mod tests {
         } else {
             panic!("unknown commitment_type");
         };
-        assert_eq!(htlc_tx.txid().to_string(), expected_txid);
+        assert_eq!(htlc_tx.compute_txid().to_string(), expected_txid);
 
         let htlc_pubkey = get_channel_htlc_pubkey(&node, &channel_id, &per_commitment_point);
 
@@ -609,7 +609,7 @@ mod tests {
     // policy-htlc-version
     generate_failed_precondition_error_with_mutated_tx!(
         bad_version,
-        |tms| tms.tx.version = 3, // only version 2 allowed
+        |tms| tms.tx.version = Version::non_standard(3), // only version 2 allowed
         |_| "policy failure: sighash mismatch"
     );
 
@@ -670,7 +670,7 @@ mod tests {
     // policy-htlc-fee-range
     generate_failed_precondition_error_with_mutated_tx!(
         low_feerate,
-        |tms| tms.tx.output[0].value = 999_885, // htlc_amount_sat is 1_000_000
+        |tms| tms.tx.output[0].value = Amount::from_sat(999_885), // htlc_amount_sat is 1_000_000
         |ectx: ErrMsgContext| {
             if ectx.opt_zerofee {
                 // zero-fee fails sooner, because we don't estimate_feerate_per_kw so the recomposed
@@ -697,7 +697,7 @@ mod tests {
     // policy-htlc-fee-range
     generate_failed_precondition_error_with_mutated_tx!(
         high_feerate,
-        |tms| tms.tx.output[0].value = 660_000, // htlc_amount_sat is 1_000_000
+        |tms| tms.tx.output[0].value = Amount::from_sat(660_000), // htlc_amount_sat is 1_000_000
         |ectx: ErrMsgContext| {
             if ectx.opt_zerofee {
                 // zero-fee fails sooner, because we don't estimate_feerate_per_kw so the recomposed

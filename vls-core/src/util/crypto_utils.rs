@@ -1,16 +1,14 @@
 use crate::prelude::*;
-use bitcoin::address::{Payload, WitnessProgram, WitnessVersion};
-use bitcoin::hashes::hash160::Hash as BitcoinHash160;
 use bitcoin::hashes::sha256::Hash as BitcoinSha256;
-use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
+use bitcoin::hashes::{sha256d, Hash, HashEngine, Hmac, HmacEngine};
 use bitcoin::key::XOnlyPublicKey;
 use bitcoin::secp256k1::constants::SCHNORR_SIGNATURE_SIZE;
 use bitcoin::secp256k1::{
-    self, ecdsa::Signature, schnorr, Message, PublicKey, Secp256k1, SecretKey, ThirtyTwoByteHash,
+    self, ecdsa::Signature, schnorr, Message, PublicKey, Secp256k1, SecretKey,
 };
 use bitcoin::sighash::{EcdsaSighashType, TapSighash};
 use bitcoin::taproot::TapTweakHash;
-use bitcoin::{PrivateKey, ScriptBuf};
+use bitcoin::PrivateKey;
 use lightning::ln::channel_keys::{RevocationBasepoint, RevocationKey};
 
 fn hkdf_extract_expand(salt: &[u8], secret: &[u8], info: &[u8], output: &mut [u8]) {
@@ -59,32 +57,6 @@ pub(crate) fn derive_public_key<T: secp256k1::Signing>(
 
     let hashkey = PublicKey::from_secret_key(&secp_ctx, &SecretKey::from_slice(&res)?);
     base_point.combine(&hashkey)
-}
-
-// only used in test_utils.rs, so warns when that file is not included
-#[allow(unused)]
-pub(crate) fn payload_for_p2wpkh(key: &PublicKey) -> Payload {
-    let mut hash_engine = BitcoinHash160::engine();
-    hash_engine.input(&key.serialize());
-    Payload::WitnessProgram(
-        WitnessProgram::new(
-            WitnessVersion::V0,
-            BitcoinHash160::from_engine(hash_engine)[..].to_vec(),
-        )
-        .expect("unable to calculate sha256"),
-    )
-}
-
-pub(crate) fn payload_for_p2wsh(script: &ScriptBuf) -> Payload {
-    let mut hash_engine = BitcoinSha256::engine();
-    hash_engine.input(&script.as_bytes());
-    Payload::WitnessProgram(
-        WitnessProgram::new(
-            WitnessVersion::V0,
-            BitcoinSha256::from_engine(hash_engine)[..].to_vec(),
-        )
-        .expect("unable to calculate sha256"),
-    )
 }
 
 /// Convert a [Signature] to Bitcoin signature bytes, with SIGHASH_ALL
@@ -145,15 +117,15 @@ pub fn sighash_from_heartbeat(ser_heartbeat: &[u8]) -> Message {
     sha.input("heartbeat".as_bytes());
     sha.input(ser_heartbeat);
     let hash = BitcoinSha256::from_engine(sha);
-    Message::from(hash)
+    Message::from_digest(hash.to_byte_array())
 }
 
-pub(crate) fn ecdsa_sign<H: Hash + ThirtyTwoByteHash>(
+pub(crate) fn ecdsa_sign(
     secp_ctx: &Secp256k1<secp256k1::All>,
     privkey: &PrivateKey,
-    sighash: &H,
+    sighash: sha256d::Hash,
 ) -> Signature {
-    let message = Message::from(*sighash);
+    let message = Message::from_digest(sighash.to_byte_array());
     secp_ctx.sign_ecdsa(&message, &privkey.inner)
 }
 
@@ -164,7 +136,7 @@ pub(crate) fn taproot_sign(
     aux_rand: &[u8; 32],
 ) -> schnorr::Signature {
     let message = Message::from(sighash);
-    let keypair = secp256k1::KeyPair::from_secret_key(secp_ctx, &privkey.inner);
+    let keypair = secp256k1::Keypair::from_secret_key(secp_ctx, &privkey.inner);
     let (internal_key, _parity) = XOnlyPublicKey::from_keypair(&keypair);
     let tweak = TapTweakHash::from_key_and_tweak(internal_key, None);
     let tweaked_keypair = keypair.add_xonly_tweak(secp_ctx, &tweak.to_scalar()).unwrap();

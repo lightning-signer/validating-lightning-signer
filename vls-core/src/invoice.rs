@@ -3,7 +3,7 @@ use core::time::Duration;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::PublicKey;
 
-use lightning::ln::PaymentHash;
+use lightning::types::payment::PaymentHash;
 
 pub use lightning::offers::invoice as bolt12;
 pub use lightning_invoice as bolt11;
@@ -62,8 +62,8 @@ impl InvoiceAttributes for Invoice {
     fn description(&self) -> Option<String> {
         match self {
             Invoice::Bolt11(bolt11) => match bolt11.description() {
-                bolt11::Bolt11InvoiceDescription::Direct(d) => Some(d.to_string()),
-                bolt11::Bolt11InvoiceDescription::Hash(h) => Some(format!("hash: {:?}", h)),
+                bolt11::Bolt11InvoiceDescriptionRef::Direct(d) => Some(d.to_string()),
+                bolt11::Bolt11InvoiceDescriptionRef::Hash(h) => Some(format!("hash: {:?}", h)),
             },
             Invoice::Bolt12(bolt12) => bolt12.description().map(|d| d.to_string()),
         }
@@ -144,6 +144,6 @@ mod tests {
         assert_invalid_argument_err!(
             Invoice::from_str("lni1qqg239qhp9zd4tnv4exlh74gmlq6yq3qqc3xu3s3rg94nj40zfsy866mhu5vxne6tcej5878k2mneuvgjy8ssqgppg88yetrw4e8y6twvus8getnwstzzq3dygmzpg6e53ll0aavg37gt3rvjg762vufygdqq4xprs0regcatydqyqpu2qsqvgnwgcg35z6ee2h3yczraddm72xrfua9uve2rlrm9deu7xyfzr6cyypc97ywxgyjmc72gxh466uf8lyr7akfmvtn4ye4efqpscxx8g5vzj26qzsfsq3dygmzpg6e53ll0aavg37gt3rvjg762vufygdqq4xprs0regcatypt8spm8wcafuwyh24nfkctvcxmyruamsljh638ec306na7327zutcpqt0vv5neq5504nacs6cy7c39atn2ldrtecldj36tjw8nq0z69e3jkqpj9n43mjrkctxjqg07amjelrlq0zyth3gv28cmju6eumg3pqqyqr2klccnuv2h6xnkymss284z2sy0sm7w5gwqqqqqqqqqqqqqqqzsqqqqqqqqqqqqr5jt9hav2gqqqqqq5szxgt8ndznqzwagyrehhzcerrnk2p5evccgrct2cdjhk5tyz02wa9lleaf879hlhcx6a2spqxczzq3dygmzpg6e53ll0aavg37gt3rvjg762vufygdqq4xprs0regcatxeqgepv7d50qsxyts2muqhwhyphg6z096dzvkj80am0f3rhm65fsycx0890807t53cmzwqppu00p25vrua6fctshty9a6hjt4sfzpqp8v4crq4pvqe75"),
             "invoice not bolt12: Decode(UnknownRequiredFeature) \
-             and not bolt11: Bech32Error(InvalidChecksum)");
+             and not bolt11: Bech32Error(Checksum(InvalidResidue))");
     }
 }

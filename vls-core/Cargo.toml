@@ -14,7 +14,7 @@ rust-version = "1.66.0"
 
 default = ["std", "env_logger", "debug", "use_backtrace"]
 
-no-std = ["lightning/no-std", "lightning-invoice/no-std", "bitcoin/no-std", "core2/alloc", "txoo/no-std", "bitcoin-push-decoder/no-std", "serde_bolt/no-std"]
+no-std = ["txoo/no-std", "bitcoin-push-decoder/no-std", "serde_bolt/no-std"]
 std = ["lightning/std", "lightning-invoice/std", "bitcoin/std", "bitcoin/rand-std", "serde_bolt/std", "txoo/std", "bitcoin-push-decoder/std", "serde_bolt/std", "tracing/std"]
 secp-lowmemory = ["bitcoin/secp-lowmemory"]
 
@@ -49,14 +49,12 @@ path = "src/lib.rs"
 vls-common = { path = "../vls-common", version = "0.13.0" }
 serde = { version = "1.0", default-features = false, features = ["alloc"] }
 serde_derive = { version = "1.0" }
-bitcoin-consensus-derive = { version = "0.1.0" }
+bitcoin-consensus-derive = { version = "0.2.0" }
 serde_with = { version = "3.6", default-features = false, features = ["hex", "macros"] }
 bolt-derive = { path = "../bolt-derive", version = "0.3.1" }
 vls-policy-derive = { path = "../policy-derive", version = "0.1.0" }
 
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
-
-core2 = { version = "0.3.0", optional = true, default-features = false }
 
 # Disable default enabled “std” feature
 anyhow = { version = "1.0", default-features = false }
@@ -79,19 +77,19 @@ ahash = { version = "0.8.7", default-features = false }
 itertools = { version = "0.10", default-features = false }
 
 [dependencies.serde_bolt]
-version = "0.4.1"
+version = "0.5.0"
 default-features = false
 
 [dependencies.bitcoin-push-decoder]
-version = "0.3"
+version = "0.4.0"
 default-features = false
 
 [dependencies.txoo]
-version = "0.8"
+version = "0.9.0"
 default-features = false
 
 [dev-dependencies.txoo-bitcoind-client]
-version = "0.8.1"
+version = "0.9.0"
 default-features = false
 features = ["dummy-source"]
 
@@ -103,26 +101,32 @@ test-log = "0.2.8"
 tempfile = "3.10.1"
 
 [dependencies.lightning]
-version = "0.0.123"
+#git = "https://github.com/lightning-signer/rust-lightning"
+#rev = ""
+version = "0.1.1"
 default-features = false
 features = ["grind_signatures", "unsafe_revoked_tx_signing"]
 
 [dev-dependencies.lightning]
-version = "0.0.123"
+#git = "https://github.com/lightning-signer/rust-lightning"
+#rev = ""
+version = "0.1.1"
 default-features = false
 features = ["grind_signatures", "_test_utils", "unsafe_revoked_tx_signing"]
 
 [dependencies.lightning-invoice]
-version = "0.31.0"
+#git = "https://github.com/lightning-signer/rust-lightning"
+#rev = ""
+version = "0.33.1"
 default-features = false
 
 [dependencies.bitcoin]
-version = "0.30.2"
+version = "0.32.2"
 default-features = false
 features = ["serde"]
 
 [dev-dependencies.bitcoin]
-version = "0.30.2"
+version = "0.32.2"
 default-features = false
 features = ["serde", "bitcoinconsensus", "rand-std"]
 

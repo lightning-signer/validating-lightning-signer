@@ -1,34 +1,25 @@
 #![allow(missing_docs)]
 
-use bitcoin::bech32::u5;
-use bitcoin::hash_types::WPubkeyHash;
 use bitcoin::hashes::Hash;
+use bitcoin::io::Error as IOError;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
 use bitcoin::secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey};
-use bitcoin::{ScriptBuf, Transaction, TxOut};
+use bitcoin::{ScriptBuf, Transaction, TxOut, WPubkeyHash};
+use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction,
 };
 use lightning::ln::channel_keys::{DelayedPaymentKey, RevocationKey};
-use lightning::ln::features::ChannelTypeFeatures;
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
-use lightning::ln::{chan_utils, PaymentPreimage};
-use lightning::sign::ecdsa::{EcdsaChannelSigner, WriteableEcdsaChannelSigner};
-use lightning::sign::HTLCDescriptor;
-use lightning::sign::{
-    ChannelSigner, EntropySource, KeyMaterial, NodeSigner, Recipient, SignerProvider,
-    SpendableOutputDescriptor,
-};
-use lightning::util::ser::{Readable, Writeable, Writer};
+use lightning::types::features::ChannelTypeFeatures;
+use lightning::types::payment::PaymentPreimage;
 
-use log::{debug, error, info};
-
+use super::crypto_utils;
 use crate::channel::{ChannelBase, ChannelId, ChannelSetup, CommitmentType};
 use crate::invoice::Invoice;
-use crate::io_extras::Error as IOError;
 use crate::node::Node;
 use crate::prelude::*;
 use crate::signer::multi_signer::MultiSigner;
@@ -37,8 +28,15 @@ use crate::util::crypto_utils::derive_public_key;
 use crate::util::status::Status;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::Arc;
-
-use super::crypto_utils;
+use lightning::ln::inbound_payment::ExpandedKey;
+use lightning::sign::ecdsa::EcdsaChannelSigner;
+use lightning::sign::HTLCDescriptor;
+use lightning::sign::{
+    ChannelSigner, EntropySource, NodeSigner, Recipient, SignerProvider, SpendableOutputDescriptor,
+};
+use lightning::util::ser::{Readable, Writeable, Writer};
+use lightning_invoice::RawBolt11Invoice;
+use log::{debug, error, info};
 
 /// Adapt MySigner to NodeSigner
 pub struct LoopbackSignerKeysInterface {
@@ -169,7 +167,11 @@ impl ChannelSigner for LoopbackChannelSigner {
         Ok(())
     }
 
-    fn get_per_commitment_point(&self, idx: u64, _secp_ctx: &Secp256k1<All>) -> PublicKey {
+    fn get_per_commitment_point(
+        &self,
+        idx: u64,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<PublicKey, ()> {
         // signer layer expect forward counting commitment number, but
         // we are passed a backwards counting one
         self.signer
@@ -177,10 +179,9 @@ impl ChannelSigner for LoopbackChannelSigner {
                 Ok(base.get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - idx).unwrap())
             })
             .map_err(|s| self.bad_status(s))
-            .unwrap()
     }
 
-    fn release_commitment_secret(&self, commitment_number: u64) -> [u8; 32] {
+    fn release_commitment_secret(&self, commitment_number: u64) -> Result<[u8; 32], ()> {
         // signer layer expect forward counting commitment number, but
         // we are passed a backwards counting one
         let secret = self.signer.with_channel(&self.node_id, &self.channel_id, |chan| {
@@ -189,7 +190,7 @@ impl ChannelSigner for LoopbackChannelSigner {
                 .unwrap();
             Ok(*secret.as_ref())
         });
-        secret.expect("missing channel")
+        Ok(secret.expect("missing channel"))
     }
 
     fn validate_holder_commitment(
@@ -544,9 +545,17 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
             })
             .map_err(|s| self.bad_status(s))
     }
-}
 
-impl WriteableEcdsaChannelSigner for LoopbackChannelSigner {}
+    fn sign_splicing_funding_input(
+        &self,
+        _tx: &Transaction,
+        _input_index: usize,
+        _input_value: u64,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<Signature, ()> {
+        todo!("sign_splicing_funding_input - #538")
+    }
+}
 
 impl SignerProvider for LoopbackSignerKeysInterface {
     type EcdsaSigner = LoopbackChannelSigner;
@@ -555,7 +564,7 @@ impl SignerProvider for LoopbackSignerKeysInterface {
     fn get_destination_script(&self, _channel_keys_id: [u8; 32]) -> Result<ScriptBuf, ()> {
         let wallet_path = LoopbackChannelSigner::dest_wallet_path();
         let pubkey = self.get_node().get_wallet_pubkey(&wallet_path).expect("pubkey");
-        Ok(ScriptBuf::new_v0_p2wpkh(&WPubkeyHash::hash(&pubkey.inner.serialize())))
+        Ok(ScriptBuf::new_p2wpkh(&WPubkeyHash::hash(&pubkey.0.serialize())))
     }
 
     fn get_shutdown_scriptpubkey(&self) -> Result<ShutdownScript, ()> {
@@ -634,15 +643,14 @@ impl NodeSigner for LoopbackSignerKeysInterface {
 
     fn sign_invoice(
         &self,
-        hrp_bytes: &[u8],
-        invoice_data: &[u5],
+        invoice: &RawBolt11Invoice,
         recipient: Recipient,
     ) -> Result<RecoverableSignature, ()> {
         match recipient {
             Recipient::Node => {}
             Recipient::PhantomNode => return Err(()),
         };
-        self.get_node().sign_invoice(hrp_bytes, invoice_data).map_err(|_| ())
+        self.get_node().sign_bolt11_invoice(invoice).map_err(|_| ())
     }
 
     fn sign_bolt12_invoice(
@@ -652,14 +660,7 @@ impl NodeSigner for LoopbackSignerKeysInterface {
         todo!()
     }
 
-    fn sign_bolt12_invoice_request(
-        &self,
-        _: &lightning::offers::invoice_request::UnsignedInvoiceRequest,
-    ) -> Result<bitcoin::secp256k1::schnorr::Signature, ()> {
-        todo!()
-    }
-
-    fn get_inbound_payment_key_material(&self) -> KeyMaterial {
+    fn get_inbound_payment_key(&self) -> ExpandedKey {
         self.get_node().get_inbound_payment_key_material()
     }
 }

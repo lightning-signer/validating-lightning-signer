@@ -1,17 +1,16 @@
 use alloc::vec::Vec;
 use bitcoin::consensus::{encode, Decodable, Encodable};
-use bitcoin::psbt::{Error, Input, Output, PartiallySignedTransaction};
+use bitcoin::psbt::{Error, Input, Output, Psbt};
 use serde_bolt::bitcoin;
 use serde_bolt::io::{self, Read, Write};
 
-// FIXME: devrandom suggested the name `PSBTWithSize`
 #[derive(Debug)]
 pub struct PsbtWrapper {
-    pub inner: PartiallySignedTransaction,
+    pub inner: Psbt,
 }
 
-impl From<PartiallySignedTransaction> for PsbtWrapper {
-    fn from(value: PartiallySignedTransaction) -> Self {
+impl From<Psbt> for PsbtWrapper {
+    fn from(value: Psbt) -> Self {
         Self { inner: value }
     }
 }
@@ -32,8 +31,8 @@ impl Decodable for PsbtWrapper {
         r: &mut R,
     ) -> Result<Self, encode::Error> {
         let mut buffer = Vec::new();
-        r.read_to_end(&mut buffer)?;
-        let psbt = PartiallySignedTransaction::deserialize(&buffer)
+        r.read_to_limit(&mut buffer, u64::MAX)?;
+        let psbt = Psbt::deserialize(&buffer)
             .map_err(|_| encode::Error::ParseFailed("filed to parse the psbt"))?;
         Ok(Self { inner: psbt })
     }
@@ -67,18 +66,16 @@ pub struct StreamedPSBT {
 }
 
 impl StreamedPSBT {
-    pub fn new(psbt: PartiallySignedTransaction) -> Self {
+    pub fn new(psbt: Psbt) -> Self {
         let segwit_flags = Vec::new();
         Self { psbt: PsbtWrapper::from(psbt), segwit_flags }
     }
 
-    pub fn psbt(&self) -> &PartiallySignedTransaction {
+    pub fn psbt(&self) -> &Psbt {
         &self.psbt.inner
     }
 
-    pub fn consensus_decode_global<R: Read + ?Sized>(
-        r: &mut R,
-    ) -> Result<PartiallySignedTransaction, encode::Error> {
+    pub fn consensus_decode_global<R: Read + ?Sized>(r: &mut R) -> Result<Psbt, encode::Error> {
         // TODO ask rust-bitcoin to implement a more memory efficient serializer / deserializer
         let psbt = PsbtWrapper::consensus_decode_from_finite_reader(r)?;
         Ok(psbt.inner)
@@ -107,7 +104,7 @@ impl Decodable for StreamedPSBT {
                 if let Some(input_tx) = input.non_witness_utxo.take() {
                     let prevout = global.unsigned_tx.input[ind].previous_output;
                     // check if the input txid matched the psbt tx input txid
-                    if input_tx.txid() != prevout.txid {
+                    if input_tx.compute_txid() != prevout.txid {
                         return Err(encode::Error::ParseFailed("missing utxo"));
                     }
                     // check if the matching output exists
@@ -160,7 +157,7 @@ impl Decodable for StreamedPSBT {
 
 impl StreamedPSBT {
     /// Checks that unsigned transaction does not have scriptSig's or witness data.
-    fn unsigned_tx_checks(psbt: &PartiallySignedTransaction) -> Result<(), Error> {
+    fn unsigned_tx_checks(psbt: &Psbt) -> Result<(), Error> {
         for txin in &psbt.unsigned_tx.input {
             if !txin.script_sig.is_empty() {
                 return Err(Error::UnsignedTxHasScriptSigs);
@@ -188,9 +185,10 @@ mod tests {
     use super::StreamedPSBT;
     use bitcoin::consensus::{deserialize, encode::serialize_hex};
     use bitcoin::hashes::hex::FromHex;
-    use bitcoin::psbt::{Input, Output, PartiallySignedTransaction};
+    use bitcoin::psbt::{Input, Output, Psbt};
     use bitcoin::*;
     use core::str::FromStr;
+    use lightning_signer::bitcoin::transaction::Version;
     use serde_bolt::bitcoin;
     use std::collections::BTreeMap;
     use txoo::bitcoin::absolute::Height;
@@ -224,7 +222,7 @@ mod tests {
         assert_eq!(
             streamed.psbt.inner.inputs[0].witness_utxo,
             Some(TxOut {
-                value: 200000000,
+                value: Amount::from_sat(200000000),
                 script_pubkey: hex_script!("76a91485cff1097fd9e008bb34af709c62197b38978a4888ac"),
             })
         );
@@ -246,7 +244,7 @@ mod tests {
         assert_eq!(streamed.segwit_flags, vec![true]);
         assert_eq!(
             streamed.psbt.inner.inputs[0].witness_utxo,
-            Some(TxOut { value: 200000000, script_pubkey: output_script })
+            Some(TxOut { value: Amount::from_sat(200000000), script_pubkey: output_script })
         );
         assert_eq!(streamed.psbt.inner.extract_tx(), unserialized.extract_tx());
     }
@@ -258,15 +256,17 @@ mod tests {
         input_tx.output[0].script_pubkey = output_script.clone();
 
         let mut unserialized = make_psbt(input_tx);
-        unserialized.inputs[0].witness_utxo =
-            Some(TxOut { value: 200000000, script_pubkey: output_script.clone() });
+        unserialized.inputs[0].witness_utxo = Some(TxOut {
+            value: Amount::from_sat(200000000),
+            script_pubkey: output_script.clone(),
+        });
         let serialized = serialize_hex(&PsbtWrapper { inner: unserialized.clone() });
         let streamed = hex_streamed!(&serialized).unwrap();
 
         assert_eq!(streamed.segwit_flags, vec![true]);
         assert_eq!(
             streamed.psbt.inner.inputs[0].witness_utxo,
-            Some(TxOut { value: 200000000, script_pubkey: output_script })
+            Some(TxOut { value: Amount::from_sat(200000000), script_pubkey: output_script })
         );
         assert_eq!(streamed.psbt.inner.extract_tx(), unserialized.extract_tx());
     }
@@ -278,32 +278,34 @@ mod tests {
         input_tx.output[0].script_pubkey = output_script.clone();
 
         let mut unserialized = make_psbt(input_tx);
-        unserialized.inputs[0].witness_utxo =
-            Some(TxOut { value: 200000001, script_pubkey: output_script.clone() });
+        unserialized.inputs[0].witness_utxo = Some(TxOut {
+            value: Amount::from_sat(200000001),
+            script_pubkey: output_script.clone(),
+        });
         let serialized = serialize_hex(&PsbtWrapper { inner: unserialized.clone() });
         assert!(hex_streamed!(&serialized).is_err());
     }
 
-    fn make_psbt(input_tx: Transaction) -> PartiallySignedTransaction {
-        let unserialized = PartiallySignedTransaction {
+    fn make_psbt(input_tx: Transaction) -> Psbt {
+        let unserialized = Psbt {
             unsigned_tx: Transaction {
-                version: 2,
+                version: Version::TWO,
                 lock_time: absolute::LockTime::Blocks(Height::from_consensus(1257139).unwrap()),
                 input: vec![TxIn {
-                    previous_output: OutPoint { txid: input_tx.txid(), vout: 0 },
+                    previous_output: OutPoint { txid: input_tx.compute_txid(), vout: 0 },
                     script_sig: ScriptBuf::new(),
                     sequence: Sequence::ENABLE_LOCKTIME_NO_RBF,
                     witness: Witness::default(),
                 }],
                 output: vec![
                     TxOut {
-                        value: 99999699,
+                        value: Amount::from_sat(99999699),
                         script_pubkey: hex_script!(
                             "76a914d0c59903c5bac2868760e90fd521a4665aa7652088ac"
                         ),
                     },
                     TxOut {
-                        value: 100000000,
+                        value: Amount::from_sat(100000000),
                         script_pubkey: hex_script!(
                             "a9143545e6e33b832c47050f24d3eeb93c9c03948bc787"
                         ),
@@ -323,7 +325,7 @@ mod tests {
 
     fn make_input_tx() -> Transaction {
         Transaction {
-            version: 1,
+            version: Version::ONE,
             lock_time: absolute::LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint {
@@ -355,11 +357,11 @@ mod tests {
                         }],
             output: vec![
                 TxOut {
-                    value: 200000000,
+                    value: Amount::from_sat(200000000),
                     script_pubkey: hex_script!("76a91485cff1097fd9e008bb34af709c62197b38978a4888ac"),
                 },
                 TxOut {
-                    value: 190303501938,
+                    value: Amount::from_sat(190303501938),
                     script_pubkey: hex_script!("a914339725ba21efd62ac753a9bcd067d6c7a6a39d0587"),
                 },
             ],
