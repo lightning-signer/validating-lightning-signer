@@ -93,11 +93,20 @@ rust-latest-extras:
   tags: [ saas-linux-large-amd64 ]
   stage: build
   image: rust:latest
+  services:
+    - docker:26.0.1-dind
   cache:
     key: vls-compile-latest-extras
     paths:
       - bin
       - .cache/cargo
+  variables:
+    DB_HOST: docker
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    # gitlab doesn't know how to wait for a service start https://gitlab.com/gitlab-org/gitlab/-/issues/24197
+    - sleep 60;
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
