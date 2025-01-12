@@ -36,6 +36,10 @@ The client internally appends an HMAC that covers:
 
 The server returns an HMAC using a shared secret that covers the stored items (`put`) or retrieved items (`get`).  A nonce is also covered in the case of a `get`.  This can be used to prove to a signer in a secure enclave that there was no replay attack by a MITM, and that the server was actually reached for the operation.
 
+# Integration Test
+
+For running integration tests of `lssd` present in [integration_test](./lssd/tests/integration_test.rs) a docker service is required to pull images and spin up containers for the associated database. We use [testcontainers](https://testcontainers.com/) which provides us ability to create temporary containers.
+
 # Try it
 
 ```sh
