@@ -1,10 +1,14 @@
 use lightning_storage_server::Value;
+#[cfg(feature = "test-etcd")]
+use lssd::database::etcd;
 #[cfg(feature = "test-postgres")]
 use lssd::database::postgres;
 use lssd::database::redb::RedbDatabase;
 use lssd::{Database, Error};
 use std::sync::Arc;
 use tempfile;
+#[cfg(feature = "test-etcd")]
+use test_log::test;
 
 fn make_value(v: u8) -> Value {
     Value { version: 0, value: vec![v] }
@@ -26,6 +30,14 @@ async fn test_postgres_database() {
     do_basic_with_db(Arc::new(db)).await;
 }
 
+#[cfg(feature = "test-etcd")]
+#[test(tokio::test)]
+async fn test_etcd_database() {
+    let db = etcd::EtcdDatabase::new(vec!["http://localhost:2379"], None).await.unwrap();
+    db.clear().await.unwrap();
+    do_basic_with_db(Arc::new(db)).await;
+}
+
 async fn do_basic_with_db(db: Arc<dyn Database>) {
     let client_id = vec![1];
     db.put(
@@ -41,7 +53,9 @@ async fn do_basic_with_db(db: Arc<dyn Database>) {
     let values = db.get_with_prefix(&client_id, "x1".to_string()).await.unwrap();
     assert_eq!(values.len(), 2);
     assert_eq!(values[0].1.value, vec![10]);
+    assert_eq!(values[0].1.version, 0);
     assert_eq!(values[1].1.value, vec![11]);
+    assert_eq!(values[1].1.version, 0);
     let result = db
         .put(
             &client_id,
