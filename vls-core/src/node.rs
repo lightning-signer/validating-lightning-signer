@@ -219,12 +219,12 @@ impl RoutedPayment {
         incoming_amount_sat: u64,
         outgoing_amount_sat: u64,
     ) -> (u64, u64) {
-        // TODO this can be optimized to eliminate the clone
-        let mut incoming = self.incoming.clone();
-        incoming.insert(channel_id.clone(), incoming_amount_sat);
-        let mut outgoing = self.outgoing.clone();
-        outgoing.insert(channel_id.clone(), outgoing_amount_sat);
-        (incoming.values().into_iter().sum::<u64>(), outgoing.values().into_iter().sum::<u64>())
+        let incoming_sum = self.incoming.values().sum::<u64>() + incoming_amount_sat
+            - *self.incoming.get(channel_id).unwrap_or(&0);
+        let outgoing_sum = self.outgoing.values().sum::<u64>() + outgoing_amount_sat
+            - *self.outgoing.get(channel_id).unwrap_or(&0);
+
+        (incoming_sum, outgoing_sum)
     }
 
     /// The total incoming and outgoing, in satoshi
