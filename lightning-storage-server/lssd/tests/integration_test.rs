@@ -8,7 +8,11 @@ use lssd::{Database, Error};
 use std::sync::Arc;
 use tempfile;
 #[cfg(any(feature = "postgres", feature = "etcd"))]
-use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage};
+use testcontainers::{
+    core::{IntoContainerPort, WaitFor},
+    runners::AsyncRunner,
+    GenericImage, ImageExt as _,
+};
 
 fn make_value(v: u8) -> Value {
     Value { version: 0, value: vec![v] }
@@ -39,7 +43,7 @@ fn load_env_vars(port: u16) {
 #[tokio::test]
 async fn test_postgres_database() {
     let postgres_container = GenericImage::new("postgres", "latest")
-        .with_exposed_port(PG_PORT)
+        .with_exposed_port(PG_PORT.tcp())
         .with_wait_for(WaitFor::seconds(10))
         .with_env_var("POSTGRES_PASSWORD", PG_PASSWORD)
         .with_env_var("POSTGRES_USER", PG_USER)
@@ -55,11 +59,10 @@ async fn test_postgres_database() {
 #[cfg(feature = "etcd")]
 #[tokio::test]
 async fn test_etcd_database() {
-    use testcontainers::RunnableImage;
-
-    let etcd_image = GenericImage::new("bitnami/etcd", "latest")
-        .with_exposed_port(2379)
-        .with_exposed_port(2380)
+    let etcd_container = GenericImage::new("bitnami/etcd", "latest")
+        .with_exposed_port(2379.tcp())
+        .with_exposed_port(2380.tcp())
+        .with_wait_for(WaitFor::seconds(10))
         .with_env_var("ETCD_NAME", "etcd-server")
         .with_env_var("ETCD_INITIAL_ADVERTISE_PEER_URLS", "http://etcd-server:2380")
         .with_env_var("ETCD_LISTEN_PEER_URLS", "http://0.0.0.0:2380")
@@ -68,9 +71,6 @@ async fn test_etcd_database() {
         .with_env_var("ETCD_INITIAL_CLUSTER", "etcd-server=http://etcd-server:2380")
         .with_env_var("ETCD_INITIAL_CLUSTER_STATE", "new")
         .with_env_var("ETCD_ROOT_PASSWORD", "mysecretpassword")
-        .with_wait_for(WaitFor::seconds(10));
-
-    let etcd_container = RunnableImage::from(etcd_image)
         .with_container_name("etcd-server")
         .start()
         .await

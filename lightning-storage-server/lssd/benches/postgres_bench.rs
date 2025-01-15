@@ -2,9 +2,9 @@ use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcoin_hashes::{Hash, HashEngine};
 use lightning_storage_server::Value;
 use lssd::database::{postgres, Database};
-use testcontainers::core::WaitFor;
+use testcontainers::core::{IntoContainerPort, WaitFor};
 use testcontainers::runners::AsyncRunner;
-use testcontainers::GenericImage;
+use testcontainers::{GenericImage, ImageExt};
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -30,7 +30,7 @@ fn load_env_vars(port: u16) {
 #[tokio::main]
 async fn main() {
     let postgres_container = GenericImage::new("postgres", "latest")
-        .with_exposed_port(PG_PORT)
+        .with_exposed_port(PG_PORT.tcp())
         .with_wait_for(WaitFor::message_on_stderr("database system is ready to accept connections"))
         .with_wait_for(WaitFor::message_on_stdout("database system is ready to accept connections"))
         .with_env_var("POSTGRES_PASSWORD", PG_PASSWORD)
