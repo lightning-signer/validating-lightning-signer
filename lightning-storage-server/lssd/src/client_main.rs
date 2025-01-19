@@ -55,7 +55,7 @@ fn info_subcommand(_rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
 // Auth and hmac secret
 fn make_auth() -> Result<(PrivAuth, Vec<u8>), Box<dyn std::error::Error>> {
     let secret_key = secret_key()?;
-    let hmac_secret = Sha256Hash::hash(&secret_key[..]).into_inner();
+    let hmac_secret = Sha256Hash::hash(&secret_key[..]).to_byte_array();
     let auth = PrivAuth::new_for_client(&secret_key, &server_public_key()?);
     Ok((auth, hmac_secret.to_vec()))
 }

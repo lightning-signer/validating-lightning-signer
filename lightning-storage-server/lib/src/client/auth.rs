@@ -51,6 +51,6 @@ impl PrivAuth {
 
     /// SHA256 of shared_secret
     pub fn auth_token(&self) -> Vec<u8> {
-        Sha256Hash::hash(&self.shared_secret).to_vec()
+        Sha256Hash::hash(&self.shared_secret).to_byte_array().to_vec()
     }
 }

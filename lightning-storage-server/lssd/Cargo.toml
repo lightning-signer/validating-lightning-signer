@@ -41,7 +41,7 @@ url = { version = "2.3", optional = true }
 bitcoin_hashes = { workspace = true, optional = true }
 
 [dev-dependencies]
-lssd = { path = ".", features = ["postgres", "dangerous-flags"] }
+lssd = { path = ".", features = ["postgres", "dangerous-flags", "cli"] }
 tempfile = "3"
 bitcoin_hashes = { workspace = true }
 

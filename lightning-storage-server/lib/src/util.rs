@@ -58,7 +58,7 @@ pub fn remove_and_check_hmac(
 fn compute_hmac(secret: &[u8], key: &str, version: &i64, value: &[u8]) -> [u8; 32] {
     let mut hmac = HmacEngine::<Sha256Hash>::new(secret);
     add_to_hmac(key, version, value, &mut hmac);
-    Hmac::from_engine(hmac).into_inner()
+    Hmac::from_engine(hmac).to_byte_array()
 }
 
 /// Add key, version (8 bytes big endian) and value to HMAC
@@ -77,7 +77,7 @@ pub fn compute_shared_hmac(secret: &[u8], nonce: &[u8], kvs: &[(String, Value)])
     for (key, value) in kvs {
         add_to_hmac(&key, &value.version, &value.value, &mut hmac_engine);
     }
-    Hmac::from_engine(hmac_engine).into_inner().to_vec()
+    Hmac::from_engine(hmac_engine).to_byte_array().to_vec()
 }
 
 #[cfg(test)]

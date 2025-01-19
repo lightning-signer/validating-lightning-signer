@@ -56,7 +56,7 @@ async fn do_insert(db: Arc<dyn Database>, i: u32, version: i64) -> f64 {
         .map(|j| {
             let mut engine1 = engine.clone();
             engine1.input(&j.to_be_bytes());
-            let key = hex::encode(Sha256::from_engine(engine1).into_inner());
+            let key = hex::encode(Sha256::from_engine(engine1).to_byte_array());
             (key, Value { version, value: [(j % 256) as u8; 128].to_vec() })
         })
         .collect();
