@@ -32,4 +32,4 @@ vls-core = { path = "../vls-core", version = "0.13.0", features = ["test_utils"]
 vls-protocol-signer = { path = ".", features = ["developer"] }
 # For logging in unit tests
 test-log = "0.2"
-env_logger = "0.9"
+env_logger = { workspace = true }

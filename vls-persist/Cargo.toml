@@ -35,7 +35,7 @@ tracing = { version = "0.1.40", features = ["attributes", "log"], default-featur
 [dev-dependencies]
 tempfile = "3.2"
 test-log = "0.2"
-env_logger = "0.9"
+env_logger = { workspace = true }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 ciborium = "0.2"
 redb = { version = "1.3" }

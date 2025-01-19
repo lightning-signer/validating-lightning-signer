@@ -27,7 +27,7 @@ default-features = false
 [dev-dependencies]
 regex = "1.5"
 # For logging in unit tests
-env_logger = "0.9"
+env_logger = { workspace = true }
 test-log = "0.2.8"
 serde_bolt = { version = "0.5.0", features = ["test_utils"] }
 vls-protocol = { path = ".", features = ["developer"] }
