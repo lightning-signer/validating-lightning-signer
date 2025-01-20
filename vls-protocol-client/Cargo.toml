@@ -17,7 +17,6 @@ developer = ["vls-protocol/developer"]
 vls-protocol-signer = { path = "../vls-protocol-signer", version = "0.13.0" }
 vls-protocol = { path = "../vls-protocol", version = "0.13.0" }
 vls-core = { path = "../vls-core", version = "0.13.0" }
-bit-vec = "0.6"
 log = "0.4"
 anyhow = "1.0"
 async-trait = "0.1"

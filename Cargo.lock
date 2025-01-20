@@ -3060,7 +3060,6 @@ version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "bit-vec",
  "delegate",
  "log",
  "vls-core",
