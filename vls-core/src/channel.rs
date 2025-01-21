@@ -31,7 +31,6 @@ use crate::node::{Node, RoutedPayment, CHANNEL_STUB_PRUNE_BLOCKS};
 use crate::policy::error::policy_error;
 use crate::policy::validator::{ChainState, CommitmentSignatures, EnforcementState, Validator};
 use crate::prelude::*;
-use crate::signer::derive::KeyDerivationStyle;
 use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
 use crate::util::crypto_utils::derive_public_key;
 use crate::util::crypto_utils::derive_public_revocation_key;
@@ -45,29 +44,78 @@ use crate::{catch_panic, policy_err, Arc, CommitmentPointProvider, Weak};
 
 /// Channel identifier
 ///
-/// This ID is not related to the channel IDs in the Lightning protocol.
-///
-/// A channel may have more than one ID.
-///
+/// This id is used to coordinate with the node and
+/// is not related to the channel ids in the Lightning protocol.
 /// The channel keys are derived from this and a base key.
+///
+/// A channel may have more than one id.
+///
+/// There are currently two ways to generate ids: one which uses
+/// a peer id and is compatible with CLN, and one which doesn't
+/// and is compatible with LDK. In both cases the id of the channel
+/// at the node (called a `dbid` in CLN or `oid in LDK) is stored
+/// in little-endian in the final 8 bytes of the id. This fact is
+/// relied when retrieving the `dbid`/`oid`.
 #[serde_as]
 #[derive(PartialEq, Eq, Clone, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ChannelId(#[serde_as(as = "IfIsHumanReadable<Hex, Bytes>")] Vec<u8>);
 
 impl ChannelId {
-    /// Create an ID
+    /// Create an id from a nonce
     pub fn new(inner: &[u8]) -> Self {
         Self(inner.to_vec())
     }
 
-    /// Convert to a byte slice
+    /// Create an id from an oid (LDK-style)
+    ///
+    /// The nonce is a 32 byte array, where the first
+    /// 24 bytes are 0 and the last 8 are the original
+    /// id (little-endian)
+    pub fn new_from_oid(oid: u64) -> Self {
+        let mut nonce: [u8; 32] = [0u8; 32];
+        let oid_slice = oid.to_le_bytes();
+        nonce[24..].copy_from_slice(&oid_slice);
+        Self::new(&nonce)
+    }
+
+    /// Create an id from a peer id and oid (CLN-style)
+    ///
+    /// The nonce is a 41 byte array, where the first 33
+    /// bytes are the peer id and the final 8 are the
+    /// original id (little-endian)
+    pub fn new_from_peer_id_and_oid(peer_id: &[u8; 33], oid: u64) -> Self {
+        let mut nonce = [0u8; 33 + 8];
+        nonce[0..33].copy_from_slice(peer_id);
+        nonce[33..].copy_from_slice(&oid.to_le_bytes());
+        Self::new(&nonce)
+    }
+
+    /// Return a byte slice of the nonce
     pub fn as_slice(&self) -> &[u8] {
         self.0.as_slice()
     }
 
-    /// Get a reference to the byte vector
+    /// Return a reference to a vector of the nonce
     pub fn inner(&self) -> &Vec<u8> {
         &self.0
+    }
+
+    /// Returns the original id used at creation
+    pub fn oid(&self) -> u64 {
+        let bytes_slice = &self.0[&self.0.len() - 8..];
+        let mut bytes_array = [0u8; 8];
+        bytes_array.copy_from_slice(bytes_slice);
+        u64::from_le_bytes(bytes_array)
+    }
+
+    /// Return the id in a format compatible with the LDK
+    /// `SignerProvider` `generate_channel_keys_id` interface
+    ///
+    /// This will panic if the nonce is not exactly 32 bytes
+    pub fn ldk_channel_keys_id(&self) -> [u8; 32] {
+        let mut nonce = [0u8; 32];
+        nonce.copy_from_slice(&self.0);
+        nonce
     }
 }
 
@@ -382,49 +430,13 @@ impl ChannelBase for ChannelStub {
 
     fn chaninfo(&self) -> SlotInfo {
         SlotInfo {
-            oid: self.oid(),
+            oid: self.id0.oid(),
             id: self.id0.clone(),
             slot: SlotInfoVariant::StubInfo {
                 pruneheight: self.blockheight + CHANNEL_STUB_PRUNE_BLOCKS,
             },
         }
     }
-}
-
-/// The CLN original id is encoded in little-endian in the last 8 bytes of the ChannelId
-pub fn oid_from_native_channel_id(cid: &ChannelId) -> u64 {
-    let chanidvec = &cid.0;
-    assert!(chanidvec.len() >= 8);
-    let bytes_slice = &chanidvec[chanidvec.len() - 8..];
-    let mut bytes_array = [0u8; 8];
-    bytes_array.copy_from_slice(bytes_slice);
-    u64::from_le_bytes(bytes_array)
-}
-
-/// The CLN channel id is formed from a original seed id (called dbid) joined with
-/// 33 bytes of the peer node id
-// TODO the peer node id should have a more specific type
-pub fn native_channel_id_from_oid(oid: u64, peer_id: &[u8; 33]) -> ChannelId {
-    let mut nonce = [0u8; 33 + 8];
-    nonce[0..33].copy_from_slice(peer_id);
-    nonce[33..].copy_from_slice(&oid.to_le_bytes());
-    ChannelId::new(&nonce)
-}
-
-/// The LDK original id is encoded in big endian in the first 8 bytes of the ChannelId
-pub fn oid_from_ldk_channel_id(channel_id: &[u8]) -> u64 {
-    assert!(channel_id.len() >= 8);
-    let mut oid_slice = [0; 8];
-    oid_slice.copy_from_slice(&channel_id[0..8]);
-    u64::from_be_bytes(oid_slice)
-}
-
-/// The LDK channel id is formed from 8 bytes of an original id followed by zeroed out bytes
-pub fn ldk_channel_id_from_oid(oid: u64) -> [u8; 32] {
-    let mut channel_id = [0u8; 32];
-    let oid_slice = oid.to_be_bytes();
-    channel_id[..8].copy_from_slice(&oid_slice);
-    channel_id
 }
 
 impl ChannelStub {
@@ -443,16 +455,6 @@ impl ChannelStub {
             keys.channel_keys_id(),
             keys.get_secure_random_bytes(),
         )
-    }
-
-    /// Return the original id used to create the channel
-    pub fn oid(&self) -> u64 {
-        match self.get_node().node_config.key_derivation_style {
-            KeyDerivationStyle::Native => oid_from_native_channel_id(&self.id0),
-            KeyDerivationStyle::Ldk => oid_from_ldk_channel_id(&self.id0.inner()),
-            // add other derivation styles here
-            _ => 0,
-        }
     }
 
     fn get_node(&self) -> Arc<Node> {
@@ -582,7 +584,7 @@ impl ChannelBase for Channel {
 
     fn chaninfo(&self) -> SlotInfo {
         SlotInfo {
-            oid: self.oid(),
+            oid: self.id0.oid(),
             id: self.id(),
             slot: SlotInfoVariant::ChannelInfo {
                 funding: self.monitor.funding_outpoint(),
@@ -598,16 +600,6 @@ impl Channel {
     /// The channel ID
     pub fn id(&self) -> ChannelId {
         self.id.clone().unwrap_or(self.id0.clone())
-    }
-
-    /// Return the original id used to create the channel
-    pub fn oid(&self) -> u64 {
-        match self.get_node().node_config.key_derivation_style {
-            KeyDerivationStyle::Native => oid_from_native_channel_id(&self.id0),
-            KeyDerivationStyle::Ldk => oid_from_ldk_channel_id(&self.id0.inner()),
-            // add other derivation styles here
-            _ => 0,
-        }
     }
 
     #[allow(missing_docs)]
@@ -2817,7 +2809,7 @@ mod tests {
     use lightning::ln::PaymentHash;
     use lightning::util::ser::Writeable;
 
-    use crate::channel::{ldk_channel_id_from_oid, oid_from_ldk_channel_id, ChannelBase};
+    use crate::channel::ChannelBase;
     use crate::util::test_utils::{
         init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
     };
@@ -2860,13 +2852,8 @@ mod tests {
     }
 
     #[test]
-    fn test_ldk_oid() {
+    fn test_ldk_oid_roundtrip() {
         let oid: u64 = 42;
-        let mut channel_id_inner = [0u8; 32];
-        channel_id_inner[..8].copy_from_slice(&oid.to_be_bytes());
-        let channel_id = ChannelId(channel_id_inner.to_vec());
-
-        assert_eq!(oid, oid_from_ldk_channel_id(&channel_id.inner()));
-        assert_eq!(channel_id, ChannelId(ldk_channel_id_from_oid(oid).to_vec()));
+        assert_eq!(oid, ChannelId::new_from_oid(oid).oid());
     }
 }

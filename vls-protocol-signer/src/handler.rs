@@ -29,8 +29,7 @@ use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::key::XOnlyPublicKey;
 use lightning_signer::bitcoin::sighash::EcdsaSighashType;
 use lightning_signer::channel::{
-    native_channel_id_from_oid, ChannelBalance, ChannelBase, ChannelId, ChannelSetup, SlotInfo,
-    SlotInfoVariant, TypedSignature,
+    ChannelBalance, ChannelBase, ChannelId, ChannelSetup, SlotInfo, SlotInfoVariant, TypedSignature,
 };
 use lightning_signer::dbgvals;
 use lightning_signer::invoice::Invoice;
@@ -370,7 +369,7 @@ impl HandlerBuilder {
 
 impl RootHandler {
     fn channel_id(peer_id: &PubKey, dbid: u64) -> ChannelId {
-        native_channel_id_from_oid(dbid, &peer_id.0)
+        ChannelId::new_from_peer_id_and_oid(&peer_id.0, dbid)
     }
 
     /// Log channel information
