@@ -321,7 +321,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         let (offered_htlcs, received_htlcs) =
             LoopbackChannelSigner::convert_to_htlc_info2(hct.htlcs());
 
-        let (sig, _) = self
+        let sig = self
             .signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
                 let result = chan.sign_holder_commitment_tx_phase2_redundant(

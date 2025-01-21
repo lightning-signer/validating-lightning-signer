@@ -52,7 +52,7 @@ mod tests {
                 Ok(commitment_tx.trust().built_transaction().transaction.clone())
             })
             .expect("build");
-        let (signature, _) = node
+        let signature = node
             .with_channel(&channel_id, |chan| {
                 chan.sign_holder_commitment_tx_phase2_redundant(
                     commit_num,
@@ -223,8 +223,7 @@ mod tests {
                 tx: &tx.transaction,
             });
 
-            let (sig, _htlc_sigs) =
-                chan.sign_holder_commitment_tx_phase2(commit_tx_ctx.commit_num)?;
+            let sig = chan.sign_holder_commitment_tx_phase2(commit_tx_ctx.commit_num)?;
 
             let build_feerate =
                 if chan_ctx.setup.is_zero_fee_htlc() { 0 } else { commit_tx_ctx.feerate_per_kw };
@@ -286,6 +285,7 @@ mod tests {
             chan_ctx.setup.channel_value_sat,
             &channel_funding_redeemscript,
         );
+
         Ok(())
     }
 

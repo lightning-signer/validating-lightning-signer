@@ -8,7 +8,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{self, ecdsa::Signature, All, Message, PublicKey, Secp256k1, SecretKey};
 use bitcoin::sighash::EcdsaSighashType;
 use bitcoin::sighash::SighashCache;
-use bitcoin::{Network, OutPoint, Script, ScriptBuf, Transaction};
+use bitcoin::{sighash, Network, OutPoint, Script, ScriptBuf, Transaction};
 use lightning::chain;
 use lightning::ln::chan_utils::{
     build_htlc_transaction, derive_private_key, get_htlc_redeemscript, make_funding_redeemscript,
@@ -1220,7 +1220,7 @@ impl Channel {
     pub fn sign_holder_commitment_tx_phase2(
         &mut self,
         commitment_number: u64,
-    ) -> Result<(Signature, Vec<Signature>), Status> {
+    ) -> Result<Signature, Status> {
         // We are just signing the latest commitment info that we previously
         // stored in the enforcement state, while checking that the commitment
         // number supplied by the caller matches the one we expect.
@@ -1273,7 +1273,7 @@ impl Channel {
         self.enforcement_state.channel_closed = true;
         trace_enforcement_state!(self);
         self.persist()?;
-        Ok((sig, vec![]))
+        Ok(sig)
     }
 
     /// Sign a holder commitment and HTLCs when recovering from node failure
@@ -1381,7 +1381,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         offered_htlcs: Vec<HTLCInfo2>,
         received_htlcs: Vec<HTLCInfo2>,
-    ) -> Result<(Signature, Vec<Signature>), Status> {
+    ) -> Result<Signature, Status> {
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         let info2 = self.build_holder_commitment_info(
@@ -1438,7 +1438,7 @@ impl Channel {
         self.enforcement_state.channel_closed = true;
         trace_enforcement_state!(self);
         self.persist()?;
-        Ok((sig, vec![]))
+        Ok(sig)
     }
 
     pub(crate) fn make_holder_commitment_tx(
@@ -2532,6 +2532,48 @@ impl Channel {
             false, // is_counterparty
             txkeys,
         )
+    }
+
+    /// Sign a HTLC transaction hanging off a commitment transaction
+    pub fn sign_holder_htlc_tx_phase2(
+        &self,
+        tx: &Transaction,
+        input: u32,
+        commitment_number: u64,
+        feerate: u32,
+        is_offered: bool,
+        cltv_expiry: u32,
+        htlc_amount_msat: u64,
+        payment_hash: PaymentHash,
+    ) -> Result<TypedSignature, Status> {
+        let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
+        let keys = self.make_holder_tx_keys(&per_commitment_point);
+        let htlc = HTLCOutputInCommitment {
+            offered: is_offered,
+            cltv_expiry,
+            payment_hash,
+            transaction_output_index: None,
+            amount_msat: htlc_amount_msat,
+        };
+        let witness_script =
+            chan_utils::get_htlc_redeemscript(&htlc, &self.setup.features(), &keys);
+        let sighash = &sighash::SighashCache::new(tx)
+            .segwit_signature_hash(
+                input as usize,
+                &witness_script,
+                htlc_amount_msat,
+                EcdsaSighashType::All,
+            )
+            .unwrap();
+        let our_htlc_private_key = chan_utils::derive_private_key(
+            &self.secp_ctx,
+            &per_commitment_point,
+            &self.keys.htlc_base_key,
+        );
+        let sighash = Message::from_slice(sighash.as_byte_array())
+            .map_err(|_| Status::internal("failed to convert sighash"))?;
+        let signature = self.secp_ctx.sign_ecdsa(&sighash, &our_htlc_private_key);
+        Ok(TypedSignature { sig: signature, typ: EcdsaSighashType::All })
     }
 
     /// Phase 1

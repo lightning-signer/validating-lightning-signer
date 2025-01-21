@@ -180,6 +180,7 @@ fn track_char(msg: &Message) -> char {
         Message::SignRemoteCommitmentTx(_m) => '<',
         Message::SignRemoteCommitmentTx2(_m) => '<',
         Message::SignRemoteHtlcTx(_m) => 'h',
+        Message::SignLocalHtlcTx2(_m) => 'h',
         Message::ValidateCommitmentTx(_m) => '{',
         Message::ValidateCommitmentTx2(_m) => '{',
         Message::RevokeCommitmentTx(_m) => '}',
