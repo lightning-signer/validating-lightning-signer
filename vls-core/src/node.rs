@@ -49,8 +49,8 @@ use serde_bolt::to_vec;
 use crate::chain::tracker::ChainTracker;
 use crate::chain::tracker::Headers;
 use crate::channel::{
-    native_channel_id_from_oid, Channel, ChannelBalance, ChannelBase,
-    ChannelCommitmentPointProvider, ChannelId, ChannelSetup, ChannelSlot, ChannelStub, SlotInfo,
+    Channel, ChannelBalance, ChannelBase, ChannelCommitmentPointProvider, ChannelId, ChannelSetup,
+    ChannelSlot, ChannelStub, SlotInfo,
 };
 use crate::invoice::{Invoice, InvoiceAttributes};
 use crate::monitor::{ChainMonitor, ChainMonitorBase};
@@ -1588,7 +1588,7 @@ impl Node {
             return Err(Status::invalid_argument("dbid not above the high water mark"));
         }
 
-        let channel_id = native_channel_id_from_oid(dbid, peer_id);
+        let channel_id = ChannelId::new_from_peer_id_and_oid(peer_id, dbid);
         self.find_or_create_channel(channel_id, arc_self)
     }
 
@@ -2773,22 +2773,20 @@ impl Node {
             // This is the only place the high water mark could be updated so any changes
             // to the node state since acquiring the channels lock are irrelevant.
             let channel = slot.lock().unwrap();
-            let oid = match &*channel {
-                ChannelSlot::Stub(chan) => {
+            match &*channel {
+                ChannelSlot::Stub(_) => {
                     info!("forget_channel stub {}", channel_id);
                     // We can't update the channels map here as it's immutably borrowed
                     // so we set a flag to remove it after the borrow is released.
                     stub_found = true;
-                    chan.oid()
                 }
                 ChannelSlot::Ready(chan) => {
                     info!("forget_channel {}", channel_id);
                     chan.forget()?;
-                    chan.oid()
                 }
             };
-            if oid > node_state.dbid_high_water_mark {
-                node_state.dbid_high_water_mark = oid;
+            if channel_id.oid() > node_state.dbid_high_water_mark {
+                node_state.dbid_high_water_mark = channel_id.oid();
                 self.persister
                     .update_node(&self.get_id(), &node_state)
                     .unwrap_or_else(|err| panic!("could not update node state: {:?}", err));
