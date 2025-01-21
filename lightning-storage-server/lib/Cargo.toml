@@ -24,4 +24,4 @@ bitcoin_hashes = { workspace = true }
 thiserror = { workspace = true }
 
 [build-dependencies]
-tonic-build = "0.9"
+tonic-build = { workspace = true }

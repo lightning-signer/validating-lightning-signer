@@ -1,6 +1,6 @@
 use bitcoin_hashes::sha256::Hash as Sha256Hash;
 use bitcoin_hashes::Hash;
-use clap::{App, Arg, ArgMatches};
+use clap::{Arg, ArgMatches, Command};
 use lightning_storage_server::client::{ClientError, PrivAuth, PrivClient};
 use lightning_storage_server::Value;
 use lssd::util::setup_logging;
@@ -65,10 +65,10 @@ async fn get_subcommand(
     rpc_url: &str,
     matches: &ArgMatches,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let prefix = matches.value_of_t("prefix")?;
+    let prefix = matches.get_one::<String>("prefix").unwrap();
     let (auth, hmac_secret) = make_auth()?;
     let mut client = PrivClient::new(rpc_url, auth.clone()).await?;
-    let res = client.get(&hmac_secret, prefix).await?;
+    let res = client.get(&hmac_secret, prefix.to_owned()).await?;
     for (key, value) in res {
         println!("key: {}, version: {} value: {}", key, value.version, hex::encode(value.value));
     }
@@ -80,14 +80,15 @@ async fn put_subcommand(
     rpc_url: &str,
     matches: &ArgMatches,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let key = matches.value_of_t("key")?;
-    let version = matches.value_of_t("version")?;
-    let value_hex: String = matches.value_of_t("value")?;
+    let key = matches.get_one::<String>("key").unwrap();
+    let version = *matches.get_one::<i64>("version").unwrap();
+    let value_hex = matches.get_one::<String>("value").unwrap();
+
     let value = hex::decode(value_hex).unwrap();
     let (auth, hmac_secret) = make_auth()?;
     let mut client = PrivClient::new(rpc_url, auth.clone()).await?;
 
-    match client.put(&hmac_secret, vec![(key, Value { version, value })]).await {
+    match client.put(&hmac_secret, vec![(key.to_owned(), Value { version, value })]).await {
         Ok(()) => Ok(()),
         Err(ClientError::PutConflict(conflicts)) => {
             for (key, value) in conflicts {
@@ -105,7 +106,7 @@ async fn put_subcommand(
 }
 
 fn parse_rpc_url(matches: &ArgMatches) -> String {
-    let raw_rpc_value = matches.value_of("rpc").expect("rpc");
+    let raw_rpc_value = matches.get_one::<String>("rpc").expect("rpc");
 
     let rpc_url = match raw_rpc_value.parse::<u16>() {
         Ok(_) => {
@@ -122,32 +123,32 @@ fn parse_rpc_url(matches: &ArgMatches) -> String {
     rpc_url
 }
 
-fn make_get_subapp() -> App<'static> {
-    App::new("get")
-        .help("get all keys/values at a key prefix")
-        .arg(Arg::new("prefix").takes_value(true).required(true).help("key prefix"))
+fn make_get_subapp() -> Command {
+    Command::new("get")
+        .about("get all keys/values at a key prefix")
+        .arg(Arg::new("prefix").num_args(1).required(true).help("key prefix"))
 }
 
-fn make_put_subapp() -> App<'static> {
-    App::new("put")
-        .help("put a versioned key/value")
-        .arg(Arg::new("key").takes_value(true).required(true))
-        .arg(Arg::new("version").takes_value(true).required(true).help("integer version"))
-        .arg(Arg::new("value").takes_value(true).required(true).help("hex value"))
+fn make_put_subapp() -> Command {
+    Command::new("put")
+        .about("put a versioned key/value")
+        .arg(Arg::new("key").num_args(1).required(true))
+        .arg(Arg::new("version").num_args(1).required(true).help("integer version"))
+        .arg(Arg::new("value").num_args(1).required(true).help("hex value"))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let app = App::new(CLIENT_APP_NAME)
-        .help("a CLI utility which communicates with a running Validating Lightning Signer server via gRPC")
+    let app = Command::new(CLIENT_APP_NAME)
+        .about("a CLI utility which communicates with a running Validating Lightning Signer server via gRPC")
         .arg(
             Arg::new("rpc")
             .help("Either port number or uri")
                 .short('c')
                 .long("rpc")
-                .takes_value(true)
+                .num_args(1)
                 .global(true)
                 .default_value("http://127.0.0.1:55551")
-                .validator(|value| {
+                .value_parser(|value: &str| {
                     let is_port = value.parse::<u16>().is_ok();
                     let is_url = url::Url::parse(value).is_ok();
                     if is_port || is_url {
@@ -157,9 +158,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }),
         )
-        .subcommand(App::new("ping"))
-        .subcommand(App::new("init"))
-        .subcommand(App::new("info"))
+        .subcommand(Command::new("ping"))
+        .subcommand(Command::new("init"))
+        .subcommand(Command::new("info"))
         .subcommand(make_get_subapp())
         .subcommand(make_put_subapp());
     let matches = app.clone().get_matches();

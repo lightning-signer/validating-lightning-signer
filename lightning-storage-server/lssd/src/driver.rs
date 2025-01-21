@@ -1,6 +1,6 @@
 use std::process;
 
-use clap::{App, Arg};
+use clap::{value_parser, Arg, ArgAction, Command};
 use log::{info, warn};
 
 #[cfg(not(feature = "dangerous-flags"))]
@@ -26,22 +26,22 @@ fn configure_tls(
     matches: &clap::ArgMatches,
     datadir: &std::path::PathBuf,
 ) -> Result<tonic::transport::Server, Box<dyn std::error::Error>> {
-    if !matches.is_present("grpc-tls-key") {
+    if !matches.contains_id("grpc-tls-key") {
         return Ok(server);
     }
 
     let mut key_file = datadir.clone();
-    key_file.push(matches.value_of("grpc-tls-key").unwrap());
+    key_file.push(matches.get_one::<String>("grpc-tls-key").unwrap());
     let key = std::fs::read(key_file).map_err(|_| "could not read key file")?;
 
     let mut cert_file = datadir.clone();
-    cert_file.push(matches.value_of("grpc-tls-certificate").unwrap());
+    cert_file.push(matches.get_one::<String>("grpc-tls-certificate").unwrap());
     let cert = std::fs::read(cert_file).map_err(|_| "could not read certificate file")?;
 
     let identity = Identity::from_pem(cert, key);
     let tls_config = ServerTlsConfig::new().identity(identity);
 
-    let tls_config = match matches.value_of("grpc-tls-authority") {
+    let tls_config = match matches.get_one::<String>("grpc-tls-authority") {
         None => tls_config,
         Some(p) => {
             let mut ca_file = datadir.clone();
@@ -57,14 +57,14 @@ fn configure_tls(
 #[tokio::main(worker_threads = 2)]
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     println!("{} {} starting", SERVER_APP_NAME, process::id());
-    let app = App::new(SERVER_APP_NAME)
-        .help("Lightning Storage Server with a gRPC interface.")
+    let app = Command::new(SERVER_APP_NAME)
+        .about("Lightning Storage Server with a gRPC interface.")
         .arg(
             Arg::new("interface")
                 .help("the interface to listen on (ip v4 or v6)")
                 .short('i')
                 .long("interface")
-                .takes_value(true)
+                .num_args(1)
                 .value_name("0.0.0.0")
                 .default_value("127.0.0.1"),
         )
@@ -73,28 +73,29 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .help("the port to listen")
                 .short('p')
                 .long("port")
-                .takes_value(true)
+                .num_args(1)
+                .value_parser(value_parser!(usize))
                 .default_value("55551"),
         )
         .arg(
             Arg::new("grpc-tls-certificate")
                 .help("Server identity certificate")
                 .long("grpc-tls-certificate")
-                .takes_value(true)
+                .num_args(1)
                 .requires("grpc-tls-key"),
         )
         .arg(
             Arg::new("grpc-tls-key")
                 .long("grpc-tls-key")
                 .help("Server identity key")
-                .takes_value(true)
+                .num_args(1)
                 .requires("grpc-tls-certificate"),
         )
         .arg(
             Arg::new("grpc-tls-authority")
                 .long("grpc-tls-authority")
                 .help("Certificate authority to verify client certificates (requires TLS to be configured with --grpc-tls-key and --grpc-tls-certificate)")
-                .takes_value(true)
+                .num_args(1)
                 .requires_all(&["grpc-tls-certificate", "grpc-tls-key"]),
         )
         .arg(
@@ -102,32 +103,35 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
                 .help("clear the database on startup")
                 .short('c')
                 .long("cleardb")
-                .takes_value(false),
+                .action(ArgAction::SetTrue),
         )
         .arg(
             Arg::new("datadir")
                 .help("data directory")
                 .long("datadir")
-                .takes_value(true)
+                .num_args(1)
                 .default_value(".lss"),
         )
         .arg(
             Arg::new("database")
                 .long("database")
                 .help("specify DB backend")
-                .takes_value(true)
+                .num_args(1)
                 .default_value("redb")
-                .possible_values(&DATABASES),
+                .value_parser(DATABASES),
         );
     let matches = app.get_matches();
 
     setup_logging("lssd", "info");
 
-    let addr =
-        format!("{}:{}", matches.value_of("interface").unwrap(), matches.value_of("port").unwrap())
-            .parse()?;
+    let addr = format!(
+        "{}:{}",
+        matches.get_one::<String>("interface").unwrap(),
+        matches.get_one::<usize>("port").unwrap()
+    )
+    .parse()?;
     let home_dir = dirs::home_dir().ok_or("home directory not found")?;
-    let datadir_opt = matches.value_of("datadir").unwrap();
+    let datadir_opt = matches.get_one::<String>("datadir").unwrap();
     let mut datadir = home_dir;
     datadir.push(datadir_opt);
 
@@ -136,7 +140,7 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let secret_key = read_secret_key("server_key")?;
     let public_key = read_public_key("server_key")?;
 
-    let clear_db = matches.is_present("cleardb");
+    let clear_db = matches.get_flag("cleardb");
 
     #[cfg(not(feature = "dangerous-flags"))]
     if clear_db {
@@ -144,12 +148,12 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
         return Err("flag not available".into());
     }
 
-    let database: Box<dyn crate::database::Database> = match matches.value_of("database") {
+    let database: Box<dyn crate::database::Database> = match matches.get_one::<String>("database") {
         #[cfg(feature = "postgres")]
-        Some("postgres") => Box::new(
+        Some(db) if db.as_str() == "postgres" => Box::new(
             if clear_db { postgres::new_and_clear().await } else { postgres::new().await }.unwrap(),
         ),
-        Some("redb") => Box::new(
+        Some(db) if db.as_str() == "redb" => Box::new(
             if clear_db {
                 RedbDatabase::new_and_clear(datadir.clone()).await
             } else {
