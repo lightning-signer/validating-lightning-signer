@@ -15,7 +15,7 @@ rust-version = "1.66.0"
 default = ["std", "env_logger", "debug", "use_backtrace"]
 
 no-std = ["lightning/no-std", "lightning-invoice/no-std", "bitcoin/no-std", "core2/alloc", "txoo/no-std", "bitcoin-push-decoder/no-std", "serde_bolt/no-std"]
-std = ["lightning/std", "lightning-invoice/std", "bitcoin/std", "bitcoin/rand", "serde_bolt/std", "txoo/std", "bitcoin-push-decoder/std", "serde_bolt/std", "tracing/std"]
+std = ["lightning/std", "lightning-invoice/std", "bitcoin/std", "bitcoin/rand-std", "serde_bolt/std", "txoo/std", "bitcoin-push-decoder/std", "serde_bolt/std", "tracing/std"]
 secp-lowmemory = ["bitcoin/secp-lowmemory"]
 
 # if you use tonic, this is convenient for auto-conversion of MySigner Status to tonic::Status
