@@ -9,9 +9,9 @@ use lightning::ln::chan_utils::{
 use lightning::ln::PaymentHash;
 use lightning::sign::{ChannelSigner, InMemorySigner};
 use log::*;
-use vls_policy_derive::Optionized;
 use serde::Deserialize;
 use vls_common::HexEncode;
+use vls_policy_derive::Optionized;
 
 use super::error::{
     policy_error, transaction_format_error, unknown_destinations_error, ValidationError,
