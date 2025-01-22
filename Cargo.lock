@@ -1700,15 +1700,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
-name = "policy-derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "possiblyrandom"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2984,7 +2975,6 @@ dependencies = [
  "lightning-invoice",
  "log",
  "paste",
- "policy-derive",
  "scopeguard",
  "serde",
  "serde_bolt",
@@ -2999,6 +2989,7 @@ dependencies = [
  "txoo-bitcoind-client",
  "vls-common",
  "vls-core",
+ "vls-policy-derive",
 ]
 
 [[package]]
@@ -3034,6 +3025,15 @@ dependencies = [
  "tracing",
  "uuid",
  "vls-core",
+]
+
+[[package]]
+name = "vls-policy-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]

@@ -9,7 +9,7 @@ use lightning::ln::chan_utils::{
 use lightning::ln::PaymentHash;
 use lightning::sign::{ChannelSigner, InMemorySigner};
 use log::*;
-use policy_derive::Optionized;
+use vls_policy_derive::Optionized;
 use serde::Deserialize;
 use vls_common::HexEncode;
 
