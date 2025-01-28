@@ -1256,7 +1256,6 @@ impl Handler for ChannelHandler {
                         &m.tx.0,
                         m.input,
                         m.per_commitment_number,
-                        m.feerate_per_kw,
                         m.offered,
                         m.cltv_expiry,
                         m.htlc_amount_msat,

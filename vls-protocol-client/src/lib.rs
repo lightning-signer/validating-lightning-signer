@@ -275,7 +275,6 @@ impl EcdsaChannelSigner for SignerClient {
         let htlc = &htlc_descriptor.htlc;
         let message = SignLocalHtlcTx2 {
             per_commitment_number: htlc_descriptor.per_commitment_number,
-            feerate_per_kw: htlc_descriptor.feerate_per_kw,
             offered: htlc.offered,
             cltv_expiry: htlc.cltv_expiry,
             tx: WithSize(htlc_tx.clone()),

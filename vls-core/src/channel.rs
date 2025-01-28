@@ -2532,7 +2532,6 @@ impl Channel {
         tx: &Transaction,
         input: u32,
         commitment_number: u64,
-        feerate: u32,
         is_offered: bool,
         cltv_expiry: u32,
         htlc_amount_msat: u64,
