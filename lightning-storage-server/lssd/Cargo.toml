@@ -62,3 +62,7 @@ harness = false
 [[bench]]
 name = "redb_bench"
 harness = false
+
+[[bench]]
+name = "etcd_bench"
+harness = false
