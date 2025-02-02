@@ -1,3 +1,4 @@
+use std::os::fd::IntoRawFd;
 use std::os::unix::io::RawFd;
 
 use bitcoin::consensus::Encodable;
@@ -70,7 +71,7 @@ impl Client for UnixClient {
     fn new_client(&mut self) -> UnixClient {
         let (fd_a, fd_b) =
             socketpair(AddressFamily::Unix, SockType::Stream, None, SockFlag::empty()).unwrap();
-        self.conn.inner().send_fd(fd_a);
-        UnixClient::new(UnixConnection::new(fd_b))
+        self.conn.inner().send_fd(fd_a.into_raw_fd());
+        UnixClient::new(UnixConnection::new(fd_b.into_raw_fd()))
     }
 }
