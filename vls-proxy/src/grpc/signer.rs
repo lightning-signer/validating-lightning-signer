@@ -569,7 +569,7 @@ async fn send_response(
 
 async fn do_connect(uri: &Uri) -> HsmdClient<Channel> {
     loop {
-        let client = HsmdClient::connect(uri.clone()).await;
+        let client = HsmdClient::connect(uri.to_string()).await;
         match client {
             Ok(mut client) => {
                 let result =

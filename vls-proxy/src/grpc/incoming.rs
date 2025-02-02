@@ -1,44 +1,39 @@
-use hyper::server::accept::Accept;
-use hyper::server::conn::{AddrIncoming, AddrStream};
-use std::net::{SocketAddr, TcpListener as StdTcpListener};
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use std::time::Duration;
-use tokio::net::TcpListener;
-use tonic::codegen::futures_core::Stream;
+use futures::Stream;
+use std::{
+    io,
+    net::SocketAddr,
+    pin::Pin,
+    task::{Context, Poll},
+};
+use tokio::net::{TcpListener, TcpStream};
 
-/// A copy of the tonic TcpIncoming, but initialized from either an address or an std listener
+/// TcpIncoming encapsulates a TcpListener and holds the TCP configuration
+/// for nodelay so that every accepted connection is configured.
 pub struct TcpIncoming {
-    inner: AddrIncoming,
+    listener: TcpListener,
+    nodelay: bool,
 }
 
 impl TcpIncoming {
-    pub fn new(addr: SocketAddr, nodelay: bool, keepalive: Option<Duration>) -> Result<Self, ()> {
-        let mut inner = AddrIncoming::bind(&addr).expect("");
-        inner.set_nodelay(nodelay);
-        inner.set_keepalive(keepalive);
-        Ok(TcpIncoming { inner })
-    }
-
-    pub fn new_from_std(
-        std_listener: StdTcpListener,
-        nodelay: bool,
-        keepalive: Option<Duration>,
-    ) -> Result<Self, ()> {
-        std_listener.set_nonblocking(true).expect("set_nonblocking"); // should be infallible on a new socket
-        let listener = TcpListener::from_std(std_listener).expect("tokio TcpListener"); // should only fail due to a fatal error in tokio runtime
-
-        let mut inner = AddrIncoming::from_listener(listener).expect("from_listener"); // should be infallible
-        inner.set_nodelay(nodelay);
-        inner.set_keepalive(keepalive);
-        Ok(TcpIncoming { inner })
+    /// Binds a TcpListener to the given address and constructs a TcpIncoming
+    /// with the provided socket options.
+    pub async fn new(addr: SocketAddr, nodelay: bool) -> io::Result<Self> {
+        let listener = TcpListener::bind(addr).await?;
+        Ok(TcpIncoming { listener, nodelay })
     }
 }
 
 impl Stream for TcpIncoming {
-    type Item = Result<AddrStream, std::io::Error>;
+    type Item = io::Result<TcpStream>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Pin::new(&mut self.inner).poll_accept(cx)
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match Pin::new(&self.listener).poll_accept(cx) {
+            Poll::Ready(Ok((stream, _peer_addr))) => {
+                stream.set_nodelay(self.nodelay)?;
+                return Poll::Ready(Some(Ok(stream)));
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e))),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }

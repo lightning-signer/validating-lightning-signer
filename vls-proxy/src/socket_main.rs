@@ -91,7 +91,7 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
         init_message_cache.clone(),
     );
 
-    let incoming = TcpIncoming::new(addr, false, None).expect("listen incoming"); // new_from_std seems to be infallible
+    let incoming = TcpIncoming::new(addr, false).await.expect("listen incoming"); // new_from_std seems to be infallible
 
     let network = vls_network().parse::<Network>().expect("malformed vls network");
     let sender = server.sender();

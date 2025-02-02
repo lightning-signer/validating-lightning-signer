@@ -8,7 +8,7 @@ description = "A library for implementing a Lightning signer, which externalizes
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 readme = "../README.md"
-rust-version = "1.66.0"
+rust-version = "1.74.0"
 
 [features]
 
@@ -68,7 +68,7 @@ tracing = { version = "0.1.40", features = ["attributes", "log"], default-featur
 
 env_logger = { version = "0.9", optional = true }
 backtrace = { version = "0.3", optional = true }
-tonic = { version = "0.9", optional = true, default-features = false }
+tonic = { workspace = true, optional = true }
 
 # match hashbrown dependency version via lightning
 hashbrown = "0.13.2"
