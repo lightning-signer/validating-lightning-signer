@@ -1,4 +1,4 @@
-use clap::{ErrorKind, Parser};
+use clap::{error::ErrorKind, Parser};
 use lightning_signer::bitcoin::secp256k1::PublicKey;
 use lightning_signer::bitcoin::Network;
 use lightning_signer::policy::filter::{FilterResult, FilterRule};
@@ -8,20 +8,21 @@ use std::ffi::OsStr;
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
 use std::process::exit;
+use std::str::FromStr as _;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{env, fs};
 use toml::value::{Table, Value};
 use url::Url;
 
 /// Network names
-pub const NETWORK_NAMES: &[&str] = &["testnet", "regtest", "signet", "bitcoin"];
+pub const NETWORK_NAMES: [&'static str; 4] = ["testnet", "regtest", "signet", "bitcoin"];
 
 /// Useful with clap's `Arg::default_value_ifs`
-pub const CLAP_NETWORK_URL_MAPPING: &[(&str, Option<&str>, Option<&str>)] = &[
-    ("network", Some("bitcoin"), Some("http://user:pass@127.0.0.1:8332")),
-    ("network", Some("testnet"), Some("http://user:pass@127.0.0.1:18332")),
-    ("network", Some("regtest"), Some("http://user:pass@127.0.0.1:18443")),
-    ("network", Some("signet"), Some("http://user:pass@127.0.0.1:18443")),
+pub const CLAP_NETWORK_URL_MAPPING: [(&'static str, &'static str, Option<&'static str>); 4] = [
+    ("network", "bitcoin", Some("http://user:pass@127.0.0.1:8332")),
+    ("network", "testnet", Some("http://user:pass@127.0.0.1:18332")),
+    ("network", "regtest", Some("http://user:pass@127.0.0.1:18443")),
+    ("network", "signet", Some("http://user:pass@127.0.0.1:18443")),
 ];
 
 pub const DEFAULT_DIR: &str = ".lightning-signer";
@@ -49,7 +50,7 @@ pub struct InitialArgs {
 
 // note that value_parser gives us clap 4 forward compatibility
 #[derive(Parser, Debug)]
-#[clap(about, long_about = None)]
+#[clap(about, long_about = None, args_override_self = true)]
 pub struct SignerArgs {
     #[clap(flatten)]
     initial_args: InitialArgs,
@@ -71,21 +72,22 @@ pub struct SignerArgs {
 
     #[clap(
         long,
-        value_parser,
         help = "set the logging level",
         value_name = "LEVEL",
         default_value = "info",
-        possible_values = &["off", "error", "warn", "info", "debug", "trace"],
+        value_parser = ["off", "error", "warn", "info", "debug", "trace"],
     )]
     pub log_level: String,
 
     #[clap(short, long, value_parser, help = "data directory", value_name = "DIR")]
     pub datadir: Option<String>,
 
-    #[clap(short, long, value_parser,
+    #[clap(
+        short,
+        long,
         value_name = "NETWORK",
-        possible_values = NETWORK_NAMES,
-        default_value = NETWORK_NAMES[0]
+        default_value = NETWORK_NAMES[0],
+        value_parser = Network::from_str,
     )]
     pub network: Network,
 
@@ -100,18 +102,17 @@ pub struct SignerArgs {
         long,
         value_parser,
         help = "block explorer/bitcoind RPC endpoint - used for broadcasting recovery transactions",
-        default_value_ifs(CLAP_NETWORK_URL_MAPPING),
-        value_name = "URL"
+        value_name = "URL",
+        default_value_ifs(CLAP_NETWORK_URL_MAPPING)
     )]
     pub recover_rpc: Option<Url>,
 
     #[clap(
         long,
-        value_parser,
+        value_parser = ["bitcoind", "esplora"],
         help = "block explorer type - used for broadcasting recovery transactions",
         value_name = "TYPE",
         default_value = "bitcoind",
-        possible_values = &["bitcoind", "esplora"]
     )]
     pub recover_type: String,
 
@@ -131,13 +132,13 @@ pub struct SignerArgs {
     )]
     pub recover_l1_range: Option<u32>,
 
-    #[clap(long, value_parser=parse_velocity_control_spec, help = "global velocity control e.g. hour:10000 (satoshi)")]
+    #[clap(long, value_parser = parse_velocity_control_spec, help = "global velocity control e.g. hour:10000 (satoshi)")]
     pub velocity_control: Option<VelocityControlSpec>,
 
-    #[clap(long, value_parser=parse_velocity_control_spec, help = "fee velocity control e.g. hour:10000 (satoshi)")]
+    #[clap(long, value_parser = parse_velocity_control_spec, help = "fee velocity control e.g. hour:10000 (satoshi)")]
     pub fee_velocity_control: Option<VelocityControlSpec>,
 
-    #[clap(long, value_parser=parse_filter_rule, help = "policy filter rule, e.g. 'policy-channel-safe-mode:warn' or 'policy-channel-*:error'")]
+    #[clap(long, value_parser = parse_filter_rule, help = "policy filter rule, e.g. 'policy-channel-safe-mode:warn' or 'policy-channel-*:error'")]
     pub policy_filter: Vec<FilterRule>,
 
     #[clap(
@@ -181,7 +182,7 @@ impl HasSignerArgs for SignerArgs {
 pub fn parse_args_and_config<A: Parser + HasSignerArgs>(bin_name: &str) -> A {
     let env_args = env::args().collect::<Vec<_>>();
     parse_args_and_config_from(bin_name, &env_args).unwrap_or_else(|e| match e.kind() {
-        clap::ErrorKind::DisplayVersion => exit(0), // exit directly because no Command
+        ErrorKind::DisplayVersion => exit(0), // exit directly because no Command
         _ => e.exit(),
     })
 }
@@ -415,10 +416,9 @@ mod tests {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         writeln!(
             file,
-            "datadir = \"/tmp/vlsd2\"\n\
-        velocity-control = \"day:222\"\n\
-        network = \"regtest\"\n\
-        "
+            "datadir = \"/tmp/vlsd2\"\n
+            velocity-control = \"day:222\"\n
+            network = \"regtest\"\n"
         )
         .unwrap();
         let env_args: Vec<String> =

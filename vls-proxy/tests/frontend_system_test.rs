@@ -40,7 +40,7 @@ use vls_protocol::msgs::{
 };
 use vls_protocol::serde_bolt::{to_vec, Array, Octets, WireString};
 use vls_protocol_client::{ClientResult, SignerPort};
-use vls_proxy::config::{CLAP_NETWORK_URL_MAPPING, NETWORK_NAMES};
+use vls_proxy::config::CLAP_NETWORK_URL_MAPPING;
 use vls_proxy::portfront::SignerPortFront;
 use vls_proxy::util::{abort_on_panic, setup_logging};
 
@@ -173,7 +173,7 @@ where
 struct Args {
     #[clap(short, long, value_parser,
     value_name = "NETWORK",
-    possible_values = NETWORK_NAMES,
+    value_parser = Network::from_str,
     default_value = "regtest",
     )]
     pub network: Network,

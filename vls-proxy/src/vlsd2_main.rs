@@ -1,5 +1,6 @@
 use bitcoind_client::BlockExplorerType;
-use clap::{CommandFactory, ErrorKind, Parser};
+use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser};
 use config::{parse_args_and_config, HasSignerArgs, SignerArgs};
 use grpc::signer::make_handler;
 use grpc::signer::start_signer;
@@ -21,7 +22,7 @@ struct Args {
         long,
         value_parser,
         help = "node RPC endpoint",
-        required_unless_present_any(&["recover-to", "git-desc"]),
+        required_unless_present_any(&["recover_to", "git_desc"]),
         value_name = "URL"
     )]
     pub(crate) connect: Option<Uri>,

@@ -14,8 +14,7 @@ rust-version = "1.74.0"
 system-test = []
 
 [dependencies]
-clap = { version = "3.2", features = ["derive"] }
-clap_complete = "3.2.0"
+clap = { workspace = true }
 jsonrpsee = { version = "0.24.8", features = ["http-client", "client-core"] }
 tokio = { version = "1.27", features = ["macros"] }
 anyhow = "1"
