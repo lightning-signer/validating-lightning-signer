@@ -2932,7 +2932,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "vls-cli"
-version = "0.13.0-rc.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -2950,14 +2950,14 @@ dependencies = [
 
 [[package]]
 name = "vls-common"
-version = "0.13.0-rc.1"
+version = "0.13.0"
 dependencies = [
  "hex",
 ]
 
 [[package]]
 name = "vls-core"
-version = "0.13.0-rc.1"
+version = "0.13.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2994,7 +2994,7 @@ dependencies = [
 
 [[package]]
 name = "vls-frontend"
-version = "0.13.0-rc.1"
+version = "0.13.0"
 dependencies = [
  "async-trait",
  "env_logger",
@@ -3010,7 +3010,7 @@ dependencies = [
 
 [[package]]
 name = "vls-persist"
-version = "0.13.0-rc.1"
+version = "0.13.0"
 dependencies = [
  "ciborium",
  "env_logger",
@@ -3038,7 +3038,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol"
-version = "0.13.0-rc.1"
+version = "0.13.0"
 dependencies = [
  "as-any",
  "bitcoin-consensus-derive",
@@ -3056,7 +3056,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol-client"
-version = "0.13.0-rc.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3070,7 +3070,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol-signer"
-version = "0.13.0-rc.1"
+version = "0.13.0"
 dependencies = [
  "bit-vec",
  "env_logger",
@@ -3083,7 +3083,7 @@ dependencies = [
 
 [[package]]
 name = "vls-proxy"
-version = "0.13.0-rc.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "as-any",
