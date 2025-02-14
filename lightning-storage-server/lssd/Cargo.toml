@@ -1,7 +1,7 @@
 [package]
 name = "lssd"
 license = "Apache-2.0"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Devrandom <c1.devrandom@niftybox.net>", "Lakshya Singh <lakshay.singh1108@gmail.com>"]
 edition = "2021"
 description = ""
@@ -32,7 +32,7 @@ thiserror = { workspace = true }
 async-trait = "0.1"
 futures = "0.3"
 itertools = "0.10"
-lightning-storage-server = { path = "../lib", version = "0.3.1" }
+lightning-storage-server = { path = "../lib", version = "0.4.0" }
 clap = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 time = { version = "=0.3.17", features = [ "formatting", "macros" ] }

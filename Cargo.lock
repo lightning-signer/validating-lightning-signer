@@ -1338,7 +1338,7 @@ dependencies = [
 
 [[package]]
 name = "lightning-storage-server"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "bitcoin_hashes 0.11.0",
  "hex",
@@ -1698,15 +1698,6 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
-
-[[package]]
-name = "policy-derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
 
 [[package]]
 name = "possiblyrandom"
@@ -2941,7 +2932,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "vls-cli"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -2959,14 +2950,14 @@ dependencies = [
 
 [[package]]
 name = "vls-common"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "hex",
 ]
 
 [[package]]
 name = "vls-core"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2984,7 +2975,6 @@ dependencies = [
  "lightning-invoice",
  "log",
  "paste",
- "policy-derive",
  "scopeguard",
  "serde",
  "serde_bolt",
@@ -2999,11 +2989,12 @@ dependencies = [
  "txoo-bitcoind-client",
  "vls-common",
  "vls-core",
+ "vls-policy-derive",
 ]
 
 [[package]]
 name = "vls-frontend"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "async-trait",
  "env_logger",
@@ -3019,7 +3010,7 @@ dependencies = [
 
 [[package]]
 name = "vls-persist"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "ciborium",
  "env_logger",
@@ -3037,8 +3028,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "vls-policy-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "vls-protocol"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "as-any",
  "bitcoin-consensus-derive",
@@ -3056,7 +3056,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol-client"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3070,7 +3070,7 @@ dependencies = [
 
 [[package]]
 name = "vls-protocol-signer"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "bit-vec",
  "env_logger",
@@ -3083,7 +3083,7 @@ dependencies = [
 
 [[package]]
 name = "vls-proxy"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "as-any",

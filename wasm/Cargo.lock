@@ -435,15 +435,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bda66fc9667c18cb2758a2ac84d1167245054bcf85d5d1aaa6923f45801bdd02"
 
 [[package]]
-name = "policy-derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "possiblyrandom"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -691,14 +682,14 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vls-common"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "hex",
 ]
 
 [[package]]
 name = "vls-core"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -714,7 +705,6 @@ dependencies = [
  "lightning",
  "lightning-invoice",
  "log",
- "policy-derive",
  "scopeguard",
  "serde",
  "serde_bolt",
@@ -723,6 +713,16 @@ dependencies = [
  "tracing",
  "txoo",
  "vls-common",
+ "vls-policy-derive",
+]
+
+[[package]]
+name = "vls-policy-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]

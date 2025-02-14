@@ -5,6 +5,7 @@ set -e
 # cargo publish all crates that are versioned together
 
 crates=(
+    vls-common
     vls-core
     vls-persist
     vls-protocol

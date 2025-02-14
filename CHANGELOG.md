@@ -4,7 +4,35 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [0.12.0-rc.3] - 2024-06-25: "Benevolent Basilisk"
+## [0.13.0] - 2025-01-21: "Celestial Citadel"
+
+### Added
+
+ - configure SimplePolicy values using vlsd2.toml
+ - fuzz: basic fuzzing of the vls-core crate
+ - developer flag for dev messages and fields
+ - core: oid derivation for ldk channel id
+ - protocol: implement `sign_holder_htlc_tx` for LDK / phase-2 code path
+
+### Changed
+
+ - core: Add new and oid methods to ChannelId and remove the `oid/channel_id` utility methods
+ - LSS: split lightning-storage-server into library and lssd
+ - deps: update to LDK version 0.0.123 with rust-bitcoin 0.30
+
+### Removed
+
+ - sled references
+
+### Fixed
+
+ - core: enforce dbids are monotonic when creating channels to protect against reuse
+ - core: use peer node id for channel creation	
+ - stm32 signer for latest nightly bump relevant deps
+ - missing macros feature on time crate
+ 
+
+## [0.12.0] - 2024-06-25: "Benevolent Basilisk"
 
 This release named by Provisional Pete
 
