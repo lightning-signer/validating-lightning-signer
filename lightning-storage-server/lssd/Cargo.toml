@@ -7,7 +7,7 @@ edition = "2021"
 description = ""
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
-rust-version = "1.66.0"
+rust-version = "1.74.0"
 
 [features]
 dangerous-flags = []

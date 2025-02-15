@@ -109,9 +109,9 @@ rust-latest-extras:
 rust-msrv:
   tags: [ saas-linux-large-amd64 ]
   stage: build
-  image: rust:1.66.0
+  image: rust:1.74.0
   cache:
-    key: vls-compile-1_66
+    key: vls-compile-1_74
     paths:
       - bin
       - .cache/cargo
@@ -123,9 +123,9 @@ rust-msrv:
 rust-msrv-lss:
   tags: [ saas-linux-large-amd64 ]
   stage: build
-  image: rust:1.66.0
+  image: rust:1.74.0
   cache:
-    key: vls-compile-lss-1_66
+    key: vls-compile-lss-1_74
     paths:
       - bin
       - .cache/cargo
