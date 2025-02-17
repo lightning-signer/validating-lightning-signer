@@ -15,11 +15,11 @@ use lightning_signer::bitcoin::ScriptBuf;
 use lightning_signer::lightning::ln::channel_keys::RevocationKey;
 use vls_protocol::psbt::PsbtWrapper;
 
-use bitcoin::bech32::u5;
+use bitcoin::bech32::Fe32;
 use bitcoin::bip32::{DerivationPath, KeySource};
 use bitcoin::blockdata::script;
 use bitcoin::consensus::deserialize;
-use bitcoin::psbt::PartiallySignedTransaction;
+use bitcoin::psbt::Psbt;
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::taproot::TapLeafHash;
@@ -34,7 +34,7 @@ use lightning_signer::channel::{
 use lightning_signer::dbgvals;
 use lightning_signer::invoice::Invoice;
 use lightning_signer::lightning::ln::chan_utils::ChannelPublicKeys;
-use lightning_signer::lightning::ln::PaymentHash;
+use lightning_signer::lightning::types::payment::PaymentHash;
 use lightning_signer::node::{Node, NodeConfig, NodeMonitor, NodeServices};
 use lightning_signer::persist::{Mutations, Persist};
 use lightning_signer::signer::my_keys_manager::MyKeysManager;
@@ -475,7 +475,7 @@ impl RootHandler {
 
         for (i, stack) in witvec.into_iter().enumerate() {
             if !stack.is_empty() {
-                psbt.inputs[i].final_script_witness = Some(Witness::from_vec(stack));
+                psbt.inputs[i].final_script_witness = Some(Witness::from_slice(&stack));
             }
         }
         Ok(())
@@ -771,7 +771,7 @@ impl Handler for RootHandler {
                 let data: Vec<_> = m
                     .u5bytes
                     .iter()
-                    .map(|b| u5::try_from_u8(*b).expect("invoice not base32"))
+                    .map(|b| Fe32::try_from(*b).expect("invoice not base32"))
                     .collect();
                 let sig = self.node.sign_invoice(hrp_bytes, &data)?;
                 let (rid, ser) = sig.serialize_compact();
@@ -1011,7 +1011,7 @@ impl Handler for RootHandler {
                 let anchor_redeemscript = self
                     .node
                     .with_channel(&channel_id, |channel| Ok(channel.get_anchor_redeemscript()))?;
-                let anchor_scriptpubkey = anchor_redeemscript.to_v0_p2wsh();
+                let anchor_scriptpubkey = anchor_redeemscript.to_p2wsh();
 
                 let mut psbt = streamed.psbt().clone();
                 let anchor_index = psbt
@@ -1029,7 +1029,8 @@ impl Handler for RootHandler {
                     Ok(channel.sign_holder_anchor_input(&psbt.unsigned_tx, anchor_index)?)
                 })?;
                 let witness = vec![signature_to_bitcoin_vec(sig), anchor_redeemscript.to_bytes()];
-                psbt.inputs[anchor_index].final_script_witness = Some(Witness::from_vec(witness));
+                psbt.inputs[anchor_index].final_script_witness =
+                    Some(Witness::from_slice(&witness));
                 Ok(Box::new(msgs::SignAnchorspendReply {
                     psbt: WithSize(PsbtWrapper { inner: psbt }),
                 }))
@@ -1084,7 +1085,7 @@ fn extract_output_path(
     path.into_iter().map(|i| i.clone().into()).collect()
 }
 
-fn extract_psbt_output_paths(psbt: &PartiallySignedTransaction) -> Vec<Vec<u32>> {
+fn extract_psbt_output_paths(psbt: &Psbt) -> Vec<Vec<u32>> {
     psbt.outputs
         .iter()
         .map(|o| extract_output_path(&o.bip32_derivation, &o.tap_key_origins))
@@ -1231,7 +1232,7 @@ impl Handler for ChannelHandler {
                 assert_eq!(tx.output.len(), 1);
                 assert_eq!(tx.input.len(), 1);
                 let redeemscript = ScriptBuf::from(m.wscript.0);
-                let htlc_amount_sat = psbt.inputs[0]
+                let htlc_amount = psbt.inputs[0]
                     .witness_utxo
                     .as_ref()
                     .expect("will only spend witness UTXOs")
@@ -1243,7 +1244,7 @@ impl Handler for ChannelHandler {
                         &tx,
                         &remote_per_commitment_point,
                         &redeemscript,
-                        htlc_amount_sat,
+                        htlc_amount.to_sat(),
                         &output_witscript,
                     )
                 })?;
@@ -1256,7 +1257,6 @@ impl Handler for ChannelHandler {
                         &m.tx.0,
                         m.input,
                         m.per_commitment_number,
-                        m.feerate_per_kw,
                         m.offered,
                         m.cltv_expiry,
                         m.htlc_amount_msat,
@@ -1562,7 +1562,7 @@ fn sign_delayed_payment_to_us(
     channel_id: &ChannelId,
     commitment_number: u64,
     tx: &Transaction,
-    psbt: &PartiallySignedTransaction,
+    psbt: &Psbt,
     wscript: &Octets,
     input: u32,
 ) -> Result<Box<dyn SerBolt>> {
@@ -1570,7 +1570,7 @@ fn sign_delayed_payment_to_us(
     let commitment_number = commitment_number;
     let redeemscript = ScriptBuf::from(wscript.0.clone());
     let input = input as usize;
-    let htlc_amount_sat =
+    let htlc_amount =
         psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
     let wallet_paths = extract_psbt_output_paths(&psbt);
     let sig = node.with_channel(channel_id, |chan| {
@@ -1579,7 +1579,7 @@ fn sign_delayed_payment_to_us(
             input,
             commitment_number,
             &redeemscript,
-            htlc_amount_sat,
+            htlc_amount.to_sat(),
             &wallet_paths[0],
         )
     })?;
@@ -1596,7 +1596,7 @@ fn sign_remote_htlc_to_us(
     channel_id: &ChannelId,
     remote_per_commitment_point: &PubKey,
     tx: &Transaction,
-    psbt: &PartiallySignedTransaction,
+    psbt: &Psbt,
     wscript: &Octets,
     _option_anchors: bool,
     input: u32,
@@ -1605,7 +1605,7 @@ fn sign_remote_htlc_to_us(
         PublicKey::from_slice(&remote_per_commitment_point.0).expect("pubkey");
     let redeemscript = ScriptBuf::from(wscript.0.clone());
     let input = input as usize;
-    let htlc_amount_sat =
+    let htlc_amount =
         psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
     let wallet_paths = extract_psbt_output_paths(&psbt);
     let sig = node.with_channel(channel_id, |chan| {
@@ -1614,7 +1614,7 @@ fn sign_remote_htlc_to_us(
             input,
             &remote_per_commitment_point,
             &redeemscript,
-            htlc_amount_sat,
+            htlc_amount.to_sat(),
             &wallet_paths[0],
         )
     })?;
@@ -1631,7 +1631,7 @@ fn sign_local_htlc_tx(
     channel_id: &ChannelId,
     commitment_number: u64,
     tx: &Transaction,
-    psbt: &PartiallySignedTransaction,
+    psbt: &Psbt,
     wscript: &Octets,
     _option_anchors: bool,
     input: u32,
@@ -1639,7 +1639,7 @@ fn sign_local_htlc_tx(
     let commitment_number = commitment_number;
     let redeemscript = ScriptBuf::from(wscript.0.clone());
     let input = input as usize;
-    let htlc_amount_sat =
+    let htlc_amount =
         psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
     let output_witscript: &ScriptBuf =
         psbt.outputs[0].witness_script.as_ref().expect("output witscript");
@@ -1649,7 +1649,7 @@ fn sign_local_htlc_tx(
             commitment_number,
             None,
             &redeemscript,
-            htlc_amount_sat,
+            htlc_amount.to_sat(),
             output_witscript,
         )
     })?;
@@ -1666,14 +1666,14 @@ fn sign_penalty_to_us(
     channel_id: &ChannelId,
     revocation_secret: &DisclosedSecret,
     tx: &Transaction,
-    psbt: &PartiallySignedTransaction,
+    psbt: &Psbt,
     wscript: &Octets,
     input: u32,
 ) -> Result<Box<dyn SerBolt>> {
     let revocation_secret = SecretKey::from_slice(&revocation_secret.0).expect("secret");
     let redeemscript = ScriptBuf::from(wscript.0.clone());
     let input = input as usize;
-    let htlc_amount_sat =
+    let htlc_amount =
         psbt.inputs[input].witness_utxo.as_ref().expect("will only spend witness UTXOs").value;
     let wallet_paths = extract_psbt_output_paths(&psbt);
     let sig = node.with_channel(&channel_id, |chan| {
@@ -1682,7 +1682,7 @@ fn sign_penalty_to_us(
             input,
             &revocation_secret,
             &redeemscript,
-            htlc_amount_sat,
+            htlc_amount.to_sat(),
             &wallet_paths[0],
         )
     })?;
@@ -1711,7 +1711,7 @@ fn extract_pubkey(key: &PubKey) -> PublicKey {
     PublicKey::from_slice(&key.0).expect("pubkey")
 }
 
-fn extract_psbt_witscripts(psbt: &PartiallySignedTransaction) -> Vec<Vec<u8>> {
+fn extract_psbt_witscripts(psbt: &Psbt) -> Vec<Vec<u8>> {
     psbt.outputs
         .iter()
         .map(|o| o.witness_script.clone().unwrap_or(ScriptBuf::new()))

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use bitcoin::bip32::ExtendedPubKey;
+use bitcoin::bip32::Xpub;
 use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::consensus::serialize;
 use bitcoin::secp256k1::PublicKey;
@@ -106,7 +106,7 @@ impl NodePortFront {
             .await
             .expect("NodeInfo failed");
         if let Ok(Message::NodeInfoReply(m)) = msgs::from_vec(reply) {
-            let xpubkey = ExtendedPubKey::decode(&m.bip32.0).expect("NodeInfoReply bip32 xpubkey");
+            let xpubkey = Xpub::decode(&m.bip32.0).expect("NodeInfoReply bip32 xpubkey");
             let heartbeat_pubkey = xpubkey.public_key;
             let node_id = PublicKey::from_slice(&m.node_id.0).expect("NodeInfoReply node_id");
             let mut lock = self.node_keys.lock().unwrap();

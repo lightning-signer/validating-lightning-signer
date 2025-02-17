@@ -118,10 +118,10 @@ pub fn derive_ser_bolt_tlv(input: TokenStream) -> TokenStream {
     // generate the output
     let output = quote! {
         impl Encodable for #ident {
-            fn consensus_encode<W: io::Write + ?Sized>(
+            fn consensus_encode<W: bitcoin::io::Write + ?Sized>(
                 &self,
                 w: &mut W,
-            ) -> core::result::Result<usize, io::Error> {
+            ) -> core::result::Result<usize, bitcoin::io::Error> {
                 let mut mw = crate::util::MeasuredWriter::wrap(w);
                 lightning::encode_tlv_stream!(&mut mw, {
                     #( #sorted_encode_entries )*
@@ -131,12 +131,14 @@ pub fn derive_ser_bolt_tlv(input: TokenStream) -> TokenStream {
         }
 
         impl Decodable for #ident {
-            fn consensus_decode<R: io::Read + ?Sized>(
+            fn consensus_decode<R: bitcoin::io::Read + ?Sized>(
                 r: &mut R,
             ) -> core::result::Result<Self, bitcoin::consensus::encode::Error> {
                 #(#decode_temp_declarations)*
                 (|| -> core::result::Result<_, _> {
-                    lightning::decode_tlv_stream!(r, {
+                    // a sized reader is required, so wrap it in a Take
+                    let mut r = r.take(u64::MAX);
+                    lightning::decode_tlv_stream!(&mut r, {
                         #( #sorted_decode_entries )*
                     });
                     Ok(())

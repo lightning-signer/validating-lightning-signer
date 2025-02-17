@@ -1,9 +1,10 @@
 use arbitrary::{Arbitrary, Unstructured};
 use bitcoin::secp256k1;
+use lightning::ln::chan_utils::MAX_HTLCS;
+use lightning::types::payment::PaymentHash;
 use lightning_signer::bitcoin;
 use lightning_signer::channel::ChannelId;
-use lightning_signer::lightning::ln::chan_utils::MAX_HTLCS;
-use lightning_signer::lightning::ln::PaymentHash;
+use lightning_signer::lightning;
 use lightning_signer::node::Node;
 use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::simple_validator::{
@@ -15,6 +16,7 @@ use lightning_signer::util::test_utils::{
     init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
 };
 use secp256k1::ecdsa::Signature;
+use std::str::FromStr;
 use std::sync::Arc;
 
 #[derive(Debug, Arbitrary)]
@@ -62,8 +64,11 @@ pub struct ChannelFuzz {
 impl ChannelFuzz {
     pub fn new() -> Self {
         let (node, channel_id) = init();
-        let dummy_point = secp256k1::PublicKey::from_slice(&[3; 33]).unwrap();
         let dummy_secret = secp256k1::SecretKey::from_slice(&[1; 32]).unwrap();
+        let dummy_point = secp256k1::PublicKey::from_str(
+            "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+        )
+        .unwrap();
         let dummy_sig = Signature::from_compact(&[0; 64]).unwrap();
         Self {
             holder_commitment_number: 0,

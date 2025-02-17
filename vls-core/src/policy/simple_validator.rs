@@ -1,13 +1,14 @@
 use bitcoin::absolute::{Height, Time};
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::sighash::{EcdsaSighashType, SegwitV0Sighash, SighashCache};
-use bitcoin::{Network, ScriptBuf, Transaction};
+use bitcoin::transaction::Version;
+use bitcoin::{Address, Amount, Network, ScriptBuf, Transaction};
 use lightning::ln::chan_utils::{
     build_htlc_transaction, htlc_success_tx_weight, htlc_timeout_tx_weight,
     make_funding_redeemscript, ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys,
 };
-use lightning::ln::PaymentHash;
 use lightning::sign::{ChannelSigner, InMemorySigner};
+use lightning::types::payment::PaymentHash;
 use log::*;
 use serde::Deserialize;
 use vls_common::HexEncode;
@@ -31,7 +32,6 @@ use crate::tx::tx::{
     parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
     CommitmentInfo, CommitmentInfo2,
 };
-use crate::util::crypto_utils::payload_for_p2wsh;
 use crate::util::debug_utils::{
     script_debug, DebugHTLCOutputInCommitment, DebugInMemorySigner, DebugTxCreationKeys,
     DebugVecVecU8,
@@ -349,7 +349,7 @@ impl SimpleValidator {
         _amount_sat: u64,
         wallet_path: &[u32],
     ) -> Result<(), ValidationError> {
-        if tx.version != 2 {
+        if tx.version != Version::TWO {
             transaction_format_err!(self, "policy-sweep-version", "bad version: {}", tx.version);
         }
 
@@ -357,7 +357,7 @@ impl SimpleValidator {
         // TODO(522) Since we see the tx on-chain, we should just get the input amount from there
 
         // // policy-sweep-fee-range
-        // self.validate_fee(amount_sat, tx.output[0].value)
+        // self.validate_fee(amount_sat, tx.output[0].value.to_sat())
         //     .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
         for out in tx.output.iter() {
@@ -469,16 +469,16 @@ impl Validator for SimpleValidator {
     ) -> Result<u64, ValidationError> {
         let mut debug_on_return = scoped_debug_return!(tx, values_sat, opaths);
 
-        if tx.version != 2 {
+        if tx.version != Version::TWO {
             policy_err!(self, "policy-onchain-format-standard", "invalid version: {}", tx.version);
         }
 
-        if tx.size() > MAX_ONCHAIN_TX_SIZE {
+        if tx.base_size() > MAX_ONCHAIN_TX_SIZE {
             policy_err!(
                 self,
                 "policy-onchain-max-size",
                 "tx too large: {} > {}",
-                tx.size(),
+                tx.base_size(),
                 MAX_ONCHAIN_TX_SIZE
             );
         }
@@ -517,18 +517,22 @@ impl Validator for SimpleValidator {
                         policy_error(format!("output[{}]: wallet_can_spend error: {}", outndx, err))
                     })?;
                 if spendable {
-                    debug!("output {} ({}) is to our wallet", outndx, output.value);
+                    debug!("output {} ({}) is to our wallet", outndx, output.value.to_sat());
                     beneficial_sum =
-                        add_beneficial_output!(beneficial_sum, output.value, "to wallet")?;
+                        add_beneficial_output!(beneficial_sum, output.value.to_sat(), "to wallet")?;
                 }
                 if !spendable {
                     // Possible output to allowlisted xpub
                     spendable = wallet.allowlist_contains(&output.script_pubkey, opath);
                     if spendable {
-                        debug!("output {} ({}) is to allowlisted xpub", outndx, output.value);
+                        debug!(
+                            "output {} ({}) is to allowlisted xpub",
+                            outndx,
+                            output.value.to_sat()
+                        );
                         beneficial_sum = add_beneficial_output!(
                             beneficial_sum,
-                            output.value,
+                            output.value.to_sat(),
                             "to allowlisted xpub"
                         )?;
                     }
@@ -543,9 +547,9 @@ impl Validator for SimpleValidator {
                 }
             } else if wallet.allowlist_contains(&output.script_pubkey, &[]) {
                 // Possible output to allowlisted address
-                debug!("output {} ({}) is allowlisted", outndx, output.value);
+                debug!("output {} ({}) is allowlisted", outndx, output.value.to_sat());
                 beneficial_sum =
-                    add_beneficial_output!(beneficial_sum, output.value, "allowlisted")?;
+                    add_beneficial_output!(beneficial_sum, output.value.to_sat(), "allowlisted")?;
             } else if let Some(slot) = channel_slot {
                 // Possible funded channel balance
                 match &*slot.lock().unwrap() {
@@ -553,17 +557,17 @@ impl Validator for SimpleValidator {
                         debug!(
                             "output {} ({}) matches channel {}",
                             outndx,
-                            output.value,
+                            output.value.to_sat(),
                             chan.id()
                         );
                         dbgvals!(chan.setup, chan.enforcement_state);
 
-                        if output.value != chan.setup.channel_value_sat {
+                        if output.value.to_sat() != chan.setup.channel_value_sat {
                             policy_err!(
                                 self,
                                 "policy-onchain-output-match-commitment",
                                 "funding output amount mismatch w/ channel: {} != {}",
-                                output.value,
+                                output.value.to_sat(),
                                 chan.setup.channel_value_sat
                             );
                         }
@@ -572,8 +576,8 @@ impl Validator for SimpleValidator {
                             &chan.keys.pubkeys().funding_pubkey,
                             &chan.counterparty_pubkeys().funding_pubkey,
                         );
-                        let script_pubkey =
-                            payload_for_p2wsh(&funding_redeemscript).script_pubkey();
+                        let address = Address::p2wsh(&funding_redeemscript, wallet.network());
+                        let script_pubkey = address.script_pubkey();
                         if output.script_pubkey != script_pubkey {
                             policy_err!(
                                 self,
@@ -616,14 +620,19 @@ impl Validator for SimpleValidator {
                                     ))
                                 },
                             )?;
-                        debug!("output {} ({}) funds channel {}", outndx, output.value, chan.id());
+                        debug!(
+                            "output {} ({}) funds channel {}",
+                            outndx,
+                            output.value.to_sat(),
+                            chan.id()
+                        );
                         beneficial_sum =
                             add_beneficial_output!(beneficial_sum, our_value, "channel value")?;
                     }
                     _ => panic!("this can't happen"),
                 };
             } else {
-                debug!("output {} ({}) is unknown", outndx, output.value);
+                debug!("output {} ({}) is unknown", outndx, output.value.to_sat());
                 // policy-onchain-no-unknown-outputs
                 unknowns.push(outndx);
             }
@@ -665,7 +674,7 @@ impl Validator for SimpleValidator {
             DebugVecVecU8(output_witscripts)
         );
 
-        if tx.version != 2 {
+        if tx.version != Version::TWO {
             policy_err!(
                 self,
                 "policy-commitment-version",
@@ -954,7 +963,7 @@ impl Validator for SimpleValidator {
             EcdsaSighashType::All
         };
         let original_tx_sighash = SighashCache::new(tx)
-            .segwit_signature_hash(0, &redeemscript, htlc_amount_sat, sighash_type)
+            .p2wsh_signature_hash(0, &redeemscript, Amount::from_sat(htlc_amount_sat), sighash_type)
             .map_err(|_| policy_error("could not compute sighash on provided HTLC tx"))?;
 
         let offered = if parse_offered_htlc_script(redeemscript, setup.is_anchors()).is_ok() {
@@ -978,7 +987,9 @@ impl Validator for SimpleValidator {
         let cltv_expiry = if offered { tx.lock_time.to_consensus_u32() } else { 0 };
         let transaction_output_index = tx.input[0].previous_output.vout;
         let commitment_txid = tx.input[0].previous_output.txid;
-        let total_fee = htlc_amount_sat - tx.output[0].value;
+        let total_fee = htlc_amount_sat
+            .checked_sub(tx.output[0].value.to_sat())
+            .ok_or_else(|| policy_error("fee underflow".to_string()))?;
 
         let features = setup.features();
         let build_feerate = if setup.is_zero_fee_htlc() {
@@ -1013,7 +1024,7 @@ impl Validator for SimpleValidator {
 
         // unwrap is safe because we know the tx is valid
         let recomposed_tx_sighash = SighashCache::new(&recomposed_tx)
-            .segwit_signature_hash(0, &redeemscript, htlc_amount_sat, sighash_type)
+            .p2wsh_signature_hash(0, &redeemscript, Amount::from_sat(htlc_amount_sat), sighash_type)
             .unwrap();
 
         if recomposed_tx_sighash != original_tx_sighash {
@@ -1194,7 +1205,7 @@ impl Validator for SimpleValidator {
 
         let (likely_args, unlikely_args) = if tx.output.len() == 1 {
             let holders_output = ValidateArgs {
-                to_holder_value_sat: tx.output[0].value,
+                to_holder_value_sat: tx.output[0].value.to_sat(),
                 to_counterparty_value_sat: 0,
                 holder_script: Some(tx.output[0].script_pubkey.clone()),
                 counterparty_script: None,
@@ -1202,7 +1213,7 @@ impl Validator for SimpleValidator {
             };
             let cpartys_output = ValidateArgs {
                 to_holder_value_sat: 0,
-                to_counterparty_value_sat: tx.output[0].value,
+                to_counterparty_value_sat: tx.output[0].value.to_sat(),
                 holder_script: None,
                 counterparty_script: Some(tx.output[0].script_pubkey.clone()),
                 wallet_path: vec![],
@@ -1216,15 +1227,15 @@ impl Validator for SimpleValidator {
             }
         } else {
             let holder_first = ValidateArgs {
-                to_holder_value_sat: tx.output[0].value,
-                to_counterparty_value_sat: tx.output[1].value,
+                to_holder_value_sat: tx.output[0].value.to_sat(),
+                to_counterparty_value_sat: tx.output[1].value.to_sat(),
                 holder_script: Some(tx.output[0].script_pubkey.clone()),
                 counterparty_script: Some(tx.output[1].script_pubkey.clone()),
                 wallet_path: wallet_paths[0].clone(),
             };
             let cparty_first = ValidateArgs {
-                to_holder_value_sat: tx.output[1].value,
-                to_counterparty_value_sat: tx.output[0].value,
+                to_holder_value_sat: tx.output[1].value.to_sat(),
+                to_counterparty_value_sat: tx.output[0].value.to_sat(),
                 holder_script: Some(tx.output[1].script_pubkey.clone()),
                 counterparty_script: Some(tx.output[0].script_pubkey.clone()),
                 wallet_path: wallet_paths[1].clone(),
@@ -1489,7 +1500,7 @@ impl Validator for SimpleValidator {
             Height::from_consensus(cstate.current_height + MAX_CHAIN_LAG)
                 .expect("Height::from_consensus"),
             // We are only interested in checking the height, and not the time. So we can put here any value.
-            Time::min_value(),
+            Time::MIN,
         ) {
             transaction_format_err!(
                 self,
@@ -1574,7 +1585,7 @@ impl Validator for SimpleValidator {
                 Height::from_consensus(cstate.current_height + MAX_CHAIN_LAG)
                     .expect("Height::from_consensus"),
                 // We are only interested in checking the height, and not the time. So we can put here any value.
-                Time::min_value(),
+                Time::MIN,
             ) {
                 transaction_format_err!(
                     self,
@@ -1636,7 +1647,7 @@ impl Validator for SimpleValidator {
             Height::from_consensus(cstate.current_height + MAX_CHAIN_LAG)
                 .expect("Height::from_consensus"),
             // We are only interested in checking the height, and not the time. So we can put here any value.
-            Time::min_value(),
+            Time::MIN,
         ) {
             transaction_format_err!(
                 self,
@@ -1961,7 +1972,7 @@ pub fn make_default_simple_policy(network: Network) -> SimplePolicy {
 
 #[cfg(test)]
 mod tests {
-    use lightning::ln::PaymentHash;
+    use lightning::types::payment::PaymentHash;
     use test_log::test;
 
     use crate::tx::tx::HTLCInfo2;
@@ -2018,7 +2029,7 @@ mod tests {
     fn validate_policy_commitment_version() {
         let validator = make_test_validator();
         let mut tx = make_test_commitment_tx();
-        tx.version = 1;
+        tx.version = Version::ONE;
         let res = validator.decode_commitment_tx(
             &make_test_channel_keys(),
             &make_test_channel_setup(),

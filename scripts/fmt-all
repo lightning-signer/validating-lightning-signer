@@ -3,7 +3,7 @@
 set -e
 set -x
 
-CARGO="cargo +nightly-2024-10-14"
+CARGO="cargo +nightly-2024-10-13"
 
 # Note that some of these need additional cargo components installed for build - see respective READMEs
 

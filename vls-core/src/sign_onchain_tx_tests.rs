@@ -3,16 +3,16 @@ mod tests {
     use bitcoin::absolute::LockTime;
     use bitcoin::hashes::hash160::Hash as Hash160;
 
-    use bitcoin::address::Payload;
     use bitcoin::blockdata::opcodes;
     use bitcoin::blockdata::script::Builder;
     use bitcoin::hashes::Hash;
     use bitcoin::script::PushBytesBuf;
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
+    use bitcoin::transaction::Version;
     use bitcoin::{
-        self, Address, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
+        self, Address, Amount, CompressedPublicKey, Network, OutPoint, ScriptBuf, Sequence,
+        Transaction, TxIn, TxOut, Txid, Witness,
     };
-
     use test_log::test;
 
     use crate::channel::CommitmentType;
@@ -30,7 +30,7 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let destination = node.get_native_address(&[0]).unwrap();
         let (tx, opaths) = make_large_tx(&destination, 1050);
-        let txo = TxOut { value: 0, script_pubkey: ScriptBuf::new() };
+        let txo = TxOut { value: Amount::ZERO, script_pubkey: ScriptBuf::new() };
         node.check_onchain_tx(&tx, &vec![], &[txo.clone()], &[None], &opaths)
             .expect("should have been under size limit");
         let (tx, opaths) = make_large_tx(&destination, 1060);
@@ -42,11 +42,11 @@ mod tests {
 
     fn make_large_tx(destination: &Address, nout: u32) -> (Transaction, Vec<Vec<u32>>) {
         let output: Vec<_> = (0..nout)
-            .map(|_| TxOut { value: 0, script_pubkey: destination.script_pubkey() })
+            .map(|_| TxOut { value: Amount::ZERO, script_pubkey: destination.script_pubkey() })
             .collect();
         let opaths: Vec<_> = output.iter().map(|_| vec![0]).collect();
         let tx = Transaction {
-            version: 2,
+            version: Version::TWO,
             lock_time: LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 },
@@ -63,7 +63,7 @@ mod tests {
     fn onchain_fee_velocity_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let tx = Transaction {
-            version: 2,
+            version: Version::TWO,
             lock_time: LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 },
@@ -74,7 +74,7 @@ mod tests {
             output: vec![],
         };
 
-        let txo = TxOut { value: 20000, script_pubkey: ScriptBuf::new() };
+        let txo = TxOut { value: Amount::from_sat(20000), script_pubkey: ScriptBuf::new() };
         for i in 0..50 {
             println!("i = {}", i);
             node.check_onchain_tx(&tx, &vec![], &[txo.clone()], &[None], &[vec![]])
@@ -264,10 +264,11 @@ mod tests {
         )
         .unwrap();
         let uniclose_pubkey =
-            bitcoin::PublicKey::new(PublicKey::from_secret_key(&secp_ctx, &uniclose_key));
+            CompressedPublicKey(PublicKey::from_secret_key(&secp_ctx, &uniclose_key));
 
+        let address = Address::p2wpkh(&uniclose_pubkey, Network::Testnet);
         let previous_tx = Transaction {
-            version: 2,
+            version: Version::TWO,
             lock_time: LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 },
@@ -276,13 +277,13 @@ mod tests {
                 witness: Witness::default(),
             }],
             output: vec![TxOut {
-                value: 300,
-                script_pubkey: Payload::p2wpkh(&uniclose_pubkey).unwrap().script_pubkey(),
+                value: Amount::from_sat(300),
+                script_pubkey: address.script_pubkey(),
             }],
         };
 
         let input1 = TxIn {
-            previous_output: OutPoint { txid: previous_tx.txid(), vout: 0 },
+            previous_output: OutPoint { txid: previous_tx.compute_txid(), vout: 0 },
             script_sig: ScriptBuf::new(),
             sequence: Sequence::ZERO,
             witness: Witness::default(),
@@ -395,7 +396,7 @@ mod tests {
         assert_eq!(witvec.len(), 1);
 
         let pubkey = &node.get_wallet_pubkey(&ipaths[0]).unwrap();
-        let keyhash = Hash160::hash(&pubkey.inner.serialize()[..]);
+        let keyhash = Hash160::hash(&pubkey.0.serialize()[..]);
 
         let script = Builder::new()
             .push_opcode(opcodes::all::OP_PUSHBYTES_0)
@@ -554,7 +555,7 @@ mod tests {
     fn bad_version_1() {
         assert_failed_precondition_err!(
             sign_funding_tx_with_mutator(|fms| {
-                fms.tx.version = 1;
+                fms.tx.version = Version::ONE;
             }),
             "policy failure: validate_onchain_tx: invalid version: 1"
         );
@@ -565,7 +566,7 @@ mod tests {
     fn bad_version_3() {
         assert_failed_precondition_err!(
             sign_funding_tx_with_mutator(|fms| {
-                fms.tx.version = 3;
+                fms.tx.version = Version::non_standard(3);
             }),
             "policy failure: validate_onchain_tx: invalid version: 3"
         );
@@ -585,7 +586,7 @@ mod tests {
     fn inputs_overflow() {
         assert_failed_precondition_err!(
             sign_funding_tx_with_mutator(|fms| {
-                fms.tx_ctx.prev_outs[0].value = u64::MAX;
+                fms.tx_ctx.prev_outs[0].value = Amount::from_sat(u64::MAX);
             }),
             "policy failure: funding sum inputs overflow"
         );
@@ -595,7 +596,7 @@ mod tests {
     fn wallet_change_overflow() {
         assert_failed_precondition_err!(
             sign_funding_tx_with_mutator(|fms| {
-                fms.tx.output[1].value = u64::MAX;
+                fms.tx.output[1].value = Amount::from_sat(u64::MAX);
             }),
             "policy failure: beneficial outputs overflow: \
              sum 90000 + to wallet 18446744073709551615"
@@ -606,7 +607,7 @@ mod tests {
     fn allowlist_overflow() {
         assert_failed_precondition_err!(
             sign_funding_tx_with_mutator(|fms| {
-                fms.tx.output[2].value = u64::MAX;
+                fms.tx.output[2].value = Amount::from_sat(u64::MAX);
             }),
             "policy failure: beneficial outputs overflow: \
              sum 5799000 + allowlisted 18446744073709551615"
@@ -618,11 +619,11 @@ mod tests {
         assert_failed_precondition_err!(
             sign_funding_tx_with_mutator(|fms| {
                 // bump the allowlisted value to almost overflow ... channel will overflow
-                fms.tx.output[2].value = u64::MAX
+                fms.tx.output[2].value = Amount::from_sat(u64::MAX)
                     - fms.tx.output[0].value
                     - fms.tx.output[1].value
                     - fms.tx.output[2].value
-                    + 1;
+                    + Amount::from_sat(1);
             }),
             "policy failure: beneficial outputs overflow: \
              sum 18446744073709351616 + channel value 3000000"
@@ -633,7 +634,7 @@ mod tests {
     fn non_beneficial_value_underflow() {
         assert_failed_precondition_err!(
             sign_funding_tx_with_mutator(|fms| {
-                fms.tx.output[1].value += 10_000_000;
+                fms.tx.output[1].value += Amount::from_sat(10_000_000);
             }),
             "policy failure: validate_onchain_tx: non-beneficial value underflow: \
              sum of our inputs 9000000 < sum of our outputs 18999000"
@@ -1105,7 +1106,7 @@ mod tests {
         funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
         // Modify the output value after funding_tx_setup_channel
-        tx.output[1].value = channel_amount + 42; // bad output value
+        tx.output[1].value = Amount::from_sat(channel_amount + 42); // bad output value
 
         // Because the amount is bogus, the channel isn't found and the output is considered
         // non-beneficial.
@@ -1132,7 +1133,7 @@ mod tests {
         let mut tx = tx_ctx.to_tx();
 
         // Modify the output value before funding_tx_setup_channel
-        tx.output[1].value = channel_amount + 42; // bad output value
+        tx.output[1].value = Amount::from_sat(channel_amount + 42); // bad output value
 
         funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 

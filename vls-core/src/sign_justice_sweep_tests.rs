@@ -2,7 +2,10 @@
 mod tests {
     use bitcoin::absolute::{Height, LockTime};
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-    use bitcoin::{self, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness};
+    use bitcoin::transaction::Version;
+    use bitcoin::{
+        self, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
+    };
     use lightning::ln::chan_utils;
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
     use lightning::ln::channel_keys::{DelayedPaymentKey, RevocationBasepoint, RevocationKey};
@@ -23,7 +26,7 @@ mod tests {
         amount_sat: u64,
     ) -> Transaction {
         Transaction {
-            version: 2,
+            version: Version::TWO,
             lock_time: LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid, vout },
@@ -31,7 +34,10 @@ mod tests {
                 sequence: Sequence::MAX,
                 witness: Witness::default(),
             }],
-            output: vec![TxOut { script_pubkey: script_pubkey, value: amount_sat }],
+            output: vec![TxOut {
+                script_pubkey: script_pubkey,
+                value: Amount::from_sat(amount_sat),
+            }],
         }
     }
 
@@ -88,7 +94,7 @@ mod tests {
                 let built_commit_tx = &built_commit.transaction;
 
                 let to_local_outndx = 4;
-                let mut amount_sat = built_commit_tx.output[to_local_outndx].value;
+                let mut amount_sat = built_commit_tx.output[to_local_outndx].value.to_sat();
                 assert_eq!(amount_sat, 1_979_997);
 
                 let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
@@ -260,7 +266,7 @@ mod tests {
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.version = 3;
+                    tx.version = Version::non_standard(3);
                 },
             ),
             "transaction format: validate_justice_sweep: validate_sweep: bad version: 3"
@@ -330,7 +336,7 @@ mod tests {
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, amount_sat| {
-                    *amount_sat = tx.output[0].value; // fee = 0
+                    *amount_sat = tx.output[0].value.to_sat(); // fee = 0
                 },
             ),
             "policy failure: validate_justice_sweep: validate_sweep: validate_fee: \
@@ -346,7 +352,7 @@ mod tests {
             sign_justice_sweep_with_mutators(
                 |node_ctx| { make_test_wallet_dest(node_ctx, 19, P2wpkh) },
                 |_chan, _cstate, tx, _input, _commit_num, _redeemscript, _amount_sat| {
-                    tx.output[0].value = 1_000;
+                    tx.output[0].value = Amount::from_sat(1_000);
                 },
             ),
             "policy failure: validate_justice_sweep: validate_sweep: validate_fee: \

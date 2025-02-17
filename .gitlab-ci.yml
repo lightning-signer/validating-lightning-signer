@@ -254,6 +254,6 @@ cargo-fmt:
   script:
     # rustup otherwise searches for its own binary in CARGO_HOME which fails
     - rustup set auto-self-update disable
-    - rustup toolchain install nightly-2024-10-14
-    - rustup component add --toolchain nightly-2024-10-14 rustfmt
+    - rustup toolchain install nightly-2024-10-13
+    - rustup component add --toolchain nightly-2024-10-13 rustfmt
     - ./scripts/fmt-all --check

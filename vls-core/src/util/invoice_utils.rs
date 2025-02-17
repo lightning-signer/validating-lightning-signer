@@ -1,8 +1,13 @@
-use core::str::FromStr;
-
 use crate::invoice::*;
 use crate::prelude::*;
 use crate::util::status::{invalid_argument, Status};
+use bitcoin::bech32::primitives::decode::UncheckedHrpstring;
+use bitcoin::bech32::{Fe32, Fe32IterExt};
+use core::str::FromStr;
+use lightning::ln::msgs::DecodeError;
+use lightning::offers::parse::Bolt12ParseError;
+
+const BECH32_HRP: &'static str = "lni";
 
 impl FromStr for Invoice {
     type Err = Status;
@@ -38,18 +43,12 @@ impl TryFrom<bolt11::SignedRawBolt11Invoice> for Invoice {
 // Cribbed from rust-lightning/lightning/src/offers/parse.rs because
 // LDK doesn't facilitate bech32 encoding/decoding of bolt12::Invoice
 
-use bitcoin::bech32;
-use bitcoin::bech32::FromBase32;
-use lightning::offers::parse::Bolt12ParseError;
-
 struct WrappedBolt12Invoice(bolt12::Bolt12Invoice);
 
 impl FromStr for WrappedBolt12Invoice {
     type Err = Bolt12ParseError;
 
-    fn from_str(s: &str) -> Result<WrappedBolt12Invoice, <WrappedBolt12Invoice as FromStr>::Err> {
-        const BECH32_HRP: &'static str = "lni";
-
+    fn from_str(s: &str) -> Result<WrappedBolt12Invoice, Bolt12ParseError> {
         // Offer encoding may be split by '+' followed by optional whitespace.
         let encoded = match s.split('+').skip(1).next() {
             Some(_) => {
@@ -66,13 +65,21 @@ impl FromStr for WrappedBolt12Invoice {
             None => Bech32String::Borrowed(s),
         };
 
-        let (hrp, data) = bech32::decode_without_checksum(encoded.as_ref())?;
+        // No checksum, because this is not human input
+        let hrp_string = UncheckedHrpstring::new(encoded.as_ref())
+            .map_err(|_| Bolt12ParseError::Decode(DecodeError::InvalidValue))?;
 
-        if hrp != BECH32_HRP {
+        if hrp_string.hrp().as_str() != BECH32_HRP {
             return Err(Bolt12ParseError::InvalidBech32Hrp);
         }
 
-        let data = Vec::<u8>::from_base32(&data)?;
+        let data = hrp_string
+            .data_part_ascii()
+            .into_iter()
+            .map(|c| Fe32::from_char_unchecked(*c))
+            .fes_to_bytes()
+            .collect::<Vec<_>>();
+
         Ok(WrappedBolt12Invoice(bolt12::Bolt12Invoice::try_from(data)?))
     }
 }

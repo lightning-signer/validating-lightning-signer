@@ -13,9 +13,6 @@
 #[cfg(not(any(feature = "std", feature = "no-std")))]
 compile_error!("at least one of the `std` or `no-std` features must be enabled");
 
-#[cfg(not(feature = "std"))]
-extern crate core2;
-
 #[macro_use]
 extern crate alloc;
 extern crate core;
@@ -54,40 +51,6 @@ pub mod tx;
 pub mod wallet;
 /// Reexport the hex crate
 pub use hex;
-
-#[cfg(not(feature = "std"))]
-mod io_extras {
-    pub use core2::io::{self, Error};
-
-    /// A writer which will move data into the void.
-    pub struct Sink {
-        _priv: (),
-    }
-
-    /// Creates an instance of a writer which will successfully consume all data.
-    pub const fn sink() -> Sink {
-        Sink { _priv: () }
-    }
-
-    impl core2::io::Write for Sink {
-        #[inline]
-        fn write(&mut self, buf: &[u8]) -> core2::io::Result<usize> {
-            Ok(buf.len())
-        }
-
-        #[inline]
-        fn flush(&mut self) -> core2::io::Result<()> {
-            Ok(())
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-mod io_extras {
-    pub use std::io::{self, sink, Error};
-}
-
-pub use io_extras::io;
 
 #[doc(hidden)]
 pub use alloc::collections::BTreeSet as OrderedSet;

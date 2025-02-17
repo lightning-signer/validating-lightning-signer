@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use core::time::Duration;
 
 use bitcoin::absolute::LockTime;
-use bitcoin::bech32::{u5, FromBase32, ToBase32};
+use bitcoin::bech32::Fe32;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::Secp256k1;
@@ -13,14 +13,14 @@ use bitcoin::{ScriptBuf, Sequence, TxIn, TxOut};
 #[cfg(feature = "device")]
 use cortex_m_semihosting::hprintln;
 use lightning::ln::chan_utils::ChannelPublicKeys;
-use lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
+use lightning::types::payment::{PaymentHash, PaymentPreimage, PaymentSecret};
 use lightning_signer::bitcoin;
+use lightning_signer::bitcoin::transaction::Version;
+use lightning_signer::bitcoin::{Amount, CompressedPublicKey};
 use lightning_signer::channel::{Channel, ChannelBase, ChannelSetup, CommitmentType};
 use lightning_signer::invoice::Invoice;
 use lightning_signer::lightning;
-use lightning_signer::lightning_invoice::{
-    Currency, InvoiceBuilder, RawBolt11Invoice, RawDataPart, RawHrp,
-};
+use lightning_signer::lightning_invoice::{Currency, InvoiceBuilder, RawBolt11Invoice};
 use lightning_signer::node::{Node, NodeConfig, NodeServices};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::{
@@ -93,7 +93,8 @@ fn make_test_funding_tx_with_change(
     opath: Vec<u32>,
     change_addr: &Address,
 ) -> (Vec<u32>, bitcoin::Transaction) {
-    let outputs = vec![TxOut { value, script_pubkey: change_addr.script_pubkey() }];
+    let outputs =
+        vec![TxOut { value: Amount::from_sat(value), script_pubkey: change_addr.script_pubkey() }];
     let tx = make_test_funding_tx_with_ins_outs(inputs, outputs);
     (opath, tx)
 }
@@ -102,7 +103,12 @@ pub fn make_test_funding_tx_with_ins_outs(
     inputs: Vec<TxIn>,
     outputs: Vec<TxOut>,
 ) -> bitcoin::Transaction {
-    bitcoin::Transaction { version: 2, lock_time: LockTime::ZERO, input: inputs, output: outputs }
+    bitcoin::Transaction {
+        version: Version::TWO,
+        lock_time: LockTime::ZERO,
+        input: inputs,
+        output: outputs,
+    }
 }
 
 pub fn make_test_channel_setup(
@@ -125,14 +131,13 @@ pub fn make_test_channel_setup(
 
 fn make_test_invoice(payee: &Arc<Node>, description: &str, payment_hash: PaymentHash) -> Invoice {
     let (hrp_bytes, invoice_data) = build_test_invoice(description, &payment_hash);
-    let hrp: RawHrp = String::from_utf8(hrp_bytes.to_vec()).expect("utf8").parse().expect("hrp");
-    let data = RawDataPart::from_base32(&invoice_data).expect("base32");
-    let raw_invoice = RawBolt11Invoice { hrp, data };
+    let hrp = String::from_utf8(hrp_bytes.to_vec()).expect("utf8");
+    let raw_invoice = RawBolt11Invoice::from_raw(&hrp, &invoice_data).expect("invoice");
     let sig = payee.sign_invoice(&hrp_bytes, &invoice_data).unwrap();
     raw_invoice.sign::<_, ()>(|_| Ok(sig)).unwrap().try_into().expect("invoice")
 }
 
-fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>, Vec<u5>) {
+fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>, Vec<Fe32>) {
     let raw_invoice = InvoiceBuilder::new(Currency::Bitcoin)
         .duration_since_epoch(Duration::from_secs(123456789))
         .amount_milli_satoshis(1_000_000_000)
@@ -141,9 +146,8 @@ fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>
         .description(description.to_string())
         .build_raw()
         .expect("build");
-    let hrp_str = raw_invoice.hrp.to_string();
-    let hrp_bytes = hrp_str.as_bytes().to_vec();
-    let invoice_data = raw_invoice.data.to_base32();
+    let (hrp, invoice_data) = raw_invoice.to_raw();
+    let hrp_bytes = hrp.into_bytes();
     (hrp_bytes, invoice_data)
 }
 
@@ -257,11 +261,11 @@ fn sign_funding(node: &Arc<Node>) {
     let ipaths = vec![vec![0u32], vec![1u32]];
     let prev_outs = vec![
         TxOut {
-            value: 100,
+            value: Amount::from_sat(100),
             script_pubkey: node.get_native_address(&ipaths[0]).unwrap().script_pubkey(),
         },
         TxOut {
-            value: 300,
+            value: Amount::from_sat(300),
             script_pubkey: node.get_native_address(&ipaths[1]).unwrap().script_pubkey(),
         },
     ];
@@ -375,8 +379,8 @@ pub fn test_bitcoin() {
     let secp = Secp256k1::new();
 
     // Derive address
-    let pubkey = pk.public_key(&secp);
-    let address = Address::p2wpkh(&pubkey, Network::Bitcoin).unwrap();
+    let pubkey = CompressedPublicKey(pk.public_key(&secp).inner);
+    let address = Address::p2wpkh(&pubkey, Network::Bitcoin);
     myprintln!("Address: {}", address);
 
     assert_eq!(address.to_string(), "bc1qpx9t9pzzl4qsydmhyt6ctrxxjd4ep549np9993".to_string());

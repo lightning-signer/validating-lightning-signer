@@ -9,7 +9,7 @@ homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 
 [dependencies]
-bitcoin-consensus-derive = { version = "0.1.0" }
+bitcoin-consensus-derive = { version = "0.2.0-rc.1" }
 bolt-derive = { path = "../bolt-derive", version = "0.3.1" }
 log = "0.4"
 as-any = "0.3"
@@ -17,11 +17,11 @@ hex = { version = "0.4", default-features = false }
 vls-core = { path = "../vls-core", version = "0.13.0", default-features = false }
 
 [dependencies.serde_bolt]
-version = "0.4.1"
+version = "0.5.0"
 default-features = false
 
 [dependencies.txoo]
-version = "0.8"
+version = "0.9.0"
 default-features = false
 
 [dev-dependencies]
@@ -29,7 +29,7 @@ regex = "1.5"
 # For logging in unit tests
 env_logger = "0.9"
 test-log = "0.2.8"
-serde_bolt = { version = "0.4.1", features = ["test_utils"] }
+serde_bolt = { version = "0.5.0", features = ["test_utils"] }
 vls-protocol = { path = ".", features = ["developer"] }
 
 [features]

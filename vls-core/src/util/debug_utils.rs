@@ -1,14 +1,13 @@
 use crate::node::{PaymentState, RoutedPayment};
 use crate::prelude::*;
-use bitcoin::address::Payload;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::{Address, Network, ScriptBuf};
 use lightning::ln::chan_utils::{
     BuiltCommitmentTransaction, ChannelPublicKeys, CommitmentTransaction, HTLCOutputInCommitment,
     TxCreationKeys,
 };
-use lightning::ln::PaymentHash;
 use lightning::sign::InMemorySigner;
+use lightning::types::payment::PaymentHash;
 use vls_common::HexEncode;
 
 /// Debug printer for ChannelPublicKeys which doesn't have one.
@@ -90,22 +89,11 @@ macro_rules! trace_node_state {
     };
 }
 
-/// Debug printer for Payload which uses hex encoded strings.
-pub struct DebugPayload<'a>(pub &'a Payload);
+/// Debug printer for AddressData which uses hex encoded strings.
+pub struct DebugPayload<'a>(pub &'a Address);
 impl<'a> core::fmt::Debug for DebugPayload<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
-        match *self.0 {
-            Payload::PubkeyHash(ref hash) =>
-                f.debug_struct("PubkeyHash").field("hash", &hex::encode(hash)).finish(),
-            Payload::ScriptHash(ref hash) =>
-                f.debug_struct("ScriptHash").field("hash", &hex::encode(hash)).finish(),
-            Payload::WitnessProgram(ref program) => f
-                .debug_struct("WitnessProgram")
-                .field("version", &program.version())
-                .field("program", &program.program().to_hex())
-                .finish(),
-            _ => unreachable!(),
-        }
+        f.write_str(&self.0.to_string())
     }
 }
 

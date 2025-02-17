@@ -3,6 +3,7 @@ use alloc::collections::BTreeSet as Set;
 use bitcoin::absolute::LockTime;
 use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::secp256k1::Secp256k1;
+use bitcoin::transaction::Version;
 use bitcoin::{BlockHash, OutPoint, Transaction, TxIn, TxOut, Txid};
 use log::*;
 use push_decoder::Listener as _;
@@ -260,7 +261,7 @@ impl<'a> push_decoder::Listener for PushListener<'a> {
             // Starting gathering it.  It will be processed in on_transaction_end.
             // It may be either mutual or unilateral.
             let tx = Transaction {
-                version: decode_state.version,
+                version: Version(decode_state.version),
                 lock_time: LockTime::ZERO,
                 input: vec![input.clone()],
                 output: vec![],
@@ -875,7 +876,7 @@ impl ChainMonitor {
         let mut state = self.get_state();
         assert!(state.funding_txids.is_empty(), "only a single funding tx currently supported");
         assert_eq!(state.funding_txids.len(), state.funding_vouts.len());
-        state.funding_txids.push(tx.txid());
+        state.funding_txids.push(tx.compute_txid());
         state.funding_vouts.push(vout);
         state.funding_inputs.extend(tx.input.iter().map(|i| i.previous_output));
     }
@@ -927,7 +928,7 @@ impl ChainMonitor {
 
         // stream the transactions to the state
         for tx in txs {
-            listener.on_transaction_start(tx.version);
+            listener.on_transaction_start(tx.version.0);
             for input in tx.input.iter() {
                 listener.on_transaction_input(input);
             }
@@ -935,7 +936,7 @@ impl ChainMonitor {
             for output in tx.output.iter() {
                 listener.on_transaction_output(output);
             }
-            listener.on_transaction_end(tx.lock_time, tx.txid());
+            listener.on_transaction_end(tx.lock_time, tx.compute_txid());
         }
 
         decode_state
@@ -1036,7 +1037,7 @@ mod tests {
     use bitcoin::hashes::Hash;
     use bitcoin::CompactTarget;
     use lightning::ln::chan_utils::HTLCOutputInCommitment;
-    use lightning::ln::PaymentHash;
+    use lightning::types::payment::PaymentHash;
     use test_log::test;
 
     use super::*;
@@ -1044,7 +1045,7 @@ mod tests {
     #[test]
     fn test_funding() {
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);
-        let outpoint = OutPoint::new(tx.txid(), 0);
+        let outpoint = OutPoint::new(tx.compute_txid(), 0);
         let cpp = Box::new(DummyCommitmentPointProvider {});
         let chan_id = ChannelId::new(&[33u8; 32]);
         let monitor = ChainMonitorBase::new(outpoint, 0, &chan_id).as_monitor(cpp);
@@ -1068,7 +1069,7 @@ mod tests {
     fn test_funding_double_spent() {
         let tx = make_tx(vec![make_txin(1), make_txin(2)]);
         let tx2 = make_tx(vec![make_txin(2)]);
-        let outpoint = OutPoint::new(tx.txid(), 0);
+        let outpoint = OutPoint::new(tx.compute_txid(), 0);
         let cpp = Box::new(DummyCommitmentPointProvider {});
         let chan_id = ChannelId::new(&[33u8; 32]);
         let monitor = ChainMonitorBase::new(outpoint, 0, &chan_id).as_monitor(cpp);
@@ -1109,7 +1110,7 @@ mod tests {
         monitor.on_push(|listener| {
             listener.on_transaction_input(&tx.input[1]);
             listener.on_transaction_output(&tx.output[0]);
-            listener.on_transaction_end(tx.lock_time, tx.txid());
+            listener.on_transaction_end(tx.lock_time, tx.compute_txid());
             listener.on_block_end();
         });
 
@@ -1122,7 +1123,7 @@ mod tests {
             listener.on_transaction_input(&tx.input[0]);
             listener.on_transaction_input(&tx.input[1]);
             listener.on_transaction_output(&tx.output[0]);
-            listener.on_transaction_end(tx.lock_time, tx.txid());
+            listener.on_transaction_end(tx.lock_time, tx.compute_txid());
             listener.on_block_end();
         });
         monitor.on_add_streamed_block_end(&header.block_hash());
@@ -1136,7 +1137,7 @@ mod tests {
             listener.on_transaction_input(&tx.input[0]);
             listener.on_transaction_input(&tx.input[1]);
             listener.on_transaction_output(&tx.output[0]);
-            listener.on_transaction_end(tx.lock_time, tx.txid());
+            listener.on_transaction_end(tx.lock_time, tx.compute_txid());
             listener.on_block_end();
         });
         monitor.on_add_streamed_block_end(&header.block_hash());
@@ -1313,9 +1314,10 @@ mod tests {
             })
             .expect("make_holder_commitment_tx failed");
         let closing_tx = closing_commitment_tx.trust().built_transaction().transaction.clone();
-        let closing_txid = closing_tx.txid();
+        let closing_txid = closing_tx.compute_txid();
         let holder_output_index =
-            closing_tx.output.iter().position(|out| out.value == to_holder).unwrap() as u32;
+            closing_tx.output.iter().position(|out| out.value.to_sat() == to_holder).unwrap()
+                as u32;
         monitor.on_add_block(&[closing_tx.clone()], &block_hash);
         assert_eq!(monitor.closing_depth(), 1);
         assert!(!monitor.is_done());
@@ -1375,15 +1377,16 @@ mod tests {
             })
             .expect("make_holder_commitment_tx failed");
         let closing_tx = closing_commitment_tx.trust().built_transaction().transaction.clone();
-        let closing_txid = closing_tx.txid();
+        let closing_txid = closing_tx.compute_txid();
         let holder_output_index =
-            closing_tx.output.iter().position(|out| out.value == to_holder).unwrap() as u32;
+            closing_tx.output.iter().position(|out| out.value.to_sat() == to_holder).unwrap()
+                as u32;
         let cp_output_index =
-            closing_tx.output.iter().position(|out| out.value == to_cp).unwrap() as u32;
+            closing_tx.output.iter().position(|out| out.value.to_sat() == to_cp).unwrap() as u32;
         let htlc_output_index = closing_tx
             .output
             .iter()
-            .position(|out| out.value == htlcs[0].amount_msat / 1000)
+            .position(|out| out.value.to_sat() == htlcs[0].amount_msat / 1000)
             .unwrap() as u32;
         monitor.on_add_block(&[closing_tx.clone()], &block_hash);
         assert_eq!(monitor.closing_depth(), 1);
@@ -1432,7 +1435,7 @@ mod tests {
 
     fn setup_funded_channel() -> (Arc<Node>, ChannelId, ChainMonitor, Txid) {
         let funding_tx = make_tx(vec![make_txin(1), make_txin(2)]);
-        let funding_outpoint = OutPoint::new(funding_tx.txid(), 0);
+        let funding_outpoint = OutPoint::new(funding_tx.compute_txid(), 0);
         let setup = make_channel_setup(funding_outpoint);
 
         let (node, channel_id) =
@@ -1446,7 +1449,7 @@ mod tests {
         monitor.on_add_block(&[], &block_hash);
         monitor.on_add_block(&[funding_tx.clone()], &block_hash);
         assert_eq!(monitor.funding_depth(), 1);
-        (node, channel_id, monitor, funding_tx.txid())
+        (node, channel_id, monitor, funding_tx.compute_txid())
     }
 
     fn make_txin2(prev_txid: Txid, prevout: u32) -> TxIn {

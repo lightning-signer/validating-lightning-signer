@@ -7,10 +7,10 @@
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use bitcoin::bip32::{ExtendedPrivKey, ExtendedPubKey};
+use bitcoin::bip32::{Xpriv, Xpub};
 use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::consensus::deserialize;
-use bitcoin::secp256k1::{All, KeyPair, PublicKey, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{All, Keypair, PublicKey, Secp256k1, SecretKey};
 use bitcoin::{BlockHash, Network};
 use bitcoind_client::{BitcoindClient, BlockchainInfo};
 use clap::Parser;
@@ -54,8 +54,8 @@ struct State {
 struct DummySignerPort {
     secp: Secp256k1<All>,
     node_id: PublicKey,
-    xpriv: ExtendedPrivKey,
-    xpub: ExtendedPubKey,
+    xpriv: Xpriv,
+    xpub: Xpub,
     state: Arc<Mutex<State>>,
 }
 
@@ -66,8 +66,8 @@ impl DummySignerPort {
         let secp = Secp256k1::new();
         let secret_key = SecretKey::from_slice(&NODE_SECRET).unwrap();
         let node_id = PublicKey::from_secret_key(&secp, &secret_key);
-        let xpriv = ExtendedPrivKey::new_master(network, &[0; 32]).unwrap();
-        let xpub = ExtendedPubKey::from_priv(&secp, &xpriv);
+        let xpriv = Xpriv::new_master(network, &[0; 32]).unwrap();
+        let xpub = Xpub::from_priv(&secp, &xpriv);
         let validator_factory = SimpleValidatorFactory::new();
         let tracker =
             ChainTracker::for_network(network, node_id, Arc::new(validator_factory), vec![]);
@@ -131,7 +131,7 @@ impl SignerPort for DummySignerPort {
                     chain_timestamp: 0,
                     current_timestamp: 0,
                 };
-                let kp = KeyPair::from_secret_key(&self.secp, &self.xpriv.private_key);
+                let kp = Keypair::from_secret_key(&self.secp, &self.xpriv.private_key);
                 let ser_heartbeat = heartbeat.encode();
                 let msg = sighash_from_heartbeat(&ser_heartbeat);
                 let sig = self.secp.sign_schnorr_no_aux_rand(&msg, &kp);

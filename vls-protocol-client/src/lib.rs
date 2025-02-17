@@ -3,11 +3,10 @@ use std::convert::{TryFrom, TryInto};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use bitcoin::bech32::u5;
 use bitcoin::bip32::ChildNumber;
-use bitcoin::bip32::ExtendedPubKey;
+use bitcoin::bip32::Xpub;
 use bitcoin::hashes::Hash;
-use bitcoin::psbt::PartiallySignedTransaction;
+use bitcoin::psbt::Psbt;
 use bitcoin::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use bitcoin::secp256k1::rand::rngs::OsRng;
 use bitcoin::secp256k1::rand::RngCore;
@@ -20,16 +19,16 @@ use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
     HTLCOutputInCommitment, HolderCommitmentTransaction,
 };
+use lightning::ln::inbound_payment::ExpandedKey;
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::msgs::UnsignedChannelAnnouncement;
 use lightning::ln::msgs::UnsignedGossipMessage;
 use lightning::ln::script::ShutdownScript;
-use lightning::ln::PaymentPreimage;
 use lightning::sign::ecdsa::EcdsaChannelSigner;
-use lightning::sign::ecdsa::WriteableEcdsaChannelSigner;
 use lightning::sign::{ChannelSigner, NodeSigner};
 use lightning::sign::{EntropySource, SignerProvider};
-use lightning::sign::{KeyMaterial, Recipient, SpendableOutputDescriptor};
+use lightning::sign::{Recipient, SpendableOutputDescriptor};
+use lightning::types::payment::PaymentPreimage;
 use lightning::util::ser::Readable;
 use lightning::util::ser::{Writeable, Writer};
 use lightning_signer::bitcoin::absolute::LockTime;
@@ -68,6 +67,8 @@ mod dyn_signer;
 pub mod signer_port;
 
 pub use dyn_signer::{DynKeysInterface, DynSigner, InnerSign, SpendableKeysInterface};
+use lightning_signer::bitcoin::secp256k1::Signing;
+use lightning_signer::lightning_invoice::RawBolt11Invoice;
 pub use signer_port::SignerPort;
 use vls_protocol::psbt::StreamedPSBT;
 
@@ -176,7 +177,7 @@ impl SignerClient {
 }
 
 impl Writeable for SignerClient {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), std::io::Error> {
+    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), bitcoin::io::Error> {
         self.peer_id.write(writer)?;
         self.dbid.write(writer)?;
         self.channel_keys.write(writer)?;
@@ -184,8 +185,6 @@ impl Writeable for SignerClient {
         Ok(())
     }
 }
-
-impl WriteableEcdsaChannelSigner for SignerClient {}
 
 impl EcdsaChannelSigner for SignerClient {
     fn sign_counterparty_commitment(
@@ -275,7 +274,6 @@ impl EcdsaChannelSigner for SignerClient {
         let htlc = &htlc_descriptor.htlc;
         let message = SignLocalHtlcTx2 {
             per_commitment_number: htlc_descriptor.per_commitment_number,
-            feerate_per_kw: htlc_descriptor.feerate_per_kw,
             offered: htlc.offered,
             cltv_expiry: htlc.cltv_expiry,
             tx: WithSize(htlc_tx.clone()),
@@ -338,14 +336,28 @@ impl EcdsaChannelSigner for SignerClient {
         let result: SignChannelAnnouncementReply = self.call(message).map_err(|_| ())?;
         Ok(Signature::from_compact(&result.bitcoin_signature.0).unwrap())
     }
+
+    fn sign_splicing_funding_input(
+        &self,
+        _tx: &Transaction,
+        _input_index: usize,
+        _input_value: u64,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<Signature, ()> {
+        todo!("sign_splicing_funding_input - #538")
+    }
 }
 
 impl ChannelSigner for SignerClient {
-    fn get_per_commitment_point(&self, idx: u64, _secp_ctx: &Secp256k1<All>) -> PublicKey {
+    fn get_per_commitment_point(
+        &self,
+        idx: u64,
+        _secp_ctx: &Secp256k1<All>,
+    ) -> Result<PublicKey, ()> {
         let message = GetPerCommitmentPoint2 { commitment_number: INITIAL_COMMITMENT_NUMBER - idx };
         let result: GetPerCommitmentPoint2Reply =
             self.call(message).expect("get_per_commitment_point");
-        PublicKey::from_slice(&result.point.0).expect("public key")
+        Ok(PublicKey::from_slice(&result.point.0).expect("public key"))
     }
 
     fn validate_counterparty_revocation(&self, idx: u64, secret: &SecretKey) -> Result<(), ()> {
@@ -357,14 +369,14 @@ impl ChannelSigner for SignerClient {
         Ok(())
     }
 
-    fn release_commitment_secret(&self, idx: u64) -> [u8; 32] {
+    fn release_commitment_secret(&self, idx: u64) -> Result<[u8; 32], ()> {
         // Getting the point at idx + 2 releases the secret at idx
         let message =
             GetPerCommitmentPoint { commitment_number: INITIAL_COMMITMENT_NUMBER - idx + 2 };
         let result: GetPerCommitmentPointReply =
             self.call(message).expect("get_per_commitment_point");
         let secret = result.secret.expect("secret not released");
-        secret.0
+        Ok(secret.0)
     }
 
     fn validate_holder_commitment(
@@ -443,8 +455,8 @@ impl ChannelSigner for SignerClient {
 pub struct KeysManagerClient {
     transport: Arc<dyn Transport>,
     next_dbid: AtomicU64,
-    key_material: KeyMaterial,
-    xpub: ExtendedPubKey,
+    key_material: ExpandedKey,
+    xpub: Xpub,
     node_id: PublicKey,
 }
 
@@ -484,13 +496,13 @@ impl KeysManagerClient {
             dev_allowlist: Array::new(),
         };
         let result: HsmdInit2Reply = node_call(&*transport, init_message).expect("HsmdInit");
-        let xpub = ExtendedPubKey::decode(&result.bip32.0).expect("xpub");
+        let xpub = Xpub::decode(&result.bip32.0).expect("xpub");
         let node_id = PublicKey::from_slice(&result.node_id.0).expect("node id");
 
         Self {
             transport,
             next_dbid: AtomicU64::new(1),
-            key_material: KeyMaterial(key_material_bytes),
+            key_material: ExpandedKey::new(key_material_bytes),
             xpub,
             node_id,
         }
@@ -520,8 +532,7 @@ impl KeysManagerClient {
     ) -> Vec<Vec<Vec<u8>>> {
         assert_eq!(tx.input.len(), descriptors.len());
 
-        let mut psbt =
-            PartiallySignedTransaction::from_unsigned_tx(tx.clone()).expect("create PSBT");
+        let mut psbt = Psbt::from_unsigned_tx(tx.clone()).expect("create PSBT");
         for i in 0..psbt.inputs.len() {
             psbt.inputs[i].witness_utxo = Self::descriptor_to_txout(descriptors[i]);
         }
@@ -579,7 +590,7 @@ impl KeysManagerClient {
         Utxo {
             txid: outpoint.txid,
             outnum: outpoint.index as u32,
-            amount,
+            amount: amount.to_sat(),
             keyindex,
             is_p2sh: false,
             script: Octets::EMPTY,
@@ -599,7 +610,7 @@ impl EntropySource for KeysManagerClient {
 }
 
 impl NodeSigner for KeysManagerClient {
-    fn get_inbound_payment_key_material(&self) -> KeyMaterial {
+    fn get_inbound_payment_key(&self) -> ExpandedKey {
         self.key_material
     }
     fn get_node_id(&self, recipient: Recipient) -> Result<PublicKey, ()> {
@@ -633,8 +644,7 @@ impl NodeSigner for KeysManagerClient {
 
     fn sign_invoice(
         &self,
-        hrp_bytes: &[u8],
-        invoice_data: &[u5],
+        invoice: &RawBolt11Invoice,
         recipient: Recipient,
     ) -> Result<RecoverableSignature, ()> {
         match recipient {
@@ -643,9 +653,12 @@ impl NodeSigner for KeysManagerClient {
                 unimplemented!("phantom nodes not supported")
             }
         }
+        let (hrp, invoice_data) = invoice.to_raw();
+        let hrp_bytes = hrp.into_bytes();
+
         let message = SignInvoice {
             u5bytes: Octets(invoice_data.iter().map(|u| u.to_u8()).collect()),
-            hrp: hrp_bytes.to_vec().into(),
+            hrp: hrp_bytes.into(),
         };
         let result: SignInvoiceReply = self.call(message).expect("sign_invoice");
         let rid = RecoveryId::from_i32(result.signature.0[64] as i32).expect("recovery ID");
@@ -656,13 +669,6 @@ impl NodeSigner for KeysManagerClient {
     fn sign_bolt12_invoice(
         &self,
         _invoice: &lightning::offers::invoice::UnsignedBolt12Invoice,
-    ) -> Result<bitcoin::secp256k1::schnorr::Signature, ()> {
-        unimplemented!()
-    }
-
-    fn sign_bolt12_invoice_request(
-        &self,
-        _invoice_request: &lightning::offers::invoice_request::UnsignedInvoiceRequest,
     ) -> Result<bitcoin::secp256k1::schnorr::Signature, ()> {
         unimplemented!()
     }
@@ -734,7 +740,7 @@ impl SignerProvider for KeysManagerClient {
             key = key.ckd_pub(&secp_ctx, ChildNumber::from_normal_idx(*i).unwrap()).unwrap();
         }
         let pubkey = key.public_key;
-        Ok(ScriptBuf::new_v0_p2wpkh(&WPubkeyHash::hash(&pubkey.serialize())))
+        Ok(ScriptBuf::new_p2wpkh(&WPubkeyHash::hash(&pubkey.serialize())))
     }
 
     fn get_shutdown_scriptpubkey(&self) -> Result<ShutdownScript, ()> {
@@ -743,13 +749,13 @@ impl SignerProvider for KeysManagerClient {
 }
 
 impl OutputSpender for KeysManagerClient {
-    fn spend_spendable_outputs<C: bitcoin::secp256k1::Signing>(
+    fn spend_spendable_outputs<C: Signing>(
         &self,
         descriptors: &[&SpendableOutputDescriptor],
         outputs: Vec<TxOut>,
         change_destination_script: ScriptBuf,
         feerate_sat_per_1000_weight: u32,
-        locktime: Option<bitcoin::absolute::LockTime>,
+        locktime: Option<LockTime>,
         _secp_ctx: &Secp256k1<C>,
     ) -> Result<Transaction, ()> {
         let mut tx = create_spending_transaction(
@@ -777,7 +783,7 @@ impl InnerSign for SignerClient {
         self
     }
 
-    fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), std::io::Error> {
+    fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), bitcoin::io::Error> {
         self.write(writer)
     }
 }

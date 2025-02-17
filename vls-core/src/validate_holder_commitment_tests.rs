@@ -5,11 +5,12 @@ mod tests {
     use bitcoin::hash_types::Txid;
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::ecdsa::Signature;
-    use bitcoin::{self, Transaction};
+    use bitcoin::transaction::Version;
+    use bitcoin::{self, Amount, Transaction};
     use lightning::ln::chan_utils::TxCreationKeys;
     use lightning::ln::channel_keys::DelayedPaymentKey;
-    use lightning::ln::PaymentHash;
     use lightning::sign::ChannelSigner;
+    use lightning::types::payment::PaymentHash;
 
     use log::*;
     use test_log::test;
@@ -900,7 +901,7 @@ mod tests {
     generate_failed_precondition_error_with_mutated_validation_input!(
         bad_version,
         |vms| {
-            vms.tx.version = 3;
+            vms.tx.version = Version::non_standard(3);
         },
         |vs| {
             // Channel state should not advance.
@@ -976,7 +977,7 @@ mod tests {
         dust_to_holder,
         |vms| {
             let basendx = if vms.opt_anchors { 2 } else { 0 };
-            let delta = 1_979_900;
+            let delta = Amount::from_sat(1_979_900);
             vms.tx.output[basendx + 3].value += delta;
             vms.tx.output[basendx + 4].value -= delta;
         },
@@ -993,7 +994,7 @@ mod tests {
         dust_to_counterparty,
         |vms| {
             let basendx = if vms.opt_anchors { 2 } else { 0 };
-            let delta = 999_900;
+            let delta = Amount::from_sat(999_900);
             vms.tx.output[basendx + 3].value -= delta;
             vms.tx.output[basendx + 4].value += delta;
         },
@@ -1011,7 +1012,7 @@ mod tests {
         |vms| {
             let basendx = if vms.opt_anchors { 2 } else { 0 };
             vms.commit_tx_ctx.offered_htlcs[0].value_sat = 300;
-            vms.tx.output[basendx].value = 300;
+            vms.tx.output[basendx].value = Amount::from_sat(300);
         },
         |vs| {
             // Channel state should not advance.
@@ -1030,7 +1031,7 @@ mod tests {
         |vms| {
             let basendx = if vms.opt_anchors { 2 } else { 0 };
             vms.commit_tx_ctx.received_htlcs[0].value_sat = 300;
-            vms.tx.output[basendx + 1].value = 300;
+            vms.tx.output[basendx + 1].value = Amount::from_sat(300);
         },
         |vs| {
             // Channel state should not advance.

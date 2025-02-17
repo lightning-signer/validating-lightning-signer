@@ -11,7 +11,7 @@ use lightning::chain::transaction::OutPoint;
 use lightning::sign::DelayedPaymentOutputDescriptor;
 use lightning_signer::bitcoin::address::{NetworkChecked, NetworkUnchecked};
 use lightning_signer::bitcoin::consensus::encode::serialize_hex;
-use lightning_signer::bitcoin::{Sequence, TxOut, Txid};
+use lightning_signer::bitcoin::{Amount, Sequence, TxOut, Txid};
 use lightning_signer::lightning::ln::channel_keys::RevocationKey;
 use lightning_signer::node::{Allowable, ToStringForNetwork};
 use lightning_signer::util::status::Status;
@@ -19,6 +19,7 @@ use lightning_signer::{bitcoin, lightning};
 use log::*;
 use std::collections::BTreeMap;
 use url::Url;
+use vls_protocol::serde_bolt::bitcoin::transaction::Version;
 
 /// Iterator
 pub struct Iter<T: RecoverySign> {
@@ -92,7 +93,7 @@ pub async fn recover_l1<R: RecoveryKeys>(
     let mut utxos = Vec::new();
     for index in 0..max_index {
         let address = keys.wallet_address_native(index).expect("address");
-        let script_pubkey = address.payload.script_pubkey();
+        let script_pubkey = address.script_pubkey();
         utxos.append(
             &mut get_utxos(&esplora, address)
                 .await
@@ -103,7 +104,7 @@ pub async fn recover_l1<R: RecoveryKeys>(
         );
 
         let taproot_address = keys.wallet_address_taproot(index).expect("address");
-        let taproot_script_pubkey = taproot_address.payload.script_pubkey();
+        let taproot_script_pubkey = taproot_address.script_pubkey();
         utxos.append(
             &mut get_utxos(&esplora, taproot_address)
                 .await
@@ -148,7 +149,7 @@ fn make_l1_sweep<R: RecoveryKeys>(
     let value = chunk.iter().map(|(_, u, _)| u.value).sum::<u64>();
 
     let mut tx = Transaction {
-        version: 2,
+        version: Version::TWO,
         lock_time: LockTime::ZERO,
         input: chunk
             .iter()
@@ -159,20 +160,26 @@ fn make_l1_sweep<R: RecoveryKeys>(
                 script_sig: ScriptBuf::new(),
             })
             .collect(),
-        output: vec![TxOut { value, script_pubkey: destination_address.payload.script_pubkey() }],
+        output: vec![TxOut {
+            value: Amount::from_sat(value),
+            script_pubkey: destination_address.script_pubkey(),
+        }],
     };
     let total_fee = feerate_per_kw * tx.weight().to_wu() / 1000;
     if total_fee > value - 1000 {
         warn!("not enough value to pay fee {:?}", tx);
         return None;
     }
-    tx.output[0].value -= total_fee;
-    info!("sending tx {} - {}", tx.txid().to_string(), serialize_hex(&tx));
+    tx.output[0].value -= Amount::from_sat(total_fee);
+    info!("sending tx {} - {}", tx.compute_txid().to_string(), serialize_hex(&tx));
 
     let ipaths = chunk.iter().map(|(i, _, _)| vec![*i]).collect::<Vec<_>>();
     let prev_outs = chunk
         .iter()
-        .map(|(_, u, script_pubkey)| TxOut { value: u.value, script_pubkey: script_pubkey.clone() })
+        .map(|(_, u, script_pubkey)| TxOut {
+            value: Amount::from_sat(u.value),
+            script_pubkey: script_pubkey.clone(),
+        })
         .collect::<Vec<_>>();
     let unicosekeys = chunk.iter().map(|_| None).collect::<Vec<_>>();
 
@@ -225,8 +232,9 @@ pub async fn recover_close<R: RecoveryKeys>(
 
         let (tx, htlc_txs, revocable_script, uck, revocation_pubkey) =
             signer.sign_holder_commitment_tx_for_recovery().expect("sign");
+        let txid = tx.compute_txid();
         debug!("closing tx {:?}", &tx);
-        info!("closing txid {}", tx.txid());
+        info!("closing txid {}", txid);
         if let Some(bitcoind_client) = &explorer_client {
             let funding_confirms = bitcoind_client
                 .get_utxo_confirmations(&signer.funding_outpoint().into_bitcoin_outpoint())
@@ -236,7 +244,7 @@ pub async fn recover_close<R: RecoveryKeys>(
                 info!(
                     "channel is open ({} confirms), broadcasting force-close {}",
                     funding_confirms.unwrap(),
-                    tx.txid()
+                    txid
                 );
                 bitcoind_client.broadcast_transaction(&tx).await.expect("failed to broadcast");
             } else {
@@ -249,7 +257,7 @@ pub async fn recover_close<R: RecoveryKeys>(
                     let script = out.script_pubkey.clone();
                     if script == revocable_script {
                         info!("our revocable output {} @ {}", out.value, idx);
-                        let out_point = OutPoint { txid: tx.txid(), index: idx as u16 };
+                        let out_point = OutPoint { txid, index: idx as u16 };
                         let confirms = bitcoind_client
                             .get_utxo_confirmations(&out_point.into_bitcoin_outpoint())
                             .await
@@ -287,7 +295,7 @@ pub async fn recover_close<R: RecoveryKeys>(
         } else {
             info!("tx: {}", serialize_hex(&tx));
             for htlc_tx in htlc_txs {
-                info!("HTLC tx: {}", htlc_tx.txid());
+                info!("HTLC tx: {}", htlc_tx.compute_txid());
             }
         }
     }
@@ -312,7 +320,7 @@ pub async fn recover_close<R: RecoveryKeys>(
             feerate,
         );
         debug!("sweep tx {:?}", &sweep_tx);
-        info!("sweep txid {}", sweep_tx.txid());
+        info!("sweep txid {}", sweep_tx.compute_txid());
         if let Some(bitcoind_client) = &explorer_client {
             bitcoind_client.broadcast_transaction(&sweep_tx).await.expect("failed to broadcast");
         }
@@ -354,6 +362,7 @@ mod tests {
         init_node, make_test_previous_tx, TEST_NODE_CONFIG, TEST_SEED,
     };
     use std::collections::BTreeMap;
+    use vls_protocol::serde_bolt::bitcoin::CompressedPublicKey;
 
     #[ignore]
     #[tokio::test]
@@ -375,8 +384,8 @@ mod tests {
     #[test]
     fn l1_sweep_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let pubkey = bitcoin::PublicKey::new(make_test_pubkey(2));
-        let address = Address::p2wpkh(&pubkey, Network::Testnet).unwrap();
+        let pubkey = CompressedPublicKey(make_test_pubkey(2));
+        let address = Address::p2wpkh(&pubkey, Network::Testnet);
 
         node.add_allowlist(&[address.to_string()]).expect("add_allowlist");
 

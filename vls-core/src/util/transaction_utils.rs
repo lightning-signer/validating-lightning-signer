@@ -1,13 +1,13 @@
-use crate::io_extras::sink;
 use crate::prelude::*;
 use crate::tx::script::ANCHOR_OUTPUT_VALUE_SATOSHI;
 use anyhow::anyhow;
-use bitcoin::address::Payload;
 use bitcoin::consensus::Encodable;
+use bitcoin::io::sink;
 use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::secp256k1::{All, PublicKey, Secp256k1};
 use bitcoin::sighash::EcdsaSighashType;
-use bitcoin::{PublicKey as BitcoinPublicKey, ScriptBuf, Sequence, TxIn, Witness};
+use bitcoin::transaction::Version;
+use bitcoin::{Amount, CompressedPublicKey, ScriptBuf, Sequence, TxIn, Witness, WitnessProgram};
 use bitcoin::{Transaction, TxOut, VarInt};
 use lightning::ln::chan_utils::{
     get_commitment_transaction_number_obscure_factor, get_revokeable_redeemscript,
@@ -67,31 +67,32 @@ pub fn maybe_add_change_output(
         return Err(());
     }
 
-    let mut output_value = 0;
+    let mut output_value = Amount::ZERO;
     for output in tx.output.iter() {
-        output_value += output.value;
-        if output_value >= input_value {
+        output_value = output_value.checked_add(output.value).unwrap();
+        if output_value.to_sat() >= input_value {
             // bail!("Ouput value equals or exceeds input value");
             return Err(());
         }
     }
 
-    let dust_value = change_destination_script.dust_value();
-    let mut change_output = TxOut { script_pubkey: change_destination_script, value: 0 };
+    let dust_value = change_destination_script.minimal_non_dust();
+    let mut change_output = TxOut { script_pubkey: change_destination_script, value: Amount::ZERO };
     let change_len = change_output.consensus_encode(&mut sink()).map_err(|_| ())?;
     let mut weight_with_change: i64 =
         tx.weight().to_wu() as i64 + 2 + witness_max_weight as i64 + change_len as i64 * 4;
     // Include any extra bytes required to push an extra output.
-    weight_with_change += (VarInt(tx.output.len() as u64 + 1).len()
-        - VarInt(tx.output.len() as u64).len()) as i64
+    weight_with_change += (VarInt(tx.output.len() as u64 + 1).size()
+        - VarInt(tx.output.len() as u64).size()) as i64
         * 4;
     // When calculating weight, add two for the flag bytes
-    let change_value: i64 = (input_value - output_value) as i64
-        - weight_with_change * feerate_sat_per_1000_weight as i64 / 1000;
+    let difference = input_value.checked_sub(output_value.to_sat()).ok_or(())?;
+    let change_value: i64 =
+        difference as i64 - weight_with_change * feerate_sat_per_1000_weight as i64 / 1000;
     if change_value >= dust_value.to_sat() as i64 {
-        change_output.value = change_value as u64;
+        change_output.value = Amount::from_sat(change_value as u64);
         tx.output.push(change_output);
-    } else if (input_value - output_value) as i64
+    } else if difference as i64
         - (tx.weight().to_wu() as i64 + 2 + witness_max_weight as i64)
             * feerate_sat_per_1000_weight as i64
             / 1000
@@ -169,12 +170,12 @@ pub fn decode_commitment_tx(
     let cp_pubkeys = &cp_params.pubkeys;
 
     let holder_non_delayed_script = if opt_anchors {
-        get_to_countersignatory_with_anchors_redeemscript(&holder_pubkeys.payment_point)
-            .to_v0_p2wsh()
+        get_to_countersignatory_with_anchors_redeemscript(&holder_pubkeys.payment_point).to_p2wsh()
     } else {
-        Payload::p2wpkh(&BitcoinPublicKey::new(holder_pubkeys.payment_point))
-            .unwrap()
-            .script_pubkey()
+        let bitcoin_key =
+            CompressedPublicKey::from_slice(&holder_pubkeys.payment_point.serialize()).unwrap();
+        let prog = WitnessProgram::p2wpkh(&bitcoin_key);
+        ScriptBuf::new_witness_program(&prog)
     };
 
     // compute the transaction keys we would have used if this is a holder commitment
@@ -193,7 +194,7 @@ pub fn decode_commitment_tx(
         &holder_tx_keys.broadcaster_delayed_payment_key,
     );
 
-    let holder_delayed_script = holder_delayed_redeem_script.to_v0_p2wsh();
+    let holder_delayed_script = holder_delayed_redeem_script.to_p2wsh();
 
     let cp_delayed_script = if let Some(cp_per_commitment_point) = cp_per_commitment_point {
         // compute the transaction keys we would have used if this is a holder commitment
@@ -212,7 +213,7 @@ pub fn decode_commitment_tx(
             &cp_tx_keys.broadcaster_delayed_payment_key,
         );
 
-        Some(cp_delayed_redeem_script.to_v0_p2wsh())
+        Some(cp_delayed_redeem_script.to_p2wsh())
     } else {
         None
     };
@@ -236,7 +237,7 @@ pub fn decode_commitment_tx(
             || output.script_pubkey == holder_delayed_script
         {
             main_output_index = Some(idx as u32);
-        } else if output.script_pubkey.is_v0_p2wsh() {
+        } else if output.script_pubkey.is_p2wsh() {
             htlcs.push(idx as u32);
         }
     }
@@ -289,7 +290,7 @@ pub fn create_spending_transaction(
     feerate_sats_per_1000_weight: u32,
 ) -> anyhow::Result<Transaction> {
     let mut input = Vec::new();
-    let mut input_value = 0;
+    let mut input_value = Amount::ZERO;
     let mut witness_weight = 0;
     let mut output_set = UnorderedSet::with_capacity(descriptors.len());
     for outp in descriptors {
@@ -302,7 +303,7 @@ pub fn create_spending_transaction(
                     witness: Witness::new(),
                 });
                 witness_weight += StaticPaymentOutputDescriptor::max_witness_length(descriptor);
-                input_value += descriptor.output.value;
+                input_value = input_value.checked_add(descriptor.output.value).unwrap();
                 if !output_set.insert(descriptor.outpoint) {
                     return Err(anyhow!("duplicate"));
                 }
@@ -315,7 +316,7 @@ pub fn create_spending_transaction(
                     witness: Witness::new(),
                 });
                 witness_weight += DelayedPaymentOutputDescriptor::MAX_WITNESS_LENGTH;
-                input_value += descriptor.output.value;
+                input_value = input_value.checked_add(descriptor.output.value).unwrap();
                 if !output_set.insert(descriptor.outpoint) {
                     return Err(anyhow!("duplicate"));
                 }
@@ -333,27 +334,27 @@ pub fn create_spending_transaction(
                     witness: Witness::default(),
                 });
                 witness_weight += 1 + 73 + 34;
-                input_value += output.value;
+                input_value = input_value.checked_add(output.value).unwrap();
                 if !output_set.insert(*outpoint) {
                     return Err(anyhow!("duplicate"));
                 }
             }
         }
 
-        if input_value > MAX_VALUE_MSAT / 1000 {
+        if input_value.to_sat() > MAX_VALUE_MSAT / 1000 {
             return Err(anyhow!("overflow"));
         }
     }
 
     let mut spend_tx = Transaction {
-        version: 2,
+        version: Version::TWO,
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input,
         output: outputs,
     };
     maybe_add_change_output(
         &mut spend_tx,
-        input_value,
+        input_value.to_sat(),
         witness_weight,
         feerate_sats_per_1000_weight,
         change_destination_script,
@@ -374,7 +375,7 @@ mod tests {
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::Transaction;
     use lightning::ln::chan_utils::{htlc_success_tx_weight, htlc_timeout_tx_weight};
-    use lightning::ln::features::ChannelTypeFeatures;
+    use lightning::types::features::ChannelTypeFeatures;
 
     #[test]
     fn test_parse_closing_tx_holder() {
@@ -411,7 +412,7 @@ mod tests {
         let (parsed_main, htlcs) =
             decode_commitment_tx(&holder_tx, &per_commitment_point, &None, &params, &secp_ctx);
         let our_main =
-            holder_tx.output.iter().position(|txout| txout.script_pubkey.is_v0_p2wsh()).unwrap();
+            holder_tx.output.iter().position(|txout| txout.script_pubkey.is_p2wsh()).unwrap();
         assert_eq!(parsed_main, Some(our_main as u32));
         assert!(htlcs.is_empty());
     }
@@ -459,7 +460,7 @@ mod tests {
             &secp_ctx,
         );
         let our_main =
-            cp_tx.output.iter().position(|txout| txout.script_pubkey.is_v0_p2wpkh()).unwrap();
+            cp_tx.output.iter().position(|txout| txout.script_pubkey.is_p2wpkh()).unwrap();
         assert_eq!(parsed_main, Some(our_main as u32));
         println!("htlcs: {:?}", htlcs);
         assert!(htlcs.is_empty());
@@ -504,7 +505,7 @@ mod tests {
         let tx_weight = tx.weight();
         let spk = tx.output[0].script_pubkey.len();
         let weight = super::mutual_close_tx_weight(&tx);
-        let fee = 1524999 - tx.output[0].value;
+        let fee = 1524999 - tx.output[0].value.to_sat();
         let estimated_feerate = super::estimate_feerate_per_kw(fee, weight as u64);
         let expected_tx_weight = (4 +                                           // version
             1 +                                           // input count

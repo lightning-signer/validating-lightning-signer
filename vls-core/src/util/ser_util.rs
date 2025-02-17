@@ -13,6 +13,7 @@ use lightning::ln::channel_keys::{DelayedPaymentBasepoint, HtlcBasepoint, Revoca
 use vls_common::HexEncode;
 
 use bitcoin::hashes::Hash;
+use bitcoin::io::Error as IOError;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{OutPoint, Script, ScriptBuf, Txid};
 use lightning::ln::chan_utils::ChannelPublicKeys;
@@ -24,7 +25,6 @@ use serde_with::serde_as;
 use serde_with::{DeserializeAs, SerializeAs};
 
 use crate::channel::ChannelId;
-use crate::io;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct PublicKeyHandler;
@@ -176,7 +176,7 @@ impl<'de> DeserializeAs<'de, ChannelPublicKeys> for ChannelPublicKeysDef {
 
 pub struct VecWriter(pub Vec<u8>);
 impl Writer for VecWriter {
-    fn write_all(&mut self, buf: &[u8]) -> Result<(), io::Error> {
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), IOError> {
         self.0.extend_from_slice(buf);
         Ok(())
     }

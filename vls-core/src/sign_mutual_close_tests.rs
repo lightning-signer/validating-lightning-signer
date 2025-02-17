@@ -3,11 +3,11 @@ mod tests {
     use std::mem;
 
     use bitcoin::hashes::hex::FromHex;
-    use bitcoin::{self, Address, Network, OutPoint, ScriptBuf, Transaction, TxOut};
+    use bitcoin::{self, Address, Amount, Network, OutPoint, ScriptBuf, Transaction, TxOut};
     use lightning::ln::chan_utils::{
         make_funding_redeemscript, ChannelPublicKeys, ClosingTransaction,
     };
-    use lightning::ln::PaymentHash;
+    use lightning::types::payment::PaymentHash;
 
     use test_log::test;
 
@@ -133,7 +133,6 @@ mod tests {
                 &node.get_wallet_pubkey(&holder_wallet_path_hint).unwrap(),
                 Network::Testnet,
             )
-            .expect("Address")
             .script_pubkey();
             let mut counterparty_shutdown_script =
                 ScriptBuf::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
@@ -252,7 +251,6 @@ mod tests {
             let mut counterparty_value_sat = to_counterparty_value_sat;
             let mut holder_shutdown_script =
                 Address::p2wpkh(&node.get_wallet_pubkey(&wallet_path).unwrap(), Network::Testnet)
-                    .expect("Address")
                     .script_pubkey();
             let mut counterparty_shutdown_script =
                 ScriptBuf::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
@@ -731,7 +729,7 @@ mod tests {
                 },
                 |tx, wallet_paths, _allowlist| {
                     // Steal some of the first output and make a new output.
-                    let steal_amt = 1_000;
+                    let steal_amt = Amount::from_sat(1_000);
                     tx.output[0].value -= steal_amt;
                     tx.output.push(TxOut {
                         value: steal_amt,

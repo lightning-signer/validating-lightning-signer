@@ -8,8 +8,9 @@ use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{self, ecdsa::Signature, All, Message, PublicKey, Secp256k1, SecretKey};
 use bitcoin::sighash::EcdsaSighashType;
 use bitcoin::sighash::SighashCache;
-use bitcoin::{sighash, Network, OutPoint, Script, ScriptBuf, Transaction};
+use bitcoin::{Amount, Network, OutPoint, Script, ScriptBuf, Transaction};
 use lightning::chain;
+use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
     build_htlc_transaction, derive_private_key, get_htlc_redeemscript, make_funding_redeemscript,
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
@@ -17,10 +18,10 @@ use lightning::ln::chan_utils::{
     TxCreationKeys,
 };
 use lightning::ln::channel_keys::{DelayedPaymentKey, RevocationKey};
-use lightning::ln::features::ChannelTypeFeatures;
-use lightning::ln::{chan_utils, PaymentHash, PaymentPreimage};
 use lightning::sign::ecdsa::EcdsaChannelSigner;
 use lightning::sign::{ChannelSigner, EntropySource, InMemorySigner, SignerProvider};
+use lightning::types::features::ChannelTypeFeatures;
+use lightning::types::payment::{PaymentHash, PaymentPreimage};
 use serde_derive::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as, Bytes, IfIsHumanReadable};
 use tracing::*;
@@ -393,10 +394,10 @@ impl ChannelBase for ChannelStub {
             ))
             .into());
         }
-        Ok(self.keys.get_per_commitment_point(
-            INITIAL_COMMITMENT_NUMBER - commitment_number,
-            &self.secp_ctx,
-        ))
+        Ok(self
+            .keys
+            .get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - commitment_number, &self.secp_ctx)
+            .unwrap())
     }
 
     fn get_per_commitment_secret(&self, _commitment_number: u64) -> Result<SecretKey, Status> {
@@ -413,8 +414,10 @@ impl ChannelBase for ChannelStub {
         commitment_number: u64,
         suggested: &SecretKey,
     ) -> Result<bool, Status> {
-        let secret_data =
-            self.keys.release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+        let secret_data = self
+            .keys
+            .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number)
+            .unwrap();
         Ok(suggested[..] == secret_data)
     }
 
@@ -534,8 +537,10 @@ impl ChannelBase for Channel {
                 next_holder_commit_num,
             )
         }
-        let secret =
-            self.keys.release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+        let secret = self
+            .keys
+            .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number)
+            .unwrap();
         Ok(SecretKey::from_slice(&secret).unwrap())
     }
 
@@ -555,7 +560,8 @@ impl ChannelBase for Channel {
                 SecretKey::from_slice(
                     &self
                         .keys
-                        .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number),
+                        .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number)
+                        .unwrap(),
                 )
                 .unwrap(),
             )
@@ -567,8 +573,10 @@ impl ChannelBase for Channel {
         commitment_number: u64,
         suggested: &SecretKey,
     ) -> Result<bool, Status> {
-        let secret_data =
-            self.keys.release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number);
+        let secret_data = self
+            .keys
+            .release_commitment_secret(INITIAL_COMMITMENT_NUMBER - commitment_number)
+            .unwrap();
         Ok(suggested[..] == secret_data)
     }
 
@@ -631,6 +639,7 @@ impl Channel {
     fn get_per_commitment_point_unchecked(&self, commitment_number: u64) -> PublicKey {
         self.keys
             .get_per_commitment_point(INITIAL_COMMITMENT_NUMBER - commitment_number, &self.secp_ctx)
+            .unwrap()
     }
 
     pub(crate) fn get_counterparty_commitment_point(
@@ -900,17 +909,17 @@ impl Channel {
         );
 
         // unwrap is safe because we just created the tx and it's well formed
-        let sighash = Message::from_slice(
-            &SighashCache::new(&recomposed_tx.trust().built_transaction().transaction)
-                .segwit_signature_hash(
+        let sighash = Message::from_digest(
+            SighashCache::new(&recomposed_tx.trust().built_transaction().transaction)
+                .p2wsh_signature_hash(
                     0,
                     &redeemscript,
-                    self.setup.channel_value_sat,
+                    Amount::from_sat(self.setup.channel_value_sat),
                     EcdsaSighashType::All,
                 )
-                .unwrap()[..],
-        )
-        .map_err(|ve| internal_error(format!("sighash failed: {}", ve)))?;
+                .unwrap()
+                .to_byte_array(),
+        );
 
         self.secp_ctx
             .verify_ecdsa(
@@ -963,17 +972,17 @@ impl Channel {
             );
 
             // unwrap is safe because we just created the tx and it's well formed
-            let recomposed_tx_sighash = Message::from_slice(
-                &SighashCache::new(&recomposed_htlc_tx)
-                    .segwit_signature_hash(
+            let recomposed_tx_sighash = Message::from_digest(
+                SighashCache::new(&recomposed_htlc_tx)
+                    .p2wsh_signature_hash(
                         0,
                         &htlc_redeemscript,
-                        htlc.amount_msat / 1000,
+                        Amount::from_sat(htlc.amount_msat / 1000),
                         sig_hash_type,
                     )
-                    .unwrap()[..],
-            )
-            .map_err(|err| invalid_argument(format!("sighash failed for htlc {}: {}", ndx, err)))?;
+                    .unwrap()
+                    .to_byte_array(),
+            );
 
             self.secp_ctx
                 .verify_ecdsa(&recomposed_tx_sighash, &counterparty_htlc_sigs[ndx], &htlc_pubkey)
@@ -1356,7 +1365,7 @@ impl Channel {
             self.get_unilateral_close_key(&Some(per_commitment_point), &Some(revocation_pubkey))?;
 
         self.persist()?;
-        Ok((tx, Vec::new(), revocable_redeemscript.to_v0_p2wsh(), ck, revocation_pubkey.0))
+        Ok((tx, Vec::new(), revocable_redeemscript.to_p2wsh(), ck, revocation_pubkey.0))
     }
 
     /// Sign a holder commitment transaction after rebuilding it
@@ -1589,12 +1598,17 @@ impl Channel {
         )?;
 
         // unwrap is safe because we just created the tx and it's well formed
-        let sighash = Message::from_slice(
-            &SighashCache::new(tx)
-                .segwit_signature_hash(input, &redeemscript, amount_sat, EcdsaSighashType::All)
-                .unwrap()[..],
-        )
-        .map_err(|_| Status::internal("failed to sighash"))?;
+        let sighash = Message::from_digest(
+            SighashCache::new(tx)
+                .p2wsh_signature_hash(
+                    input,
+                    &redeemscript,
+                    Amount::from_sat(amount_sat),
+                    EcdsaSighashType::All,
+                )
+                .unwrap()
+                .to_byte_array(),
+        );
 
         let privkey = derive_private_key(
             &self.secp_ctx,
@@ -1637,12 +1651,17 @@ impl Channel {
         )?;
 
         // unwrap is safe because we just created the tx and it's well formed
-        let htlc_sighash = Message::from_slice(
-            &SighashCache::new(tx)
-                .segwit_signature_hash(input, &redeemscript, htlc_amount_sat, EcdsaSighashType::All)
-                .unwrap()[..],
-        )
-        .map_err(|_| Status::internal("failed to sighash"))?;
+        let htlc_sighash = Message::from_digest(
+            SighashCache::new(tx)
+                .p2wsh_signature_hash(
+                    input,
+                    &redeemscript,
+                    Amount::from_sat(htlc_amount_sat),
+                    EcdsaSighashType::All,
+                )
+                .unwrap()
+                .to_byte_array(),
+        );
 
         let htlc_privkey = derive_private_key(
             &self.secp_ctx,
@@ -1683,12 +1702,17 @@ impl Channel {
         )?;
 
         // unwrap is safe because we just created the tx and it's well formed
-        let sighash = Message::from_slice(
-            &SighashCache::new(tx)
-                .segwit_signature_hash(input, &redeemscript, amount_sat, EcdsaSighashType::All)
-                .unwrap()[..],
-        )
-        .map_err(|_| Status::internal("failed to sighash"))?;
+        let sighash = Message::from_digest(
+            SighashCache::new(tx)
+                .p2wsh_signature_hash(
+                    input,
+                    &redeemscript,
+                    Amount::from_sat(amount_sat),
+                    EcdsaSighashType::All,
+                )
+                .unwrap()
+                .to_byte_array(),
+        );
 
         let privkey = chan_utils::derive_private_revocation_key(
             &self.secp_ctx,
@@ -1704,7 +1728,7 @@ impl Channel {
     /// Sign a channel announcement with both the node key and the funding key
     pub fn sign_channel_announcement_with_funding_key(&self, announcement: &[u8]) -> Signature {
         let ann_hash = Sha256dHash::hash(announcement);
-        let encmsg = secp256k1::Message::from(ann_hash);
+        let encmsg = secp256k1::Message::from_digest(ann_hash.to_byte_array());
 
         self.secp_ctx.sign_ecdsa(&encmsg, &self.keys.funding_key)
     }
@@ -1820,10 +1844,10 @@ impl Channel {
             // unwrap is safe because we just created the tx and it's well formed
             let htlc_sighash = Message::from(
                 SighashCache::new(&htlc_tx)
-                    .segwit_signature_hash(
+                    .p2wsh_signature_hash(
                         0,
                         &htlc_redeemscript,
-                        htlc.amount_msat / 1000,
+                        Amount::from_sat(htlc.amount_msat / 1000),
                         sig_hash_type,
                     )
                     .unwrap(),
@@ -2469,7 +2493,7 @@ impl Channel {
         tx: &Transaction,
         opaths: &[Vec<u32>],
     ) -> Result<Signature, Status> {
-        dbgvals!(tx.txid(), self.get_node().allowlist());
+        dbgvals!(tx.compute_txid(), self.get_node().allowlist());
         if opaths.len() != tx.output.len() {
             return Err(invalid_argument(format!(
                 "{}: bad opath len {} with tx.output len {}",
@@ -2532,7 +2556,6 @@ impl Channel {
         tx: &Transaction,
         input: u32,
         commitment_number: u64,
-        feerate: u32,
         is_offered: bool,
         cltv_expiry: u32,
         htlc_amount_msat: u64,
@@ -2549,11 +2572,11 @@ impl Channel {
         };
         let witness_script =
             chan_utils::get_htlc_redeemscript(&htlc, &self.setup.features(), &keys);
-        let sighash = &sighash::SighashCache::new(tx)
-            .segwit_signature_hash(
+        let sighash = SighashCache::new(tx)
+            .p2wsh_signature_hash(
                 input as usize,
                 &witness_script,
-                htlc_amount_msat,
+                Amount::from_sat(htlc_amount_msat / 1000),
                 EcdsaSighashType::All,
             )
             .unwrap();
@@ -2562,8 +2585,7 @@ impl Channel {
             &per_commitment_point,
             &self.keys.htlc_base_key,
         );
-        let sighash = Message::from_slice(sighash.as_byte_array())
-            .map_err(|_| Status::internal("failed to convert sighash"))?;
+        let sighash = Message::from_digest(sighash.to_byte_array());
         let signature = self.secp_ctx.sign_ecdsa(&sighash, &our_htlc_private_key);
         Ok(TypedSignature { sig: signature, typ: EcdsaSighashType::All })
     }
@@ -2656,8 +2678,7 @@ impl Channel {
         let htlc_privkey =
             derive_private_key(&self.secp_ctx, &per_commitment_point, &self.keys.htlc_base_key);
 
-        let htlc_sighash = Message::from_slice(&recomposed_tx_sighash[..])
-            .map_err(|_| Status::internal("failed to sighash recomposed"))?;
+        let htlc_sighash = Message::from_digest(recomposed_tx_sighash.to_byte_array());
 
         Ok(TypedSignature {
             sig: self.secp_ctx.sign_ecdsa(&htlc_sighash, &htlc_privkey),
@@ -2806,7 +2827,7 @@ impl CommitmentPointProvider for ChannelCommitmentPointProvider {
 mod tests {
     use bitcoin::secp256k1::{self, Secp256k1, SecretKey};
     use lightning::ln::chan_utils::HTLCOutputInCommitment;
-    use lightning::ln::PaymentHash;
+    use lightning::types::payment::PaymentHash;
     use lightning::util::ser::Writeable;
 
     use crate::channel::ChannelBase;
@@ -2819,7 +2840,7 @@ mod tests {
     #[test]
     fn test_dummy_sig() {
         let dummy_sig = Secp256k1::new().sign_ecdsa(
-            &secp256k1::Message::from_slice(&[42; 32]).unwrap(),
+            &secp256k1::Message::from_digest([42; 32]),
             &SecretKey::from_slice(&[42; 32]).unwrap(),
         );
         let ser = dummy_sig.serialize_compact();

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use lightning_signer::channel::ChannelId;
-use lightning_signer::lightning::ln::PaymentHash;
+use lightning_signer::lightning::types::payment::PaymentHash;
 use lightning_signer::node::{PaymentState, PaymentType};
 use lightning_signer::persist::Persist;
 use lightning_signer::util::test_utils::{

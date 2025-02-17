@@ -6,6 +6,7 @@ use nix::sys::socket::{socketpair, AddressFamily, SockFlag, SockType};
 
 use serde_bolt::{io::Read, ReadBigEndian};
 use vls_protocol::serde_bolt;
+use vls_protocol::serde_bolt::io::FromStd;
 use vls_protocol::{msgs, Error, Result};
 use vls_protocol_signer::vls_protocol;
 
@@ -22,16 +23,16 @@ pub trait Client: Send {
 }
 
 pub struct UnixClient {
-    conn: UnixConnection,
+    conn: FromStd<UnixConnection>,
 }
 
 impl UnixClient {
     pub fn new(conn: UnixConnection) -> Self {
-        Self { conn }
+        Self { conn: FromStd::new(conn) }
     }
 
     pub fn recv_fd(&mut self) -> core::result::Result<RawFd, ()> {
-        self.conn.recv_fd()
+        self.conn.inner().recv_fd()
     }
 }
 
@@ -63,13 +64,13 @@ impl Client for UnixClient {
     }
 
     fn id(&self) -> u64 {
-        self.conn.id()
+        self.conn.inner().id()
     }
 
     fn new_client(&mut self) -> UnixClient {
         let (fd_a, fd_b) =
             socketpair(AddressFamily::Unix, SockType::Stream, None, SockFlag::empty()).unwrap();
-        self.conn.send_fd(fd_a);
+        self.conn.inner().send_fd(fd_a);
         UnixClient::new(UnixConnection::new(fd_b))
     }
 }

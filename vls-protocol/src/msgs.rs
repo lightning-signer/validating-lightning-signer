@@ -911,7 +911,6 @@ pub struct SignLocalHtlcTx2 {
     pub tx: WithSize<Transaction>,
     pub input: u32,
     pub per_commitment_number: u64,
-    pub feerate_per_kw: u32,
     pub offered: bool,
     pub cltv_expiry: u32,
     pub htlc_amount_msat: u64,

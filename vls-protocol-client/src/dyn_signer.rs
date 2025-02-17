@@ -1,10 +1,9 @@
 use std::any::Any;
-use std::io::Read;
 
 use delegate::delegate;
 
+use crate::bitcoin::Address;
 use crate::HTLCDescriptor;
-use bitcoin::bech32::u5;
 use bitcoin::{secp256k1, Transaction, TxOut};
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, ClosingTransaction, CommitmentTransaction,
@@ -12,30 +11,28 @@ use lightning::ln::chan_utils::{
 };
 use lightning::ln::msgs::{DecodeError, UnsignedChannelAnnouncement, UnsignedGossipMessage};
 use lightning::ln::script::ShutdownScript;
-use lightning::ln::PaymentPreimage;
 use lightning::sign::ecdsa::EcdsaChannelSigner;
-use lightning::sign::ecdsa::WriteableEcdsaChannelSigner;
 use lightning::sign::ChannelSigner;
 use lightning::sign::InMemorySigner;
-use lightning::sign::{
-    KeyMaterial, NodeSigner, Recipient, SignerProvider, SpendableOutputDescriptor,
-};
+use lightning::sign::{NodeSigner, Recipient, SignerProvider, SpendableOutputDescriptor};
+use lightning::types::payment::PaymentPreimage;
 use lightning::util::ser::Readable;
 use lightning::util::ser::{Writeable, Writer};
+use lightning_invoice::RawBolt11Invoice;
 use lightning_signer::bitcoin::secp256k1::All;
 use lightning_signer::bitcoin::{self, ScriptBuf};
 use lightning_signer::lightning;
+use lightning_signer::lightning::ln::inbound_payment::ExpandedKey;
+use lightning_signer::lightning_invoice;
+use lightning_signer::util::loopback::LoopbackChannelSigner;
 use secp256k1::ecdsa::RecoverableSignature;
 use secp256k1::{ecdh::SharedSecret, ecdsa::Signature, PublicKey, Scalar, Secp256k1, SecretKey};
-
-use crate::bitcoin::Address;
-use lightning_signer::util::loopback::LoopbackChannelSigner;
 
 /// Helper to allow DynSigner to clone itself
 pub trait InnerSign: EcdsaChannelSigner + Send + Sync {
     fn box_clone(&self) -> Box<dyn InnerSign>;
     fn as_any(&self) -> &dyn Any;
-    fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), std::io::Error>;
+    fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), bitcoin::io::Error>;
 }
 
 /// A ChannelSigner derived struct allowing run-time selection of a signer
@@ -49,8 +46,6 @@ impl DynSigner {
     }
 }
 
-impl WriteableEcdsaChannelSigner for DynSigner {}
-
 impl Clone for DynSigner {
     fn clone(&self) -> Self {
         DynSigner { inner: self.inner.box_clone() }
@@ -59,7 +54,7 @@ impl Clone for DynSigner {
 
 // This is taken care of by KeysInterface
 impl Readable for DynSigner {
-    fn read<R: Read>(_reader: &mut R) -> Result<Self, DecodeError> {
+    fn read<R: bitcoin::io::Read>(_reader: &mut R) -> Result<Self, DecodeError> {
         unimplemented!()
     }
 }
@@ -133,6 +128,11 @@ impl EcdsaChannelSigner for DynSigner {
             ) -> Result<Signature, ()>;
 
             fn sign_holder_htlc_transaction(&self, htlc_tx: &Transaction, input: usize, htlc_descriptor: &HTLCDescriptor, secp_ctx: &Secp256k1<All>) -> Result<Signature, ()>;
+
+            fn sign_splicing_funding_input(
+                &self, tx: &Transaction, input_index: usize, input_value: u64,
+                secp_ctx: &Secp256k1<secp256k1::All>,
+            ) -> Result<Signature, ()>;
         }
     }
 }
@@ -146,9 +146,9 @@ impl ChannelSigner for DynSigner {
                 &self,
                 idx: u64,
                 secp_ctx: &Secp256k1<secp256k1::All>,
-            ) -> PublicKey;
+            ) -> Result<PublicKey, ()>;
 
-            fn release_commitment_secret(&self, idx: u64) -> [u8; 32];
+            fn release_commitment_secret(&self, idx: u64) -> Result<[u8; 32], ()>;
 
             fn validate_holder_commitment(
                 &self,
@@ -166,7 +166,7 @@ impl ChannelSigner for DynSigner {
 }
 
 impl Writeable for DynSigner {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), std::io::Error> {
+    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), bitcoin::io::Error> {
         let inner = self.inner.as_ref();
         let mut buf = Vec::new();
         inner.vwrite(&mut buf)?;
@@ -183,7 +183,7 @@ impl InnerSign for InMemorySigner {
         self
     }
 
-    fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), std::io::Error> {
+    fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), bitcoin::io::Error> {
         self.write(writer)
     }
 }
@@ -197,7 +197,7 @@ impl InnerSign for LoopbackChannelSigner {
         self
     }
 
-    fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), std::io::Error> {
+    fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), bitcoin::io::Error> {
         self.write(writer)
     }
 }
@@ -221,8 +221,7 @@ impl NodeSigner for DynKeysInterface {
 
             fn sign_invoice(
                 &self,
-                hrp_bytes: &[u8],
-                invoice_data: &[u5],
+                invoice: &RawBolt11Invoice,
                 recipient: Recipient,
             ) -> Result<RecoverableSignature, ()>;
 
@@ -230,11 +229,7 @@ impl NodeSigner for DynKeysInterface {
                 &self, invoice: &lightning::offers::invoice::UnsignedBolt12Invoice
             ) -> Result<bitcoin::secp256k1::schnorr::Signature, ()>;
 
-            fn sign_bolt12_invoice_request(
-                &self, invoice_request: &lightning::offers::invoice_request::UnsignedInvoiceRequest
-            ) -> Result<bitcoin::secp256k1::schnorr::Signature, ()>;
-
-            fn get_inbound_payment_key_material(&self) -> KeyMaterial;
+            fn get_inbound_payment_key(&self) -> ExpandedKey;
         }
     }
 }

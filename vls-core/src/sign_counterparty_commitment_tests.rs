@@ -5,8 +5,8 @@ mod tests {
 
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::PublicKey;
-    use bitcoin::Network;
-    use bitcoin::Sequence;
+    use bitcoin::transaction::Version;
+    use bitcoin::{CompressedPublicKey, Network, Sequence};
     use lightning::ln::chan_utils::{
         get_to_countersignatory_with_anchors_redeemscript, make_funding_redeemscript,
         BuiltCommitmentTransaction, DirectedChannelTransactionParameters, TxCreationKeys,
@@ -14,8 +14,8 @@ mod tests {
     use lightning::ln::channel_keys::DelayedPaymentKey;
     use lightning::ln::channel_keys::HtlcKey;
     use lightning::ln::channel_keys::RevocationKey;
-    use lightning::ln::PaymentHash;
     use lightning::sign::ChannelSigner;
+    use lightning::types::payment::PaymentHash;
     use std::sync::Arc;
     use test_log::test;
 
@@ -23,7 +23,6 @@ mod tests {
     use crate::node::NodeMonitor;
     use crate::policy::validator::{ChainState, EnforcementState};
     use crate::tx::tx::HTLCInfo2;
-    use crate::util::crypto_utils::payload_for_p2wpkh;
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::key::*;
     use crate::util::test_utils::*;
@@ -115,7 +114,7 @@ mod tests {
             .expect("build_commitment_tx");
 
         assert_eq!(
-            tx.txid().to_string(),
+            tx.compute_txid().to_string(),
             "1645eee89d5a231702eda1c1b02dee7d42742c8b763c731b7b4cf7936054eae6"
         );
 
@@ -229,7 +228,7 @@ mod tests {
             .expect("build_commitment_tx");
 
         assert_eq!(
-            tx.txid().to_string(),
+            tx.compute_txid().to_string(),
             "08491fe78992b402bbc51771386395fc81bf20d0178b4156bc039b5a84e92aea"
         );
 
@@ -408,7 +407,7 @@ mod tests {
                 tx: &mut tx,
                 witscripts: &mut output_witscripts,
             });
-            tx.txid = tx.transaction.txid();
+            tx.txid = tx.transaction.compute_txid();
 
             for received_htlc in received_htlcs.clone() {
                 node.add_keysend(
@@ -684,7 +683,7 @@ mod tests {
     generate_failed_precondition_error_phase1_with_mutated_tx!(
         bad_version,
         |tms| {
-            tms.tx.transaction.version = 3;
+            tms.tx.transaction.version = Version::non_standard(3);
         },
         |_| "policy failure: decode_commitment_tx: bad commitment version: 3"
     );
@@ -763,11 +762,12 @@ mod tests {
             if tms.opt_anchors {
                 let redeem_script =
                     get_to_countersignatory_with_anchors_redeemscript(&make_test_pubkey(42));
-                tms.tx.transaction.output[5].script_pubkey = redeem_script.to_v0_p2wsh();
+                tms.tx.transaction.output[5].script_pubkey = redeem_script.to_p2wsh();
                 tms.witscripts[5] = redeem_script.as_bytes().to_vec();
             } else {
-                tms.tx.transaction.output[3].script_pubkey =
-                    payload_for_p2wpkh(&make_test_pubkey(42)).script_pubkey();
+                let key = CompressedPublicKey(make_test_pubkey(42));
+                let address = bitcoin::Address::p2wpkh(&key, Network::Testnet);
+                tms.tx.transaction.output[3].script_pubkey = address.script_pubkey();
             };
         },
         |_| "policy failure: sign_counterparty_commitment_tx: recomposed tx mismatch"

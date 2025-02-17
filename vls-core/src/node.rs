@@ -6,39 +6,35 @@ use core::time::Duration;
 
 use scopeguard::defer;
 
-use bitcoin::address::Payload;
-use bitcoin::bech32::{u5, FromBase32};
-use bitcoin::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use bitcoin::bech32::Fe32;
+use bitcoin::bip32::{ChildNumber, Xpriv, Xpub};
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
 use bitcoin::key::UntweakedPublicKey;
 use bitcoin::key::XOnlyPublicKey;
-use bitcoin::psbt::Prevouts;
 use bitcoin::secp256k1::ecdh::SharedSecret;
 use bitcoin::secp256k1::ecdsa::{RecoverableSignature, Signature};
 use bitcoin::secp256k1::{schnorr, Message, PublicKey, Secp256k1, SecretKey};
-use bitcoin::sighash::EcdsaSighashType;
-use bitcoin::sighash::{SighashCache, TapSighashType};
-use bitcoin::{secp256k1, Address, PrivateKey, ScriptBuf, Transaction, TxOut};
+use bitcoin::sighash::{EcdsaSighashType, Prevouts, SighashCache, TapSighashType};
+use bitcoin::{secp256k1, Address, CompressedPublicKey, PrivateKey, ScriptBuf, Transaction, TxOut};
 use bitcoin::{Network, OutPoint, Script};
 use bitcoin_consensus_derive::{Decodable, Encodable};
 use lightning::chain;
 use lightning::ln::chan_utils::{
     ChannelPublicKeys, ChannelTransactionParameters, CounterpartyChannelTransactionParameters,
 };
+use lightning::ln::inbound_payment::ExpandedKey;
 use lightning::ln::msgs::UnsignedGossipMessage;
 use lightning::ln::script::ShutdownScript;
-use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning::sign::{
-    ChannelSigner, EntropySource, KeyMaterial, NodeSigner, Recipient, SignerProvider,
-    SpendableOutputDescriptor,
+    ChannelSigner, EntropySource, NodeSigner, Recipient, SignerProvider, SpendableOutputDescriptor,
 };
-use lightning::util::invoice::construct_invoice_preimage;
+use lightning::types::payment::{PaymentHash, PaymentPreimage};
 use lightning::util::logger::Logger;
 use lightning::util::ser::Writeable;
-use lightning_invoice::{RawBolt11Invoice, RawDataPart, RawHrp, SignedRawBolt11Invoice};
+use lightning_invoice::{RawBolt11Invoice, SignedRawBolt11Invoice};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, Bytes, IfIsHumanReadable};
 
@@ -831,7 +827,7 @@ pub enum Allowable {
     /// A layer-1 destination
     Script(ScriptBuf),
     /// A layer-1 xpub destination
-    XPub(ExtendedPubKey),
+    XPub(Xpub),
     /// A layer-2 payee (node_id)
     Payee(PublicKey),
 }
@@ -866,17 +862,17 @@ impl Allowable {
         let prefix = splits.next().ok_or_else(|| "empty Allowable")?;
         if let Some(body) = splits.next() {
             if prefix == "address" {
-                let address = Address::from_str(body).map_err(|_| s.to_string())?;
-                if address.network != network {
-                    return Err(format!("{}: expected network {}", s, network));
-                }
-                Ok(Allowable::Script(address.payload.script_pubkey()))
+                let address = Address::from_str(body)
+                    .map_err(|_| s.to_string())?
+                    .require_network(network)
+                    .map_err(|_| format!("{}: expected network {}", s, network))?;
+                Ok(Allowable::Script(address.script_pubkey()))
             } else if prefix == "payee" {
                 let pubkey = PublicKey::from_str(body).map_err(|_| s.to_string())?;
                 Ok(Allowable::Payee(pubkey))
             } else if prefix == "xpub" {
-                let xpub = ExtendedPubKey::from_str(body).map_err(|_| s.to_string())?;
-                if xpub.network != network {
+                let xpub = Xpub::from_str(body).map_err(|_| s.to_string())?;
+                if xpub.network != network.into() {
                     return Err(format!("{}: expected network {}", s, network));
                 }
                 Ok(Allowable::XPub(xpub))
@@ -884,11 +880,11 @@ impl Allowable {
                 Err(s.to_string())
             }
         } else {
-            let address = Address::from_str(prefix).map_err(|_| s.to_string())?;
-            if address.network != network {
-                return Err(format!("{}: expected network {}", s, network));
-            }
-            Ok(Allowable::Script(address.payload.script_pubkey()))
+            let address = Address::from_str(prefix)
+                .map_err(|_| s.to_string())?
+                .require_network(network)
+                .map_err(|_| format!("{}: expected network {}", s, network))?;
+            Ok(Allowable::Script(address.script_pubkey()))
         }
     }
 
@@ -1050,9 +1046,9 @@ impl Wallet for Node {
 
         // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
         // these can only fail with uncompressed keys, which we never generate
-        let native_addr = Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed");
-        let wrapped_addr = Address::p2shwpkh(&pubkey, self.network()).expect("p2shwpkh failed");
-        let untweaked_pubkey = UntweakedPublicKey::from(pubkey.inner);
+        let native_addr = Address::p2wpkh(&pubkey, self.network());
+        let wrapped_addr = Address::p2shwpkh(&pubkey, self.network());
+        let untweaked_pubkey = UntweakedPublicKey::from(pubkey.0);
 
         // FIXME(520) it is not recommended to use the same xpub for both schnorr and ECDSA
         let taproot_addr = Address::p2tr(&self.secp_ctx, untweaked_pubkey, None, self.network());
@@ -1069,7 +1065,7 @@ impl Wallet for Node {
 
         let pubkey = self.get_wallet_pubkey(child_path)?;
         // can only fail with uncompressed keys, which we never generate
-        Ok(Address::p2wpkh(&pubkey, self.network()).expect("p2wpkh failed"))
+        Ok(Address::p2wpkh(&pubkey, self.network()))
     }
 
     fn get_taproot_address(&self, child_path: &[u32]) -> Result<Address, Status> {
@@ -1078,7 +1074,7 @@ impl Wallet for Node {
         }
 
         let pubkey = self.get_wallet_pubkey(child_path)?;
-        let untweaked_pubkey = UntweakedPublicKey::from(pubkey.inner);
+        let untweaked_pubkey = UntweakedPublicKey::from(pubkey.0);
         Ok(Address::p2tr(&self.secp_ctx, untweaked_pubkey, None, self.network()))
     }
 
@@ -1089,7 +1085,7 @@ impl Wallet for Node {
 
         let pubkey = self.get_wallet_pubkey(child_path)?;
         // can only fail with uncompressed keys, which we never generate
-        Ok(Address::p2shwpkh(&pubkey, self.network()).expect("p2shwpkh failed"))
+        Ok(Address::p2shwpkh(&pubkey, self.network()))
     }
 
     fn allowlist_contains_payee(&self, payee: PublicKey) -> bool {
@@ -1116,14 +1112,12 @@ impl Wallet for Node {
         for a in self.allowlist.lock().unwrap().iter() {
             if let Allowable::XPub(xp) = a {
                 // cannot fail because we did not generate hardened paths
-                let pubkey = bitcoin::PublicKey::new(
+                let pubkey = CompressedPublicKey(
                     xp.derive_pub(&Secp256k1::new(), &child_path).unwrap().public_key,
                 );
 
                 // this is infallible because the pubkey is compressed
-                if *script_pubkey
-                    == Address::p2wpkh(&pubkey, self.network()).unwrap().script_pubkey()
-                {
+                if *script_pubkey == Address::p2wpkh(&pubkey, self.network()).script_pubkey() {
                     return true;
                 }
 
@@ -1132,7 +1126,7 @@ impl Wallet for Node {
                 }
 
                 // FIXME(520) it is not recommended to use the same xpub for both schnorr and ECDSA
-                let untweaked_pubkey = UntweakedPublicKey::from(pubkey.inner);
+                let untweaked_pubkey = UntweakedPublicKey::from(pubkey.0);
                 if *script_pubkey
                     == Address::p2tr(&self.secp_ctx, untweaked_pubkey, None, self.network())
                         .script_pubkey()
@@ -1497,8 +1491,8 @@ impl Node {
     /// Get secret key material as bytes for use in encrypting and decrypting inbound payment data.
     ///
     /// This method must return the same value each time it is called.
-    pub fn get_inbound_payment_key_material(&self) -> KeyMaterial {
-        self.keys_manager.get_inbound_payment_key_material()
+    pub fn get_inbound_payment_key_material(&self) -> ExpandedKey {
+        self.keys_manager.get_inbound_payment_key()
     }
 
     /// Get the [Mutex] protected channel slot
@@ -1972,7 +1966,7 @@ impl Node {
         // Funding transactions cannot be associated with just a single channel;
         // a single transaction may fund multiple channels
 
-        let txid = tx.txid();
+        let txid = tx.compute_txid();
         debug!("{}: txid: {}", short_function!(), txid);
 
         let channels: Vec<Option<Arc<Mutex<ChannelSlot>>>> = (0..tx.output.len())
@@ -2005,57 +1999,92 @@ impl Node {
                         (key, vec![redeemscript])
                     }
                 };
-                let pubkey = privkey.public_key(&self.secp_ctx);
-                let script_code = Payload::p2pkh(&pubkey).script_pubkey();
+                let pubkey = CompressedPublicKey(privkey.public_key(&self.secp_ctx).inner);
                 // the unwraps below are infallible, because sighash is always 32 bytes
                 let sigvec = match spend_type {
                     SpendType::P2pkh => {
-                        let expected_scriptpubkey = Payload::p2pkh(&pubkey).script_pubkey();
+                        let expected_scriptpubkey =
+                            Address::p2pkh(&pubkey, self.network()).script_pubkey();
                         assert_eq!(
                             prev_outs[idx].script_pubkey, expected_scriptpubkey,
                             "scriptpubkey mismatch on index {}",
                             idx
                         );
-                        // legacy address
-                        #[allow(deprecated)]
-                        let sighash = tx.signature_hash(0, &script_code, 0x01);
-                        signature_to_bitcoin_vec(ecdsa_sign(&self.secp_ctx, &privkey, &sighash))
+                        let script_code = Address::p2pkh(&pubkey, self.network()).script_pubkey();
+                        let sighash = SighashCache::new(tx)
+                            .legacy_signature_hash(idx, &script_code, 0x01)
+                            .map_err(|_| internal_error("sighash failed"))?;
+                        signature_to_bitcoin_vec(ecdsa_sign(
+                            &self.secp_ctx,
+                            &privkey,
+                            sighash.into(),
+                        ))
                     }
-                    SpendType::P2wpkh | SpendType::P2shP2wpkh => {
-                        // compressed pubkeys cannot fail
-                        let expected_scriptpubkey = if spend_type == SpendType::P2wpkh {
-                            Payload::p2wpkh(&pubkey).unwrap().script_pubkey()
-                        } else {
-                            Payload::p2shwpkh(&pubkey).unwrap().script_pubkey()
-                        };
+                    SpendType::P2wpkh => {
+                        let expected_scriptpubkey =
+                            Address::p2wpkh(&pubkey, self.network()).script_pubkey();
                         assert_eq!(
                             prev_outs[idx].script_pubkey, expected_scriptpubkey,
                             "scriptpubkey mismatch on index {}",
                             idx
                         );
-                        // segwit native and wrapped
                         // unwrap cannot fail
                         let sighash = SighashCache::new(tx)
-                            .segwit_signature_hash(
+                            .p2wpkh_signature_hash(
                                 idx,
-                                &script_code,
+                                &expected_scriptpubkey,
                                 value_sat,
                                 EcdsaSighashType::All,
                             )
                             .unwrap();
-                        signature_to_bitcoin_vec(ecdsa_sign(&self.secp_ctx, &privkey, &sighash))
+                        signature_to_bitcoin_vec(ecdsa_sign(
+                            &self.secp_ctx,
+                            &privkey,
+                            sighash.into(),
+                        ))
+                    }
+                    SpendType::P2shP2wpkh => {
+                        // compressed pubkeys cannot fail
+                        let expected_scriptpubkey =
+                            Address::p2shwpkh(&pubkey, self.network()).script_pubkey();
+                        assert_eq!(
+                            prev_outs[idx].script_pubkey, expected_scriptpubkey,
+                            "scriptpubkey mismatch on index {}",
+                            idx
+                        );
+                        let nested_script =
+                            Address::p2wpkh(&pubkey, self.network()).script_pubkey();
+
+                        // unwrap cannot fail
+                        let sighash = SighashCache::new(tx)
+                            .p2wpkh_signature_hash(
+                                idx,
+                                &nested_script,
+                                value_sat,
+                                EcdsaSighashType::All,
+                            )
+                            .unwrap();
+                        signature_to_bitcoin_vec(ecdsa_sign(
+                            &self.secp_ctx,
+                            &privkey,
+                            sighash.into(),
+                        ))
                     }
                     SpendType::P2wsh => {
                         // TODO failfast here if the scriptpubkey doesn't match
                         let sighash = SighashCache::new(tx)
-                            .segwit_signature_hash(
+                            .p2wsh_signature_hash(
                                 idx,
                                 &ScriptBuf::from(witness[witness.len() - 1].clone()),
                                 value_sat,
                                 EcdsaSighashType::All,
                             )
                             .unwrap();
-                        signature_to_bitcoin_vec(ecdsa_sign(&self.secp_ctx, &privkey, &sighash))
+                        signature_to_bitcoin_vec(ecdsa_sign(
+                            &self.secp_ctx,
+                            &privkey,
+                            sighash.into(),
+                        ))
                     }
                     SpendType::P2tr => {
                         let wallet_addr = self.get_taproot_address(&ipaths[idx])?;
@@ -2172,7 +2201,7 @@ impl Node {
         // Funding transactions cannot be associated with just a single channel;
         // a single transaction may fund multiple channels
 
-        let txid = tx.txid();
+        let txid = tx.compute_txid();
         debug!("{}: txid: {}", short_function!(), txid);
 
         let channels: Vec<Option<Arc<Mutex<ChannelSlot>>>> = (0..tx.output.len())
@@ -2203,7 +2232,7 @@ impl Node {
         }
         debug!("weight_lower_bound: {}", weight_lower_bound);
 
-        let values_sat = prev_outs.iter().map(|o| o.value).collect::<Vec<_>>();
+        let values_sat = prev_outs.iter().map(|o| o.value.to_sat()).collect::<Vec<_>>();
         let non_beneficial_sat = validator.validate_onchain_tx(
             self,
             channels,
@@ -2275,7 +2304,7 @@ impl Node {
         // Derive the rest of the child_path.
         for elem in child_path {
             xkey = xkey
-                .ckd_priv(&self.secp_ctx, ChildNumber::from_normal_idx(*elem).unwrap())
+                .derive_priv(&self.secp_ctx, &[ChildNumber::from_normal_idx(*elem).unwrap()])
                 .map_err(|err| internal_error(format!("derive child_path failed: {}", err)))?;
         }
         Ok(PrivateKey::new(xkey.private_key, self.network()))
@@ -2284,8 +2313,10 @@ impl Node {
     pub(crate) fn get_wallet_pubkey(
         &self,
         child_path: &[u32],
-    ) -> Result<bitcoin::PublicKey, Status> {
-        Ok(self.get_wallet_privkey(child_path)?.public_key(&self.secp_ctx))
+    ) -> Result<CompressedPublicKey, Status> {
+        Ok(CompressedPublicKey(
+            self.get_wallet_privkey(child_path)?.public_key(&self.secp_ctx).inner,
+        ))
     }
 
     /// Check the submitted wallet pubkey
@@ -2294,7 +2325,7 @@ impl Node {
         child_path: &[u32],
         pubkey: bitcoin::PublicKey,
     ) -> Result<bool, Status> {
-        Ok(self.get_wallet_pubkey(&child_path)? == pubkey)
+        Ok(self.get_wallet_pubkey(&child_path)?.0 == pubkey.inner)
     }
 
     /// Get shutdown_pubkey to use as PublicKey at channel closure
@@ -2304,14 +2335,14 @@ impl Node {
     }
 
     /// Get the layer-1 xprv
-    pub fn get_account_extended_key(&self) -> &ExtendedPrivKey {
+    pub fn get_account_extended_key(&self) -> &Xpriv {
         self.keys_manager.get_account_extended_key()
     }
 
     /// Get the layer-1 xpub
-    pub fn get_account_extended_pubkey(&self) -> ExtendedPubKey {
+    pub fn get_account_extended_pubkey(&self) -> Xpub {
         let secp_ctx = Secp256k1::signing_only();
-        ExtendedPubKey::from_priv(&secp_ctx, &self.get_account_extended_key())
+        Xpub::from_priv(&secp_ctx, &self.get_account_extended_key())
     }
 
     /// Sign a node announcement using the node key
@@ -2333,17 +2364,24 @@ impl Node {
     fn do_sign_gossip_message(&self, encoded: &[u8]) -> Result<Signature, Status> {
         let secp_ctx = Secp256k1::signing_only();
         let msg_hash = Sha256dHash::hash(encoded);
-        let encmsg = Message::from_slice(&msg_hash[..])
-            .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
+        let encmsg = Message::from_digest(msg_hash.to_byte_array());
         let sig = secp_ctx.sign_ecdsa(&encmsg, &self.get_node_secret());
         Ok(sig)
+    }
+
+    /// Sign a bolt11 invoice
+    pub fn sign_bolt11_invoice(
+        &self,
+        _invoice: &RawBolt11Invoice,
+    ) -> Result<RecoverableSignature, Status> {
+        todo!()
     }
 
     /// Sign an invoice and start tracking incoming payment for its payment hash
     pub fn sign_invoice(
         &self,
         hrp_bytes: &[u8],
-        invoice_data: &[u5],
+        invoice_data: &[Fe32],
     ) -> Result<RecoverableSignature, Status> {
         let signed_raw_invoice = self.do_sign_invoice(hrp_bytes, invoice_data)?;
 
@@ -2401,20 +2439,16 @@ impl Node {
     pub(crate) fn do_sign_invoice(
         &self,
         hrp_bytes: &[u8],
-        invoice_data: &[u5],
+        invoice_data: &[Fe32],
     ) -> Result<SignedRawBolt11Invoice, Status> {
-        let hrp: RawHrp = String::from_utf8(hrp_bytes.to_vec())
-            .map_err(|_| invalid_argument("invoice hrp not utf-8"))?
-            .parse()
+        let hrp = String::from_utf8(hrp_bytes.to_vec())
+            .map_err(|_| invalid_argument("invoice hrp not utf-8"))?;
+        let raw_invoice = RawBolt11Invoice::from_raw(&hrp, invoice_data)
             .map_err(|e| invalid_argument(format!("parse error: {}", e)))?;
-        let data = RawDataPart::from_base32(invoice_data)
-            .map_err(|e| invalid_argument(format!("parse error: {}", e)))?;
-        let raw_invoice = RawBolt11Invoice { hrp, data };
 
-        let invoice_preimage = construct_invoice_preimage(&hrp_bytes, &invoice_data);
+        let hash = raw_invoice.signable_hash();
         let secp_ctx = Secp256k1::signing_only();
-        let hash = Sha256Hash::hash(&invoice_preimage);
-        let message = Message::from(hash);
+        let message = Message::from_digest(hash);
         let sig = secp_ctx.sign_ecdsa_recoverable(&message, &self.get_node_secret());
 
         raw_invoice
@@ -2431,8 +2465,7 @@ impl Node {
         buffer.extend(message);
         let secp_ctx = Secp256k1::signing_only();
         let hash = Sha256dHash::hash(&buffer);
-        let encmsg = Message::from_slice(&hash[..])
-            .map_err(|err| internal_error(format!("encmsg failed: {}", err)))?;
+        let encmsg = Message::from_digest(hash.to_byte_array());
         let sig = secp_ctx.sign_ecdsa_recoverable(&encmsg, &self.get_node_secret());
         let (rid, sig) = sig.serialize_compact();
         let mut res = sig.to_vec();
@@ -2968,11 +3001,11 @@ impl SpendType {
             SpendType::P2pkh
         } else if script.is_p2sh() {
             SpendType::P2shP2wpkh
-        } else if script.is_v0_p2wpkh() {
+        } else if script.is_p2wpkh() {
             SpendType::P2wpkh
-        } else if script.is_v0_p2wsh() {
+        } else if script.is_p2wsh() {
             SpendType::P2wsh
-        } else if script.is_v1_p2tr() {
+        } else if script.is_p2tr() {
             SpendType::P2tr
         } else {
             SpendType::Invalid
@@ -2986,14 +3019,14 @@ pub trait SyncLogger: Logger + SendSync {}
 #[cfg(test)]
 mod tests {
     use bitcoin;
-    use bitcoin::bech32::{CheckBase32, ToBase32};
     use bitcoin::consensus::deserialize;
     use bitcoin::hashes::sha256d::Hash as Sha256dHash;
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
     use bitcoin::secp256k1::SecretKey;
+    use bitcoin::transaction::Version;
     use bitcoin::{secp256k1, BlockHash, Sequence, TxIn, Witness};
-    use bitcoin::{Address, OutPoint};
+    use bitcoin::{Address, Amount, OutPoint};
     use lightning::ln::chan_utils;
     use lightning::ln::chan_utils::derive_private_key;
     use lightning::ln::channel_keys::{DelayedPaymentKey, RevocationKey};
@@ -3328,11 +3361,11 @@ mod tests {
         sign_invoice(payee_node, build_test_invoice(description, &payment_hash))
     }
 
-    fn sign_invoice(payee_node: &Node, data: (Vec<u8>, Vec<u5>)) -> Invoice {
+    fn sign_invoice(payee_node: &Node, data: (Vec<u8>, Vec<Fe32>)) -> Invoice {
         payee_node.do_sign_invoice(&data.0, &data.1).unwrap().try_into().unwrap()
     }
 
-    fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>, Vec<u5>) {
+    fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>, Vec<Fe32>) {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("time");
         build_test_invoice_with_time(description, payment_hash, now)
     }
@@ -3341,7 +3374,7 @@ mod tests {
         description: &str,
         payment_hash: &PaymentHash,
         now: Duration,
-    ) -> (Vec<u8>, Vec<u5>) {
+    ) -> (Vec<u8>, Vec<Fe32>) {
         let amount = 100_000;
         build_test_invoice_with_time_and_amount(description, payment_hash, now, amount)
     }
@@ -3351,7 +3384,7 @@ mod tests {
         payment_hash: &PaymentHash,
         now: Duration,
         amount: u64,
-    ) -> (Vec<u8>, Vec<u5>) {
+    ) -> (Vec<u8>, Vec<Fe32>) {
         let raw_invoice = InvoiceBuilder::new(Currency::Bitcoin)
             .duration_since_epoch(now)
             .amount_milli_satoshis(amount)
@@ -3360,10 +3393,8 @@ mod tests {
             .description(description.to_string())
             .build_raw()
             .expect("build");
-        let hrp_str = raw_invoice.hrp.to_string();
-        let hrp_bytes = hrp_str.as_bytes().to_vec();
-        let invoice_data = raw_invoice.data.to_base32();
-        (hrp_bytes, invoice_data)
+        let (hrp, data) = raw_invoice.to_raw();
+        (hrp.into_bytes(), data)
     }
 
     #[test]
@@ -3762,12 +3793,10 @@ mod tests {
             .description("".to_string())
             .build_raw()
             .expect("build");
-        let hrp_str = raw_invoice.hrp.to_string();
-        let hrp = hrp_str.as_bytes().to_vec();
-        let data = raw_invoice.data.to_base32();
+        let (hrp, data) = raw_invoice.to_raw();
 
         // This records the issued invoice
-        node.sign_invoice(&hrp, &data).unwrap();
+        node.sign_invoice(&hrp.into_bytes(), &data).unwrap();
     }
 
     #[test]
@@ -3890,7 +3919,7 @@ mod tests {
             .unwrap();
 
         let ca_hash = Sha256dHash::hash(&ann);
-        let encmsg = Message::from_slice(&ca_hash[..]).expect("encmsg");
+        let encmsg = Message::from_digest(ca_hash.to_byte_array());
         let secp_ctx = Secp256k1::new();
         node.with_channel(&channel_id, |chan| {
             let funding_pubkey = PublicKey::from_secret_key(&secp_ctx, &chan.keys.funding_key);
@@ -4014,15 +4043,15 @@ mod tests {
             holder_tx.output.iter().position(|o| o.value == ANCHOR_SAT).expect("anchor output");
         // spend the anchor
         let mut spend_tx = Transaction {
-            version: 2,
+            version: Version::TWO,
             lock_time: bitcoin::absolute::LockTime::ZERO,
             input: vec![TxIn {
-                previous_output: OutPoint { txid: holder_tx.txid(), vout: idx as u32 },
+                previous_output: OutPoint { txid: holder_tx.compute_txid(), vout: idx as u32 },
                 sequence: Sequence::MAX,
                 witness: Witness::new(),
                 script_sig: ScriptBuf::new(),
             }],
-            output: vec![TxOut { value: 330, script_pubkey: ScriptBuf::new() }],
+            output: vec![TxOut { value: ANCHOR_SAT, script_pubkey: ScriptBuf::new() }],
         };
         // sign the spend
         let sig = channel.sign_holder_anchor_input(&spend_tx, idx).unwrap();
@@ -4197,7 +4226,7 @@ mod tests {
         let mut buffer = String::from("Lightning Signed Message:").into_bytes();
         buffer.extend(message);
         let hash = Sha256dHash::hash(&buffer);
-        let encmsg = Message::from_slice(&hash[..]).unwrap();
+        let encmsg = Message::from_digest(hash.to_byte_array());
         let sig = Signature::from_compact(&rsig.to_standard().serialize_compact()).unwrap();
         let pubkey = secp_ctx.recover_ecdsa(&encmsg, &rsig).unwrap();
         assert!(secp_ctx.verify_ecdsa(&encmsg, &sig, &pubkey).is_ok());
@@ -4217,18 +4246,18 @@ mod tests {
         let spent3: Transaction = deserialize(hex_decode("01000000027a1120a30cef95422638e8dab9dedf720ec614b1b21e451a4957a5969afb869d000000006a47304402200ecc318a829a6cad4aa9db152adbf09b0cd2de36f47b53f5dade3bc7ef086ca702205722cda7404edd6012eedd79b2d6f24c0a0c657df1a442d0a2166614fb164a4701210372f4b97b34e9c408741cd1fc97bcc7ffdda6941213ccfde1cb4075c0f17aab06ffffffffc23b43e5a18e5a66087c0d5e64d58e8e21fcf83ce3f5e4f7ecb902b0e80a7fb6010000006b483045022100f10076a0ea4b4cf8816ed27a1065883efca230933bf2ff81d5db6258691ff75202206b001ef87624e76244377f57f0c84bc5127d0dd3f6e0ef28b276f176badb223a01210309a3a61776afd39de4ed29b622cd399d99ecd942909c36a8696cfd22fc5b5a1affffffff0200127a000000000017a914f895e1dd9b29cb228e9b06a15204e3b57feaf7cc8769311d09000000001976a9144d00da12aaa51849d2583ae64525d4a06cd70fde88ac00000000")
             .unwrap().as_slice()).unwrap();
 
-        println!("{:?}", &spending.txid());
-        println!("{:?}", &spent1.txid());
-        println!("{:?}", &spent2.txid());
-        println!("{:?}", &spent3.txid());
+        println!("{:?}", &spending.compute_txid());
+        println!("{:?}", &spent1.compute_txid());
+        println!("{:?}", &spent2.compute_txid());
+        println!("{:?}", &spent3.compute_txid());
         println!("{:?}", &spent1.output[0].script_pubkey);
         println!("{:?}", &spent2.output[0].script_pubkey);
         println!("{:?}", &spent3.output[0].script_pubkey);
 
         let mut spent = Map::new();
-        spent.insert(spent1.txid(), spent1);
-        spent.insert(spent2.txid(), spent2);
-        spent.insert(spent3.txid(), spent3);
+        spent.insert(spent1.compute_txid(), spent1);
+        spent.insert(spent2.compute_txid(), spent2);
+        spent.insert(spent3.compute_txid(), spent3);
         spending
             .verify(|point: &OutPoint| {
                 if let Some(tx) = spent.remove(&point.txid) {
@@ -4256,15 +4285,12 @@ mod tests {
         )
         .unwrap();
 
-        let script_code = Address::p2pkh(&pub2, Network::Testnet).script_pubkey();
-        assert_eq!(
-            hex_encode(script_code.as_bytes()),
-            "76a9141d0f172a0ecb48aee1be1f2687d2963ae33f71a188ac"
-        );
+        let script_code =
+            Address::p2wpkh(&CompressedPublicKey(pub2.inner), Network::Testnet).script_pubkey();
         let value = 600_000_000;
 
         let sighash = &SighashCache::new(&tx)
-            .segwit_signature_hash(1, &script_code, value, EcdsaSighashType::All)
+            .p2wpkh_signature_hash(1, &script_code, Amount::from_sat(value), EcdsaSighashType::All)
             .unwrap()[..];
         assert_eq!(
             hex_encode(sighash),
@@ -4283,11 +4309,11 @@ mod tests {
     fn allowlist_test() {
         assert!(Allowable::from_str(
             "address:mv4rnyY3Su5gjcDNzbMLKBQkBicCtHUtFB",
-            Network::Regtest
+            Network::Bitcoin
         )
         .is_err());
 
-        assert!(Allowable::from_str("xpub:tpubDEQBfiy13hMZzGT4NWqNnaSWwVqYQ58kuu2pDYjkrf8F6DLKAprm8c65Pyh7PrzodXHtJuEXFu5yf6JbvYaL8rz7v28zapwbuzZzr7z4UvR", Network::Regtest).is_err());
+        assert!(Allowable::from_str("xpub:tpubDEQBfiy13hMZzGT4NWqNnaSWwVqYQ58kuu2pDYjkrf8F6DLKAprm8c65Pyh7PrzodXHtJuEXFu5yf6JbvYaL8rz7v28zapwbuzZzr7z4UvR", Network::Bitcoin).is_err());
         assert!(Allowable::from_str("xxx:mv4rnyY3Su5gjcDNzbMLKBQkBicCtHUtFB", Network::Regtest)
             .is_err());
         let a = Allowable::from_str("address:mv4rnyY3Su5gjcDNzbMLKBQkBicCtHUtFB", Network::Testnet)
@@ -4315,7 +4341,7 @@ mod tests {
         let payee_sec = SecretKey::from_slice(&[42; 32]).unwrap();
         let payee_pub = PublicKey::from_secret_key(&Secp256k1::new(), &payee_sec);
         let xpub_str = "tpubDEQBfiy13hMZzGT4NWqNnaSWwVqYQ58kuu2pDYjkrf8F6DLKAprm8c65Pyh7PrzodXHtJuEXFu5yf6JbvYaL8rz7v28zapwbuzZzr7z4UvR";
-        // let xpub = ExtendedPubKey::from_str(xpub_str).unwrap();
+        // let xpub = Xpub::from_str(xpub_str).unwrap();
         // println!("XXX {}", Address::p2wpkh(&xpub.derive_pub(&Secp256k1::new(), &[ChildNumber::from_normal_idx(2).unwrap()]).unwrap().to_pub(), Network::Testnet).unwrap());
         // xpub is "abandon* about" external account 0
         node.add_allowlist(&[
@@ -4327,18 +4353,21 @@ mod tests {
         // check if second child matches the xpub in the allowlist
         let script2 = Address::from_str("mnTkxhNkgx7TsZrEdRcPti564yQTzynGJp")
             .unwrap()
-            .payload
+            .require_network(Network::Testnet)
+            .unwrap()
             .script_pubkey();
         assert!(node.allowlist_contains(&script2, &[2]));
         // check if third child matches the xpub in the allowlist with wrong index
         let script2 = Address::from_str("mpW3iVi2Td1vqDK8Nfie29ddZXf9spmZkX")
             .unwrap()
-            .payload
+            .require_network(Network::Testnet)
+            .unwrap()
             .script_pubkey();
         assert!(!node.allowlist_contains(&script2, &[2]));
         let p2wpkh_script = Address::from_str("tb1qfshzhu5qdyz94r4kylyrnlerq6mnhw3sjz7w8p")
             .unwrap()
-            .payload
+            .require_network(Network::Testnet)
+            .unwrap()
             .script_pubkey();
         assert!(node.allowlist_contains(&p2wpkh_script, &[2]));
     }
