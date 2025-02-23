@@ -31,5 +31,5 @@ bit-vec = { version = "0.6", default-features = false }
 vls-core = { path = "../vls-core", version = "0.13.0", features = ["test_utils"] }
 vls-protocol-signer = { path = ".", features = ["developer"] }
 # For logging in unit tests
-test-log = "0.2"
+test-log = { workspace = true }
 env_logger = { workspace = true }

@@ -33,7 +33,7 @@ workspace = true
 features = ["dummy-source"]
 
 [dev-dependencies]
-test-log = "0.2.8"
+test-log = { workspace = true }
 env_logger = { workspace = true }
 
 [[example]]

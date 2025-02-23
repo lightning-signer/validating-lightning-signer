@@ -80,6 +80,10 @@ workspace = true
 [dev-dependencies]
 tempfile = "3"
 vls-proxy = { path = ".", features = ["developer", "otlp"] }
+vls-core = { path = "../vls-core", version = "0.13.0", features = [
+  "use_backtrace",
+  "test_utils",
+] }
 
 [build-dependencies]
 tonic-build = "0.12.0"

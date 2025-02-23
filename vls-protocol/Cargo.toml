@@ -27,7 +27,7 @@ workspace = true
 regex = "1.5"
 # For logging in unit tests
 env_logger = { workspace = true }
-test-log = "0.2.8"
+test-log = { workspace = true }
 serde_bolt = { version = "0.5.0", features = ["test_utils"] }
 vls-protocol = { path = ".", features = ["developer"] }
 
