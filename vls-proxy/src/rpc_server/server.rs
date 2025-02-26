@@ -3,6 +3,7 @@ use jsonrpsee::{
     types::{error::ErrorCode, ErrorObject},
 };
 use lightning_signer::node::Node;
+use tower::ServiceBuilder;
 
 use std::{
     net::{IpAddr, SocketAddr},
@@ -45,25 +46,25 @@ pub async fn start_rpc_server(
     shutdown_signal: triggered::Listener,
 ) -> anyhow::Result<(SocketAddr, JoinHandle<()>)> {
     let mut module = RpcModule::new(node);
-    module.register_method(RpcMethods::Info.as_str(), |_, context| {
+    module.register_method(RpcMethods::Info.as_str(), |_, context, _| {
         info!("rpc_server: info");
         let height = context.get_chain_height();
         let channels = context.get_channels().values().len() as u32;
         Ok::<_, ErrorObject>(InfoModel::new(height, channels, GIT_DESC.to_string()))
     })?;
 
-    module.register_method(RpcMethods::Version.as_str(), |_, _| {
+    module.register_method(RpcMethods::Version.as_str(), |_, _, _| {
         Ok::<_, ErrorObject>(GIT_DESC.to_string())
     })?;
 
-    module.register_method(RpcMethods::AllowlistDisplay.as_str(), |_, context| {
+    module.register_method(RpcMethods::AllowlistDisplay.as_str(), |_, context, _| {
         return match context.allowlist() {
             Ok(allowlist) => Ok(allowlist),
             Err(e) => Err(ErrorObject::owned(e.code() as i32, e.message(), None::<bool>)),
         };
     })?;
 
-    module.register_method(RpcMethods::AllowlistAdd.as_str(), |params, context| {
+    module.register_method(RpcMethods::AllowlistAdd.as_str(), |params, context, _| {
         info!("rpc_server: allow list add, params {:?}", params);
         let address = params.one::<String>().map_err(|_| ErrorCode::InvalidParams)?;
         match context.add_allowlist(&[address.clone()]) {
@@ -78,7 +79,7 @@ pub async fn start_rpc_server(
         }
     })?;
 
-    module.register_method(RpcMethods::AllowlistRemove.as_str(), |params, context| {
+    module.register_method(RpcMethods::AllowlistRemove.as_str(), |params, context, _| {
         info!("rpc_server: allow list remove, params {:?}", params);
         let address = params.one::<String>().map_err(|_| ErrorCode::InvalidParams)?;
         match context.remove_allowlist(&[address.clone()]) {
@@ -93,11 +94,12 @@ pub async fn start_rpc_server(
         }
     })?;
 
-    let auth_middleware = tower::ServiceBuilder::new()
+    let auth_middleware = ServiceBuilder::new()
         .layer(tower_http::auth::AddAuthorizationLayer::basic(username, password));
 
     let server = Server::builder()
         .set_http_middleware(auth_middleware)
+        .http_only()
         .build(SocketAddr::new(ip, port))
         .await?;
 

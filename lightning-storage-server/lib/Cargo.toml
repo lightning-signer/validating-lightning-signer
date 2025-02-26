@@ -7,7 +7,7 @@ edition = "2021"
 description = "A client library for interacting with lightning storage server"
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
-rust-version = "1.66.0"
+rust-version = "1.74.0"
 
 [features]
 default = ["crypt"]
@@ -24,4 +24,4 @@ bitcoin_hashes = { workspace = true }
 thiserror = { workspace = true }
 
 [build-dependencies]
-tonic-build = "0.9"
+tonic-build = { workspace = true }

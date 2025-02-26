@@ -3,12 +3,14 @@ use std::pin::Pin;
 use std::result::Result as StdResult;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 use log::*;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinHandle;
-use tonic::{transport::Server, Request, Response, Status, Streaming};
+use tonic::transport::Server;
+use tonic::{Request, Response, Status, Streaming};
 
 use super::hsmd::{
     hsmd_server, HsmRequestContext, PingReply, PingRequest, SignerRequest, SignerResponse,
@@ -270,7 +272,7 @@ impl HsmdService {
     }
 }
 
-#[tonic::async_trait]
+#[async_trait]
 impl hsmd_server::Hsmd for HsmdService {
     async fn ping(&self, request: Request<PingRequest>) -> StdResult<Response<PingReply>, Status> {
         info!("got ping request");

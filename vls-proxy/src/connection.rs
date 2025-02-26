@@ -46,7 +46,7 @@ impl UnixConnection {
         let mut io_slice = [IoSliceMut::new(&mut c)];
         let result =
             recvmsg::<()>(self.fd, &mut io_slice, Some(&mut cmsgs), MsgFlags::empty()).unwrap();
-        let mut iter = result.cmsgs();
+        let mut iter = result.cmsgs().map_err(|_| ())?;
         let cmsg = iter.next().ok_or_else(|| {
             error!("expected a control message");
         })?;

@@ -9,13 +9,13 @@ autotests = false
 vls-core = { path = "../vls-core" }
 itertools = { version = "0.10", default-features = false }
 test-log = "0.2.8"
-env_logger = "0.9"
+env_logger = { version = ">=0.9,<0.12" }
 log = "0.4.14"
 
 [dev-dependencies]
 vls-core = { path = "../vls-core", features = ["test_utils"] }
 vls-persist = { path = "../vls-persist", features = ["redb-kvv"] }
-tempfile = "3.2"
+tempfile = "3.10.1"
 
 [dev-dependencies.criterion]
 version = "0.4.0"

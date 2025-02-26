@@ -28,8 +28,8 @@ struct Cli {
         long,
         help = "rpc server admin username",
         value_parser,
-        required_unless_present = "rpc-cookie",
-        requires = "rpc-password"
+        required_unless_present = "rpc_cookie",
+        requires = "rpc_password"
     )]
     rpc_user: Option<String>,
 
@@ -37,8 +37,8 @@ struct Cli {
         long,
         help = "rpc server admin password",
         value_parser,
-        required_unless_present = "rpc-cookie",
-        requires = "rpc-user"
+        required_unless_present = "rpc_cookie",
+        requires = "rpc_user"
     )]
     rpc_password: Option<String>,
 

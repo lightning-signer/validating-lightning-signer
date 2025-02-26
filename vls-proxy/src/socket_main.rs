@@ -9,7 +9,7 @@ use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
-use clap::App;
+use clap::Command;
 #[allow(unused_imports)]
 use log::{error, info, warn};
 use tokio::task::spawn_blocking;
@@ -43,7 +43,7 @@ pub fn main() {
 
     let app = make_clap_app();
     let matches = app.get_matches();
-    if matches.is_present("git-desc") {
+    if matches.contains_id("git-desc") {
         println!("remote_hsmd_socket git_desc={}", GIT_DESC);
         return;
     }
@@ -67,8 +67,8 @@ pub fn main() {
     start_server(sock_addr, client);
 }
 
-fn make_clap_app() -> App<'static> {
-    let app = App::new("signer")
+fn make_clap_app() -> Command {
+    let app = Command::new("signer")
         .about("CLN:socket - listens for a vlsd2 connection on port 7701 (or VLS_PORT if set)");
     add_hsmd_args(app)
 }
@@ -91,7 +91,7 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
         init_message_cache.clone(),
     );
 
-    let incoming = TcpIncoming::new(addr, false, None).expect("listen incoming"); // new_from_std seems to be infallible
+    let incoming = TcpIncoming::new(addr, false).await.expect("listen incoming"); // new_from_std seems to be infallible
 
     let network = vls_network().parse::<Network>().expect("malformed vls network");
     let sender = server.sender();

@@ -2,7 +2,6 @@
 
 use std::fs::File;
 use std::num::NonZeroUsize;
-use std::os::unix::io::AsRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -48,10 +47,9 @@ pub struct SerialWrap {
 
 impl SerialWrap {
     fn new(inner: File) -> Self {
-        let fd = inner.as_raw_fd();
-        let mut termios = tcgetattr(fd).expect("tcgetattr");
+        let mut termios = tcgetattr(&inner).expect("tcgetattr");
         cfmakeraw(&mut termios);
-        tcsetattr(fd, SetArg::TCSANOW, &termios).expect("tcsetattr");
+        tcsetattr(&inner, SetArg::TCSANOW, &termios).expect("tcsetattr");
         Self { inner, sequence: 0, is_ready: Arc::new(AtomicBool::new(false)) }
     }
 

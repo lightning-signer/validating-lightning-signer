@@ -16,8 +16,8 @@ pub fn deployment_environment() -> String {
     env::var("DEPLOYMENT_ENV").unwrap_or("DEVELOPMENT".to_string())
 }
 
-pub fn otlp_endpoint() -> String {
-    env::var("OLTP_ENDPOINT").unwrap_or("http://localhost:4317".to_string())
+pub fn otlp_endpoint() -> Option<String> {
+    env::var("OLTP_ENDPOINT").ok()
 }
 
 pub fn otlp_timeout() -> u64 {

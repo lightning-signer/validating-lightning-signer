@@ -8,7 +8,7 @@ description = "A library for implementing a Lightning signer, which externalizes
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
 readme = "../README.md"
-rust-version = "1.66.0"
+rust-version = "1.74.0"
 
 [features]
 
@@ -66,9 +66,9 @@ scopeguard = { version = "1.1.0", default-features = false }
 log = "0.4.14"
 tracing = { version = "0.1.40", features = ["attributes", "log"], default-features = false }
 
-env_logger = { version = "0.9", optional = true }
+env_logger = { workspace = true, optional = true }
 backtrace = { version = "0.3", optional = true }
-tonic = { version = "0.9", optional = true, default-features = false }
+tonic = { workspace = true, optional = true }
 
 # match hashbrown dependency version via lightning
 hashbrown = "0.13.2"
@@ -85,20 +85,18 @@ version = "0.4.0"
 default-features = false
 
 [dependencies.txoo]
-version = "0.9.0"
-default-features = false
+workspace = true
 
 [dev-dependencies.txoo-bitcoind-client]
-version = "0.9.0"
-default-features = false
+workspace = true
 features = ["dummy-source"]
 
 [dev-dependencies]
 tokio = { version = "1.0", default-features = false, features = ["macros"] }
 paste = "1.0"
 # For logging in unit tests
-test-log = "0.2.8"
-tempfile = "3.10.1"
+test-log = { workspace = true }
+tempfile = { workspace = true }
 
 [dependencies.lightning]
 #git = "https://github.com/lightning-signer/rust-lightning"

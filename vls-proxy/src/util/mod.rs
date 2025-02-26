@@ -14,9 +14,9 @@ pub use env_var::*;
 pub use testing::*;
 pub use validation::*;
 
-use clap::{arg, AppSettings};
+use clap::arg;
 #[cfg(feature = "main")]
-use clap::{App, Arg, ArgMatches};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use log::*;
 use std::env;
 use std::fs::File;
@@ -100,23 +100,29 @@ pub fn setup_logging<P: AsRef<Path>>(datadir: P, who: &str, level_arg: &str) {
 }
 
 #[cfg(feature = "main")]
-pub fn add_hsmd_args(app: App) -> App {
-    app.setting(AppSettings::NoAutoVersion)
+pub fn add_hsmd_args(app: Command) -> Command {
+    app.version("1.0.0")
+        .disable_version_flag(false)
         .arg(
             Arg::new("dev-disconnect")
+                .action(ArgAction::SetTrue)
                 .help("ignored dev flag")
-                .long("dev-disconnect")
-                .takes_value(true),
+                .long("dev-disconnect"),
         )
-        .arg(Arg::new("developer").long("developer").help("ignored dev flag"))
-        .arg(Arg::new("log-io").long("log-io").help("ignored dev flag"))
+        .arg(
+            Arg::new("developer")
+                .long("developer")
+                .action(ArgAction::SetTrue)
+                .help("ignored dev flag"),
+        )
+        .arg(Arg::new("log-io").long("log-io").action(ArgAction::SetTrue).help("ignored dev flag"))
         .arg(arg!(--version "show a dummy version"))
         .arg(Arg::new("git-desc").long("git-desc").help("print git desc version and exit"))
 }
 
 #[cfg(feature = "main")]
 pub fn handle_hsmd_version(matches: &ArgMatches) -> bool {
-    if matches.is_present("version") {
+    if matches.contains_id("version") {
         // Pretend to be the right version, given to us by an env var
         let version = vls_cln_version();
         println!("{}", version);

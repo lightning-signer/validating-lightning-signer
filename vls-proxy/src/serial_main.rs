@@ -4,7 +4,7 @@
 use std::env;
 use std::sync::{Arc, Mutex};
 
-use clap::{arg, App};
+use clap::{arg, Command};
 use url::Url;
 
 #[allow(unused_imports)]
@@ -72,11 +72,11 @@ pub fn main() -> anyhow::Result<()> {
 
     let app = make_clap_app();
     let matches = app.get_matches();
-    if matches.is_present("git-desc") {
+    if matches.contains_id("git-desc") {
         println!("remote_hsmd_serial git_desc={}", GIT_DESC);
         return Ok(());
     }
-    if matches.is_present("version") {
+    if matches.contains_id("version") {
         // Pretend to be the right version, given to us by an env var
         let version =
             env::var("VLS_CLN_VERSION").expect("set VLS_CLN_VERSION to match c-lightning");
@@ -86,7 +86,7 @@ pub fn main() -> anyhow::Result<()> {
 
     let serial_port = env::var("VLS_SERIAL_PORT").unwrap_or("/dev/ttyACM1".to_string());
 
-    if matches.is_present("test") {
+    if matches.contains_id("test") {
         run_test(serial_port)?;
     } else {
         let (shutdown_trigger, shutdown_signal) = triggered::trigger();
@@ -123,8 +123,8 @@ pub fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn make_clap_app() -> App<'static> {
-    let app = App::new("signer")
+fn make_clap_app() -> Command {
+    let app = Command::new("signer")
         .about("CLN:serial - connects to an embedded VLS over a USB / serial connection")
         .arg(arg!(--test "run a test against the embedded device"));
     add_hsmd_args(app)

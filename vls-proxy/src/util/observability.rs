@@ -11,9 +11,9 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 #[cfg(feature = "otlp")]
-use crate::util::otlp::new_tracer;
+use crate::util::otlp::new_tracer_provider;
 #[cfg(feature = "otlp")]
-use opentelemetry::global;
+use opentelemetry::{global, trace::TracerProvider as _};
 #[cfg(feature = "otlp")]
 use tracing_opentelemetry::OpenTelemetryLayer;
 
@@ -41,8 +41,15 @@ pub fn init_tracing_subscriber<P: AsRef<Path>>(
 ) -> Result<OtelGuard, Box<dyn Error>> {
     let (file_writer, file_guard) = setup_file_appender(datadir, who);
 
-    let stdout_layer = fmt::layer().with_writer(std::io::stdout);
-    let file_layer = fmt::layer().with_writer(file_writer);
+    let format = fmt::format()
+        .with_level(true)
+        .with_ansi(true)
+        .with_target(false)
+        .with_source_location(true)
+        .compact();
+
+    let stdout_layer = fmt::layer().event_format(format.clone()).with_writer(std::io::stdout);
+    let file_layer = fmt::layer().event_format(format).with_writer(file_writer);
     let env_filter = env_filter();
 
     let default_subscriber =
@@ -50,10 +57,9 @@ pub fn init_tracing_subscriber<P: AsRef<Path>>(
 
     #[cfg(feature = "otlp")]
     let default_subscriber = {
-        let tracer = new_tracer()?;
-        let otlp_layer = Some(OpenTelemetryLayer::new(tracer));
-
-        default_subscriber.with(Some(otlp_layer))
+        let tracer = new_tracer_provider()?.tracer(who.to_string());
+        let otlp_trace_layer = OpenTelemetryLayer::new(tracer);
+        default_subscriber.with(otlp_trace_layer)
     };
 
     match default_subscriber.try_init() {
