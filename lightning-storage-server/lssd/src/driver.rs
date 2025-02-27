@@ -6,6 +6,8 @@ use log::{info, warn};
 #[cfg(not(feature = "dangerous-flags"))]
 use log::error;
 
+#[cfg(feature = "etcd")]
+use crate::database::etcd::{EtcdDatabase, ETCD_PASSWORD, ETCD_URLS, ETCD_USERNAME};
 #[cfg(feature = "postgres")]
 use crate::database::postgres;
 use crate::database::redb::RedbDatabase;
@@ -16,10 +18,14 @@ use crate::StorageServer;
 use tonic::transport::{server::ServerTlsConfig, Identity};
 
 pub const SERVER_APP_NAME: &str = "lssd";
-#[cfg(feature = "postgres")]
-const DATABASES: [&str; 2] = ["redb", "postgres"];
-#[cfg(not(feature = "postgres"))]
+#[cfg(all(not(feature = "postgres"), not(feature = "etcd")))]
 const DATABASES: [&str; 1] = ["redb"];
+#[cfg(all(feature = "postgres", not(feature = "etcd")))]
+const DATABASES: [&str; 2] = ["redb", "postgres"];
+#[cfg(all(feature = "etcd", not(feature = "postgres")))]
+const DATABASES: [&str; 2] = ["redb", "etcd"];
+#[cfg(all(feature = "etcd", feature = "postgres"))]
+const DATABASES: [&str; 3] = ["redb", "postgres", "etcd"];
 
 fn configure_tls(
     server: tonic::transport::Server,
@@ -161,6 +167,26 @@ pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
             }
             .unwrap_or_else(|err| panic!("trouble opening redb in {:?}: {}", datadir, err)),
         ),
+        #[cfg(feature = "etcd")]
+        Some(db) if db.as_str() == "etcd" => {
+            let etcd_url_raw =
+                std::env::var(ETCD_URLS).ok().unwrap_or("http://localhost:2379".to_string());
+            let etcd_url = etcd_url_raw.split(",").collect();
+            let etcd_user = std::env::var(ETCD_USERNAME).ok();
+            let etcd_password = std::env::var(ETCD_PASSWORD).ok();
+
+            let auth_credentials = if etcd_user != None && etcd_password != None {
+                Some((etcd_user.unwrap(), etcd_password.unwrap()))
+            } else {
+                None
+            };
+
+            let etcd = EtcdDatabase::new(etcd_url, auth_credentials).await?;
+            if clear_db {
+                etcd.clear().await?;
+            }
+            Box::new(etcd)
+        }
         None => panic!("database not specified, even though there is a default value"),
         Some(v) => Err(format!("unsupported option for --database: {}", v))?,
     };
