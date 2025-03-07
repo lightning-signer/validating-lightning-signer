@@ -43,7 +43,8 @@ pub fn main() {
 
     let app = make_clap_app();
     let matches = app.get_matches();
-    if matches.contains_id("git-desc") {
+
+    if matches.get_flag("git-desc") {
         println!("remote_hsmd_socket git_desc={}", GIT_DESC);
         return;
     }
