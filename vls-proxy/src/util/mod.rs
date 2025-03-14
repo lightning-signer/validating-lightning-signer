@@ -102,7 +102,7 @@ pub fn setup_logging<P: AsRef<Path>>(datadir: P, who: &str, level_arg: &str) {
 #[cfg(feature = "main")]
 pub fn add_hsmd_args(app: Command) -> Command {
     app.version("1.0.0")
-        .disable_version_flag(false)
+        .disable_version_flag(true)
         .arg(
             Arg::new("dev-disconnect")
                 .action(ArgAction::SetTrue)
@@ -117,7 +117,12 @@ pub fn add_hsmd_args(app: Command) -> Command {
         )
         .arg(Arg::new("log-io").long("log-io").action(ArgAction::SetTrue).help("ignored dev flag"))
         .arg(arg!(--version "show a dummy version"))
-        .arg(Arg::new("git-desc").long("git-desc").help("print git desc version and exit"))
+        .arg(
+            Arg::new("git-desc")
+                .long("git-desc")
+                .help("print git desc version and exit")
+                .action(ArgAction::SetTrue),
+        )
 }
 
 #[cfg(feature = "main")]
