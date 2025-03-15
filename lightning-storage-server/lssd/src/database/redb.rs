@@ -54,7 +54,7 @@ impl RedbDatabase {
             let mut table = tx.open_table(TABLE)?;
             if clear {
                 // clear the table
-                for _item in table.drain(""..)? {}
+                table.retain(|_, _| false)?;
             }
         }
         tx.commit()?;
