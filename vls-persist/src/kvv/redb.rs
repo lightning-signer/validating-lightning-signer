@@ -227,7 +227,7 @@ impl KVVStore for RedbKVVStore {
         let tx = self.db.begin_write().unwrap();
         {
             let mut table = tx.open_table(TABLE).unwrap();
-            for _ in table.drain(""..).unwrap() {}
+            table.retain(|_, _| false).unwrap();
         }
         tx.commit().unwrap();
         Ok(())
