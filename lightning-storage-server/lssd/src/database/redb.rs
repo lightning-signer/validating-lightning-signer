@@ -2,8 +2,12 @@ use super::Error;
 use async_trait::async_trait;
 use lightning_storage_server::model::Value;
 use log::*;
-use redb::{Database, ReadableTable, TableDefinition};
+use redb::{Database, ReadableTable, TableDefinition, TableHandle};
+use redb1::ReadableTable as ReadableTable1;
 use std::path::Path;
+
+const REDB_DIR_NAME: &str = "redb";
+const DB2_EXTENSION: &str = "db2";
 
 const TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("kv");
 
@@ -21,6 +25,8 @@ pub enum RedbError {
     RedbTable(#[from] ::redb::TableError),
     #[error("database error: {0}")]
     RedbCommit(#[from] ::redb::CommitError),
+    #[error("migration error: {0}")]
+    MigrationError(String),
 }
 
 /// A versioned key-value store backed by redb
@@ -31,14 +37,139 @@ pub struct RedbDatabase {
 impl RedbDatabase {
     /// Open a database at the given path.
     pub async fn new<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
-        let mut db = Database::create(path.as_ref().join("redb")).map_err(RedbError::from)?;
+        let db_path = path.as_ref().join(REDB_DIR_NAME);
+
+        // Attempt to open the database in the db2 format (redb 2.x)
+        let mut db = match Database::create(&db_path) {
+            Ok(db) => db,
+            Err(redb::DatabaseError::UpgradeRequired(_)) => Self::migrate_v1_to_v2(&db_path)?,
+            Err(e) => return Err(RedbError::RedbDatabase(e).into()),
+        };
         Self::maybe_create_table(&mut db, false)?;
         Ok(Self { db })
     }
 
+    /// Migrate data from redb 1.x to redb 2.x
+    fn migrate_v1_to_v2(db1_path: &Path) -> Result<Database, RedbError> {
+        info!("Starting database migration to redb 2 for path: {}", db1_path.display());
+
+        let db1 = Self::open_db1_database(db1_path)?;
+        let db2_path = db1_path.with_extension(DB2_EXTENSION);
+
+        if db2_path.exists() {
+            std::fs::remove_file(&db2_path).map_err(|e| {
+                RedbError::MigrationError(format!(
+                    "Failed to remove existing temporary database file: {}",
+                    e
+                ))
+            })?;
+        }
+
+        let db2 = Self::create_db2_database(&db2_path)?;
+        Self::migrate_data(&db1, &db2)?;
+
+        drop(db1);
+        drop(db2);
+
+        std::fs::rename(db2_path, db1_path).map_err(|e| {
+            RedbError::MigrationError(format!("Failed to replace db1 with db2: {}", e))
+        })?;
+
+        let migrated_db = Database::open(db1_path).map_err(|e| {
+            RedbError::MigrationError(format!("Failed to open db2 database after migration: {}", e))
+        })?;
+
+        info!(
+            "Database migration to redb 2 completed successfully for path: {}",
+            db1_path.display()
+        );
+
+        Ok(migrated_db)
+    }
+
+    fn open_db1_database(db1_path: &Path) -> Result<redb1::Database, RedbError> {
+        redb1::Database::open(db1_path)
+            .map_err(|e| RedbError::MigrationError(format!("Failed to open redb1 database: {}", e)))
+    }
+
+    fn create_db2_database(db2_path: &Path) -> Result<Database, RedbError> {
+        Database::create(&db2_path)
+            .map_err(|e| RedbError::MigrationError(format!("Failed to create db2 database: {}", e)))
+    }
+
+    /// Migrate data from the db1 database to the db2 one
+    fn migrate_data(db1: &redb1::Database, db2: &Database) -> Result<(), RedbError> {
+        let read_txn = db1.begin_read().map_err(|e| {
+            RedbError::MigrationError(format!("Failed to begin read transaction: {}", e))
+        })?;
+
+        let write_txn = db2.begin_write().map_err(|e| {
+            RedbError::MigrationError(format!("Failed to begin write transaction: {}", e))
+        })?;
+
+        Self::migrate_table(&read_txn, &write_txn, TABLE.name())?;
+
+        write_txn.commit().map_err(|e| {
+            RedbError::MigrationError(format!("Failed to commit db2 transaction: {}", e))
+        })?;
+
+        Ok(())
+    }
+
+    /// Migrate a specific table from the db1 database to the db2 one
+    fn migrate_table(
+        read_txn: &redb1::ReadTransaction,
+        write_txn: &redb::WriteTransaction,
+        table_name: &str,
+    ) -> Result<(), RedbError> {
+        let table_def1: redb1::TableDefinition<&str, &[u8]> =
+            redb1::TableDefinition::new(table_name);
+
+        let table1 = match read_txn.open_table(table_def1) {
+            Ok(table) => table,
+            Err(e) => {
+                error!("Table '{}' not found or error opening it: {}", table_name, e);
+                return Ok(());
+            }
+        };
+
+        let table_def2: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new(table_name);
+
+        let mut table2 = write_txn.open_table(table_def2).map_err(|e| {
+            RedbError::MigrationError(format!(
+                "Failed to open target '{}' table: {}",
+                table_name, e
+            ))
+        })?;
+
+        for result in table1.iter().map_err(|e| {
+            RedbError::MigrationError(format!(
+                "Failed to iterate source '{}' table: {}",
+                table_name, e
+            ))
+        })? {
+            let (key, value) = result.map_err(|e| {
+                RedbError::MigrationError(format!(
+                    "Failed to read source '{}' table entry: {}",
+                    table_name, e
+                ))
+            })?;
+
+            table2.insert(key.value(), value.value()).map_err(|e| {
+                RedbError::MigrationError(format!(
+                    "Failed to insert into target '{}' table: {}",
+                    table_name, e
+                ))
+            })?;
+        }
+
+        Ok(())
+    }
+
     /// Open a database at the given path and clear it.
     pub async fn new_and_clear<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
-        let mut db = Database::create(path.as_ref().join("redb")).map_err(RedbError::from)?;
+        let mut db =
+            Database::create(path.as_ref().join(REDB_DIR_NAME)).map_err(RedbError::from)?;
         Self::maybe_create_table(&mut db, true)?;
         Ok(Self { db })
     }
