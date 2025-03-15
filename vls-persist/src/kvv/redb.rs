@@ -1,13 +1,17 @@
 use super::{KVVStore, KVV};
 use lightning_signer::persist::{Error, SignerId};
 use lightning_signer::SendSync;
-use redb::{Database, ReadableTable, TableDefinition};
+use redb::{Database, ReadableTable, TableDefinition, TableHandle, WriteTransaction};
+use redb1::ReadableTable as ReadableTable1;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 use tracing::*;
+
+const REDB_DIR_NAME: &str = "redb";
+const DB2_EXTENSION: &str = "db2";
 
 const TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("kv");
 const META_TABLE: TableDefinition<&str, &SignerId> = TableDefinition::new("meta");
@@ -48,7 +52,17 @@ impl RedbKVVStore {
             fs::create_dir(path).expect("failed to create directory");
         }
         assert!(path.is_dir(), "{} is not a directory", path.display());
-        let mut db = Database::create(path.join("redb")).unwrap();
+
+        let db_path = path.join(REDB_DIR_NAME);
+
+        // Attempt to open the database in the db2 format (redb 2.x)
+        let mut db = match Database::create(&db_path) {
+            Ok(db) => db,
+            Err(redb::DatabaseError::UpgradeRequired(_)) =>
+                Self::migrate_v1_to_v2(&db_path).expect("Failed to migrate database"),
+            Err(e) => panic!("Failed to open database: {}", e),
+        };
+
         db.check_integrity().expect("database integrity check failed");
         let mut versions = BTreeMap::new();
         let signer_id = {
@@ -82,6 +96,147 @@ impl RedbKVVStore {
 
         let store = Self { db, versions: Mutex::new(versions), signer_id };
         store
+    }
+
+    fn migrate_v1_to_v2(db1_path: &Path) -> Result<Database, Error> {
+        info!("Starting database migration to redb 2 for path: {}", db1_path.display());
+
+        let db1 = Self::open_db1_database(db1_path)?;
+        let db2_path = db1_path.with_extension(DB2_EXTENSION);
+
+        if db2_path.exists() {
+            std::fs::remove_file(&db2_path).map_err(|e| {
+                Error::Internal(format!("Failed to remove existing temporary database file: {}", e))
+            })?;
+        }
+
+        let db2 = Self::create_db2_database(&db2_path)?;
+        Self::migrate_data(&db1, &db2)?;
+
+        drop(db1);
+        drop(db2);
+
+        std::fs::rename(&db2_path, db1_path)
+            .map_err(|e| Error::Internal(format!("Failed to replace db1 with db2: {}", e)))?;
+
+        let migrated_db = Database::open(db1_path).map_err(|e| {
+            Error::Internal(format!("Failed to open db2 database after migration: {}", e))
+        })?;
+
+        info!(
+            "Database migration to redb 2 completed successfully for path: {}",
+            db1_path.display()
+        );
+
+        Ok(migrated_db)
+    }
+
+    fn open_db1_database(db1_path: &Path) -> Result<redb1::Database, Error> {
+        redb1::Database::open(db1_path)
+            .map_err(|e| Error::Internal(format!("Failed to open db1 database: {}", e)))
+    }
+
+    fn create_db2_database(db2_path: &Path) -> Result<Database, Error> {
+        Database::create(db2_path)
+            .map_err(|e| Error::Internal(format!("Failed to create db2 database: {}", e)))
+    }
+
+    fn migrate_data(db1: &redb1::Database, db2: &Database) -> Result<(), Error> {
+        let read_txn = db1
+            .begin_read()
+            .map_err(|e| Error::Internal(format!("Failed to begin read transaction: {}", e)))?;
+
+        let write_txn = db2
+            .begin_write()
+            .map_err(|e| Error::Internal(format!("Failed to begin write transaction: {}", e)))?;
+
+        Self::migrate_kv_table(&read_txn, &write_txn)?;
+        Self::migrate_meta_table(&read_txn, &write_txn)?;
+
+        write_txn
+            .commit()
+            .map_err(|e| Error::Internal(format!("Failed to commit db2 transaction: {}", e)))?;
+
+        Ok(())
+    }
+
+    fn migrate_kv_table(
+        read_txn: &redb1::ReadTransaction,
+        write_txn: &WriteTransaction,
+    ) -> Result<(), Error> {
+        let table_def1: redb1::TableDefinition<&str, &[u8]> =
+            redb1::TableDefinition::new(TABLE.name());
+
+        let table1 = match read_txn.open_table(table_def1) {
+            Ok(table) => table,
+            Err(e) => {
+                error!("Table 'kv' not found or error opening it: {}", e);
+                return Ok(());
+            }
+        };
+
+        let table_def2: redb::TableDefinition<&str, &[u8]> = TABLE;
+        let mut table2 = write_txn
+            .open_table(table_def2)
+            .map_err(|e| Error::Internal(format!("Failed to open target 'kv' table: {}", e)))?;
+
+        for result in table1
+            .iter()
+            .map_err(|e| Error::Internal(format!("Failed to iterate source 'kv' table: {}", e)))?
+        {
+            let (key, value) = result.map_err(|e| {
+                Error::Internal(format!("Failed to read source 'kv' table entry: {}", e))
+            })?;
+
+            table2.insert(key.value(), value.value()).map_err(|e| {
+                Error::Internal(format!("Failed to insert into target 'kv' table: {}", e))
+            })?;
+        }
+
+        Ok(())
+    }
+
+    fn migrate_meta_table(
+        read_txn: &redb1::ReadTransaction,
+        write_txn: &WriteTransaction,
+    ) -> Result<(), Error> {
+        let table_def1: redb1::TableDefinition<&str, &[u8]> =
+            redb1::TableDefinition::new(META_TABLE.name());
+
+        let table1 = match read_txn.open_table(table_def1) {
+            Ok(table) => table,
+            Err(e) => {
+                info!("Table 'meta' not found or error opening it: {}", e);
+                return Ok(());
+            }
+        };
+
+        let table_def2 = META_TABLE;
+        let mut table2 = write_txn
+            .open_table(table_def2)
+            .map_err(|e| Error::Internal(format!("Failed to open target 'meta' table: {}", e)))?;
+
+        if let Some(value_result) = table1.get(SIGNER_ID_KEY).map_err(|e| {
+            Error::Internal(format!("Failed to get signer_id from source table: {}", e))
+        })? {
+            let bytes = value_result.value();
+
+            if bytes.len() == 16 {
+                let mut signer_id = [0u8; 16];
+                signer_id.copy_from_slice(bytes);
+
+                table2.insert(SIGNER_ID_KEY, &signer_id).map_err(|e| {
+                    Error::Internal(format!("Failed to insert signer_id into target table: {}", e))
+                })?;
+            } else {
+                return Err(Error::Internal(format!(
+                    "Invalid signer_id length: expected 16 bytes, got {}",
+                    bytes.len()
+                )));
+            }
+        }
+
+        Ok(())
     }
 
     fn decode_vv(vv: &[u8]) -> (u64, Vec<u8>) {
@@ -266,6 +421,7 @@ mod tests {
     use hex::FromHex;
     use lightning_signer::channel::ChannelId;
     use lightning_signer::node::{Node, NodeServices};
+    use lightning_signer::persist::Error;
     use lightning_signer::persist::{MemorySeedPersister, Mutations, Persist};
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
     use lightning_signer::util::clock::StandardClock;
@@ -416,5 +572,169 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    #[test]
+    fn test_migrate_v1_to_v2_success() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let db1_path = tempdir.path().join(REDB_DIR_NAME);
+        let test_signer_id = uuid::Uuid::new_v4();
+        let signer_id_bytes = test_signer_id.as_bytes().to_vec();
+
+        create_v1_database(&db1_path, &signer_id_bytes);
+        let store = RedbKVVStore::new(tempdir.path());
+        verify_migrated_data(&store, &signer_id_bytes);
+
+        drop(store);
+        verify_persistence(tempdir.path(), &signer_id_bytes);
+    }
+
+    #[test]
+    fn test_migrate_v1_to_v2_with_existing_db2_file() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let db1_path = tempdir.path().join(REDB_DIR_NAME);
+        let db2_path = db1_path.with_extension(DB2_EXTENSION);
+
+        fs::File::create(&db2_path).unwrap();
+
+        let test_signer_id = uuid::Uuid::new_v4();
+        let signer_id_bytes = test_signer_id.as_bytes().to_vec();
+        create_v1_database(&db1_path, &signer_id_bytes);
+
+        let store = RedbKVVStore::new(tempdir.path());
+        verify_migrated_data(&store, &signer_id_bytes);
+    }
+
+    #[test]
+    fn test_migrate_v1_to_v2_with_missing_kv_table() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let db1_path = tempdir.path().join(REDB_DIR_NAME);
+        let test_signer_id = uuid::Uuid::new_v4();
+        let signer_id_bytes = test_signer_id.as_bytes().to_vec();
+
+        {
+            let db1 = redb1::Database::create(&db1_path).unwrap();
+            let write_txn = db1.begin_write().unwrap();
+            {
+                let meta_table_def: redb1::TableDefinition<&str, &[u8]> =
+                    redb1::TableDefinition::new(META_TABLE.name());
+                let mut meta_table = write_txn.open_table(meta_table_def).unwrap();
+                meta_table.insert(SIGNER_ID_KEY, &*signer_id_bytes).unwrap();
+            }
+            write_txn.commit().unwrap();
+        }
+
+        let store = RedbKVVStore::new(tempdir.path());
+        assert_eq!(store.signer_id().to_vec(), signer_id_bytes);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid signer_id length")]
+    fn test_migrate_v1_to_v2_with_invalid_signer_id_length() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let db1_path = tempdir.path().join(REDB_DIR_NAME);
+
+        {
+            let db1 = redb1::Database::create(&db1_path).unwrap();
+            let write_txn = db1.begin_write().unwrap();
+            {
+                let meta_table_def: redb1::TableDefinition<&str, &[u8]> =
+                    redb1::TableDefinition::new(META_TABLE.name());
+                let mut meta_table = write_txn.open_table(meta_table_def).unwrap();
+                meta_table.insert(SIGNER_ID_KEY, b"invalid-length".as_slice()).unwrap();
+            }
+            write_txn.commit().unwrap();
+        }
+
+        RedbKVVStore::new(tempdir.path());
+    }
+
+    fn create_v1_database(db1_path: &Path, signer_id_bytes: &[u8]) {
+        let db1 = redb1::Database::create(db1_path)
+            .or_else(|_| redb1::Database::open(db1_path))
+            .map_err(|e| format!("Failed to open or create db1 database: {}", e))
+            .unwrap();
+        let write_txn = db1.begin_write().unwrap();
+
+        {
+            let table_def: redb1::TableDefinition<&str, &[u8]> =
+                redb1::TableDefinition::new(TABLE.name());
+            let mut table = write_txn.open_table(table_def).unwrap();
+
+            let value1 = RedbKVVStore::encode_vv(1, b"value1".to_vec());
+            let value2 = RedbKVVStore::encode_vv(2, b"value2".to_vec());
+
+            table.insert("key1", value1.as_slice()).unwrap();
+            table.insert("key2", value2.as_slice()).unwrap();
+        }
+
+        {
+            let meta_table_def: redb1::TableDefinition<&str, &[u8]> =
+                redb1::TableDefinition::new(META_TABLE.name());
+            let mut meta_table = write_txn.open_table(meta_table_def).unwrap();
+
+            meta_table.insert(SIGNER_ID_KEY, signer_id_bytes).unwrap();
+        }
+
+        write_txn.commit().unwrap();
+    }
+
+    fn verify_migrated_data(store: &RedbKVVStore, signer_id_bytes: &[u8]) {
+        {
+            let tx = store.db.begin_read().unwrap();
+            let kv_table = tx.open_table(TABLE).unwrap();
+
+            let value1_guard = kv_table.get("key1").unwrap().unwrap();
+            let value1 = value1_guard.value();
+            let (version1, data1) = RedbKVVStore::decode_vv(value1);
+            assert_eq!(version1, 1, "Version for key1 should be 1");
+            assert_eq!(data1, b"value1".to_vec(), "Data for key1 should be 'value1'");
+
+            let value2_guard = kv_table.get("key2").unwrap().unwrap();
+            let value2 = value2_guard.value();
+            let (version2, data2) = RedbKVVStore::decode_vv(value2);
+            assert_eq!(version2, 2, "Version for key2 should be 2");
+            assert_eq!(data2, b"value2".to_vec(), "Data for key2 should be 'value2'");
+
+            let meta_table = tx.open_table(META_TABLE).unwrap();
+            let signer_id_guard = meta_table.get(SIGNER_ID_KEY).unwrap().unwrap();
+            let migrated_signer_id = signer_id_guard.value();
+
+            assert_eq!(
+                migrated_signer_id, signer_id_bytes,
+                "Signer ID should be preserved after migration"
+            );
+        }
+
+        {
+            let versions = store.versions.lock().unwrap();
+            assert_eq!(versions.get("key1"), Some(&1), "Version for key1 should be stored as 1");
+            assert_eq!(versions.get("key2"), Some(&2), "Version for key2 should be stored as 2");
+        }
+
+        assert_eq!(
+            store.signer_id().to_vec(),
+            signer_id_bytes,
+            "Signer ID should be accessible through the store"
+        );
+    }
+
+    fn verify_persistence(temp_path: &Path, signer_id_bytes: &[u8]) {
+        let reopened_store = RedbKVVStore::new(temp_path);
+
+        let tx = reopened_store.db.begin_read().unwrap();
+        let kv_table = tx.open_table(TABLE).unwrap();
+
+        let value1_guard = kv_table.get("key1").unwrap().unwrap();
+        let value1 = value1_guard.value();
+        let (version1, data1) = RedbKVVStore::decode_vv(value1);
+        assert_eq!(version1, 1);
+        assert_eq!(data1, b"value1".to_vec());
+
+        assert_eq!(
+            reopened_store.signer_id().to_vec(),
+            signer_id_bytes,
+            "Signer ID should persist after reopening"
+        );
     }
 }
