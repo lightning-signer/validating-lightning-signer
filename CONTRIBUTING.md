@@ -134,7 +134,7 @@ Enhancement suggestions are tracked as [GitLab issues](https://docs.gitlab.com/e
 
 Unsure where to begin contributing to VLS? You can start by looking through these `Starter Issues` and `Help-Wanted` issues:
 
-* [Starter Issues](https://gitlab.com/groups/lightning-signer/-/issues/?sort=created_date&state=opened&label_name%5B%5D=StarterIssue&first_page_size=20) - issues which should only require a few lines of code, and a test or two.
+* [Starter Issues](https://gitlab.com/groups/lightning-signer/-/issues/?sort=created_date&state=opened&label_name%5B%5D=Starter%20Issue&first_page_size=20) - issues which should only require a few lines of code, and a test or two.
 * [Help wanted issues](https://gitlab.com/groups/lightning-signer/-/issues/?sort=popularity&state=opened&label_name%5B%5D=Help-Wanted&first_page_size=20) - issues which should be a bit more involved than `Starter` issues.
 
 Both issue lists are sorted by popularity. While not perfect, popularity is a reasonable proxy for impact a given change will have.
@@ -169,7 +169,7 @@ This section lists the labels we use to help us track and manage issues and merg
 
 For example, you might be interested in:
 
-* [Starter Issues](https://gitlab.com/groups/lightning-signer/-/issues?label_name%5B%5D=StarterIssue)
+* [Starter Issues](https://gitlab.com/groups/lightning-signer/-/issues?label_name%5B%5D=Starter%20Issue)
 * [Help Wanted](https://gitlab.com/groups/lightning-signer/-/issues?label_name%5B%5D=Help-Wanted)
 * [Triage Issues](https://gitlab.com/groups/lightning-signer/-/issues?label_name%5B%5D=Triage)
 * [High Priority Issues](https://gitlab.com/groups/lightning-signer/-/issues?label_name%5B%5D=Priority%3A%3AHigh)
