@@ -2825,6 +2825,7 @@ impl CommitmentPointProvider for ChannelCommitmentPointProvider {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use bitcoin::secp256k1::{self, Secp256k1, SecretKey};
     use lightning::ln::chan_utils::HTLCOutputInCommitment;
     use lightning::types::payment::PaymentHash;
@@ -2834,8 +2835,7 @@ mod tests {
     use crate::util::test_utils::{
         init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
     };
-
-    use super::ChannelId;
+    use bitcoin::Network;
 
     #[test]
     fn test_dummy_sig() {
@@ -2876,5 +2876,140 @@ mod tests {
     fn test_ldk_oid_roundtrip() {
         let oid: u64 = 42;
         assert_eq!(oid, ChannelId::new_from_oid(oid).oid());
+    }
+
+    #[test]
+    fn test_ldk_channel_keys_id_valid() {
+        let oid = 42u64;
+        let chan_id = ChannelId::new_from_oid(oid);
+        let keys_id = chan_id.ldk_channel_keys_id();
+        assert_eq!(keys_id.len(), 32);
+        assert_eq!(&keys_id[0..24], &[0u8; 24]);
+        assert_eq!(&keys_id[24..], &oid.to_le_bytes());
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "source slice length (3) does not match destination slice length (32)"
+    )]
+    fn test_ldk_channel_keys_id_short_id() {
+        let short_id = ChannelId::new(&[1, 2, 3]);
+        short_id.ldk_channel_keys_id();
+    }
+
+    #[test]
+    fn test_typed_signature_serialize() {
+        let secp = Secp256k1::new();
+        let msg = secp256k1::Message::from_digest([42; 32]);
+        let sk = SecretKey::from_slice(&[1; 32]).unwrap();
+        let sig = secp.sign_ecdsa(&msg, &sk);
+        let typed_sig = TypedSignature { sig, typ: EcdsaSighashType::All };
+
+        let serialized = typed_sig.serialize();
+        let expected = {
+            let mut v = sig.serialize_der().to_vec();
+            v.push(EcdsaSighashType::All as u8);
+            v
+        };
+        assert_eq!(serialized, expected);
+    }
+
+    #[test]
+    fn test_channel_setup_methods() {
+        let setup_legacy =
+            ChannelSetup { commitment_type: CommitmentType::Legacy, ..make_test_channel_setup() };
+        let setup_static = ChannelSetup {
+            commitment_type: CommitmentType::StaticRemoteKey,
+            ..make_test_channel_setup()
+        };
+        let setup_anchors =
+            ChannelSetup { commitment_type: CommitmentType::Anchors, ..make_test_channel_setup() };
+        let setup_zero_fee = ChannelSetup {
+            commitment_type: CommitmentType::AnchorsZeroFeeHtlc,
+            ..make_test_channel_setup()
+        };
+
+        assert!(!setup_legacy.is_static_remotekey());
+        assert!(setup_static.is_static_remotekey());
+        assert!(setup_anchors.is_static_remotekey());
+        assert!(setup_zero_fee.is_static_remotekey());
+
+        assert!(!setup_legacy.is_anchors());
+        assert!(!setup_static.is_anchors());
+        assert!(setup_anchors.is_anchors());
+        assert!(setup_zero_fee.is_anchors());
+
+        assert!(!setup_legacy.is_zero_fee_htlc());
+        assert!(!setup_static.is_zero_fee_htlc());
+        assert!(!setup_anchors.is_zero_fee_htlc());
+        assert!(setup_zero_fee.is_zero_fee_htlc());
+
+        let features_legacy = setup_legacy.features();
+        assert!(features_legacy.supports_static_remote_key());
+        assert!(!features_legacy.supports_anchors_zero_fee_htlc_tx());
+
+        let features_zero_fee = setup_zero_fee.features();
+        assert!(features_zero_fee.supports_static_remote_key());
+        assert!(features_zero_fee.supports_anchors_zero_fee_htlc_tx());
+
+        let feature_static = setup_static.features();
+        assert!(feature_static.supports_static_remote_key());
+        assert!(!feature_static.supports_anchors_zero_fee_htlc_tx());
+
+        let feature_anchors = setup_anchors.features();
+        assert!(feature_anchors.supports_static_remote_key());
+        assert!(!feature_anchors.supports_anchors_zero_fee_htlc_tx());
+    }
+
+    #[test]
+    fn test_channel_make_counterparty_tx_keys() {
+        let (node, chan_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        node.with_channel(&chan_id, |chan| {
+            let point = PublicKey::from_secret_key(
+                &chan.secp_ctx,
+                &SecretKey::from_slice(&[3; 32]).unwrap(),
+            );
+            let keys = chan.make_counterparty_tx_keys(&point);
+            assert_eq!(keys.per_commitment_point, point);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn test_channel_network() {
+        let (node, chan_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        node.with_channel(&chan_id, |chan| {
+            assert_eq!(chan.network(), Network::Testnet);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn test_channel_balance_methods() {
+        let mut bal1 = ChannelBalance::new(1000, 200, 300, 400, 1, 2, 3, 4, 5, 6);
+        assert_eq!(bal1.claimable, 1000);
+        assert_eq!(bal1.stub_count, 1);
+
+        let bal2 = ChannelBalance::new(500, 100, 150, 200, 1, 1, 1, 1, 2, 3);
+        bal1.accumulate(&bal2);
+
+        assert_eq!(bal1.claimable, 1500);
+        assert_eq!(bal1.received_htlc, 300);
+        assert_eq!(bal1.offered_htlc, 450);
+        assert_eq!(bal1.sweeping, 600);
+        assert_eq!(bal1.stub_count, 2);
+        assert_eq!(bal1.unconfirmed_count, 3);
+        assert_eq!(bal1.channel_count, 4);
+        assert_eq!(bal1.closing_count, 5);
+        assert_eq!(bal1.received_htlc_count, 7);
+        assert_eq!(bal1.offered_htlc_count, 9);
+
+        let stub_bal = ChannelBalance::stub();
+        assert_eq!(stub_bal.stub_count, 1);
+        assert_eq!(stub_bal.claimable, 0);
     }
 }
