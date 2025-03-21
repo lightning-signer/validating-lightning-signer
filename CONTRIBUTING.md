@@ -13,7 +13,7 @@ The following is a set of guidelines for contributing to VLS and its packages, w
 
 [What should I know before I get started?](#what-should-i-know-before-i-get-started)
 
-* [VLS and Packages](#VLS-and-packages)
+* [VLS and Packages](#vls-and-packages)
 * [VLS Design Decisions](#design-decisions)
 
 [How Can I Contribute?](#how-can-i-contribute)
@@ -21,12 +21,12 @@ The following is a set of guidelines for contributing to VLS and its packages, w
 * [Reporting Bugs](#reporting-bugs)
 * [Suggesting Enhancements](#suggesting-enhancements)
 * [Your First Code Contribution](#your-first-code-contribution)
-* [Merge Requests](#Merge-requests)
+* [Merge Requests](#merge-requests)
 
 [Styleguides](#styleguides)
 
 * [Git Commit Messages](#git-commit-messages)
-* [Documentation Styleguide](#documentation-styleguide)
+* [Changelog Entries](#changelog-entries)
 
 [Additional Notes](#additional-notes)
 
@@ -158,6 +158,53 @@ The process described here has several goals:
 * Reference the relevant folder or module as a prefix for commit messages (e.g. `core: xxxx` or `protocol: xxxx`)
 * Reference issues and merge requests liberally after the first line
 * When only changing documentation, include `[ci skip]` in the commit title
+
+### Changelog Entries
+
+To streamline our release process and ensure that all significant changes are tracked, please include a changelog entry in your commit messages when applicable. Our release automation relies on these annotations to generate a changelog automatically using the [scripts/harvest-changelog](https://gitlab.com/lightning-signer/validating-lightning-signer/-/blob/main/scripts/harvest-changelog?ref_type=heads) script.
+
+The changelog annotations should follow this format in your commit messages:
+
+- **Changelog-Added:** `<module>:` A brief description of the new feature or enhancement.  
+  _Example:_  
+  `Changelog-Added: serial: Adds feature that improves user interaction.`
+
+- **Changelog-Changed:** `<module>:` A brief description of changes to existing functionality.  
+  _Example:_  
+  `Changelog-Changed: policy: Adjusted default settings for improved security.`
+
+- **Changelog-Fixed:** `<module>:` A brief description of the bug fix.  
+  _Example:_  
+  `Changelog-Fixed: core: The xyzzy bug was fixed (#6077).`
+
+- **Changelog-Deprecated:** `<module>:` A brief note on deprecated functionality.  
+  _Example:_  
+  `Changelog-Deprecated: proxy: Feature blah is now deprecated in the API.`
+
+- **Changelog-Removed:** `<module>:` A brief note on removed functionality.  
+  _Example:_  
+  `Changelog-Removed: core: Unused feature x was removed in this release.`
+
+#### When to Include Changelog Entries
+
+Not every commit requires a changelog entry. Include entries when:
+
+* Your change would be meaningful to developers who use the project
+* The change affects public APIs, behaviors, or configurations
+* You've fixed a user-facing bug
+* You're adding, changing, or removing features users interact with
+* You've made significant improvements to testing that enhance overall reliability
+
+Changelog entries are typically not needed for internal refactoring, documentation updates, or changes that don't affect how developers use your code.
+
+#### Notes
+
+* Include the appropriate changelog entry as part of your commit message.
+* For a Merge Request with multiple commits, ensure there are enough entries to describe the important changes, but you don't need an entry for every individual commit.
+* If your commit introduces multiple significant changes, feel free to include multiple annotations.
+* If you're unsure whether a change needs a changelog entry, it's best to include one.
+* The format is case-sensitive and should follow the examples above for our script to pick up your entry correctly.
+
 
 ## Additional Notes
 
