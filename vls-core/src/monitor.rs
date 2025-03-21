@@ -327,7 +327,7 @@ impl<'a> push_decoder::Listener for PushListener<'a> {
                 txid,
                 vout
             );
-            let outpoint = OutPoint { txid: txid.clone(), vout };
+            let outpoint = OutPoint { txid, vout };
             decode_state.add_change(StateChange::FundingConfirmed(outpoint));
         }
 
@@ -628,9 +628,9 @@ impl State {
             ) => {
                 self.unilateral_closing_height = Some(self.height);
                 removes.push(funding_outpoint);
-                our_output_index.map(|i| adds.push(OutPoint { txid: txid.clone(), vout: i }));
+                our_output_index.map(|i| adds.push(OutPoint { txid, vout: i }));
                 for i in htlcs_indices.iter() {
-                    adds.push(OutPoint { txid: txid.clone(), vout: *i });
+                    adds.push(OutPoint { txid, vout: *i });
                 }
                 self.closing_outpoints =
                     Some(ClosingOutpoints::new(txid, our_output_index, htlcs_indices));
@@ -693,9 +693,9 @@ impl State {
                 assert_eq!(self.unilateral_closing_height, Some(self.height));
                 self.unilateral_closing_height = None;
                 self.closing_outpoints = None;
-                our_output_index.map(|i| adds.push(OutPoint { txid: txid.clone(), vout: i }));
+                our_output_index.map(|i| adds.push(OutPoint { txid, vout: i }));
                 for i in htlcs_indices {
-                    adds.push(OutPoint { txid: txid.clone(), vout: i });
+                    adds.push(OutPoint { txid, vout: i });
                 }
                 removes.push(funding_outpoint)
             }
