@@ -61,7 +61,6 @@ use crate::prelude::*;
 use crate::signer::derive::KeyDerivationStyle;
 use crate::signer::my_keys_manager::MyKeysManager;
 use crate::signer::StartingTimeFactory;
-use crate::sync::{Arc, Weak};
 use crate::tx::tx::PreimageMap;
 use crate::txoo::get_latest_checkpoint;
 use crate::util::clock::Clock;

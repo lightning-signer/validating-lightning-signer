@@ -10,7 +10,6 @@ use crate::policy::validator::EnforcementState;
 use crate::policy::validator::{ChainState, Validator, ValidatorFactory};
 use crate::policy::Policy;
 use crate::prelude::*;
-use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
 use crate::wallet::Wallet;
 

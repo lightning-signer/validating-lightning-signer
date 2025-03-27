@@ -16,9 +16,9 @@ use lightning_signer::hex;
 use lightning_signer::node::{Node, NodeConfig, NodeServices};
 use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
+use lightning_signer::prelude::Arc;
 use lightning_signer::signer::StartingTimeFactory;
 use lightning_signer::util::clock::ManualClock;
-use lightning_signer::Arc;
 use lightning_signer::SendSync;
 use lightning_signer::{bitcoin, lightning};
 

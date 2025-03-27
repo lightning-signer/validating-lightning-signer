@@ -56,8 +56,6 @@ pub use hex;
 pub use alloc::collections::BTreeSet as OrderedSet;
 #[doc(hidden)]
 pub use alloc::rc::Rc;
-#[doc(hidden)]
-pub use alloc::sync::{Arc, Weak};
 
 use bitcoin::secp256k1::PublicKey;
 use lightning::ln::chan_utils::ChannelTransactionParameters;
@@ -65,6 +63,7 @@ use lightning::ln::chan_utils::ChannelTransactionParameters;
 #[cfg(not(feature = "std"))]
 mod nostd;
 
+#[doc(hidden)]
 /// std / no_std compat
 pub mod prelude {
     pub use alloc::{boxed::Box, string::String, vec, vec::Vec};
@@ -79,11 +78,15 @@ pub mod prelude {
     pub use alloc::borrow::ToOwned;
     pub use alloc::string::ToString;
 
+    #[cfg(not(all(test, feature = "shuttle")))]
+    pub use alloc::sync::{Arc, Weak};
+    #[cfg(all(test, feature = "shuttle"))]
+    pub use shuttle::sync::{Arc, Mutex, MutexGuard, Weak};
+    #[cfg(all(feature = "std", not(all(test, feature = "shuttle"))))]
+    pub use std::sync::{Mutex, MutexGuard};
+
     #[cfg(not(feature = "std"))]
     pub use crate::nostd::*;
-
-    #[cfg(feature = "std")]
-    pub use std::sync::{Mutex, MutexGuard};
 
     /// Convenience trait for Send + Sync
     #[cfg(feature = "std")]
@@ -94,11 +97,6 @@ pub mod prelude {
 pub use prelude::SendSync;
 
 use prelude::*;
-
-#[cfg(feature = "std")]
-mod sync {
-    pub use ::std::sync::{Arc, Weak};
-}
 
 /// A trait for getting a commitment point for a given commitment number,
 /// if known.

@@ -18,7 +18,7 @@ use lightning_signer::persist::model::{
 use lightning_signer::persist::{ChainTrackerListenerEntry, Error, Persist, SignerId};
 use lightning_signer::policy::validator::{EnforcementState, ValidatorFactory};
 use lightning_signer::prelude::*;
-use lightning_signer::{persist::Mutations, Arc, SendSync};
+use lightning_signer::{persist::Mutations, SendSync};
 use serde_json::{from_slice, to_vec};
 
 const NODE_ENTRY_PREFIX: &str = "node/entry";

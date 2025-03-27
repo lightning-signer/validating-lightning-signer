@@ -17,8 +17,7 @@ use stm32f4xx_hal::prelude::*;
 use log::{debug, info, trace};
 
 use lightning_signer::persist::Persist;
-use lightning_signer::prelude::Box;
-use lightning_signer::Arc;
+use lightning_signer::prelude::{Arc, Box};
 use vls_protocol_signer::lightning_signer;
 
 mod device;

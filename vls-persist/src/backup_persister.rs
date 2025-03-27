@@ -10,7 +10,7 @@ use lightning_signer::persist::model::{
 use lightning_signer::persist::{ChainTrackerListenerEntry, Error, Persist};
 use lightning_signer::policy::validator::ValidatorFactory;
 use lightning_signer::prelude::*;
-use lightning_signer::{Arc, SendSync};
+use lightning_signer::SendSync;
 
 /// A composite persister that writes to two underlying persisters.
 ///

@@ -7,6 +7,7 @@ use crate::policy::validator::{
     validate_block, ChainState, EnforcementState, Validator, ValidatorFactory,
 };
 use crate::policy::Policy;
+use crate::prelude::{Arc, Mutex};
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
 use crate::wallet::Wallet;
 use bitcoin::blockdata::block::Header as BlockHeader;
@@ -16,7 +17,6 @@ use bitcoin::sighash::{EcdsaSighashType, SegwitV0Sighash};
 use bitcoin::{BlockHash, Network, OutPoint, ScriptBuf, Transaction};
 use lightning::ln::chan_utils::{ClosingTransaction, HTLCOutputInCommitment, TxCreationKeys};
 use lightning::sign::InMemorySigner;
-use std::sync::{Arc, Mutex};
 use txoo::proof::TxoProof;
 
 #[derive(Clone)]

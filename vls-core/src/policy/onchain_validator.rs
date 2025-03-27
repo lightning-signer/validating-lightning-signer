@@ -11,7 +11,6 @@ use super::validator::{ChainState, Validator, ValidatorFactory};
 use super::{policy_error_with_filter, Policy, DEFAULT_FEE_VELOCITY_CONTROL};
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot};
 use crate::prelude::*;
-use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
 use crate::util::velocity::VelocityControlSpec;
 use crate::wallet::Wallet;

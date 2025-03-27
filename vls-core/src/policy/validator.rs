@@ -25,7 +25,6 @@ use crate::channel::{ChannelBalance, ChannelId, ChannelSetup, ChannelSlot};
 use crate::invoice::{Invoice, InvoiceAttributes};
 use crate::policy::{Policy, MAX_CLOCK_SKEW, MIN_INVOICE_EXPIRY};
 use crate::prelude::*;
-use crate::sync::Arc;
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2, HTLCInfo2, PreimageMap};
 use crate::util::debug_utils::DebugBytes;
 use crate::wallet::Wallet;
