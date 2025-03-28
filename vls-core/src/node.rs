@@ -1089,7 +1089,7 @@ impl Wallet for Node {
     }
 
     fn allowlist_contains_payee(&self, payee: PublicKey) -> bool {
-        self.allowlist.lock().unwrap().contains(&Allowable::Payee(payee.clone()))
+        self.allowlist.lock().unwrap().contains(&Allowable::Payee(payee))
     }
 
     fn allowlist_contains(&self, script_pubkey: &ScriptBuf, path: &[u32]) -> bool {
@@ -1306,11 +1306,7 @@ impl Node {
                     let slot = Arc::new(Mutex::new(ChannelSlot::Ready(channel)));
                     let provider = Box::new(ChannelCommitmentPointProvider::new(slot.clone()));
                     let monitor = monitor_base.as_monitor(provider);
-                    node.get_tracker().restore_listener(
-                        funding_outpoint.clone(),
-                        monitor,
-                        tracker_slot,
-                    );
+                    node.get_tracker().restore_listener(funding_outpoint, monitor, tracker_slot);
                     channels.insert(channel_id0, Arc::clone(&slot));
                     channel_id.map(|id| channels.insert(id, Arc::clone(&slot)));
                 }
@@ -1989,7 +1985,7 @@ impl Node {
                 let value_sat = prev_outs[idx].value;
                 let (privkey, mut witness) = match uck {
                     // There was a unilateral_close_key.
-                    Some((key, stack)) => (PrivateKey::new(key.clone(), self.network()), stack),
+                    Some((key, stack)) => (PrivateKey::new(key, self.network()), stack),
                     // Derive the HD key.
                     None => {
                         let key = self.get_wallet_privkey(&ipaths[idx])?;
@@ -2747,7 +2743,7 @@ impl Node {
         let payment_hash = invoice.payment_hash();
         let invoice_hash = invoice.invoice_hash();
         let payment_state = PaymentState {
-            invoice_hash: invoice_hash.clone(),
+            invoice_hash,
             amount_msat: invoice.amount_milli_satoshis(),
             payee: invoice.payee_pub_key(),
             duration_since_epoch: invoice.duration_since_epoch(),
