@@ -13,7 +13,7 @@ mod tests {
 
     use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, TypedSignature};
     use crate::node::{Node, NodeMonitor};
-    use crate::sync::Arc;
+    use crate::prelude::Arc;
     use crate::tx::tx::{CommitmentInfo2, HTLCInfo2};
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::key::*;

@@ -26,13 +26,12 @@ use lightning_signer::persist::{DummyPersister, Persist};
 use lightning_signer::policy::simple_validator::{
     make_default_simple_policy, SimpleValidatorFactory,
 };
-use lightning_signer::prelude::SendSync;
+use lightning_signer::prelude::{Arc, SendSync};
 use lightning_signer::signer::derive::KeyDerivationStyle;
 use lightning_signer::signer::StartingTimeFactory;
 use lightning_signer::tx::tx::HTLCInfo2;
 use lightning_signer::util::clock::ManualClock;
 use lightning_signer::wallet::Wallet;
-use lightning_signer::Arc;
 
 #[cfg(feature = "device")]
 macro_rules! myprintln {

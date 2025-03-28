@@ -26,10 +26,9 @@ use lightning_signer::policy::filter::{FilterRule, PolicyFilter};
 use lightning_signer::policy::simple_validator::{
     make_default_simple_policy, SimpleValidatorFactory,
 };
-use lightning_signer::prelude::Box;
+use lightning_signer::prelude::{Arc, Box};
 use lightning_signer::util::clock::ManualClock;
 use lightning_signer::util::velocity::VelocityControlSpec;
-use lightning_signer::Arc;
 use rand_core::RngCore;
 use random_starting_time::RandomStartingTimeFactory;
 use vls_protocol::model::DevSecret;

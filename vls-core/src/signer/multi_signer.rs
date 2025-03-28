@@ -7,7 +7,6 @@ use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSlot};
 use crate::node::{Node, NodeConfig, NodeServices};
 use crate::persist::{Persist, SeedPersist};
 use crate::prelude::*;
-use crate::sync::Arc;
 use crate::util::status::{invalid_argument, Status};
 use vls_common::HexEncode;
 

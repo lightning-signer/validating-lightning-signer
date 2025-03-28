@@ -5,9 +5,9 @@ use lightning_signer::bitcoin::{Address, ScriptBuf, Transaction, TxOut};
 use lightning_signer::channel::{Channel, ChannelBase, ChannelSlot};
 use lightning_signer::lightning;
 use lightning_signer::node::Node;
+use lightning_signer::prelude::{Arc, Mutex, MutexGuard};
 use lightning_signer::util::status::Status;
 use lightning_signer::wallet::Wallet;
-use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Recovery keys for an in-process Node
 pub struct DirectRecoveryKeys {

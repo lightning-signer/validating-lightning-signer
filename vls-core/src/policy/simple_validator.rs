@@ -27,7 +27,6 @@ use super::{
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot, CommitmentType};
 use crate::policy::temporary_policy_error_with_filter;
 use crate::prelude::*;
-use crate::sync::Arc;
 use crate::tx::tx::{
     parse_offered_htlc_script, parse_received_htlc_script, parse_revokeable_redeemscript,
     CommitmentInfo, CommitmentInfo2,

@@ -18,8 +18,7 @@ use vls_protocol_signer::lightning_signer::{
     bitcoin::TxOut,
     invoice::{Invoice, InvoiceAttributes},
     lightning::types::payment::PaymentHash,
-    prelude::SendSync,
-    Arc,
+    prelude::{Arc, SendSync},
 };
 
 use crate::bitcoin::Address;

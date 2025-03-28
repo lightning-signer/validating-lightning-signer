@@ -78,6 +78,22 @@ fuzz_channel:
   rules:
     - when: always
 
+random_scheduler:
+  tags: [ $RUNNER_TAG ]
+  stage: fuzz
+  image: rust:latest
+  timeout: 5m
+  cache:
+    key: vls-random-scheduler
+    paths:
+      - .cache/cargo
+  script:
+    - apt-get update
+    - apt-get install -y protobuf-compiler
+    - cargo test --features shuttle test_node_with_random_operations
+  rules:
+    - when: always
+
 rust-latest:
   tags: [ $RUNNER_TAG ]
   stage: build

@@ -2,7 +2,6 @@ use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{Transaction, TxOut};
 use lightning_signer::bitcoin;
 use lightning_signer::prelude::*;
-use lightning_signer::Arc;
 use log::*;
 
 use lightning_signer::invoice::{Invoice, InvoiceAttributes};
