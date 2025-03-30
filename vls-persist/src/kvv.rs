@@ -8,10 +8,11 @@ use alloc::format;
 use core::fmt::Debug;
 use core::ops::Deref;
 use lightning_signer::bitcoin::secp256k1::PublicKey;
+use lightning_signer::bitcoin::Network;
 use lightning_signer::chain::tracker::ChainTracker;
 use lightning_signer::channel::{Channel, ChannelId, ChannelStub};
 use lightning_signer::monitor::ChainMonitor;
-use lightning_signer::node::{NodeConfig, NodeState};
+use lightning_signer::node::{Allowable, NodeConfig, NodeState};
 use lightning_signer::persist::model::{
     ChannelEntry as CoreChannelEntry, NodeEntry as CoreNodeEntry,
 };
@@ -278,9 +279,28 @@ impl<S: KVVStore, F: ValueFormat> Persist for KVVPersister<S, F> {
             let suffix = extract_key_suffix(&prefix, &key);
             let node_id = PublicKey::from_slice(&suffix).unwrap();
             let entry: NodeEntry = F::de_value(&value)?;
-            let state_value =
-                self.get(&make_key(NODE_STATE_PREFIX, &node_id.serialize())).unwrap().unwrap().1;
+
+            let state_value = self
+                .get(&make_key(NODE_STATE_PREFIX, &node_id.serialize()))?
+                .ok_or(Error::NotFound("state not found".to_string()))?
+                .1;
             let state_entry: NodeStateEntry = F::de_value(&state_value)?;
+
+            let network: Network = entry.network.parse().map_err(|_| {
+                Error::SerdeError(format!("Invalid network string: {}", entry.network))
+            })?;
+
+            let allowlist =
+                self.get_node_allowlist(&node_id)
+                    .map(|strings| {
+                        strings
+                            .into_iter()
+                            .map(|s| Allowable::from_str(&s, network))
+                            .collect::<Result<Vec<Allowable>, _>>()
+                    })
+                    .unwrap_or(Ok(Vec::new()))
+                    .map_err(|e| Error::SerdeError(format!("Invalid allowlist entry: {}", e)))?;
+
             let state = NodeState::restore(
                 state_entry.invoices,
                 state_entry.issued_invoices,
@@ -289,6 +309,7 @@ impl<S: KVVStore, F: ValueFormat> Persist for KVVPersister<S, F> {
                 state_entry.velocity_control.into(),
                 state_entry.fee_velocity_control.into(),
                 state_entry.dbid_high_water_mark.into(),
+                allowlist,
             );
             let node_entry = CoreNodeEntry {
                 key_derivation_style: entry.key_derivation_style as u8,
