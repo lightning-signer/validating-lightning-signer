@@ -1424,7 +1424,8 @@ dependencies = [
  "log",
  "lssd",
  "prost",
- "redb",
+ "redb 1.5.1",
+ "redb 2.2.0",
  "secp256k1",
  "tempfile",
  "test-log",
@@ -1873,6 +1874,15 @@ name = "redb"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd7f82ecd6ba647a39dd1a7172b8a1cd9453c0adee6da20cb553d83a9a460fa5"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "redb"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84b1de48a7cf7ba193e81e078d17ee2b786236eed1d3f7c60f8a09545efc4925"
 dependencies = [
  "libc",
 ]
