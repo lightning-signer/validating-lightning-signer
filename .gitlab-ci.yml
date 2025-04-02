@@ -319,3 +319,36 @@ cargo-fmt:
     - ./scripts/fmt-all --check
   rules:
     - when: always
+
+cargo-mutants:
+  tags: [ $RUNNER_TAG ]
+  stage: build
+  image: rust:latest
+  needs: [ "get_bitcoin" ]
+  cache:
+    key: vls-mutants
+    paths:
+      - .cache/cargo
+  script:
+    - apt-get update
+    - apt-get install -y protobuf-compiler
+    - cargo install cargo-mutants
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "main" ]; then
+        echo "Running cargo-mutants incrementally for main branch"
+        git fetch origin main
+        git diff HEAD^ HEAD > git.diff
+        cargo mutants --in-diff git.diff --package vls-core -vV
+      else
+        echo "Running cargo-mutants incrementally for non-main branch"
+        git fetch origin main
+        git diff origin/main > git.diff
+        cargo mutants --in-diff git.diff --package vls-core -vV
+      fi
+  artifacts:
+    when: always
+    paths:
+      - mutants.out/
+    expire_in: 1 week
+  rules:
+    - when: always
