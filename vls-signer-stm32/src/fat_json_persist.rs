@@ -18,10 +18,11 @@ use lightning_signer::persist::{
 };
 use lightning_signer::{
     bitcoin::secp256k1::PublicKey,
+    bitcoin::Network,
     chain::tracker::ChainTracker,
     channel::{Channel, ChannelId, ChannelStub},
     monitor::ChainMonitor,
-    node::{NodeConfig, NodeState as CoreNodeState},
+    node::{Allowable, NodeConfig, NodeState as CoreNodeState},
     policy::validator::{EnforcementState, ValidatorFactory},
     prelude::*,
 };
@@ -471,6 +472,23 @@ impl Persist for FatJsonPersister {
                     .map_err(|err| err.into())?,
             )
             .map_err(|err| persist::Error::Internal(format!("serde_json failed: {:?}", err)))?;
+
+            let network: Network = e.network.parse().map_err(|_| {
+                persist::Error::SerdeError(format!("Invalid network string: {}", e.network))
+            })?;
+
+            let allowlist = match self.get_node_allowlist(&self.node_id) {
+                Ok(strings) => strings
+                    .into_iter()
+                    .map(|s| Allowable::from_str(&s, network))
+                    .collect::<Result<Vec<Allowable>, _>>()
+                    .map_err(|e| {
+                        persist::Error::SerdeError(format!("Invalid allowlist entry: {}", e))
+                    })?,
+                Err(persist::Error::NotFound(_)) => Vec::new(),
+                Err(err) => return Err(err),
+            };
+
             let state = CoreNodeState::restore(
                 state_e.invoices,
                 state_e.issued_invoices,
@@ -479,6 +497,7 @@ impl Persist for FatJsonPersister {
                 state_e.velocity_control.into(),
                 state_e.fee_velocity_control.into(),
                 state_e.dbid_high_water_mark.into(),
+                allowlist,
             );
             let entry = CoreNodeEntry {
                 key_derivation_style: e.key_derivation_style,

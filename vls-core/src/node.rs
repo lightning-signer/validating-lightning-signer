@@ -243,7 +243,6 @@ impl RoutedPayment {
 }
 
 /// Enforcement state for a node
-// TODO(518) move allowlist into this struct
 pub struct NodeState {
     /// Added invoices for outgoing payments indexed by their payment hash
     pub invoices: Map<PaymentHash, PaymentState>,
@@ -270,6 +269,8 @@ pub struct NodeState {
     pub last_summary: String,
     /// dbid high water mark
     pub dbid_high_water_mark: u64,
+    /// Set of allowed addresses or scripts for the node
+    pub allowlist: OrderedSet<Allowable>,
 }
 
 impl Debug for NodeState {
@@ -295,7 +296,11 @@ impl PreimageMap for NodeState {
 
 impl NodeState {
     /// Create a state
-    pub fn new(velocity_control: VelocityControl, fee_velocity_control: VelocityControl) -> Self {
+    pub fn new(
+        velocity_control: VelocityControl,
+        fee_velocity_control: VelocityControl,
+        allowlist: Vec<Allowable>,
+    ) -> Self {
         NodeState {
             invoices: Map::new(),
             issued_invoices: Map::new(),
@@ -306,6 +311,7 @@ impl NodeState {
             fee_velocity_control,
             last_summary: String::new(),
             dbid_high_water_mark: 0,
+            allowlist: allowlist.into_iter().collect(),
         }
     }
 
@@ -318,6 +324,7 @@ impl NodeState {
         velocity_control: VelocityControl,
         fee_velocity_control: VelocityControl,
         dbid_high_water_mark: u64,
+        allowlist: Vec<Allowable>,
     ) -> Self {
         // the try_into must succeed, because we persisted hashes of the right length
         let invoices = invoices_v
@@ -347,6 +354,7 @@ impl NodeState {
             fee_velocity_control,
             last_summary: String::new(),
             dbid_high_water_mark,
+            allowlist: allowlist.into_iter().collect(),
         }
     }
 
@@ -366,6 +374,7 @@ impl NodeState {
             fee_velocity_control,
             last_summary: String::new(),
             dbid_high_water_mark: self.dbid_high_water_mark,
+            allowlist: self.allowlist,
         }
     }
 
@@ -821,7 +830,7 @@ impl NodeState {
 }
 
 /// Allowlist entry
-#[derive(Eq, PartialEq, Hash, Clone)]
+#[derive(Eq, PartialEq, Hash, Clone, PartialOrd, Ord)]
 pub enum Allowable {
     /// A layer-1 destination
     Script(ScriptBuf),
@@ -1013,7 +1022,6 @@ pub struct Node {
     pub(crate) validator_factory: Mutex<Arc<dyn ValidatorFactory>>,
     pub(crate) persister: Arc<dyn Persist>,
     pub(crate) clock: Arc<dyn Clock>,
-    allowlist: Mutex<UnorderedSet<Allowable>>,
     tracker: Mutex<ChainTracker<ChainMonitor>>,
     pub(crate) state: Mutex<NodeState>,
     node_id: PublicKey,
@@ -1088,18 +1096,17 @@ impl Wallet for Node {
     }
 
     fn allowlist_contains_payee(&self, payee: PublicKey) -> bool {
-        self.allowlist.lock().unwrap().contains(&Allowable::Payee(payee))
+        self.get_state().allowlist.contains(&Allowable::Payee(payee))
     }
 
     fn allowlist_contains(&self, script_pubkey: &ScriptBuf, path: &[u32]) -> bool {
-        if self.allowlist.lock().unwrap().contains(&Allowable::Script(script_pubkey.clone())) {
+        let state = self.get_state();
+        if state.allowlist.contains(&Allowable::Script(script_pubkey.clone())) {
             return true;
         }
-
-        if path.len() == 0 {
+        if path.is_empty() {
             return false;
         }
-
         let child_path: Vec<_> = path
             .iter()
             .map(|i| ChildNumber::from_normal_idx(*i).ok())
@@ -1108,7 +1115,7 @@ impl Wallet for Node {
         if child_path.is_empty() {
             return false;
         }
-        for a in self.allowlist.lock().unwrap().iter() {
+        for a in state.allowlist.iter() {
             if let Allowable::XPub(xp) = a {
                 // cannot fail because we did not generate hardened paths
                 let pubkey = CompressedPublicKey(
@@ -1156,7 +1163,7 @@ impl Node {
         let policy = services.validator_factory.policy(node_config.network);
         let global_velocity_control = Self::make_velocity_control(&policy);
         let fee_velocity_control = Self::make_fee_velocity_control(&policy);
-        let state = NodeState::new(global_velocity_control, fee_velocity_control);
+        let state = NodeState::new(global_velocity_control, fee_velocity_control, allowlist);
 
         let (keys_manager, node_id) = Self::make_keys_manager(&node_config, seed, &services);
         let mut tracker = if node_config.use_checkpoints {
@@ -1174,10 +1181,9 @@ impl Node {
                 services.trusted_oracle_pubkeys.clone(),
             )
         };
-
         tracker.set_allow_deep_reorgs(node_config.allow_deep_reorgs);
 
-        Self::new_full(node_config, allowlist, services, state, keys_manager, node_id, tracker)
+        Self::new_full(node_config, services, state, keys_manager, node_id, tracker)
     }
 
     /// Update the velocity controls with any spec changes from the policy
@@ -1209,7 +1215,6 @@ impl Node {
         node_config: NodeConfig,
         expected_node_id: &PublicKey,
         seed: &[u8],
-        allowlist: Vec<Allowable>,
         services: NodeServices,
         state: NodeState,
     ) -> Arc<Node> {
@@ -1227,16 +1232,8 @@ impl Node {
 
         let persister = services.persister.clone();
 
-        let node = Arc::new(Self::new_full(
-            node_config,
-            allowlist,
-            services,
-            state,
-            keys_manager,
-            node_id,
-            tracker,
-        ));
-
+        let node =
+            Arc::new(Self::new_full(node_config, services, state, keys_manager, node_id, tracker));
         let blockheight = node.get_tracker().height();
 
         let mut listeners = OrderedMap::from_iter(listener_entries.into_iter().map(|e| (e.0, e.1)));
@@ -1320,7 +1317,6 @@ impl Node {
 
     fn new_full(
         node_config: NodeConfig,
-        allowlist: Vec<Allowable>,
         services: NodeServices,
         state: NodeState,
         keys_manager: MyKeysManager,
@@ -1357,13 +1353,12 @@ impl Node {
 
         Node {
             secp_ctx,
-            keys_manager,
             node_config,
+            keys_manager,
             channels: Mutex::new(OrderedMap::new()),
             validator_factory: Mutex::new(validator_factory),
             persister,
             clock,
-            allowlist: Mutex::new(UnorderedSet::from_iter(allowlist)),
             tracker: Mutex::new(tracker),
             state,
             node_id,
@@ -1447,7 +1442,8 @@ impl Node {
     /// but may be useful if switching to a new persister.
     pub fn persist_all(&self) {
         let persister = &self.persister;
-        persister.new_node(&self.get_id(), &self.node_config, &self.get_state()).unwrap();
+        let state = self.get_state();
+        persister.new_node(&self.get_id(), &self.node_config, &*state).unwrap();
         for channel in self.get_channels().values() {
             let channel = channel.lock().unwrap();
             match &*channel {
@@ -1458,8 +1454,7 @@ impl Node {
             }
         }
         persister.update_tracker(&self.get_id(), &self.get_tracker()).unwrap();
-        let alset = self.allowlist.lock().unwrap();
-        let wlvec = (*alset).iter().map(|a| a.to_string(self.network())).collect();
+        let wlvec = state.allowlist.iter().map(|a| a.to_string(self.network())).collect();
         self.persister.update_node_allowlist(&self.get_id(), wlvec).unwrap();
     }
 
@@ -1658,7 +1653,7 @@ impl Node {
             NodeConfig { network, key_derivation_style, use_checkpoints: true, allow_deep_reorgs };
 
         let persister = services.persister.clone();
-        let allowlist = persister
+        let allowlist: Vec<Allowable> = persister
             .get_node_allowlist(node_id)
             .expect("missing node allowlist in persistence")
             .iter()
@@ -1668,12 +1663,14 @@ impl Node {
 
         let mut state = node_entry.state;
 
+        state.allowlist = allowlist.into_iter().collect();
+
         // create a payment state for each invoice state
         for h in state.invoices.keys() {
             state.payments.insert(*h, RoutedPayment::new());
         }
 
-        let node = Node::new_from_persistence(config, node_id, seed, allowlist, services, state);
+        let node = Node::new_from_persistence(config, node_id, seed, services, state);
         assert_eq!(&node.get_id(), node_id);
         info!("Restore node {} on {}", node_id, config.network);
         if let Some((height, _hash, filter_header, header)) = get_latest_checkpoint(network) {
@@ -1694,16 +1691,18 @@ impl Node {
         if self.persister.on_initial_restore() {
             // write everything to persister, to ensure that any composite
             // persister has all sub-persisters in sync
-            {
-                let state = self.get_state();
-                // do a new_node here, because update_node doesn't store the entry,
-                // only the state
-                self.persister
-                    .new_node(&self.get_id(), &self.node_config, &*state)
-                    .map_err(|_| internal_error("sync persist failed"))?;
-            }
-            let alset = self.allowlist.lock().unwrap();
-            self.update_allowlist(&alset).map_err(|_| internal_error("sync persist failed"))?;
+            let state = self.get_state();
+            // do a new_node here, because update_node doesn't store the entry,
+            // only the state
+            self.persister
+                .new_node(&self.get_id(), &self.node_config, &*state)
+                .map_err(|_| internal_error("sync persist failed"))?;
+
+            let wlvec = state.allowlist.iter().map(|a| a.to_string(self.network())).collect();
+            self.persister
+                .update_node_allowlist(&self.get_id(), wlvec)
+                .map_err(|_| internal_error("sync persist failed"))?;
+
             {
                 let tracker = self.get_tracker();
                 self.persister
@@ -2508,8 +2507,9 @@ impl Node {
 
     /// Returns the node's current allowlist.
     pub fn allowlist(&self) -> Result<Vec<String>, Status> {
-        let alset = self.allowlist.lock().unwrap();
-        (*alset)
+        let state = self.get_state();
+        state
+            .allowlist
             .iter()
             .map(|allowable| Ok(allowable.to_string(self.network())))
             .collect::<Result<Vec<String>, Status>>()
@@ -2517,59 +2517,50 @@ impl Node {
 
     /// Returns the node's current allowlist.
     pub fn allowables(&self) -> Vec<Allowable> {
-        self.allowlist.lock().unwrap().iter().cloned().collect()
+        self.get_state().allowlist.iter().cloned().collect()
     }
 
     /// Adds addresses to the node's current allowlist.
-    pub fn add_allowlist(&self, addlist: &[String]) -> Result<(), Status> {
-        let allowables = addlist
-            .iter()
-            .map(|addrstr| Allowable::from_str(addrstr, self.network()))
-            .collect::<Result<Vec<Allowable>, String>>()
-            .map_err(|s| invalid_argument(format!("could not parse {}", s)))?;
-        let mut alset = self.allowlist.lock().unwrap();
-        for a in allowables {
-            alset.insert(a);
+    pub fn add_allowlist(&self, adds: &[String]) -> Result<(), Status> {
+        let mut state = self.get_state();
+        for a in adds.iter() {
+            let allowable = Allowable::from_str(a, self.node_config.network)
+                .map_err(|e| invalid_argument(format!("could not parse {}", e)))?;
+            state.allowlist.insert(allowable);
         }
-        self.update_allowlist(&alset)?;
+        self.update_allowlist(&state)?;
         Ok(())
     }
 
-    /// Replace the nodes allowlist with the provided allowlist.
-    pub fn set_allowlist(&self, allowlist: &[String]) -> Result<(), Status> {
-        let allowables = allowlist
-            .iter()
-            .map(|addrstr| Allowable::from_str(addrstr, self.network()))
-            .collect::<Result<Vec<Allowable>, String>>()
-            .map_err(|s| invalid_argument(format!("could not parse {}", s)))?;
-        let mut alset = self.allowlist.lock().unwrap();
-        alset.clear();
-        for a in allowables {
-            alset.insert(a);
+    /// Replace the node's allowlist with the provided allowlist.
+    pub fn set_allowlist(&self, list: &[String]) -> Result<(), Status> {
+        let mut state = self.get_state();
+        state.allowlist.clear();
+        for a in list.iter() {
+            let allowable = Allowable::from_str(a, self.node_config.network)
+                .map_err(|e| invalid_argument(format!("could not parse {}", e)))?;
+            state.allowlist.insert(allowable);
         }
-        self.update_allowlist(&alset)?;
+        self.update_allowlist(&state)?;
         Ok(())
     }
 
-    fn update_allowlist(&self, alset: &MutexGuard<UnorderedSet<Allowable>>) -> Result<(), Status> {
-        let wlvec = (*alset).iter().map(|a| a.to_string(self.network())).collect();
+    fn update_allowlist(&self, state: &MutexGuard<NodeState>) -> Result<(), Status> {
+        let wlvec = state.allowlist.iter().map(|a| a.to_string(self.network())).collect();
         self.persister
             .update_node_allowlist(&self.get_id(), wlvec)
             .map_err(|_| internal_error("persist failed"))
     }
 
     /// Removes addresses from the node's current allowlist.
-    pub fn remove_allowlist(&self, rmlist: &[String]) -> Result<(), Status> {
-        let allowables = rmlist
-            .iter()
-            .map(|addrstr| Allowable::from_str(addrstr, self.network()))
-            .collect::<Result<Vec<Allowable>, String>>()
-            .map_err(|s| invalid_argument(format!("could not parse {}", s)))?;
-        let mut alset = self.allowlist.lock().unwrap();
-        for a in allowables {
-            alset.remove(&a);
+    pub fn remove_allowlist(&self, removes: &[String]) -> Result<(), Status> {
+        let mut state = self.get_state();
+        for r in removes.iter() {
+            let allowable = Allowable::from_str(r, self.node_config.network)
+                .map_err(|e| invalid_argument(format!("could not parse {}", e)))?;
+            state.allowlist.remove(&allowable);
         }
-        self.update_allowlist(&alset)?;
+        self.update_allowlist(&state)?;
         Ok(())
     }
 
