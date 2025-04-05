@@ -97,9 +97,7 @@ impl Decodable for StreamedPSBT {
 
             let mut inputs: Vec<Input> = Vec::with_capacity(inputs_len);
 
-            for ind in 0..inputs_len {
-                let mut input: Input = global.inputs[ind].clone();
-
+            for (ind, mut input) in global.inputs.into_iter().enumerate() {
                 // take the non_witness_utxo from the input and summarize it
                 if let Some(input_tx) = input.non_witness_utxo.take() {
                     let prevout = global.unsigned_tx.input[ind].previous_output;
