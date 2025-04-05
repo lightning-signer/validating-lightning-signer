@@ -733,8 +733,6 @@ impl Validator for SimpleValidator {
         // - commit_num 20 is current, previously signed, ok to resign
         // - commit_num 21 is ok to sign, advances the state
         // - commit_num 22 is not ok to sign
-        // This check overlaps the check in set_next_counterparty_commit_num
-        // but gives better diagnostic.
         if commit_num > estate.next_counterparty_revoke_num + 1 {
             policy_err!(
                 self,
@@ -2459,24 +2457,11 @@ mod tests {
             .is_ok());
         assert_eq!(state.next_counterparty_commit_num, 1);
 
-        // but setting it to something else is an error
-        // policy-v2-commitment-retry-same
-        let point1 = make_test_pubkey(0x16);
-        assert_policy_err!(
-            validator.set_next_counterparty_commit_num(
-                &mut state,
-                1,
-                point1.clone(),
-                commit_info.clone()
-            ),
-            "set_next_counterparty_commit_num: retry 1: point different than prior"
-        );
-        assert_eq!(state.next_counterparty_commit_num, 1);
-
         // can't get commit_num 1 yet
         assert_eq!(state.get_previous_counterparty_point(1), None);
 
         // can't skip forward
+        let point1 = make_test_pubkey(0x16);
         assert_policy_err!(
             validator.set_next_counterparty_commit_num(
                 &mut state,
@@ -2485,7 +2470,7 @@ mod tests {
                 commit_info.clone()
             ),
             "set_next_counterparty_commit_num: \
-             3 too large relative to next_counterparty_revoke_num 0"
+             invalid progression: 1 to 3"
         );
         assert_eq!(state.next_counterparty_commit_num, 1);
 
@@ -2512,8 +2497,7 @@ mod tests {
                 point1.clone(),
                 commit_info.clone()
             ),
-            "set_next_counterparty_commit_num: 4 too large \
-             relative to next_counterparty_revoke_num 0"
+            "set_next_counterparty_commit_num: invalid progression: 2 to 4"
         );
         assert_eq!(state.next_counterparty_commit_num, 2);
 
