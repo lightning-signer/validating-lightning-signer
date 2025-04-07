@@ -13,6 +13,7 @@ use core::str::FromStr;
 use lightning_signer::bitcoin::script::PushBytesBuf;
 use lightning_signer::bitcoin::ScriptBuf;
 use lightning_signer::lightning::ln::channel_keys::RevocationKey;
+use lightning_signer::lightning_invoice::RawBolt11Invoice;
 use vls_protocol::psbt::PsbtWrapper;
 
 use bitcoin::bech32::Fe32;
@@ -767,13 +768,14 @@ impl Handler for RootHandler {
             }
             Message::SignInvoice(m) => {
                 let hrp = String::from_utf8(m.hrp.to_vec()).expect("hrp");
-                let hrp_bytes = hrp.as_bytes();
                 let data: Vec<_> = m
                     .u5bytes
                     .iter()
                     .map(|b| Fe32::try_from(*b).expect("invoice not base32"))
                     .collect();
-                let sig = self.node.sign_invoice(hrp_bytes, &data)?;
+                let raw_invoice = RawBolt11Invoice::from_raw(&hrp, &data)
+                    .map_err(|e| Status::invalid_argument(format!("parse error: {}", e)))?;
+                let sig = self.node.sign_bolt11_invoice(raw_invoice)?;
                 let (rid, ser) = sig.serialize_compact();
                 let mut sig_slice = [0u8; 65];
                 sig_slice[0..64].copy_from_slice(&ser);

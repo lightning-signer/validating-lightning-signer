@@ -1,10 +1,9 @@
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::time::Duration;
 
 use bitcoin::absolute::LockTime;
-use bitcoin::bech32::Fe32;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::Secp256k1;
@@ -129,25 +128,20 @@ pub fn make_test_channel_setup(
 }
 
 fn make_test_invoice(payee: &Arc<Node>, description: &str, payment_hash: PaymentHash) -> Invoice {
-    let (hrp_bytes, invoice_data) = build_test_invoice(description, &payment_hash);
-    let hrp = String::from_utf8(hrp_bytes.to_vec()).expect("utf8");
-    let raw_invoice = RawBolt11Invoice::from_raw(&hrp, &invoice_data).expect("invoice");
-    let sig = payee.sign_invoice(&hrp_bytes, &invoice_data).unwrap();
+    let raw_invoice = build_test_invoice(description, &payment_hash);
+    let sig = payee.sign_bolt11_invoice(raw_invoice.clone()).unwrap();
     raw_invoice.sign::<_, ()>(|_| Ok(sig)).unwrap().try_into().expect("invoice")
 }
 
-fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>, Vec<Fe32>) {
-    let raw_invoice = InvoiceBuilder::new(Currency::Bitcoin)
+fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> RawBolt11Invoice {
+    InvoiceBuilder::new(Currency::Bitcoin)
         .duration_since_epoch(Duration::from_secs(123456789))
         .amount_milli_satoshis(1_000_000_000)
         .payment_hash(Sha256Hash::from_slice(&payment_hash.0).unwrap())
         .payment_secret(PaymentSecret([0; 32]))
         .description(description.to_string())
         .build_raw()
-        .expect("build");
-    let (hrp, invoice_data) = raw_invoice.to_raw();
-    let hrp_bytes = hrp.into_bytes();
-    (hrp_bytes, invoice_data)
+        .expect("build")
 }
 
 pub fn test_lightning_signer(postscript: fn()) {

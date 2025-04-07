@@ -6,7 +6,6 @@ use core::time::Duration;
 
 use scopeguard::defer;
 
-use bitcoin::bech32::Fe32;
 use bitcoin::bip32::{ChildNumber, Xpriv, Xpub};
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
@@ -2363,21 +2362,12 @@ impl Node {
         Ok(sig)
     }
 
-    /// Sign a bolt11 invoice
+    /// Sign a BOLT-11 invoice and start tracking incoming payment for its payment hash
     pub fn sign_bolt11_invoice(
         &self,
-        _invoice: &RawBolt11Invoice,
+        invoice: RawBolt11Invoice,
     ) -> Result<RecoverableSignature, Status> {
-        todo!()
-    }
-
-    /// Sign an invoice and start tracking incoming payment for its payment hash
-    pub fn sign_invoice(
-        &self,
-        hrp_bytes: &[u8],
-        invoice_data: &[Fe32],
-    ) -> Result<RecoverableSignature, Status> {
-        let signed_raw_invoice = self.do_sign_invoice(hrp_bytes, invoice_data)?;
+        let signed_raw_invoice = self.do_sign_invoice(invoice)?;
 
         let sig = signed_raw_invoice.signature().0;
         let (hash, payment_state, invoice_hash) = Self::payment_state_from_invoice(
@@ -2432,14 +2422,8 @@ impl Node {
     // Sign a BOLT-11 invoice
     pub(crate) fn do_sign_invoice(
         &self,
-        hrp_bytes: &[u8],
-        invoice_data: &[Fe32],
+        raw_invoice: RawBolt11Invoice,
     ) -> Result<SignedRawBolt11Invoice, Status> {
-        let hrp = String::from_utf8(hrp_bytes.to_vec())
-            .map_err(|_| invalid_argument("invoice hrp not utf-8"))?;
-        let raw_invoice = RawBolt11Invoice::from_raw(&hrp, invoice_data)
-            .map_err(|e| invalid_argument(format!("parse error: {}", e)))?;
-
         let hash = raw_invoice.signable_hash();
         let secp_ctx = Secp256k1::signing_only();
         let message = Message::from_digest(hash);
@@ -3347,11 +3331,11 @@ mod tests {
         sign_invoice(payee_node, build_test_invoice(description, &payment_hash))
     }
 
-    fn sign_invoice(payee_node: &Node, data: (Vec<u8>, Vec<Fe32>)) -> Invoice {
-        payee_node.do_sign_invoice(&data.0, &data.1).unwrap().try_into().unwrap()
+    fn sign_invoice(payee_node: &Node, raw_invoice: RawBolt11Invoice) -> Invoice {
+        payee_node.do_sign_invoice(raw_invoice).unwrap().try_into().unwrap()
     }
 
-    fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> (Vec<u8>, Vec<Fe32>) {
+    fn build_test_invoice(description: &str, payment_hash: &PaymentHash) -> RawBolt11Invoice {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("time");
         build_test_invoice_with_time(description, payment_hash, now)
     }
@@ -3360,7 +3344,7 @@ mod tests {
         description: &str,
         payment_hash: &PaymentHash,
         now: Duration,
-    ) -> (Vec<u8>, Vec<Fe32>) {
+    ) -> RawBolt11Invoice {
         let amount = 100_000;
         build_test_invoice_with_time_and_amount(description, payment_hash, now, amount)
     }
@@ -3370,17 +3354,15 @@ mod tests {
         payment_hash: &PaymentHash,
         now: Duration,
         amount: u64,
-    ) -> (Vec<u8>, Vec<Fe32>) {
-        let raw_invoice = InvoiceBuilder::new(Currency::Bitcoin)
+    ) -> RawBolt11Invoice {
+        InvoiceBuilder::new(Currency::Bitcoin)
             .duration_since_epoch(now)
             .amount_milli_satoshis(amount)
             .payment_hash(Sha256Hash::from_slice(&payment_hash.0).unwrap())
             .payment_secret(PaymentSecret([0; 32]))
             .description(description.to_string())
             .build_raw()
-            .expect("build");
-        let (hrp, data) = raw_invoice.to_raw();
-        (hrp.into_bytes(), data)
+            .expect("build")
     }
 
     #[test]
@@ -3497,8 +3479,8 @@ mod tests {
     #[test]
     fn prune_issued_invoice_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let (hrp, data) = build_test_invoice("invoice", &PaymentHash([0; 32]));
-        node.sign_invoice(&hrp, &data).unwrap();
+        let raw_invoice = build_test_invoice("invoice", &PaymentHash([0; 32]));
+        node.sign_bolt11_invoice(raw_invoice).unwrap();
         let mut state = node.get_state();
         assert_eq!(state.issued_invoices.len(), 1);
         state.prune_issued_invoices(node.clock.now());
@@ -3512,13 +3494,13 @@ mod tests {
     #[test]
     fn drop_zero_amount_issued_invoice_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let (hrp, data) = build_test_invoice_with_time_and_amount(
+        let raw_invoice = build_test_invoice_with_time_and_amount(
             "invoice",
             &PaymentHash([0; 32]),
             SystemTime::now().duration_since(UNIX_EPOCH).expect("time"),
             0,
         );
-        node.sign_invoice(&hrp, &data).unwrap();
+        node.sign_bolt11_invoice(raw_invoice).unwrap();
         let state = node.get_state();
         assert_eq!(state.issued_invoices.len(), 0);
     }
@@ -3559,12 +3541,12 @@ mod tests {
         for i in 0..node.policy().max_invoices() {
             let mut hash = [1u8; 32];
             hash[0..8].copy_from_slice(&i.to_be_bytes());
-            let (hrp, data) = build_test_invoice("invoice", &PaymentHash(hash));
-            node.sign_invoice(&hrp, &data).unwrap();
+            let raw_invoice = build_test_invoice("invoice", &PaymentHash(hash));
+            node.sign_bolt11_invoice(raw_invoice).unwrap();
         }
 
-        let (hrp, data) = build_test_invoice("invoice", &PaymentHash([2u8; 32]));
-        node.sign_invoice(&hrp, &data).expect_err("expected too many issued invoics");
+        let raw_invoice = build_test_invoice("invoice", &PaymentHash([2u8; 32]));
+        node.sign_bolt11_invoice(raw_invoice).expect_err("expected too many issued invoics");
     }
 
     #[test]
@@ -3779,10 +3761,9 @@ mod tests {
             .description("".to_string())
             .build_raw()
             .expect("build");
-        let (hrp, data) = raw_invoice.to_raw();
 
         // This records the issued invoice
-        node.sign_invoice(&hrp.into_bytes(), &data).unwrap();
+        node.sign_bolt11_invoice(raw_invoice).unwrap();
     }
 
     #[test]
@@ -3793,9 +3774,9 @@ mod tests {
         let preimage = PaymentPreimage([0; 32]);
         let hash = PaymentHash(Sha256Hash::hash(&preimage.0).to_byte_array());
 
-        let (hrp, data) = build_test_invoice("invoice", &hash);
+        let raw_invoice = build_test_invoice("invoice", &hash);
         // This records the issued invoice
-        node.sign_invoice(&hrp, &data).unwrap();
+        node.sign_bolt11_invoice(raw_invoice).unwrap();
 
         let mut policy = make_default_simple_policy(Network::Testnet);
         policy.enforce_balance = true;
@@ -3937,10 +3918,8 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let human_readable_part = String::from("lnbcrt1230n");
         let data_part = hex_decode("010f0418090a010101141917110f01040e050f06100003021e1b0e13161c150301011415060204130c0018190d07070a18070a1c1101111e111f130306000d00120c11121706181b120d051807081a0b0f0d18060004120e140018000105100114000b130b01110c001a05041a181716020007130c091d11170d10100d0b1a1b00030e05190208171e16080d00121a00110719021005000405001000").unwrap().check_base32().unwrap();
-        let (rid, rsig) = node
-            .sign_invoice(human_readable_part.as_bytes(), &data_part)
-            .unwrap()
-            .serialize_compact();
+        let raw_invoice = RawBolt11Invoice::from_raw(&human_readable_part, &data_part).unwrap();
+        let (rid, rsig) = node.sign_bolt11_invoice(raw_invoice).unwrap().serialize_compact();
         assert_eq!(rsig.to_vec(), hex_decode("739ffb91aa7c0b3d3c92de1600f7a9afccedc5597977095228232ee4458685531516451b84deb35efad27a311ea99175d10c6cdb458cd27ce2ed104eb6cf8064").unwrap());
         assert_eq!(rid.to_i32(), 0);
         Ok(())
@@ -3954,24 +3933,11 @@ mod tests {
         // The data_part is 170 bytes.
         // overhang = (data_part.len() * 5) % 8 = 2
         // looking for a verified invoice where overhang is in 1..3
-        let (rid, rsig) = node
-            .sign_invoice(human_readable_part.as_bytes(), &data_part)
-            .unwrap()
-            .serialize_compact();
+        let raw_invoice = RawBolt11Invoice::from_raw(&human_readable_part, &data_part).unwrap();
+        let (rid, rsig) = node.sign_bolt11_invoice(raw_invoice).unwrap().serialize_compact();
         assert_eq!(rsig.to_vec(), hex_decode("f278cdba3fd4a37abf982cee5a66f52e142090631ef57763226f1232eead78b43da7962fcfe29ffae9bd918c588df71d6d7b92a4787de72801594b22f0e7e62a").unwrap());
         assert_eq!(rid.to_i32(), 0);
         Ok(())
-    }
-
-    #[test]
-    fn sign_bad_invoice_test() {
-        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let human_readable_part = String::from("lnbcrt1230n");
-        let data_part = hex_decode("010f0418090a").unwrap().check_base32().unwrap();
-        assert_invalid_argument_err!(
-            node.sign_invoice(human_readable_part.as_bytes(), &data_part),
-            "parse error: data part too short (should be at least 111 bech32 chars long)"
-        );
     }
 
     #[test]

@@ -650,7 +650,7 @@ impl NodeSigner for LoopbackSignerKeysInterface {
             Recipient::Node => {}
             Recipient::PhantomNode => return Err(()),
         };
-        self.get_node().sign_bolt11_invoice(invoice).map_err(|_| ())
+        self.get_node().sign_bolt11_invoice(invoice.clone()).map_err(|_| ())
     }
 
     fn sign_bolt12_invoice(
