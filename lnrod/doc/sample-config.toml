@@ -1,0 +1,37 @@
+regtest = true
+signet = false
+ln_port = 9901
+rpc_port = 8801
+bitcoin_rpc = "http://user:pass@localhost:18443"
+data_dir = "data"
+log_level_console = "INFO"
+log_level_disk = "TRACE"
+signer = "test"
+
+[channel.bitcoin.propose]
+# Channel confirmation depth
+minimum_depth = 6
+# Set to the number of blocks we require our counterparty to wait to claim their money
+our_to_self_delay = 144
+# Set to the smallest value HTLC we will accept to process.
+our_htlc_minimum_msat = 1
+announced_channel = false
+commit_upfront_shutdown_pubkey = true
+
+[channel.bitcoin.limit]
+min_funding_sat = 0
+max_htlc_minimum_msat = 100000000000000
+min_max_htlc_value_in_flight_msat = 0
+max_channel_reserve_sat = 100000000000000
+min_max_accepted_htlcs = 0
+min_dust_limit_satoshis = 546
+max_dust_limit_satoshis = 100000000000000
+max_minimum_depth = 144
+# whether our default "announced_channel" flag is also enforced regardless of what the counterparty wants
+force_announced_channel_preference = false
+their_to_self_delay = 2016
+
+# Default channel parameters
+[channel.bitcoin.default]
+fee_proportional_millionths = 0
+cltv_expiry_delta = 10

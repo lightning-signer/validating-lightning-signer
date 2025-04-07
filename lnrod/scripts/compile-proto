@@ -1,0 +1,7 @@
+#!/bin/sh
+
+# Compile protobuf for integration tests
+
+#protoc admin.proto --proto_path=src/admin  --python_out=tests/
+cd tests
+python3 -m grpc_tools.protoc --proto_path=../src/admin  --python_out=. --grpc_python_out=. admin.proto

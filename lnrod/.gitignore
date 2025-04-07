@@ -1,0 +1,10 @@
+/.venv
+/logs
+/test-output
+/data*
+
+/tests/admin_pb2.py
+/tests/admin_pb2_grpc.py
+
+**/*.swp
+**/__pycache__

@@ -1,5 +1,6 @@
 ignore:
   - "*_tests.rs"
+  - "lnrod"
 coverage:
   status:
     # patch coverage is flaky, so disable it

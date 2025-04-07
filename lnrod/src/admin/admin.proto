@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package admin_api;
+
+service Admin {
+  // Trivial call to test connectivity
+  rpc Ping(PingRequest)
+      returns (PingReply);
+  rpc ChannelClose(ChannelCloseRequest)
+      returns (Void);
+  rpc NodeInfo(Void)
+      returns(NodeInfoReply);
+  rpc ChannelList(Void)
+      returns (ChannelListReply);
+  rpc ChannelNew(ChannelNewRequest)
+      returns (ChannelNewReply);
+  rpc PeerConnect(PeerConnectRequest)
+      returns (PeerConnectReply);
+  rpc PeerList(PeerListRequest)
+      returns (PeerListReply);
+  rpc InvoiceNew(InvoiceNewRequest)
+      returns (InvoiceNewReply);
+  rpc PaymentSend(PaymentSendRequest)
+      returns (PaymentSendReply);
+  rpc PaymentKeysend(PaymentKeysendRequest)
+      returns (PaymentSendReply);
+  rpc PaymentList(Void)
+      returns (PaymentListReply);
+}
+
+message PingRequest {
+  string message = 1;
+}
+
+message PingReply {
+  string message = 1;
+}
+
+message Void {
+}
+
+message ChannelCloseRequest {
+  bytes channel_id = 1;
+  bool is_force = 2;
+}
+
+message NodeInfoReply {
+  bytes node_id = 1;
+  bytes best_block_hash = 10;
+  uint32 num_blocks = 11;
+  string shutdown_address = 20;
+}
+
+message Channel {
+  bytes peer_node_id = 1;
+  bytes channel_id = 2;
+  bool is_pending = 3;
+  uint64 value_sat = 4;
+  bool is_active = 5;
+  uint64 outbound_msat = 6;
+
+}
+
+message ChannelListReply {
+  repeated Channel channels = 1;
+}
+
+message ChannelNewRequest {
+  bytes node_id = 1;
+  bool is_public = 2;
+  uint64 value_sat = 10;
+  uint64 push_msat = 11;
+}
+
+message ChannelNewReply {
+}
+
+message PeerConnectRequest {
+  bytes node_id = 1;
+  string address = 2;
+}
+
+message PeerConnectReply {
+}
+
+message PeerListRequest {
+}
+
+message Peer {
+  bytes node_id = 1;
+}
+
+message PeerListReply {
+  repeated Peer peers = 1;
+}
+
+message InvoiceNewRequest {
+  uint64 value_msat = 1;
+}
+
+message InvoiceNewReply {
+  string invoice = 1;
+}
+
+message PaymentSendRequest {
+  string invoice = 1;
+}
+
+message PaymentKeysendRequest {
+  bytes node_id = 1;
+  uint64 value_msat = 2;
+}
+
+message PaymentSendReply {
+}
+
+message Payment {
+  enum PaymentStatus {
+    Pending = 0;
+    Succeeded = 1;
+    Failed = 2;
+  }
+  uint64 value_msat = 1;
+  bytes payment_hash = 2;
+  bool is_outbound = 3;
+  PaymentStatus status = 4;
+}
+
+message PaymentListReply {
+  repeated Payment payments = 1;
+}
