@@ -109,6 +109,8 @@ rust-latest:
     - apt-get install -y protobuf-compiler
     # check if Cargo.lock is upto date
     - cargo update -w --locked
+    # build command line binaries for integration tests
+    - cargo build --bins
     - cargo test
     # ensure vls-persist builds with no-std
     - cargo build -p vls-persist --no-default-features --features no-std,kvv
@@ -161,12 +163,14 @@ rust-msrv:
   script:
     - apt-get update
     - apt-get install -y protobuf-compiler
-    - cargo test
+    # build command line binaries for integration tests
+    - cargo build --bins
+    - cargo test --features test_cli
   rules:
     - when: always
 
 rust-msrv-lss:
-  tags: [ $RUNNER_TAG ]
+  tags: [$RUNNER_TAG]
   stage: build
   image: rust:1.74.0
   cache:

@@ -130,11 +130,46 @@ async fn start_server(addr: SocketAddr, client: UnixClient) {
 }
 
 #[cfg(test)]
+#[cfg(feature = "test_cli")]
 mod tests {
     use super::*;
+    use assert_cmd::Command;
+    use predicates::prelude::*;
 
     #[test]
     fn test_make_clap_app() {
         make_clap_app();
+    }
+
+    #[test]
+    fn test_remote_hsmd_cli_normal() {
+        let mut cmd = Command::cargo_bin("remote_hsmd_socket").unwrap();
+        let assert = cmd
+            .arg("--developer")
+            .env("VLS_NETWORK", "bitcoin")
+            .env("BITCOIND_RPC_URL", "http://localhost:18332")
+            .assert();
+
+        assert.stdout(
+            predicate::str::is_match("remote_hsmd_socket git_desc=v0.13.0\\S+ starting").unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_remote_hsmd_cli_version() {
+        let mut cmd = Command::cargo_bin("remote_hsmd_socket").unwrap();
+        let assert = cmd.arg("--version").env("VLS_CLN_VERSION", "1.0").assert();
+
+        assert.success().stdout("1.0\n");
+    }
+
+    #[test]
+    fn test_remote_hsmd_cli_git_desc() {
+        let mut cmd = Command::cargo_bin("remote_hsmd_socket").unwrap();
+        let assert = cmd.arg("--git-desc").assert();
+
+        assert
+            .success()
+            .stdout(predicate::str::is_match("remote_hsmd_socket git_desc=v0.13.0\\S+").unwrap());
     }
 }
