@@ -274,7 +274,8 @@ pub trait Validator {
         Ok(commitment_info)
     }
 
-    /// Set next counterparty commitment number
+    /// Set next counterparty commitment number, assuming prior validation by
+    /// `validate_counterparty_commitment_tx`
     fn set_next_counterparty_commit_num(
         &self,
         estate: &mut EnforcementState,
@@ -299,39 +300,9 @@ pub trait Validator {
                 estate.next_counterparty_revoke_num
             );
         }
-        if num > estate.next_counterparty_revoke_num + 2 {
-            policy_err!(
-                self,
-                "policy-commitment-previous-revoked",
-                "{} too large relative to next_counterparty_revoke_num {}",
-                num,
-                estate.next_counterparty_revoke_num
-            );
-        }
 
         let current = estate.next_counterparty_commit_num;
-        if num == current {
-            // This is a retry.
-            assert!(
-                estate.current_counterparty_point.is_some(),
-                "retry {}: current_counterparty_point not set, this shouldn't be possible",
-                num
-            );
-
-            // TODO(513) seems to be duplicate logic vs validate_counterparty_commitment_tx
-            // unwrap is safe because the caller must have validated a cp commitment
-            let expected_point = estate.current_counterparty_point.unwrap();
-            if current_point != expected_point {
-                debug!("current_point {} != prior {}", current_point, expected_point);
-                policy_err!(
-                    self,
-                    "policy-commitment-retry-same",
-                    "retry {}: point different than prior",
-                    num
-                );
-            }
-        } else if num == current + 1 {
-        } else {
+        if num != current && num != current + 1 {
             policy_err!(
                 self,
                 "policy-commitment-previous-revoked",

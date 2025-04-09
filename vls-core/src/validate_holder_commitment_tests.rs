@@ -1117,8 +1117,7 @@ mod tests {
                         make_test_pubkey(0x14),
                         commit_info.clone()
                     ),
-                    "set_next_counterparty_commit_num: 3 too large \
-                     relative to next_counterparty_revoke_num 0"
+                    "set_next_counterparty_commit_num: invalid progression: 1 to 3"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 1);
 
@@ -1162,19 +1161,6 @@ mod tests {
                         commit_info.clone()
                     ),
                     "set_next_counterparty_commit_num: invalid progression: 2 to 1"
-                );
-                assert_eq!(state.next_counterparty_commit_num, 2);
-
-                // can't advance commit again
-                assert_policy_err!(
-                    validator.set_next_counterparty_commit_num(
-                        state,
-                        3,
-                        make_test_pubkey(0x14),
-                        commit_info.clone()
-                    ),
-                    "set_next_counterparty_commit_num: 3 too large \
-                     relative to next_counterparty_revoke_num 0"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 2);
 
@@ -1227,8 +1213,7 @@ mod tests {
                         make_test_pubkey(0x16),
                         commit_info.clone()
                     ),
-                    "set_next_counterparty_commit_num: 4 too large relative to \
-                     next_counterparty_revoke_num 1"
+                    "set_next_counterparty_commit_num: invalid progression: 2 to 4"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 2);
 
@@ -1282,19 +1267,6 @@ mod tests {
                      next_counterparty_commit_num 3"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 1);
-
-                // can't commit ahead until revoke catches up
-                assert_policy_err!(
-                    validator.set_next_counterparty_commit_num(
-                        state,
-                        4,
-                        make_test_pubkey(0x16),
-                        commit_info.clone()
-                    ),
-                    "set_next_counterparty_commit_num: 4 too large relative to \
-                     next_counterparty_revoke_num 1"
-                );
-                assert_eq!(state.next_counterparty_commit_num, 3);
 
                 // can't commit behind
                 assert_policy_err!(
@@ -1358,8 +1330,7 @@ mod tests {
                         make_test_pubkey(0x18),
                         commit_info.clone()
                     ),
-                    "set_next_counterparty_commit_num: 5 too large relative to \
-                     next_counterparty_revoke_num 2"
+                    "set_next_counterparty_commit_num: invalid progression: 3 to 5"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 3);
 
