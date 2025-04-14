@@ -4,7 +4,7 @@ title: System Overview
 eleventyNavigation:
   key: System Overview
   parent: Overview
-  order: 2
+  order: 3
 ---
 
 ## c-Lightning Validating Signer Demo
@@ -84,3 +84,13 @@ The Lightning Node makes requests to any one of the Remote Signers.
 The Remote Signer Front End initiates the multi-party signing
 operation and relays the resulting signature(s) back to the
 Lightning Node.
+
+## 🧬 Protocol-Level Signing Flow
+
+Want to see how VLS fits into the Lightning lifecycle?
+
+Check out our [Sequence Diagrams](../seq-diagrams/) for:
+
+- [Channel Establishment](../seq-diagrams/channel-establishment.md)
+- [Normal Operation](../seq-diagrams/normal-operation.md)
+- [Lightning Transaction Signing Details](../seq-diagrams/transaction-diagrams.md)

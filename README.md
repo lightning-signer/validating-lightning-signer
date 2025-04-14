@@ -1,7 +1,7 @@
 # Validating Lightning Signer
 
 Please see the
-[VLS Project Overview](https://gitlab.com/lightning-signer/docs/-/blob/master/README.md)
+[VLS Project Overview](./docs/Overview/intro.md)
 for more information.  Our [web site](https://vls.tech/).
 
 ## Limitations
@@ -20,7 +20,7 @@ The following remain to be implemented:
 
 ## Development Information
 
-[Additional HOWTO Documentation](./contrib/howto/README.md)
+[Check out our Docs](./docs/README.md)
 
 ### Recommended Rust Version
 
