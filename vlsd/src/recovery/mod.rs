@@ -352,8 +352,8 @@ fn spend_delayed_outputs<R: RecoveryKeys>(
 
 #[cfg(test)]
 mod tests {
+    use super::direct::DirectRecoveryKeys;
     use super::*;
-    use crate::recovery::direct::DirectRecoveryKeys;
     use lightning_signer::node::SpendType;
     use lightning_signer::util::test_utils::key::make_test_pubkey;
     use lightning_signer::util::test_utils::{

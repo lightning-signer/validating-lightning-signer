@@ -118,13 +118,10 @@ pub async fn start_rpc_server(
 
 #[cfg(test)]
 mod tests {
+    use crate::config::{SignerArgs, RPC_SERVER_ADDRESS, RPC_SERVER_PORT};
+    use crate::grpc::signer::make_handler;
     use clap::Parser;
     use std::sync::Arc;
-
-    use crate::{
-        config::{SignerArgs, RPC_SERVER_ADDRESS, RPC_SERVER_PORT},
-        grpc::signer::make_handler,
-    };
 
     use super::start_rpc_server;
 

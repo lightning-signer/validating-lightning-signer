@@ -45,21 +45,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
-name = "android-tzdata"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e999941b234f3131b00bc13c22d06e8c5ff726d1b6318ac7eb276997bbb4fef0"
-
-[[package]]
-name = "android_system_properties"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "819e7219dbd41043ac279b19830f2efc897156490d7fd6ea916720117ee66311"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "anstream"
 version = "0.6.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -494,11 +479,8 @@ version = "0.4.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e36cc9d416881d2e24f9a963be5fb1cd90966419ac844274161d10488b3e825"
 dependencies = [
- "android-tzdata",
- "iana-time-zone",
  "num-traits",
  "serde",
- "windows-targets",
 ]
 
 [[package]]
@@ -1088,20 +1070,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "heapmon"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf84b8972db62c05ac874852a5b78521626f9ab0de3a8dd5a2a49b7c90cef562"
-dependencies = [
- "backtrace",
- "chrono",
- "fern",
- "log",
- "once_cell",
- "regex",
-]
-
-[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1256,29 +1224,6 @@ dependencies = [
  "tokio",
  "tower-service",
  "tracing",
-]
-
-[[package]]
-name = "iana-time-zone"
-version = "0.1.61"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "235e081f3925a06703c2d0117ea8b91f042756fd6e7a6e5d901e8ca1a996b220"
-dependencies = [
- "android_system_properties",
- "core-foundation-sys",
- "iana-time-zone-haiku",
- "js-sys",
- "wasm-bindgen",
- "windows-core 0.52.0",
-]
-
-[[package]]
-name = "iana-time-zone-haiku"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
-dependencies = [
- "cc",
 ]
 
 [[package]]
@@ -3440,7 +3385,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "vls-proxy",
+ "vlsd",
 ]
 
 [[package]]
@@ -3582,34 +3527,59 @@ name = "vls-proxy"
 version = "0.13.0"
 dependencies = [
  "anyhow",
- "as-any",
  "assert_cmd",
  "async-stream",
  "async-trait",
  "backoff",
- "base64",
  "clap",
  "ctrlc",
- "dirs",
- "fern",
  "futures",
- "heapmon",
  "hex",
- "http",
- "hyper",
- "jsonrpsee",
  "lightning-storage-server",
  "log",
  "lru",
  "nix",
+ "predicates",
+ "prost",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "triggered",
+ "txoo-bitcoind-client",
+ "url",
+ "vls-common",
+ "vls-core",
+ "vls-frontend",
+ "vls-persist",
+ "vls-protocol",
+ "vls-protocol-client",
+ "vls-protocol-signer",
+ "vls-proxy",
+ "vlsd",
+]
+
+[[package]]
+name = "vlsd"
+version = "0.13.0"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "clap",
+ "ctrlc",
+ "dirs",
+ "fern",
+ "http",
+ "jsonrpsee",
+ "lightning-storage-server",
+ "log",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
- "predicates",
  "prost",
  "serde",
- "serde_json",
  "tempfile",
  "thiserror 1.0.69",
  "time",
@@ -3631,9 +3601,7 @@ dependencies = [
  "vls-frontend",
  "vls-persist",
  "vls-protocol",
- "vls-protocol-client",
  "vls-protocol-signer",
- "vls-proxy",
 ]
 
 [[package]]
@@ -3816,16 +3784,7 @@ version = "0.58.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd04d41d93c4992d421894c18c8b43496aa748dd4c081bac0dc93eb0489272b6"
 dependencies = [
- "windows-core 0.58.0",
- "windows-targets",
-]
-
-[[package]]
-name = "windows-core"
-version = "0.52.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33ab640c8d7e35bf8ba19b884ba838ceb4fba93a4e8c65a9059d08afcfc683d9"
-dependencies = [
+ "windows-core",
  "windows-targets",
 ]
 

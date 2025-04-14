@@ -5,7 +5,7 @@ use lightning_signer::txoo::filter::BlockSpendFilter;
 use log::*;
 use std::env;
 use url::Url;
-use vls_proxy::util::setup_logging;
+use vlsd::util::setup_logging;
 
 #[tokio::main]
 async fn main() {

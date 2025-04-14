@@ -10,7 +10,6 @@ use bitcoin::consensus::serialize;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{BlockHash, Network, OutPoint, Txid};
 
-use crate::persist::ExternalPersistWithHelper;
 use lightning_signer::bitcoin;
 use lightning_signer::chain::tracker::{ChainTracker, Headers};
 use lightning_signer::monitor::ChainMonitor;
@@ -20,6 +19,7 @@ use lightning_signer::signer::multi_signer::MultiSigner;
 use lightning_signer::txoo::proof::TxoProof;
 use lightning_signer::wallet::Wallet;
 use vls_frontend::{ChainTrack, ChainTrackDirectory};
+use vlsd::persist::ExternalPersistWithHelper;
 
 /// Implements ChainTrackDirectory using calls to inplace MultiSigner
 pub struct SignerFront {

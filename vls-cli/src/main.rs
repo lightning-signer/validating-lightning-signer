@@ -8,9 +8,9 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
-use vls_proxy::config::RPC_SERVER_ENDPOINT;
-use vls_proxy::rpc_server::RpcMethods;
-use vls_proxy::util::get_rpc_credentials;
+use vlsd::config::RPC_SERVER_ENDPOINT;
+use vlsd::rpc_server::RpcMethods;
+use vlsd::util::get_rpc_credentials;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]

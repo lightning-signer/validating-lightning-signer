@@ -11,7 +11,7 @@ use vls_frontend::external_persist::lss::{Client as LssClient, Client};
 use vls_frontend::external_persist::ExternalPersist;
 use vls_persist::kvv::cloud::{CloudKVVStore, LAST_WRITER_KEY};
 use vls_persist::kvv::{redb::RedbKVVStore, JsonFormat, KVVPersister, KVVStore};
-use vls_proxy::util::setup_logging;
+use vlsd::util::setup_logging;
 
 // requires a running lss instance
 #[tokio::test]

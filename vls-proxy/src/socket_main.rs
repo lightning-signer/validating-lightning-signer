@@ -28,11 +28,12 @@ use grpc::adapter::HsmdService;
 use grpc::incoming::TcpIncoming;
 use grpc::signer_loop::{GrpcSignerPort, SignerLoop};
 use portfront::SignerPortFront;
-use util::{abort_on_panic, add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, vls_network};
+use util::{add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, vls_network};
 use vls_proxy::grpc::signer_loop::InitMessageCache;
 use vls_proxy::util::observability::init_tracing_subscriber;
 use vls_proxy::util::txoo_source_url;
 use vls_proxy::*;
+use vlsd::util::{abort_on_panic, setup_logging};
 
 /// Implement hsmd replacement that listens to connections from vlsd2.
 #[tokio::main(worker_threads = 2)]

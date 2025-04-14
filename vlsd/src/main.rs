@@ -1,7 +1,7 @@
 use bitcoind_client::BlockExplorerType;
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
-use config::{parse_args_and_config, HasSignerArgs, SignerArgs};
+use config::{parse_args_and_config, HasSignerArgs, SignerArgs, DEFAULT_DIR};
 use grpc::signer::make_handler;
 use grpc::signer::start_signer;
 use http::Uri;
@@ -11,8 +11,7 @@ use recovery::{direct::DirectRecoveryKeys, recover_close, recover_l1};
 use std::fs;
 use util::abort_on_panic;
 use util::observability::init_tracing_subscriber;
-use vls_proxy::config::DEFAULT_DIR;
-use vls_proxy::*;
+use vlsd::*;
 
 #[derive(Parser, Debug)]
 #[clap(about, long_about = None)]

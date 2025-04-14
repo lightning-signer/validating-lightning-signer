@@ -1,5 +1,5 @@
 mod model;
-mod server;
+pub mod server;
 
 pub use model::*;
 pub use server::start_rpc_server;
