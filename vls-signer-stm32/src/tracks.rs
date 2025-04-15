@@ -160,6 +160,7 @@ fn track_char(msg: &Message) -> char {
         Message::SignChannelUpdate(_m) => 'u',
         Message::SignInvoice(_m) => 'i',
         Message::SignBolt12(_m) => 'i',
+        Message::SignBolt12V2(_m) => 'i',
         Message::PreapproveInvoice(_m) => 'a',
         Message::PreapproveKeysend(_m) => 'k',
         Message::DeriveSecret(_m) => 'x',
@@ -238,6 +239,7 @@ fn track_char(msg: &Message) -> char {
         | Message::CheckFutureSecretReply(_)
         | Message::SignMessageReply(_)
         | Message::SignBolt12Reply(_)
+        | Message::SignBolt12V2Reply(_)
         | Message::PreapproveInvoiceReply(_)
         | Message::PreapproveKeysendReply(_)
         | Message::DeriveSecretReply(_)
