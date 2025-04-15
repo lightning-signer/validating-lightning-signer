@@ -28,16 +28,15 @@ use grpc::adapter::HsmdService;
 use grpc::incoming::TcpIncoming;
 use grpc::signer_loop::{GrpcSignerPort, SignerLoop};
 use portfront::SignerPortFront;
-use util::{
-    abort_on_panic, add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, setup_logging,
-    vls_network,
-};
+use util::{abort_on_panic, add_hsmd_args, bitcoind_rpc_url, handle_hsmd_version, vls_network};
 use vls_proxy::grpc::signer_loop::InitMessageCache;
+use vls_proxy::util::observability::init_tracing_subscriber;
 use vls_proxy::util::txoo_source_url;
 use vls_proxy::*;
 
 /// Implement hsmd replacement that listens to connections from vlsd2.
-pub fn main() {
+#[tokio::main(worker_threads = 2)]
+pub async fn main() {
     abort_on_panic();
     let parent_fd = open_parent_fd();
 
@@ -52,7 +51,11 @@ pub fn main() {
         return;
     }
 
-    setup_logging(".", "remote_hsmd_socket", "info");
+    let datadir: &String =
+        matches.get_one::<String>("datadir").expect("datadir is always set using default argument");
+
+    init_tracing_subscriber(datadir, "remote_hsmd_socket")
+        .expect("failed to initalize traicng subscriber");
     info!("remote_hsmd_socket git_desc={} starting", GIT_DESC);
 
     // Unfortunately, we can't easily be passed arguments, so use env vars to configure
@@ -65,7 +68,7 @@ pub fn main() {
     // Note that this is unsafe if we use the wrong fd
     let conn = UnixConnection::new(parent_fd);
     let client = UnixClient::new(conn);
-    start_server(sock_addr, client);
+    start_server(sock_addr, client).await;
 }
 
 fn make_clap_app() -> Command {
@@ -75,7 +78,6 @@ fn make_clap_app() -> Command {
 }
 
 // hsmd replacement entry point
-#[tokio::main(worker_threads = 2)]
 async fn start_server(addr: SocketAddr, client: UnixClient) {
     let (shutdown_trigger, shutdown_signal) = triggered::trigger();
     let trigger1 = shutdown_trigger.clone();
@@ -135,6 +137,7 @@ mod tests {
     use super::*;
     use assert_cmd::Command;
     use predicates::prelude::*;
+    use tempfile::TempDir;
 
     #[test]
     fn test_make_clap_app() {
@@ -143,9 +146,11 @@ mod tests {
 
     #[test]
     fn test_remote_hsmd_cli_normal() {
+        let tempdir: TempDir = TempDir::new().unwrap();
         let mut cmd = Command::cargo_bin("remote_hsmd_socket").unwrap();
         let assert = cmd
             .arg("--developer")
+            .arg(format!("--datadir={}", tempdir.path().display()))
             .env("VLS_NETWORK", "bitcoin")
             .env("BITCOIND_RPC_URL", "http://localhost:18332")
             .assert();

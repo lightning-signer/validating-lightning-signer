@@ -127,6 +127,14 @@ pub fn add_hsmd_args(app: Command) -> Command {
                 .help("print git desc version and exit")
                 .action(ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("datadir")
+                .long("datadir")
+                .help("data directory")
+                .action(ArgAction::Set)
+                .default_value(".")
+                .value_name("DIR"),
+        )
 }
 
 #[cfg(feature = "main")]
