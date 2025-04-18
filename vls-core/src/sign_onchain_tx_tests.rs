@@ -36,7 +36,10 @@ mod tests {
         let (tx, opaths) = make_large_tx(&destination, 1060);
         assert_eq!(
             node.check_onchain_tx(&tx, &vec![], &[txo], &[None], &opaths),
-            Err(policy_error("validate_onchain_tx: tx too large: 32913 > 32768"))
+            Err(policy_error(
+                "policy-onchain-max-size",
+                "validate_onchain_tx: tx too large: 32913 > 32768"
+            ))
         );
     }
 
@@ -83,6 +86,7 @@ mod tests {
         assert_eq!(
             node.check_onchain_tx(&tx, &vec![], &[txo], &[None], &[vec![]]),
             Err(policy_error(
+                "policy-onchain-fee-range",
                 "check_onchain_tx: fee velocity would be exceeded 1000000000 + 20000000 > 1000000000"
             ))
         )

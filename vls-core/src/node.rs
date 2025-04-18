@@ -540,10 +540,13 @@ impl NodeState {
                 .checked_sub(balance_delta.0)
                 .ok_or_else(|| {
                     // policy-routing-deltas-only-htlc
-                    policy_error(format!(
-                        "shortfall {} + {} - {}",
-                        self.excess_amount, balance_delta.1, balance_delta.0
-                    ))
+                    policy_error(
+                        "policy-routing-balanced",
+                        format!(
+                            "shortfall {} + {} - {}",
+                            self.excess_amount, balance_delta.1, balance_delta.0
+                        ),
+                    )
                 })?;
         }
         *debug_on_return = false;
@@ -1824,11 +1827,14 @@ impl Node {
                 // here because we need it to create the validator
                 (setup.channel_value_sat * 1000).checked_sub(setup.push_value_msat).ok_or_else(
                     || {
-                        policy_error(format!(
-                            "beneficial channel value underflow: {} - {}",
-                            setup.channel_value_sat * 1000,
-                            setup.push_value_msat
-                        ))
+                        policy_error(
+                            "policy-routing-balanced",
+                            format!(
+                                "beneficial channel value underflow: {} - {}",
+                                setup.channel_value_sat * 1000,
+                                setup.push_value_msat
+                            ),
+                        )
                     },
                 )?
             } else {
@@ -3256,7 +3262,7 @@ mod tests {
             &Default::default(),
             strict_validator.clone(),
         );
-        assert_eq!(result, Err(policy_error("validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"0202020202020202020202020202020202020202020202020202020202020202\"]")));
+        assert_eq!(result, Err(policy_error("policy-commitment-htlc-routing-balance", "validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"0202020202020202020202020202020202020202020202020202020202020202\"]")));
 
         assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0, dbid_high_water_mark 0".to_string(), false));
 
@@ -3282,7 +3288,7 @@ mod tests {
             &Default::default(),
             strict_validator.clone(),
         );
-        assert_policy_err!(result, "validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"0101010101010101010101010101010101010101010101010101010101010101\"]");
+        assert_policy_err!(result, "policy-commitment-htlc-routing-balance", "validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"0101010101010101010101010101010101010101010101010101010101010101\"]");
 
         assert_eq!(state.summary(), ("NodeState::summary 022d: 1 invoices, 0 issued_invoices, 1 payments, excess_amount 0, dbid_high_water_mark 0".to_string(), false));
 
@@ -3422,6 +3428,7 @@ mod tests {
         assert_eq!(
             result,
             Err(policy_error(
+                "policy-htlc-fee-range",
                 "validate_payment_balance: fee_percentage > max_feerate_percentage: 100% > 10%"
             )),
             "{:?}",
@@ -3666,7 +3673,7 @@ mod tests {
                     &Default::default(),
                     invoice_validator.clone()
                 ),
-                Err(policy_error("validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925\"]"))
+                Err(policy_error("policy-commitment-htlc-routing-balance", "validate_payments: unbalanced payments on channel 0100000000000000000000000000000000000000000000000000000000000000: [\"66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925\"]"))
             );
         }
     }
@@ -3757,7 +3764,7 @@ mod tests {
                     &BalanceDelta(1, 0),
                     invoice_validator.clone()
                 ),
-                Err(policy_error("shortfall 0 + 0 - 1"))
+                Err(policy_error("policy-routing-balanced", "shortfall 0 + 0 - 1"))
             );
         }
     }

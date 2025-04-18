@@ -389,9 +389,10 @@ impl ChannelBase for ChannelStub {
 
     fn get_per_commitment_point(&self, commitment_number: u64) -> Result<PublicKey, Status> {
         if ![0, 1].contains(&commitment_number) {
-            return Err(policy_error(format!(
-                "channel stub can only return point for commitment number zero or one",
-            ))
+            return Err(policy_error(
+                "policy-optional-fail-fast",
+                format!("channel stub can only return point for commitment number zero or one",),
+            )
             .into());
         }
         Ok(self
@@ -402,7 +403,11 @@ impl ChannelBase for ChannelStub {
 
     fn get_per_commitment_secret(&self, _commitment_number: u64) -> Result<SecretKey, Status> {
         // We can't release a commitment_secret from a ChannelStub ever.
-        Err(policy_error(format!("channel stub cannot release commitment secret")).into())
+        Err(policy_error(
+            "policy-revoke-new-commitment-valid",
+            format!("channel stub cannot release commitment secret"),
+        )
+        .into())
     }
 
     fn get_per_commitment_secret_or_none(&self, _commitment_number: u64) -> Option<SecretKey> {
@@ -509,11 +514,14 @@ impl ChannelBase for Channel {
         // The following check is relaxed by +1 because LDK fetches the next commitment point
         // before it calls validate_holder_commitment_tx.
         if commitment_number > next_holder_commit_num + 1 {
-            return Err(policy_error(format!(
-                "get_per_commitment_point: \
+            return Err(policy_error(
+                "policy-optional-fail-fast",
+                format!(
+                    "get_per_commitment_point: \
                  commitment_number {} invalid when next_holder_commit_num is {}",
-                commitment_number, next_holder_commit_num,
-            ))
+                    commitment_number, next_holder_commit_num,
+                ),
+            )
             .into());
         }
         Ok(self.get_per_commitment_point_unchecked(commitment_number))
@@ -927,7 +935,12 @@ impl Channel {
                 &counterparty_commit_sig,
                 &self.setup.counterparty_points.funding_pubkey,
             )
-            .map_err(|ve| policy_error(format!("commit sig verify failed: {}", ve)))?;
+            .map_err(|ve| {
+                policy_error(
+                    "policy-revoke-new-commitment-signed",
+                    format!("commit sig verify failed: {}", ve),
+                )
+            })?;
 
         let commitment_txid = recomposed_tx.trust().txid();
         let to_self_delay = self.setup.counterparty_selected_contest_delay;
@@ -987,7 +1000,10 @@ impl Channel {
             self.secp_ctx
                 .verify_ecdsa(&recomposed_tx_sighash, &counterparty_htlc_sigs[ndx], &htlc_pubkey)
                 .map_err(|err| {
-                    policy_error(format!("commit sig verify failed for htlc {}: {}", ndx, err))
+                    policy_error(
+                        "policy-revoke-new-commitment-signed",
+                        format!("commit sig verify failed for htlc {}: {}", ndx, err),
+                    )
                 })?;
         }
         Ok(())

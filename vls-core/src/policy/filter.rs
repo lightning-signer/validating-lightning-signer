@@ -45,10 +45,10 @@ pub struct PolicyFilter {
 
 impl PolicyFilter {
     /// Evaluate the filter rules and return the resulting action
-    pub fn filter(&self, tag: impl Into<String>) -> FilterResult {
-        let tag = tag.into();
+    pub fn filter(&self, tag: &str) -> FilterResult {
         for rule in self.rules.iter() {
-            let matches = if rule.is_prefix { tag.starts_with(&rule.tag) } else { tag == rule.tag };
+            let matches =
+                if rule.is_prefix { tag.starts_with(&rule.tag) } else { *tag == rule.tag };
             if matches {
                 return rule.action;
             }

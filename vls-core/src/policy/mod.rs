@@ -76,12 +76,22 @@ fn policy_error_with_filter(
     filter: &PolicyFilter,
 ) -> Result<(), ValidationError> {
     warn!("policy failed: {} {}", tag, msg);
-
-    if filter.filter(tag.clone()) == FilterResult::Error {
-        Err(policy_error(msg))
-    } else {
+    let res = make_policy_error_with_filter(tag.clone(), msg.clone(), filter);
+    if let Err(ref e) = res {
         #[cfg(feature = "use_backtrace")]
-        warn!("BACKTRACE:\n{:?}", backtrace::Backtrace::new());
+        warn!("BACKTRACE:\n{:?}", &e.bt);
+    }
+    res
+}
+
+fn make_policy_error_with_filter(
+    tag: String,
+    msg: String,
+    filter: &PolicyFilter,
+) -> Result<(), ValidationError> {
+    if filter.filter(&tag) == FilterResult::Error {
+        Err(policy_error(tag, msg))
+    } else {
         Ok(())
     }
 }
@@ -91,8 +101,8 @@ fn temporary_policy_error_with_filter(
     msg: String,
     filter: &PolicyFilter,
 ) -> Result<(), ValidationError> {
-    if filter.filter(tag.clone()) == FilterResult::Error {
-        Err(temporary_policy_error(msg))
+    if filter.filter(&tag) == FilterResult::Error {
+        Err(temporary_policy_error(tag, msg))
     } else {
         warn!("policy temporarily failed: {} {}", tag, msg);
         #[cfg(feature = "use_backtrace")]
