@@ -14,6 +14,7 @@ use lightning_signer::bitcoin::script::PushBytesBuf;
 use lightning_signer::bitcoin::ScriptBuf;
 use lightning_signer::lightning::ln::channel_keys::RevocationKey;
 use lightning_signer::lightning_invoice::RawBolt11Invoice;
+use vls_protocol::msgs::SignBolt12V2Reply;
 use vls_protocol::psbt::PsbtWrapper;
 
 use bitcoin::bech32::Fe32;
@@ -692,7 +693,19 @@ impl Handler for RootHandler {
                     &m.merkle_root.0,
                     tweak,
                 )?;
-                Ok(Box::new(SignBolt12Reply { signature: Signature(sig.as_ref().clone()) }))
+                Ok(Box::new(SignBolt12Reply { signature: Signature(*sig.as_ref()) }))
+            }
+            Message::SignBolt12V2(m) => {
+                let tweak_message =
+                    if m.public_tweak.is_empty() { None } else { Some(m.public_tweak.as_slice()) };
+                let sig = self.node.sign_bolt12_2(
+                    &m.message_name.0,
+                    &m.field_name.0,
+                    &m.merkle_root.0,
+                    &m.info.0,
+                    tweak_message,
+                )?;
+                Ok(Box::new(SignBolt12V2Reply { signature: Signature(*sig.as_ref()) }))
             }
             Message::PreapproveInvoice(m) => {
                 let invstr = String::from_utf8(m.invstring.0)

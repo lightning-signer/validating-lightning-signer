@@ -1425,6 +1425,20 @@ impl Node {
             .map_err(|_| internal_error("signature operation failed"))
     }
 
+    /// BOLT 12 sign
+    pub fn sign_bolt12_2(
+        &self,
+        messagename: &[u8],
+        fieldname: &[u8],
+        merkleroot: &[u8; 32],
+        info: &[u8],
+        publictweak_opt: Option<&[u8]>,
+    ) -> Result<schnorr::Signature, Status> {
+        self.keys_manager
+            .sign_bolt12_2(messagename, fieldname, merkleroot, info, publictweak_opt)
+            .map_err(|_| internal_error("signature operation failed"))
+    }
+
     /// derive secret
     pub fn derive_secret(&self, info: &[u8]) -> SecretKey {
         self.keys_manager.derive_secret(info)

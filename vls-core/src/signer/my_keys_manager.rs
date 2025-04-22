@@ -199,15 +199,50 @@ impl MyKeysManager {
         Sha256::hash(&self.get_persistence_shared_secret(server_pubkey)).to_byte_array()
     }
 
-    /// BOLT 12 sign
-    pub fn sign_bolt12(
+    /// Computes a keypair for BOLT12 signing with optional message-based tweaking
+    ///
+    /// Based on the BOLT12 specification and c-lightning implementation:
+    /// 1. Without tweak message: Uses the node_secret directly
+    /// 2. With tweak message only: Takes the bolt12_secret and tweaks it with the message
+    /// 3. With tweak message and info: Derives a base secret using HKDF-SHA256 from info
+    ///    then computes the tweak from the tweakmessage
+    fn get_bolt12_keypair(
+        &self,
+        opt_info: Option<&[u8]>,
+        opt_tweak_message: Option<&[u8]>,
+    ) -> Result<Keypair, ()> {
+        match (opt_tweak_message, opt_info) {
+            (None, _) => Ok(Keypair::from_secret_key(&self.secp_ctx, &self.node_secret)),
+            (Some(tweak_message), None) => {
+                let pubkey_ser =
+                    PublicKey::from_secret_key(&self.secp_ctx, &self.bolt12_secret).serialize();
+                let mut sha = Sha256::engine();
+                sha.input(&pubkey_ser);
+                sha.input(tweak_message);
+                let tweak = Scalar::from_be_bytes(*Sha256::from_engine(sha).as_ref())
+                    .expect("your RNG is busted");
+                let tweaked_secret = self.bolt12_secret.add_tweak(&tweak).map_err(|_| ())?;
+                Ok(Keypair::from_secret_key(&self.secp_ctx, &tweaked_secret))
+            }
+            (Some(tweak_message), Some(info)) => {
+                let base_secret = self.derive_secret(info);
+                let mut sha = Sha256::engine();
+                sha.input(base_secret.as_ref());
+                sha.input(tweak_message);
+                let tweak = Scalar::from_be_bytes(*Sha256::from_engine(sha).as_ref())
+                    .expect("valid tweak value");
+                let tweaked_secret = self.node_secret.add_tweak(&tweak).map_err(|_| ())?;
+                Ok(Keypair::from_secret_key(&self.secp_ctx, &tweaked_secret))
+            }
+        }
+    }
+
+    fn bolt12_message_hash(
         &self,
         messagename: &[u8],
         fieldname: &[u8],
         merkleroot: &[u8; 32],
-        publictweak_opt: Option<&[u8]>,
-    ) -> Result<schnorr::Signature, ()> {
-        // BIP340 init
+    ) -> Sha256 {
         let mut sha = Sha256::engine();
         sha.input("lightning".as_bytes());
         sha.input(messagename);
@@ -218,22 +253,34 @@ impl MyKeysManager {
         sha.input(&tag_hash);
         // BIP340 done, compute hash of message
         sha.input(merkleroot);
-        let sig_hash = Sha256::from_engine(sha);
+        Sha256::from_engine(sha)
+    }
 
-        let kp = if let Some(publictweak) = publictweak_opt {
-            // Compute the tweaked key
-            let pubkey_ser =
-                PublicKey::from_secret_key(&self.secp_ctx, &self.bolt12_secret).serialize();
-            let mut sha = Sha256::engine();
-            sha.input(&pubkey_ser);
-            sha.input(publictweak);
-            let tweak = Scalar::from_be_bytes(*Sha256::from_engine(sha).as_ref())
-                .expect("your RNG is busted");
-            let tweakedsecret = self.bolt12_secret.add_tweak(&tweak).map_err(|_| ())?;
-            Keypair::from_secret_key(&self.secp_ctx, &tweakedsecret)
-        } else {
-            Keypair::from_secret_key(&self.secp_ctx, &self.node_secret)
-        };
+    /// BOLT 12 sign
+    pub fn sign_bolt12(
+        &self,
+        messagename: &[u8],
+        fieldname: &[u8],
+        merkleroot: &[u8; 32],
+        publictweak_opt: Option<&[u8]>,
+    ) -> Result<schnorr::Signature, ()> {
+        let sig_hash = self.bolt12_message_hash(messagename, fieldname, merkleroot);
+        let kp = self.get_bolt12_keypair(None, publictweak_opt)?;
+        let msg = Message::from_digest(sig_hash.to_byte_array());
+        Ok(self.secp_ctx.sign_schnorr_no_aux_rand(&msg, &kp))
+    }
+
+    /// Bolt 12 (modern) sign
+    pub fn sign_bolt12_2(
+        &self,
+        messagename: &[u8],
+        fieldname: &[u8],
+        merkleroot: &[u8; 32],
+        info: &[u8],
+        publictweak_opt: Option<&[u8]>,
+    ) -> Result<schnorr::Signature, ()> {
+        let sig_hash = self.bolt12_message_hash(messagename, fieldname, merkleroot);
+        let kp = self.get_bolt12_keypair(Some(info), publictweak_opt)?;
         let msg = Message::from_digest(sig_hash.to_byte_array());
         Ok(self.secp_ctx.sign_schnorr_no_aux_rand(&msg, &kp))
     }

@@ -308,10 +308,27 @@ pub struct SignBolt12 {
     pub public_tweak: Octets,
 }
 
+// SignBolt12V2
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(41)]
+pub struct SignBolt12V2 {
+    pub message_name: WireString,
+    pub field_name: WireString,
+    pub merkle_root: Sha256,
+    pub info: Octets,
+    pub public_tweak: Octets,
+}
+
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(125)]
 pub struct SignBolt12Reply {
+    pub signature: Signature,
+}
+
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(141)]
+pub struct SignBolt12V2Reply {
     pub signature: Signature,
 }
 
@@ -1121,7 +1138,9 @@ pub enum Message {
     CheckFutureSecret(CheckFutureSecret),
     CheckFutureSecretReply(CheckFutureSecretReply),
     SignBolt12(SignBolt12),
+    SignBolt12V2(SignBolt12V2),
     SignBolt12Reply(SignBolt12Reply),
+    SignBolt12V2Reply(SignBolt12V2Reply),
     PreapproveInvoice(PreapproveInvoice),
     PreapproveInvoiceReply(PreapproveInvoiceReply),
     PreapproveKeysend(PreapproveKeysend),
@@ -1541,8 +1560,9 @@ mod tests {
         match rv {
             Ok(_) => panic!("Expected an error, but got Ok"),
             Err(e) => match e {
-                bitcoin::consensus::encode::Error::ParseFailed(expected_msg) =>
-                    assert_eq!(expected_msg, "decode_tlv_stream failed"),
+                bitcoin::consensus::encode::Error::ParseFailed(expected_msg) => {
+                    assert_eq!(expected_msg, "decode_tlv_stream failed")
+                }
                 _ => panic!("Unexpected error type"),
             },
         }
