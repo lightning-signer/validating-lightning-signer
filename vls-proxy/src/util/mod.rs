@@ -114,7 +114,16 @@ pub fn add_hsmd_args(app: Command) -> Command {
                 .action(ArgAction::SetTrue)
                 .help("ignored dev flag"),
         )
-        .arg(Arg::new("log-io").long("log-io").action(ArgAction::SetTrue).help("ignored dev flag"))
+        .arg(
+            Arg::new("log-io").long("log-io").action(ArgAction::SetTrue).help(
+                "ignored flag to set log level as we rely on `RUST_LOG` environment variable",
+            ),
+        )
+        .arg(
+            Arg::new("log-trace").long("log-trace").action(ArgAction::SetTrue).help(
+                "ignored flag to set log level as we rely on `RUST_LOG` environment variable",
+            ),
+        )
         .arg(
             Arg::new("version")
                 .long("version")
