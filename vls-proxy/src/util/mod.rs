@@ -14,7 +14,6 @@ pub use env_var::*;
 pub use testing::*;
 pub use validation::*;
 
-use clap::arg;
 #[cfg(feature = "main")]
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use log::*;
@@ -116,18 +115,31 @@ pub fn add_hsmd_args(app: Command) -> Command {
                 .help("ignored dev flag"),
         )
         .arg(Arg::new("log-io").long("log-io").action(ArgAction::SetTrue).help("ignored dev flag"))
-        .arg(arg!(--version "show a dummy version"))
+        .arg(
+            Arg::new("version")
+                .long("version")
+                .action(ArgAction::SetTrue)
+                .help("show a dummy version"),
+        )
         .arg(
             Arg::new("git-desc")
                 .long("git-desc")
                 .help("print git desc version and exit")
                 .action(ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("datadir")
+                .long("datadir")
+                .help("data directory")
+                .action(ArgAction::Set)
+                .default_value(".")
+                .value_name("DIR"),
+        )
 }
 
 #[cfg(feature = "main")]
 pub fn handle_hsmd_version(matches: &ArgMatches) -> bool {
-    if matches.contains_id("version") {
+    if matches.get_flag("version") {
         // Pretend to be the right version, given to us by an env var
         let version = vls_cln_version();
         println!("{}", version);
