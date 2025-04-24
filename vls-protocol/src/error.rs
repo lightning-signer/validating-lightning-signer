@@ -5,7 +5,7 @@ use core::fmt::{Debug, Display, Formatter};
 use serde_bolt::bitcoin;
 
 /// Error
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Error {
     UnexpectedType(u16),
     BadFraming,

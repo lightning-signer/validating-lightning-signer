@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use backoff::Error as BackoffError;
+use backon::{BlockingRetryable, ExponentialBuilder, Retryable};
 use log::*;
 use lru::LruCache;
 use std::num::NonZeroUsize;
@@ -26,6 +26,9 @@ use vls_protocol_signer::vls_protocol;
 use crate::client::Client;
 use crate::*;
 
+// The default backon rules retry after 1s then start
+// doubling, so this number equates to 1 + 2^(n - 1) seconds
+const BACKOFF_RETRY_TIMES: usize = 8;
 const PREAPPROVE_CACHE_TTL: Duration = Duration::from_secs(60);
 const PREAPPROVE_CACHE_SIZE: usize = 6;
 
@@ -40,31 +43,28 @@ pub struct GrpcSignerPort {
 }
 
 // create a Backoff
-fn backoff() -> backoff::ExponentialBackoff {
-    backoff::ExponentialBackoffBuilder::default()
-        .with_initial_interval(Duration::from_secs(1))
-        .with_max_interval(Duration::from_secs(10))
-        .with_max_elapsed_time(Some(Duration::from_secs(300)))
-        .build()
+fn backoff() -> ExponentialBuilder {
+    ExponentialBuilder::new().with_max_times(BACKOFF_RETRY_TIMES)
 }
 
 #[async_trait]
 impl SignerPort for GrpcSignerPort {
     async fn handle_message(&self, message: Vec<u8>) -> Result<Vec<u8>> {
-        let result = backoff::future::retry(backoff(), || async {
-            let reply_rx =
-                self.send_request(message.clone()).await.map_err(|e| BackoffError::permanent(e))?;
+        let result = (|| async {
+            let reply_rx = self.send_request(message.clone()).await?;
             // Wait for the signer reply
             // Can fail if the adapter shut down
-            let reply = reply_rx.await.map_err(|_| BackoffError::permanent(Error::Transport))?;
+            let reply = reply_rx.await.map_err(|_| Error::Transport)?;
             if reply.is_temporary_failure {
                 // Retry with backoff
                 info!("temporary error, retrying");
-                return Err(BackoffError::transient(Error::Transport));
+                return Err(Error::TransportTransient);
             }
 
             return Ok(reply.reply);
         })
+        .retry(backoff())
+        .when(|e| *e == Error::TransportTransient)
         .await
         .map_err(|e| {
             error!("signer retry failed: {:?}", e);
@@ -223,8 +223,9 @@ impl<C: 'static + Client> SignerLoop<C> {
         }
         match self.do_loop() {
             Ok(()) => info!("read loop {} done", self.log_prefix),
-            Err(Error::Protocol(ProtocolError::Eof)) =>
-                info!("read loop {} saw EOF; ending", self.log_prefix),
+            Err(Error::Protocol(ProtocolError::Eof)) => {
+                info!("read loop {} saw EOF; ending", self.log_prefix)
+            }
             Err(e) => error!("read loop {} saw error {:?}; ending", self.log_prefix, e),
         }
         if let Some(trigger) = self.shutdown_trigger.as_ref() {
@@ -388,27 +389,24 @@ impl<C: 'static + Client> SignerLoop<C> {
     }
 
     fn handle_message(&mut self, message: Vec<u8>, is_oneway: bool) -> Result<Vec<u8>> {
-        let result = backoff::retry(backoff(), || {
+        let result = (|| {
             info!(
                 "read loop {}: request {}{}",
                 self.log_prefix,
                 msgs::message_name_from_vec(&message),
                 if is_oneway { " (oneway)" } else { "" }
             );
-            let reply_rx =
-                self.send_request(message.clone()).map_err(|e| BackoffError::permanent(e))?;
+            let reply_rx = self.send_request(message.clone())?;
             if is_oneway {
                 Ok(vec![])
             } else {
                 // Wait for the signer reply
                 // Can fail if the adapter shut down
-                let reply = reply_rx
-                    .blocking_recv()
-                    .map_err(|_| BackoffError::permanent(Error::Transport))?;
+                let reply = reply_rx.blocking_recv().map_err(|_| Error::Transport)?;
                 if reply.is_temporary_failure {
                     // Retry with backoff
                     info!("read loop {}: temporary error, retrying", self.log_prefix);
-                    return Err(BackoffError::transient(Error::Transport));
+                    return Err(Error::TransportTransient);
                 };
                 info!(
                     "read loop {}: reply {}",
@@ -418,7 +416,9 @@ impl<C: 'static + Client> SignerLoop<C> {
                 Ok(reply.reply)
             }
         })
-        .map_err(|e| error_from_backoff(e))
+        .retry(backoff())
+        .when(|e| *e == Error::TransportTransient)
+        .call()
         .map_err(|e| {
             error!("read loop {}: signer retry failed: {:?}", self.log_prefix, e);
             e
@@ -428,12 +428,5 @@ impl<C: 'static + Client> SignerLoop<C> {
 
     fn send_request(&mut self, message: Vec<u8>) -> Result<oneshot::Receiver<ChannelReply>> {
         self.signer_port.send_request_blocking(message, self.client_id.clone())
-    }
-}
-
-fn error_from_backoff(e: BackoffError<Error>) -> Error {
-    match e {
-        BackoffError::Transient { err, .. } => err,
-        BackoffError::Permanent(err) => err,
     }
 }
