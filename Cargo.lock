@@ -3540,11 +3540,9 @@ dependencies = [
  "lru",
  "nix",
  "predicates",
- "prost",
  "serde_json",
  "tempfile",
  "tokio",
- "tokio-stream",
  "tonic",
  "triggered",
  "txoo-bitcoind-client",
@@ -3557,7 +3555,29 @@ dependencies = [
  "vls-protocol-client",
  "vls-protocol-signer",
  "vls-proxy",
+ "vls-util",
  "vlsd",
+]
+
+[[package]]
+name = "vls-util"
+version = "0.13.0"
+dependencies = [
+ "fern",
+ "log",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry-semantic-conventions",
+ "opentelemetry_sdk",
+ "tempfile",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "vls-core",
+ "vls-frontend",
 ]
 
 [[package]]
@@ -3574,10 +3594,6 @@ dependencies = [
  "jsonrpsee",
  "lightning-storage-server",
  "log",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry-semantic-conventions",
- "opentelemetry_sdk",
  "prost",
  "serde",
  "tempfile",
@@ -3591,9 +3607,6 @@ dependencies = [
  "tower 0.4.13",
  "tower-http",
  "tracing",
- "tracing-appender",
- "tracing-opentelemetry",
- "tracing-subscriber",
  "triggered",
  "txoo-bitcoind-client",
  "url",
@@ -3602,6 +3615,7 @@ dependencies = [
  "vls-persist",
  "vls-protocol",
  "vls-protocol-signer",
+ "vls-util",
 ]
 
 [[package]]

@@ -25,7 +25,8 @@ use connection::{open_parent_fd, UnixConnection};
 use portfront::SignerPortFront;
 use util::{add_hsmd_args, bitcoind_rpc_url, create_runtime, vls_network};
 use vls_proxy::*;
-use vlsd::util::{abort_on_panic, setup_logging};
+use vls_util::util::{abort_on_panic, setup_logging};
+use vls_util::GIT_DESC;
 
 mod serial;
 

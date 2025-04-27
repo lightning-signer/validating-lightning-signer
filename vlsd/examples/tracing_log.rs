@@ -1,7 +1,7 @@
 use std::{thread::sleep, time::Duration};
 
 use tracing::{error, info};
-use vlsd::util::observability::{init_tracing_subscriber, OtelGuard};
+use vls_util::observability::{init_tracing_subscriber, OtelGuard};
 
 #[tokio::main]
 async fn main() {

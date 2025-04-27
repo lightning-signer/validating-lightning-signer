@@ -15,6 +15,3 @@ pub use lightning_signer;
 pub use vls_frontend;
 pub use vls_protocol_client;
 pub use vls_protocol_signer;
-
-// Defines GIT_DESC
-include!(concat!(env!("OUT_DIR"), "/version.rs"));

@@ -11,7 +11,7 @@ use std::{
 };
 use tokio::task::JoinHandle;
 
-use crate::GIT_DESC;
+use vls_util::GIT_DESC;
 
 use super::InfoModel;
 use tracing::*;

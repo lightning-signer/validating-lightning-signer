@@ -10,7 +10,7 @@ use log::warn;
 use recovery::{direct::DirectRecoveryKeys, recover_close, recover_l1};
 use std::fs;
 use util::abort_on_panic;
-use util::observability::init_tracing_subscriber;
+use vls_util::observability::init_tracing_subscriber;
 use vlsd::*;
 
 #[derive(Parser, Debug)]
@@ -63,7 +63,7 @@ pub async fn main() {
     let _tracing_guard = init_tracing_subscriber(&datapath, &bin_name)
         .expect("failed to initalize tracing subscriber");
 
-    tracing::info!("{} git_desc={} starting", bin_name, GIT_DESC);
+    tracing::info!("{} git_desc={} starting", bin_name, vls_util::GIT_DESC);
 
     if let Some(ref address) = args.recover_to {
         let recover_type = match args.recover_type.as_str() {

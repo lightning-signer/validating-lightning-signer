@@ -14,20 +14,10 @@ use std::{env, fs};
 use toml::value::{Table, Value};
 use url::Url;
 
-/// Network names
-pub const NETWORK_NAMES: [&'static str; 4] = ["testnet", "regtest", "signet", "bitcoin"];
+pub use vls_util::config::{CLAP_NETWORK_URL_MAPPING, DEFAULT_DIR, NETWORK_NAMES};
 
-/// Useful with clap's `Arg::default_value_ifs`
-pub const CLAP_NETWORK_URL_MAPPING: [(&'static str, &'static str, Option<&'static str>); 4] = [
-    ("network", "bitcoin", Some("http://user:pass@127.0.0.1:8332")),
-    ("network", "testnet", Some("http://user:pass@127.0.0.1:18332")),
-    ("network", "regtest", Some("http://user:pass@127.0.0.1:18443")),
-    ("network", "signet", Some("http://user:pass@127.0.0.1:18443")),
-];
-
-pub const DEFAULT_DIR: &str = ".lightning-signer";
-pub const RPC_SERVER_PORT: u16 = 8011;
 pub const RPC_SERVER_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+pub const RPC_SERVER_PORT: u16 = 8011;
 pub const RPC_SERVER_ENDPOINT: &'static str = "http://127.0.0.1:8011";
 
 pub trait HasSignerArgs {
@@ -253,7 +243,7 @@ pub fn parse_args_and_config_from<A: Parser + HasSignerArgs>(
 
     // short-circuit if we're just printing the git desc
     if args.signer_args().git_desc {
-        println!("{} git_desc={}", bin_name, crate::GIT_DESC);
+        println!("{} git_desc={}", bin_name, vls_util::GIT_DESC);
         // Don't exit here because this is called by unit tests
         return Err(clap::Error::raw(ErrorKind::DisplayVersion, ""));
     }

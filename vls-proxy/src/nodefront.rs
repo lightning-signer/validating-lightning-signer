@@ -19,7 +19,7 @@ use lightning_signer::signer::multi_signer::MultiSigner;
 use lightning_signer::txoo::proof::TxoProof;
 use lightning_signer::wallet::Wallet;
 use vls_frontend::{ChainTrack, ChainTrackDirectory};
-use vlsd::persist::ExternalPersistWithHelper;
+use vls_util::persist::ExternalPersistWithHelper;
 
 /// Implements ChainTrackDirectory using calls to inplace MultiSigner
 pub struct SignerFront {

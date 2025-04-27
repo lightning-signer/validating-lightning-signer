@@ -15,6 +15,7 @@ members = [
   "vls-protocol-client",
   "vls-protocol-signer",
   "vls-proxy",
+  "vls-util",
   "vlsd",
 ]
 
@@ -36,3 +37,4 @@ txoo = { version = "0.10.0", default-features = false }
 txoo-bitcoind-client = { version = "0.10.0", default-features = false }
 test-log = "0.2.8"
 tempfile = "3.10.1"
+log = { version = "0.4" }

@@ -38,7 +38,7 @@ use vls_protocol_signer::vls_protocol;
 use crate::client::Client;
 use crate::*;
 #[cfg(feature = "developer")]
-use vlsd::util::{read_allowlist, read_integration_test_seed};
+use vls_util::util::{read_allowlist, read_integration_test_seed};
 
 pub struct SerialWrap {
     inner: File,

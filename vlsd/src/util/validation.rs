@@ -11,7 +11,7 @@ use lightning_signer::policy::DEFAULT_FEE_VELOCITY_CONTROL;
 use lightning_signer::util::velocity::VelocityControlSpec;
 use tracing::{info, warn};
 
-use crate::util::compare_env_var;
+use vls_util::util::compare_env_var;
 
 /// Make a standard validation factory, allowing VLS_PERMISSIVE env var to override
 pub fn make_validator_factory(network: Network) -> Arc<dyn ValidatorFactory> {
