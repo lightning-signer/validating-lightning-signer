@@ -79,9 +79,9 @@ pub async fn main() {
         }
         let keys = DirectRecoveryKeys { node };
         if let Some(max_index) = args.recover_l1_range {
-            recover_l1(network, recover_type, args.recover_rpc, &address, keys, max_index);
+            recover_l1(network, recover_type, args.recover_rpc, &address, keys, max_index).await;
         } else {
-            recover_close(network, recover_type, args.recover_rpc, &address, keys);
+            recover_close(network, recover_type, args.recover_rpc, &address, keys).await;
         }
         return;
     }
