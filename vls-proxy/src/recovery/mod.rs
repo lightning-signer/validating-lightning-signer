@@ -71,7 +71,6 @@ pub trait RecoverySign {
     fn get_per_commitment_point(&self) -> Result<PublicKey, Status>;
 }
 
-#[tokio::main(worker_threads = 2)]
 pub async fn recover_l1<R: RecoveryKeys>(
     network: Network,
     block_explorer_type: BlockExplorerType,
@@ -212,7 +211,6 @@ async fn get_feerate(esplora: &EsploraClient) -> Result<u64, ()> {
     Ok(feerate)
 }
 
-#[tokio::main(worker_threads = 2)]
 pub async fn recover_close<R: RecoveryKeys>(
     network: Network,
     block_explorer_type: BlockExplorerType,
