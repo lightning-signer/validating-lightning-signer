@@ -40,9 +40,9 @@ use vls_protocol::msgs::{
 };
 use vls_protocol::serde_bolt::{to_vec, Array, Octets, WireString};
 use vls_protocol_client::{ClientResult, SignerPort};
-use vls_proxy::config::CLAP_NETWORK_URL_MAPPING;
 use vls_proxy::portfront::SignerPortFront;
-use vls_proxy::util::{abort_on_panic, setup_logging};
+use vls_util::config::CLAP_NETWORK_URL_MAPPING;
+use vls_util::util::{abort_on_panic, setup_logging};
 
 struct State {
     height: u32,

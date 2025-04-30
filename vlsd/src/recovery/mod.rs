@@ -4,6 +4,7 @@ pub mod direct;
 use crate::tx_util::create_spending_transaction;
 use bitcoin::absolute::LockTime;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
+use bitcoin::transaction::Version;
 use bitcoin::{Address, Network, ScriptBuf, Transaction, Witness};
 use bitcoind_client::esplora_client::EsploraClient;
 use bitcoind_client::{explorer_from_url, BlockExplorerType, Explorer};
@@ -19,7 +20,6 @@ use lightning_signer::{bitcoin, lightning};
 use log::*;
 use std::collections::BTreeMap;
 use url::Url;
-use vls_protocol::serde_bolt::bitcoin::transaction::Version;
 
 /// Iterator
 pub struct Iter<T: RecoverySign> {
@@ -352,8 +352,8 @@ fn spend_delayed_outputs<R: RecoveryKeys>(
 
 #[cfg(test)]
 mod tests {
+    use super::direct::DirectRecoveryKeys;
     use super::*;
-    use crate::recovery::direct::DirectRecoveryKeys;
     use lightning_signer::node::SpendType;
     use lightning_signer::util::test_utils::key::make_test_pubkey;
     use lightning_signer::util::test_utils::{

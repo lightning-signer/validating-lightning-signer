@@ -11,7 +11,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 #[cfg(feature = "otlp")]
-use crate::util::otlp::new_tracer_provider;
+use super::otlp::new_tracer_provider;
 #[cfg(feature = "otlp")]
 use opentelemetry::{global, trace::TracerProvider as _};
 #[cfg(feature = "otlp")]
@@ -88,7 +88,7 @@ impl Drop for OtelGuard {
 
 #[cfg(test)]
 mod tests {
-    use crate::util::observability::env_filter;
+    use crate::observability::env_filter;
     use std::time::Duration;
     use tokio::time::sleep;
     use tracing_subscriber::{fmt, layer::SubscriberExt};

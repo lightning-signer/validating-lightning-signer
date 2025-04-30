@@ -23,10 +23,10 @@ use vls_protocol_signer::vls_protocol;
 use client::UnixClient;
 use connection::{open_parent_fd, UnixConnection};
 use portfront::SignerPortFront;
-use util::{
-    abort_on_panic, add_hsmd_args, bitcoind_rpc_url, create_runtime, setup_logging, vls_network,
-};
+use util::{add_hsmd_args, bitcoind_rpc_url, create_runtime, vls_network};
 use vls_proxy::*;
+use vls_util::util::{abort_on_panic, setup_logging};
+use vls_util::GIT_DESC;
 
 mod serial;
 

@@ -151,6 +151,6 @@ sudo cp ~/lightning-signer/vls-hsmd/vls/target/debug/remote_hsmd_socket \
 
 Install the VLS signer on the `VLSHOST` if you are running in `SOCKET` mode:
 ```
-sudo cp ~/lightning-signer/vls-hsmd/vls/target/debug/vlsd2 /usr/local/bin
-/usr/local/bin/vlsd2 --git-desc
+sudo cp ~/lightning-signer/vls-hsmd/vls/target/debug/vlsd /usr/local/bin
+/usr/local/bin/vlsd --git-desc
 ```

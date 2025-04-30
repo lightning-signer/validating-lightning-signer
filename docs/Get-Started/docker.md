@@ -21,7 +21,7 @@ Docker Engine is available on a variety of Linux distros, macOS, and Windows 10 
 
 ## VLS standalone Setup
 
-Below are the steps required to run `vlsd2` as a standalone container.
+Below are the steps required to run `vlsd` as a standalone container.
 
 ### Docker Image
 
@@ -47,7 +47,7 @@ Frequently used optional environment variables are:
 - `VLS_PERMISSIVE`
 - `RUST_LOG`
 
-### `vlsd2` Command Arguments
+### `vlsd` Command Arguments
 
 Required command arguments:
 - `connect`: URL of `remote_hsmd_socket` running in the lightning node.

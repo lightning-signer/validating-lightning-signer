@@ -12,14 +12,14 @@ use tokio::task::JoinHandle;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status, Streaming};
 
-use super::hsmd::{
-    hsmd_server, HsmRequestContext, PingReply, PingRequest, SignerRequest, SignerResponse,
-};
 use super::incoming::TcpIncoming;
 use crate::grpc::signer_loop::InitMessageCache;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tonic::transport::Error;
 use triggered::{Listener, Trigger};
+use vlsd::grpc::hsmd::{
+    hsmd_server, HsmRequestContext, PingReply, PingRequest, SignerRequest, SignerResponse,
+};
 
 struct Requests {
     requests: BTreeMap<u64, ChannelRequest>,

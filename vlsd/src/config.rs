@@ -14,20 +14,10 @@ use std::{env, fs};
 use toml::value::{Table, Value};
 use url::Url;
 
-/// Network names
-pub const NETWORK_NAMES: [&'static str; 4] = ["testnet", "regtest", "signet", "bitcoin"];
+pub use vls_util::config::{CLAP_NETWORK_URL_MAPPING, DEFAULT_DIR, NETWORK_NAMES};
 
-/// Useful with clap's `Arg::default_value_ifs`
-pub const CLAP_NETWORK_URL_MAPPING: [(&'static str, &'static str, Option<&'static str>); 4] = [
-    ("network", "bitcoin", Some("http://user:pass@127.0.0.1:8332")),
-    ("network", "testnet", Some("http://user:pass@127.0.0.1:18332")),
-    ("network", "regtest", Some("http://user:pass@127.0.0.1:18443")),
-    ("network", "signet", Some("http://user:pass@127.0.0.1:18443")),
-];
-
-pub const DEFAULT_DIR: &str = ".lightning-signer";
-pub const RPC_SERVER_PORT: u16 = 8011;
 pub const RPC_SERVER_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+pub const RPC_SERVER_PORT: u16 = 8011;
 pub const RPC_SERVER_ENDPOINT: &'static str = "http://127.0.0.1:8011";
 
 pub trait HasSignerArgs {
@@ -253,7 +243,7 @@ pub fn parse_args_and_config_from<A: Parser + HasSignerArgs>(
 
     // short-circuit if we're just printing the git desc
     if args.signer_args().git_desc {
-        println!("{} git_desc={}", bin_name, crate::GIT_DESC);
+        println!("{} git_desc={}", bin_name, vls_util::GIT_DESC);
         // Don't exit here because this is called by unit tests
         return Err(clap::Error::raw(ErrorKind::DisplayVersion, ""));
     }
@@ -362,22 +352,22 @@ mod tests {
     #[test]
     fn git_desc_test() {
         let env_args: Vec<String> =
-            vec!["vlsd2", "--git-desc"].into_iter().map(|s| s.to_string()).collect();
+            vec!["vlsd", "--git-desc"].into_iter().map(|s| s.to_string()).collect();
         let args_res: Result<SignerArgs, _> = parse_args_and_config_from("", &env_args);
         assert!(args_res.is_err());
     }
 
     #[test]
     fn clap_test() {
-        let env_args: Vec<String> = vec!["vlsd2"].into_iter().map(|s| s.to_string()).collect();
+        let env_args: Vec<String> = vec!["vlsd"].into_iter().map(|s| s.to_string()).collect();
         let args: SignerArgs = parse_args_and_config_from("", &env_args).unwrap();
         assert!(args.policy_filter.is_empty());
         assert!(args.velocity_control.is_none());
         assert!(args.fee_velocity_control.is_none());
 
         let env_args: Vec<String> = vec![
-            "vlsd2",
-            "--datadir=/tmp/vlsd2",
+            "vlsd",
+            "--datadir=/tmp/vlsd",
             "--network=regtest",
             "--integration-test",
             "--recover-rpc=http://localhost:3000",
@@ -398,7 +388,7 @@ mod tests {
         .map(|s| s.to_string())
         .collect();
         let args: SignerArgs = parse_args_and_config_from("", &env_args).unwrap();
-        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd2");
+        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd");
         assert_eq!(args.policy_filter.len(), 1);
         assert!(args.velocity_control.is_some());
         assert_eq!(args.network, Network::Regtest);
@@ -416,29 +406,29 @@ mod tests {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         writeln!(
             file,
-            "datadir = \"/tmp/vlsd2\"\n
+            "datadir = \"/tmp/vlsd\"\n
             velocity-control = \"day:222\"\n
             network = \"regtest\"\n"
         )
         .unwrap();
         let env_args: Vec<String> =
-            vec!["vlsd2", "--config", file.path().to_str().unwrap(), "--network=bitcoin"]
+            vec!["vlsd", "--config", file.path().to_str().unwrap(), "--network=bitcoin"]
                 .into_iter()
                 .map(|s| s.to_string())
                 .collect();
         let args: SignerArgs = parse_args_and_config_from("", &env_args).unwrap();
-        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd2");
+        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd");
         assert!(args.velocity_control.is_some());
         // command line args override config file
         assert_eq!(args.network, Network::Bitcoin);
 
         let env_args: Vec<String> =
-            vec!["vlsd2", "--network=bitcoin", "--config", file.path().to_str().unwrap()]
+            vec!["vlsd", "--network=bitcoin", "--config", file.path().to_str().unwrap()]
                 .into_iter()
                 .map(|s| s.to_string())
                 .collect();
         let args: SignerArgs = parse_args_and_config_from("", &env_args).unwrap();
-        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd2");
+        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd");
         assert!(args.velocity_control.is_some());
         // config file overrides command line because it comes last
         assert_eq!(args.network, Network::Regtest);

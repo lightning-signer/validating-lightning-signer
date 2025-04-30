@@ -1,4 +1,4 @@
-use crate::recovery::{Iter, RecoveryKeys, RecoverySign};
+use super::{Iter, RecoveryKeys, RecoverySign};
 use lightning::chain::transaction::OutPoint;
 use lightning_signer::bitcoin::secp256k1::{PublicKey, SecretKey};
 use lightning_signer::bitcoin::{Address, ScriptBuf, Transaction, TxOut};

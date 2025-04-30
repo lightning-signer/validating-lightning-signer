@@ -16,7 +16,7 @@ log-level=debug
 RUST_LOG=debug
 ```
 
-`~vls/.lightning-signer/vlsd2.toml`:
+`~vls/.lightning-signer/vlsd.toml`:
 ```
 log-level = "debug"
 ```

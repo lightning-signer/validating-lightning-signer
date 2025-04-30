@@ -4,6 +4,9 @@ extern crate alloc;
 
 use alloc::string::String;
 
+#[macro_use]
+pub mod macros;
+
 pub trait HexEncode {
     fn to_hex(&self) -> String;
 }

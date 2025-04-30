@@ -13,19 +13,19 @@ fn get_free_tcp_port() -> u16 {
 #[tokio::test]
 async fn rpc_server_test() {
     Command::new("cargo")
-        .args(["build", "--bin", "vlsd2"])
+        .args(["build", "--bin", "vlsd"])
         .current_dir("..")
         .status()
-        .expect("vlsd2 build failed");
+        .expect("vlsd build failed");
 
     let tempdir = TempDir::new().expect("temp dir for vlsd");
     let tmp_path = tempdir.path().to_str().unwrap();
     let port = get_free_tcp_port();
-    let mut vlsd2_process = Command::new("cargo")
+    let mut vlsd_process = Command::new("cargo")
         .args([
             "run",
             "--bin",
-            "vlsd2",
+            "vlsd",
             "--",
             "--connect=http://localhost:7701",
             &format!("--datadir={}", tmp_path),
@@ -35,7 +35,7 @@ async fn rpc_server_test() {
         ])
         .current_dir("..")
         .spawn()
-        .expect("vlsd2 didn't start");
+        .expect("vlsd didn't start");
 
     // required to ensure vls is started and running
     sleep(Duration::from_secs(10)).await;
@@ -54,7 +54,7 @@ async fn rpc_server_test() {
         .output()
         .expect("vls-cli info failed");
 
-    vlsd2_process.kill().expect("vlsd2 couldn't be killed properly");
+    vlsd_process.kill().expect("vlsd couldn't be killed properly");
     let stdout_vls_cli =
         std::str::from_utf8(&vls_cli_result.stdout).expect("error while parsing result");
     assert!(stdout_vls_cli.contains("channels"));
@@ -65,10 +65,10 @@ async fn rpc_server_test() {
 #[tokio::test]
 async fn rpc_server_test_with_cookie() {
     Command::new("cargo")
-        .args(["build", "--bin", "vlsd2"])
+        .args(["build", "--bin", "vlsd"])
         .current_dir("..")
         .status()
-        .expect("vlsd2 build failed");
+        .expect("vlsd build failed");
 
     // Create the rpc cookie file
     let cookie_file = NamedTempFile::new().unwrap();
@@ -78,12 +78,12 @@ async fn rpc_server_test_with_cookie() {
     let tempdir = TempDir::new().expect("temp dir for vlsd");
     let tmp_path = tempdir.path().to_str().unwrap();
     let port = get_free_tcp_port();
-    // Start the vlsd2 process with the rpc-cookie
-    let mut vlsd2_process = Command::new("cargo")
+    // Start the vlsd process with the rpc-cookie
+    let mut vlsd_process = Command::new("cargo")
         .args([
             "run",
             "--bin",
-            "vlsd2",
+            "vlsd",
             "--",
             "--connect=http://localhost:7701",
             &format!("--datadir={}", tmp_path),
@@ -93,7 +93,7 @@ async fn rpc_server_test_with_cookie() {
         ])
         .current_dir("..")
         .spawn()
-        .expect("vlsd2 didn't start");
+        .expect("vlsd didn't start");
 
     // required to ensure vls is started and running
     sleep(Duration::from_secs(10)).await;
@@ -112,7 +112,7 @@ async fn rpc_server_test_with_cookie() {
         .output()
         .expect("vls-cli info failed");
 
-    vlsd2_process.kill().expect("vlsd2 couldn't be killed properly");
+    vlsd_process.kill().expect("vlsd couldn't be killed properly");
     let stdout_vls_cli =
         std::str::from_utf8(&vls_cli_result.stdout).expect("error while parsing result");
     assert!(stdout_vls_cli.contains("channels"));

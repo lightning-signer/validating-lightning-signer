@@ -1,7 +1,7 @@
 use bitcoind_client::BlockExplorerType;
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
-use config::{parse_args_and_config, HasSignerArgs, SignerArgs};
+use config::{parse_args_and_config, HasSignerArgs, SignerArgs, DEFAULT_DIR};
 use grpc::signer::make_handler;
 use grpc::signer::start_signer;
 use http::Uri;
@@ -10,9 +10,8 @@ use log::warn;
 use recovery::{direct::DirectRecoveryKeys, recover_close, recover_l1};
 use std::fs;
 use util::abort_on_panic;
-use util::observability::init_tracing_subscriber;
-use vls_proxy::config::DEFAULT_DIR;
-use vls_proxy::*;
+use vls_util::observability::init_tracing_subscriber;
+use vlsd::*;
 
 #[derive(Parser, Debug)]
 #[clap(about, long_about = None)]
@@ -48,7 +47,7 @@ pub async fn main() {
     })
     .expect("Error setting Ctrl-C handler");
 
-    let bin_name = "vlsd2";
+    let bin_name = "vlsd";
     let our_args: Args = parse_args_and_config(bin_name);
 
     let args = our_args.signer_args;
@@ -64,7 +63,7 @@ pub async fn main() {
     let _tracing_guard = init_tracing_subscriber(&datapath, &bin_name)
         .expect("failed to initalize tracing subscriber");
 
-    tracing::info!("{} git_desc={} starting", bin_name, GIT_DESC);
+    tracing::info!("{} git_desc={} starting", bin_name, vls_util::GIT_DESC);
 
     if let Some(ref address) = args.recover_to {
         let recover_type = match args.recover_type.as_str() {

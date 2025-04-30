@@ -16,6 +16,7 @@ use lightning_signer::bitcoin::hashes::sha256::Hash as Sha256Hash;
 use lightning_signer::bitcoin::hashes::Hash;
 
 use super::adapter::{ChannelReply, ChannelRequest, ClientId};
+use vls_common::*;
 use vls_protocol::{
     msgs, msgs::DeBolt as _, msgs::Message, msgs::SerBolt as _, Error as ProtocolError,
 };

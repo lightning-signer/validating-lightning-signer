@@ -45,7 +45,6 @@ use vls_protocol_signer::handler::{
 use vls_protocol_signer::vls_protocol::model::PubKey;
 use vls_protocol_signer::vls_protocol::msgs;
 
-use crate::persist::ExternalPersistWithHelper;
 #[cfg(feature = "heapmon_requests")]
 use heapmon::{self, HeapMon, SummaryOrder};
 use lightning_storage_server::client::Auth;
@@ -60,6 +59,7 @@ use vls_frontend::external_persist::lss::Client as LssClient;
 use vls_frontend::external_persist::{self, ExternalPersist};
 use vls_persist::kvv::cloud::CloudKVVStore;
 use vls_protocol::msgs::{Message, SerBolt};
+use vls_util::persist::ExternalPersistWithHelper;
 
 #[cfg(feature = "heapmon_requests")]
 #[global_allocator]

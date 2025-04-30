@@ -23,6 +23,7 @@ use secp256k1::PublicKey;
 
 use lightning_signer::bitcoin;
 use lightning_signer::bitcoin::secp256k1;
+use vls_common::*;
 #[cfg(feature = "developer")]
 use vls_protocol::model::DevSecret;
 #[cfg(feature = "developer")]
@@ -35,9 +36,9 @@ use vls_protocol_client::{ClientResult as Result, SignerPort};
 use vls_protocol_signer::vls_protocol;
 
 use crate::client::Client;
-#[cfg(feature = "developer")]
-use crate::util::{read_allowlist, read_integration_test_seed};
 use crate::*;
+#[cfg(feature = "developer")]
+use vls_util::util::{read_allowlist, read_integration_test_seed};
 
 pub struct SerialWrap {
     inner: File,
