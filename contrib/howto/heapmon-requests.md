@@ -19,11 +19,11 @@ requests is logged at info level.
 
 A good way to summarize the results is by grepping the logs:
 ```
-grep 'Filtered' vlsd2.log
-[2023-08-16 14:18:28.580 vlsd2/heapmon INFO] Filtered peak size for SignRemoteCommitmentTx is 33_764
-[2023-08-16 14:18:30.375 vlsd2/heapmon INFO] Filtered peak size for ValidateCommitmentTx is 32_776
-[2023-08-16 14:18:31.511 vlsd2/heapmon INFO] Filtered peak size for SignRemoteCommitmentTx is 32_000
-[2023-08-16 14:25:42.817 vlsd2/heapmon INFO] Filtered peak size for SignRemoteCommitmentTx is 30_832
+grep 'Filtered' vlsd.log
+[2023-08-16 14:18:28.580 vlsd/heapmon INFO] Filtered peak size for SignRemoteCommitmentTx is 33_764
+[2023-08-16 14:18:30.375 vlsd/heapmon INFO] Filtered peak size for ValidateCommitmentTx is 32_776
+[2023-08-16 14:18:31.511 vlsd/heapmon INFO] Filtered peak size for SignRemoteCommitmentTx is 32_000
+[2023-08-16 14:25:42.817 vlsd/heapmon INFO] Filtered peak size for SignRemoteCommitmentTx is 30_832
 ```
 
 Allocation backtraces can be found in the log.

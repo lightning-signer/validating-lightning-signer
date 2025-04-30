@@ -3,7 +3,7 @@
 # This script concatenates historical rolled (and possibly compressed) log files.
 #
 # Sample invocation:
-# nohup logcat ~vls/.lightning-signer/testnet/vlsd2.log | logfilter -a
+# nohup logcat ~vls/.lightning-signer/testnet/vlsd.log | logfilter -a
 
 # Check if there is exactly one argument
 if [ "$#" -ne 1 ]; then

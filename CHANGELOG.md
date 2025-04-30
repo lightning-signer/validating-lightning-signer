@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
- - configure SimplePolicy values using vlsd2.toml
+ - configure SimplePolicy values using vlsd.toml
  - fuzz: basic fuzzing of the vls-core crate
  - developer flag for dev messages and fields
  - core: oid derivation for ldk channel id
@@ -38,7 +38,7 @@ This release named by Provisional Pete
 
 ### Added
 
- - LSS support in vlsd2
+ - LSS support in vlsd
  - core: Added tests for validating trusted oracle public key.
  - core: Implement `sign_holder_htlc_transaction`.
  - core: Make `NativeKeyDerive` struct public usable.
@@ -89,7 +89,7 @@ This release named by Provisional Pete
  - fix crash while revoking in permissive mode
  - retransmit requests on signer reconnect
  - core: A problem w/ handling historical revocations on reconnection which led to state corruption was fixed ([#502])
- - vlsd2: Reconnect to CLN if CLN crashes.
+ - vlsd: Reconnect to CLN if CLN crashes.
  - stm32: The crash in the stm32 invoice approver is fixed ([#429])
 
 ### Workaround
@@ -301,7 +301,7 @@ The main focus of this release is low-resource environments and CLN 23.08 suppor
 - core: Replace debug_vals!() with dbgvals!() which is heap friendly
 - ci: don't require Changelog entries for merge commits
 - core: Increase testnet max_routing_fee_msat to 50_000 to clear CLN integration test
-- howto: Consolidate vlsd2 config files in ~/.lightning-signer/
+- howto: Consolidate vlsd config files in ~/.lightning-signer/
 - howto: Decrease allowable testnet to_self_delay to allow earlier sweeps of force-closed channels
 
 ### Removed
@@ -354,7 +354,7 @@ The main focus of this release is low-resource environments and CLN 23.08 suppor
  - howto: Add gawk to one-time-setup ([#259])
  - howto: Fix initial installation of CLN+VLS service components
  - howto: Fix path in cln testnet service setup
- - vlsd2: Don't print error on `--help` or `--git-desc`
+ - vlsd: Don't print error on `--help` or `--git-desc`
 
 ### Changed
 

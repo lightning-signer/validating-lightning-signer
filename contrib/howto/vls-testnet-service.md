@@ -14,9 +14,9 @@ Setup config files:
 ```bash
 # become root user
 touch /home/vls/.lightning-signer/ALLOWLIST
-cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/vlsd2.toml /home/vls/.lightning-signer/vlsd2.toml
-echo "rpc-user = <ADMIN_USER>" >> /home/vls/.lightning-signer/vlsd2.toml
-echo "rpc-pass = <ADMIN_SERVER_PASSWORD>" >> /home/vls/.lightning-signer/vlsd2.toml
+cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/vlsd.toml /home/vls/.lightning-signer/vlsd.toml
+echo "rpc-user = <ADMIN_USER>" >> /home/vls/.lightning-signer/vlsd.toml
+echo "rpc-pass = <ADMIN_SERVER_PASSWORD>" >> /home/vls/.lightning-signer/vlsd.toml
 ```
 
 Create `~vls/.lightning-signer/testnet-env`:
@@ -46,7 +46,7 @@ sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/vls-testnet.logrota
 ```
 
 If you would like to allow legacy anchor channels (non-zero-fee anchors) you should
-add the following line to `/home/vls/vlsd2.toml`:
+add the following line to `/home/vls/vlsd.toml`:
 ```
 policy-filter = "policy-channel-safe-type-anchors:warn"
 ```

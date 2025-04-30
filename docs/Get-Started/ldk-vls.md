@@ -76,7 +76,7 @@ If you have `bitcoind` in your path, and a recent Rust toolchain:
 virtualenv venv
 source venv/bin/activate
 pip3 install -r requirements.txt
-cargo install vls-proxy --git=https://gitlab.com/lightning-signer/validating-lightning-signer.git --root=. --features=developer --bin=vlsd2
+cargo install vls-proxy --git=https://gitlab.com/lightning-signer/validating-lightning-signer.git --root=. --features=developer --bin=vlsd
 cargo build
 ./scripts/compile-proto
 SIGNER=vls2-grpc ./tests/integration-test.py

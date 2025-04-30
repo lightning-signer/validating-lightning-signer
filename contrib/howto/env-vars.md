@@ -16,7 +16,7 @@ Possible values:
 
 #### `VLS_AUTOAPPROVE` - Automatically approve payments
 
-The `VLS_AUTOAPPROVE` env variable is interpreted by `vlsd2` and `remote_hsmd_inplace`.
+The `VLS_AUTOAPPROVE` env variable is interpreted by `vlsd` and `remote_hsmd_inplace`.
 
 By default, if an invoice payment, keysend, or onchain payment is not allowlisted it requires
 explicit approval.  When `VLS_AUTOAPPROVE=1` these payments will be automatically approved.
@@ -24,7 +24,7 @@ This is useful for integration testing.
 
 #### `VLS_PERMISSIVE` - Warn on policy violation instead of failing
 
-The `VLS_PERMISSIVE` env variable is interpreted by `vlsd2` and `remote_hsmd_inplace`.
+The `VLS_PERMISSIVE` env variable is interpreted by `vlsd` and `remote_hsmd_inplace`.
 
 When `VLS_PERMISSIVE=1` any policy violations will generate a warning to the log and then succeed.
 This is useful for testing and early system integration.
@@ -32,7 +32,7 @@ This is useful for testing and early system integration.
 #### `VLS_ONCHAIN_VALIDATION_DISABLE` - Disable onchain validation
 
 The `VLS_ONCHAIN_VALIDATION_DISABLE` env variable is interpreted by
-`vlsd2` and `remote_hsmd_inplace`.
+`vlsd` and `remote_hsmd_inplace`.
 
 Setting `VLS_ONCHAIN_VALIDATION_DISABLE=1` disables policy checking
 involving onchain events.  For example ensuring that the funding
@@ -40,10 +40,10 @@ transaction is locked before allowing further channel operations.
 
 #### `VLS_MAX_PROTOCOL_VERSION` - Override maximum wire protocol version
 
-The `VLS_MAX_PROTOCOL_VERSION` env variable is interpreted by `vlsd2` on startup.
+The `VLS_MAX_PROTOCOL_VERSION` env variable is interpreted by `vlsd` on startup.
 
 Setting `VLS_MAX_PROTOCOL_VERSION=4` limits the maximum protocol
-version which will be used by `vlsd2` when communicating with
+version which will be used by `vlsd` when communicating with
 node.  This feature is useful for developers who need to control the
 protocol version for testing or debugging.
 

@@ -47,7 +47,7 @@ pub async fn main() {
     })
     .expect("Error setting Ctrl-C handler");
 
-    let bin_name = "vlsd2";
+    let bin_name = "vlsd";
     let our_args: Args = parse_args_and_config(bin_name);
 
     let args = our_args.signer_args;

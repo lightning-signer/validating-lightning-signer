@@ -352,22 +352,22 @@ mod tests {
     #[test]
     fn git_desc_test() {
         let env_args: Vec<String> =
-            vec!["vlsd2", "--git-desc"].into_iter().map(|s| s.to_string()).collect();
+            vec!["vlsd", "--git-desc"].into_iter().map(|s| s.to_string()).collect();
         let args_res: Result<SignerArgs, _> = parse_args_and_config_from("", &env_args);
         assert!(args_res.is_err());
     }
 
     #[test]
     fn clap_test() {
-        let env_args: Vec<String> = vec!["vlsd2"].into_iter().map(|s| s.to_string()).collect();
+        let env_args: Vec<String> = vec!["vlsd"].into_iter().map(|s| s.to_string()).collect();
         let args: SignerArgs = parse_args_and_config_from("", &env_args).unwrap();
         assert!(args.policy_filter.is_empty());
         assert!(args.velocity_control.is_none());
         assert!(args.fee_velocity_control.is_none());
 
         let env_args: Vec<String> = vec![
-            "vlsd2",
-            "--datadir=/tmp/vlsd2",
+            "vlsd",
+            "--datadir=/tmp/vlsd",
             "--network=regtest",
             "--integration-test",
             "--recover-rpc=http://localhost:3000",
@@ -388,7 +388,7 @@ mod tests {
         .map(|s| s.to_string())
         .collect();
         let args: SignerArgs = parse_args_and_config_from("", &env_args).unwrap();
-        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd2");
+        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd");
         assert_eq!(args.policy_filter.len(), 1);
         assert!(args.velocity_control.is_some());
         assert_eq!(args.network, Network::Regtest);
@@ -406,29 +406,29 @@ mod tests {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         writeln!(
             file,
-            "datadir = \"/tmp/vlsd2\"\n
+            "datadir = \"/tmp/vlsd\"\n
             velocity-control = \"day:222\"\n
             network = \"regtest\"\n"
         )
         .unwrap();
         let env_args: Vec<String> =
-            vec!["vlsd2", "--config", file.path().to_str().unwrap(), "--network=bitcoin"]
+            vec!["vlsd", "--config", file.path().to_str().unwrap(), "--network=bitcoin"]
                 .into_iter()
                 .map(|s| s.to_string())
                 .collect();
         let args: SignerArgs = parse_args_and_config_from("", &env_args).unwrap();
-        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd2");
+        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd");
         assert!(args.velocity_control.is_some());
         // command line args override config file
         assert_eq!(args.network, Network::Bitcoin);
 
         let env_args: Vec<String> =
-            vec!["vlsd2", "--network=bitcoin", "--config", file.path().to_str().unwrap()]
+            vec!["vlsd", "--network=bitcoin", "--config", file.path().to_str().unwrap()]
                 .into_iter()
                 .map(|s| s.to_string())
                 .collect();
         let args: SignerArgs = parse_args_and_config_from("", &env_args).unwrap();
-        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd2");
+        assert_eq!(args.datadir.unwrap(), "/tmp/vlsd");
         assert!(args.velocity_control.is_some());
         // config file overrides command line because it comes last
         assert_eq!(args.network, Network::Regtest);

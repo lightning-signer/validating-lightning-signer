@@ -36,7 +36,7 @@ use vls_util::observability::init_tracing_subscriber;
 use vls_util::util::abort_on_panic;
 use vls_util::GIT_DESC;
 
-/// Implement hsmd replacement that listens to connections from vlsd2.
+/// Implement hsmd replacement that listens to connections from vlsd.
 #[tokio::main(worker_threads = 2)]
 pub async fn main() {
     abort_on_panic();
@@ -75,7 +75,7 @@ pub async fn main() {
 
 fn make_clap_app() -> Command {
     let app = Command::new("signer")
-        .about("CLN:socket - listens for a vlsd2 connection on port 7701 (or VLS_PORT if set)");
+        .about("CLN:socket - listens for a vlsd connection on port 7701 (or VLS_PORT if set)");
     add_hsmd_args(app)
 }
 

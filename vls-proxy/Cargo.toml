@@ -74,7 +74,7 @@ path = "src/serial_main.rs"
 required-features = ["main"]
 
 [[bin]]
-# A replacement for hsmd, listening to vlsd2 over a gRPC protocol
+# A replacement for hsmd, listening to vlsd over a gRPC protocol
 # AKA cln:socket
 name = "remote_hsmd_socket"
 path = "src/socket_main.rs"
