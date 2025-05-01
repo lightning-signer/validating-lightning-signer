@@ -11,6 +11,17 @@ eleventyNavigation:
 ## Intro
 Validating Lightning Signer (VLS) is an open-source **Rust library for secure, self-custodial Lightning signers**. Unlike hot wallets or blind signers, VLS keeps your private keys off the node **and** validates each signing request, ensuring only legitimate channel operations are approved. In other words, even if your Lightning node were compromised, funds remain safe thanks to the signer’s rigorous policy checks.
 
+---
+
+> 🧠 **New to VLS?** Learn why validation matters:  
+> 👉 [Why Validating Signing?](./why-validating-signer.md)
+
+> ⚡ **Ready to integrate?**  
+> 👉 [Start Here → Choose your stack](../Get-Started/start-here.md)
+
+---
+
+
 ## System Overview
 ---
 VLS splits Lightning key management into two primary components:

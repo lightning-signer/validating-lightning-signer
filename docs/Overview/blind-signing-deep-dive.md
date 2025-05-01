@@ -4,7 +4,7 @@ title: Blind Signing is Worse
 eleventyNavigation:
   key: Blind Signing
   parent: Overview
-  order: 2
+  order: 4
 ---
 ##
 
