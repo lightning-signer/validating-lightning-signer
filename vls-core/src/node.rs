@@ -1987,7 +1987,7 @@ impl Node {
         for (idx, uck) in uniclosekeys.into_iter().enumerate() {
             let spend_type = SpendType::from_script_pubkey(&prev_outs[idx].script_pubkey);
             // if we don't recognize the script, or we are not told what the derivation path is, don't try to sign
-            if spend_type == SpendType::Invalid || ipaths[idx].is_empty() {
+            if spend_type == SpendType::Invalid || (uck.is_none() && ipaths[idx].is_empty()) {
                 // If we are signing a PSBT some of the inputs may be
                 // marked as SpendType::Invalid (we skip these), push
                 // an empty witness element instead.

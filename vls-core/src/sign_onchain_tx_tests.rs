@@ -315,6 +315,119 @@ mod tests {
     }
 
     #[test]
+    fn sign_onchain_tx_with_empty_ipaths_and_valid_uck_test() -> Result<(), ()> {
+        let secp_ctx = Secp256k1::signing_only();
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+
+        let uck_sk = SecretKey::from_slice(&[1; 32]).unwrap();
+        let uck_pubkey = CompressedPublicKey(PublicKey::from_secret_key(&secp_ctx, &uck_sk));
+        let uck_address = Address::p2wpkh(&uck_pubkey, Network::Testnet);
+
+        let previous_tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 },
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ZERO,
+                witness: Witness::default(),
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(100_000),
+                script_pubkey: uck_address.script_pubkey(),
+            }],
+        };
+        let txid = previous_tx.compute_txid();
+
+        let mut tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint { txid, vout: 0 },
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ZERO,
+                witness: Witness::default(),
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(90_000),
+                script_pubkey: node.get_native_address(&[0]).unwrap().script_pubkey(),
+            }],
+        };
+
+        let ipaths = vec![vec![]];
+        let txos = previous_tx.output.clone();
+        let uck_tuple = (uck_sk, vec![uck_pubkey.0.serialize().to_vec()]);
+        let opaths = vec![vec![0]];
+
+        let witvec = node
+            .check_and_sign_onchain_tx(&tx, &[true], &ipaths, &txos, vec![Some(uck_tuple)], &opaths)
+            .expect("should sign with uck");
+
+        assert_eq!(witvec.len(), 1);
+        assert!(!witvec[0].is_empty(), "Should produce witness when uck present");
+        assert_eq!(witvec[0][1], uck_pubkey.0.serialize());
+
+        tx.input[0].witness = Witness::from_slice(&witvec[0]);
+        assert!(tx.verify(|p| Some(txos[p.vout as usize].clone())).is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn sign_onchain_tx_with_empty_ipaths_and_no_uck_test() -> Result<(), ()> {
+        let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
+
+        let secp_ctx = Secp256k1::signing_only();
+        let uck_sk = SecretKey::from_slice(&[1; 32]).unwrap();
+        let uck_pubkey = CompressedPublicKey(PublicKey::from_secret_key(&secp_ctx, &uck_sk));
+        let uck_address = Address::p2wpkh(&uck_pubkey, Network::Testnet);
+
+        let previous_tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint { txid: Txid::all_zeros(), vout: 0 },
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ZERO,
+                witness: Witness::default(),
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(100_000),
+                script_pubkey: uck_address.script_pubkey(),
+            }],
+        };
+        let txid = previous_tx.compute_txid();
+
+        let tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint { txid, vout: 0 },
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ZERO,
+                witness: Witness::default(),
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(90_000),
+                script_pubkey: node.get_native_address(&[0]).unwrap().script_pubkey(),
+            }],
+        };
+
+        let ipaths = vec![vec![]];
+        let txos = previous_tx.output.clone();
+        let opaths = vec![vec![0]];
+
+        let empty_witvec = node
+            .check_and_sign_onchain_tx(&tx, &[true], &ipaths, &txos, vec![None], &opaths)
+            .expect("should succeed with empty witness");
+
+        assert_eq!(empty_witvec.len(), 1);
+        assert!(empty_witvec[0].is_empty());
+
+        Ok(())
+    }
+
+    #[test]
     fn sign_funding_tx_p2pkh_test() -> Result<(), ()> {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let values = vec![(0, 200u64, SpendType::P2pkh)];
