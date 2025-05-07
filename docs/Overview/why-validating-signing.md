@@ -1,4 +1,5 @@
 ---
+layout: layouts/docs.njk
 title: Why Validating Signing?
 description: Why blind signers fall short—and why VLS matters for secure Lightning
 eleventyNavigation:

@@ -14,7 +14,7 @@ Validating Lightning Signer (VLS) is an open-source **Rust library for secure, s
 ---
 
 > 🧠 **New to VLS?** Learn why validation matters:  
-> 👉 [Why Validating Signing?](./why-validating-signer.md)
+> 👉 [Why Validating Signing?](./why-validating-signing.md)
 
 > ⚡ **Ready to integrate?**  
 > 👉 [Start Here → Choose your stack](../Get-Started/start-here.md)

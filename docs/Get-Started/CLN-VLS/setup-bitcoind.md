@@ -7,7 +7,7 @@ eleventyNavigation:
   order: 2
 ---
 
-## Setup Bitcoind testnet Service
+# Setup Bitcoind  Service
 
 You can skip this entirely if you already have bitcoin installed as a service.
 

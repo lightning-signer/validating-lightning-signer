@@ -4,13 +4,12 @@ title: Run VLS on Docker
 eleventyNavigation:
   key: Run VLS on Docker
   parent: Get Started
-  order: 1
+  order: 7
 ---
 
+# Run VLS on Docker
 
-## Installing Docker
-
-### Docker Documentation
+## Docker Documentation
 
 Docker Engine is available on a variety of Linux distros, macOS, and Windows 10 through Docker Desktop, and as a static binary installation. Refer to the official [docker documentation](https://docs.docker.com/engine/install/)
 
@@ -248,7 +247,7 @@ docker compose --profile vls down
 
 ## Choosing Versions
 
-The currently set default versions for services is as follows in the [.env](.env) file:
+The currently set default versions for services is as follows in the .env file:
 - **Bitcoin Core**: v26.0
 - **Core Lightning**: v24.02.2
 - **TXOO**: v0.8.1

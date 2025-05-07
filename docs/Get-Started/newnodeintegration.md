@@ -4,6 +4,7 @@ title: New Node Integration
 eleventyNavigation:
   key: Node Integration
   parent: Get Started
+  order: 8
 ---
 
 ## Protocol

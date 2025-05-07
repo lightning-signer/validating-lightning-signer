@@ -7,7 +7,7 @@ eleventyNavigation:
   order: 3
 ---
 
-## Setup the TXOOD Oracle
+# Setup the TXOOD Oracle
 
 Setup the TXOOD service on the `TXOHOST`.  The TXOOD service wants to
 be co-located with a bitcoind server so it can utilize its datastore

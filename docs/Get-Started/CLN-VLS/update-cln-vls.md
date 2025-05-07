@@ -9,7 +9,7 @@ eleventyNavigation:
 
 
 
-## Update CLN+VLS Software
+# Update CLN+VLS Software
 
 This procedure presumes you've already performed the [One Time Setup](./one-time-setup.md)
 

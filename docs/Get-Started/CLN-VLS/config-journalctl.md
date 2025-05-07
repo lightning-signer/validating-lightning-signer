@@ -8,7 +8,7 @@ eleventyNavigation:
 ---
 
 
-## Configuring journalctl
+# Configuring journalctl
 
 It is useful to use journalctl because it normalizes log timestamps
 and can show multiple different server's entries in a time sorted log.

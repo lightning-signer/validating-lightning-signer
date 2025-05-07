@@ -7,7 +7,7 @@ eleventyNavigation:
   order: 6
 ---
 
-## Setup CLBOSS and CLN Plugins
+# Setup CLBOSS and CLN Plugins
 
 This section may be skipped if you do not wish to run CLBOSS or standard CLN plugins.
 
