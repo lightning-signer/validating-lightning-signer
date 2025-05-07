@@ -7,7 +7,7 @@ eleventyNavigation:
   order: 5
 ---
 
-## Setup VLS testnet Service
+# Setup VLS Service
 
 ### Configure Service
 

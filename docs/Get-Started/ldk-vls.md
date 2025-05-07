@@ -7,7 +7,7 @@ eleventyNavigation:
   order: 3
 ---
 
-# lnrod
+# LDK & VLS
 
 A node implementation using LDK.
 

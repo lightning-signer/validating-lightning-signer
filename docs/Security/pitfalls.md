@@ -7,7 +7,7 @@ eleventyNavigation:
 ---
 
 
-# Overview
+# Pitfalls
 
 This document describes some exploits/pitfalls which the lightning-signer must mitigate.
 

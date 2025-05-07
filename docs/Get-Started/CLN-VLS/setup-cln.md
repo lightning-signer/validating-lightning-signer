@@ -7,7 +7,7 @@ eleventyNavigation:
   order: 4
 ---
 
-## Setup CLN testnet Service
+# Setup CLN Service
 
 ### Configure Service
 

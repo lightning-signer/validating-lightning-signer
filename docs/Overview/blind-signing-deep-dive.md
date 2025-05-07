@@ -1,12 +1,11 @@
 ---
 layout: layouts/docs.njk
-title: Blind Signing is Worse
+title: Blind Signing is Harmful
 eleventyNavigation:
   key: Blind Signing
   parent: Overview
   order: 4
 ---
-##
 
 VLS separates your Lightning private keys and security rule validation from your Lightning node, into a discrete signing device. This improves LN security for users by reducing the attack surface.
 

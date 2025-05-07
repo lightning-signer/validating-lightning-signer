@@ -1,9 +1,11 @@
 ---
+layout: layouts/docs.njk
 title: Start Here
 description: Choose your stack and follow the right guide to integrate VLS
 eleventyNavigation:
   key: Start Here
-  parent: v0.13
+  parent: Get Started
+  order: 1
 ---
 
 # Start Building with VLS
@@ -15,9 +17,9 @@ It’s designed to help you:
 - Secure your **own Lightning funds** with stronger guarantees than standard Lightning nodes
 - Provide **non-custodial Lightning services** to users, avoiding the risks of holding their keys
 
-> 🧠 **New to VLS?** Learn why validation matters:  
-> 👉 [Why Validating Signing?](./why-validating-signer.md)
-> Learn more about [what VLS does](../Overview/intro.md)
+🧠 **New to VLS?** Learn why validation matters:  
+- 👉 [Why Validating Signing?](../Overview/why-validating-signing.md)
+- Learn more about [what VLS does](../Overview/intro.md)
 
 ---
 
