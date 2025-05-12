@@ -1,7 +1,10 @@
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::{format_ident, quote, ToTokens};
-use syn::{parse_macro_input, Data, DataEnum, DeriveInput, Error, Fields, Lit, Type};
+use syn::{
+    parse_macro_input, Data, DataEnum, DeriveInput, Error, Expr, Fields, GenericArgument, Lit,
+    LitInt, Meta, PathArguments, Type, TypePath,
+};
 
 /// Serialize a message with a type prefix, in BOLT style
 #[proc_macro_derive(SerBolt, attributes(message_id))]
@@ -10,9 +13,11 @@ pub fn derive_ser_bolt(input: TokenStream) -> TokenStream {
     let DeriveInput { ident, attrs, .. } = parse_macro_input!(input1);
     let message_id = attrs
         .into_iter()
-        .filter(|a| a.path.is_ident("message_id"))
-        .next()
-        .map(|a| a.tokens)
+        .find(|a| a.path().is_ident("message_id"))
+        .map(|a| {
+            let lit: LitInt = a.parse_args().expect("expected integer literal for message_id");
+            lit.to_token_stream()
+        })
         .unwrap_or_else(|| {
             Error::new(ident.span(), "missing message_id attribute").into_compile_error()
         });
@@ -69,35 +74,39 @@ pub fn derive_ser_bolt_tlv(input: TokenStream) -> TokenStream {
                 let field_type = &field.ty;
                 let var_name = format_ident!("{}", field_name);
 
-                if let Some(attr) = field.attrs.iter().find(|a| a.path.is_ident("tlv_tag")) {
-                    match attr.parse_meta() {
-                        Ok(syn::Meta::NameValue(meta_name_value)) => {
-                            if let Lit::Int(lit_int) = meta_name_value.lit {
-                                let tlv_tag = lit_int
-                                    .base10_parse::<u64>()
-                                    .expect("tlv_tag should be a valid u64");
-                                encode_entries.push((
-                                    tlv_tag,
-                                    quote! {
-                                        (#tlv_tag, self.#var_name.as_ref().map(|f| crate::model::SerBoltTlvWriteWrap(f)), option),
-                                    },
-                                ));
-                                decode_entries.push((
-                                    tlv_tag,
-                                    quote! {
-                                        (#tlv_tag, #var_name, option),
-                                    },
-                                ));
-                                let inner_type =
-                                    unwrap_option(field_type).expect("Option type expected");
-                                decode_temp_declarations.push(quote! {
-                                    let mut #var_name: Option<crate::model::SerBoltTlvReadWrap<#inner_type>> = None;
-                                });
-                                decode_fields.push(quote! {
-                                    #var_name: #var_name.map(|w| w.0),
-                                });
+                if let Some(attr) = field.attrs.iter().find(|a| a.path().is_ident("tlv_tag")) {
+                    match &attr.meta {
+                        Meta::NameValue(name_value) => {
+                            if let Expr::Lit(expr_lit) = &name_value.value {
+                                if let Lit::Int(lit_int) = &expr_lit.lit {
+                                    let tlv_tag = lit_int
+                                        .base10_parse::<u64>()
+                                        .expect("tlv_tag should be a valid u64");
+                                    encode_entries.push((
+                                        tlv_tag,
+                                        quote! {
+                                            (#tlv_tag, self.#var_name.as_ref().map(|f| crate::model::SerBoltTlvWriteWrap(f)), option),
+                                        },
+                                    ));
+                                    decode_entries.push((
+                                        tlv_tag,
+                                        quote! {
+                                            (#tlv_tag, #var_name, option),
+                                        },
+                                    ));
+                                    let inner_type =
+                                        unwrap_option(field_type).expect("Option type expected");
+                                    decode_temp_declarations.push(quote! {
+                                        let mut #var_name: Option<crate::model::SerBoltTlvReadWrap<#inner_type>> = None;
+                                    });
+                                    decode_fields.push(quote! {
+                                        #var_name: #var_name.map(|w| w.0),
+                                    });
+                                } else {
+                                    eprintln!("Warning: `tlv_tag` attribute value must be an integer literal.");
+                                }
                             } else {
-                                eprintln!("Warning: `tlv_tag` attribute value must be an integer.");
+                                eprintln!("Warning: `tlv_tag` attribute value is not a literal expression.");
                             }
                         }
                         _ => eprintln!("Failed to parse `tlv_tag` attribute."),
@@ -154,10 +163,10 @@ pub fn derive_ser_bolt_tlv(input: TokenStream) -> TokenStream {
 }
 
 fn unwrap_option(field_type: &Type) -> Option<&Type> {
-    if let syn::Type::Path(syn::TypePath { path, .. }) = &field_type {
+    if let Type::Path(TypePath { path, .. }) = field_type {
         if path.segments.len() == 1 && path.segments[0].ident == "Option" {
-            if let syn::PathArguments::AngleBracketed(args) = &path.segments[0].arguments {
-                if let Some(syn::GenericArgument::Type(ty)) = args.args.first() {
+            if let PathArguments::AngleBracketed(args) = &path.segments[0].arguments {
+                if let Some(GenericArgument::Type(ty)) = args.args.first() {
                     return Some(ty);
                 }
             }
