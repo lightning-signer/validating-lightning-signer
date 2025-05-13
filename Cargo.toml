@@ -25,6 +25,7 @@ exclude = [
   "wasm",
   "lightning-storage-server",
   "vls-core-test",
+  "lnrod",
 ]
 
 [workspace.dependencies]

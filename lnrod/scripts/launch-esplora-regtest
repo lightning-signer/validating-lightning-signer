@@ -1,0 +1,8 @@
+#!/bin/bash
+
+set -e
+
+# you can access the block explorer at http://localhost:8094 and the bitcoin-cli at http://localhost:18443
+# see `test-esplora-disaster-recovery` for an example of how to use this
+
+docker run --rm -it -p 18443:18443 -p 8094:80 --name esplora-regtest blockstream/esplora bash -c "echo -e 'rpcbind=0.0.0.0\nrpcallowip=0.0.0.0/0'  >> /srv/explorer/source/contrib/bitcoin-regtest-explorer.conf.in && /srv/explorer/run.sh bitcoin-regtest explorer"

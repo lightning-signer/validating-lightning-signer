@@ -1,0 +1,117 @@
+[package]
+name = "lnrod"
+version = "0.1.0"
+authors = [
+    "Dev Random",
+    "Valentine Wallace <vwallace@protonmail.com>",
+    "Ken Sedgwick <ken@bonsai.com>",
+]
+license = "MIT OR Apache-2.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+bugs = ["bugsalot"]
+default = ["regex"]
+
+[dependencies]
+bugsalot = { version = "0.2", optional = true }
+
+anyhow = "1.0"
+base64 = "0.13"
+bech32 = "0.9"
+hex = "0.4"
+futures = "0.3.21"
+
+log = { version="0.4.14", features = [ "std" ] }
+once_cell = "1.7.2"
+time = "0.2"
+rand = "0.8"
+serde_json = { version = "1.0" }
+tokio = { version = "1.24", features = ["macros", "rt-multi-thread"] }
+hyper = "0.14"
+prost = "0.11"
+tonic = "0.9"
+clap = "3.2"
+toml = "0.5.8"
+url = "2.3"
+async-trait = "0.1"
+
+jsonrpc-async = "2.0.2"
+serde = { version = "1.0.105", features = ["derive"] }
+tokio-socks = { version = "0.5.1", optional = true }
+regex = { version = "1.5.4", optional = true }
+tracing = { version = "0.1.32" }
+tracing-subscriber = { version = "0.3.9" }
+triggered = "0.1"
+ctrlc = { version = "3.1", features = ["termination"] }
+
+[dependencies.lightning-net-tokio]
+version = "0.1.0"
+#git = "https://github.com/lightningdevkit/rust-lightning"
+#rev = "af7c2920e1e5ae4ba3f522730e5cce99bedacc8c"
+#path = "../rust-lightning/lightning-net-tokio"
+
+[dependencies.lightning-rapid-gossip-sync]
+version = "0.1.0"
+#git = "https://github.com/lightningdevkit/rust-lightning"
+#rev = "af7c2920e1e5ae4ba3f522730e5cce99bedacc8c"
+#path = "../rust-lightning/lightning-rapid-gossip-sync"
+
+[dependencies.lightning-background-processor]
+version = "0.1.0"
+#git = "https://github.com/lightningdevkit/rust-lightning"
+#rev = "af7c2920e1e5ae4ba3f522730e5cce99bedacc8c"
+#path = "../rust-lightning/lightning-background-processor"
+
+[dependencies.lightning-persister]
+version = "0.1.0"
+#git = "https://github.com/lightningdevkit/rust-lightning"
+#rev = "af7c2920e1e5ae4ba3f522730e5cce99bedacc8c"
+#path = "../rust-lightning/lightning-persister"
+
+[dependencies.lightning-block-sync]
+version = "0.1.0"
+#git = "https://github.com/lightningdevkit/rust-lightning"
+#rev = "af7c2920e1e5ae4ba3f522730e5cce99bedacc8c"
+#path = "../rust-lightning/lightning-block-sync"
+features = ["rpc-client"]
+
+[dependencies.vls-core]
+features = ["std"]
+# git = "https://gitlab.com/lightning-signer/validating-lightning-signer.git"
+#version = "0.12.0"
+#rev = "b181714ba50c3f5dc48db289510923b5313f3f86"
+path = "../vls-core"
+
+[dependencies.vls-persist]
+features = ["redb-kvv"]
+# git = "https://gitlab.com/lightning-signer/validating-lightning-signer.git"
+#version = "0.12.0"
+#rev = "b181714ba50c3f5dc48db289510923b5313f3f86"
+path = "../vls-persist"
+
+[dependencies.vls-proxy]
+features = ["developer"]
+# git = "https://gitlab.com/lightning-signer/validating-lightning-signer.git"
+#version = "0.12.0"
+#rev = "b181714ba50c3f5dc48db289510923b5313f3f86"
+path = "../vls-proxy"
+
+[build-dependencies]
+tonic-build = "0.9"
+
+[[bin]]
+name = "lnrod"
+path = "src/main_server.rs"
+
+[[bin]]
+name = "lnrcli"
+path = "src/main_cli.rs"
+
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

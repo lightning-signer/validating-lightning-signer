@@ -26,14 +26,14 @@ before_script:
 
 stages:
   - build
-  - fuzz
+  - test
 
 include:
   - template: Coverage-Fuzzing.gitlab-ci.yml
 
 # Do this in a separate job, so that it gets cached with high probability
 # later jobs can be flaky and cache is not written when a job fails.
-get_bitcoin:
+get-bitcoin:
   stage: build
   cache:
     key: vls-bitcoin
@@ -55,10 +55,11 @@ get_bitcoin:
   rules:
     - when: always
 
-fuzz_channel:
+fuzz-channel:
   tags: [ $RUNNER_TAG ]
   image: 'rustlang/rust:nightly'
   extends: .fuzz_base
+  stage: test
   cache:
     key: vls-fuzz
     paths:
@@ -78,9 +79,9 @@ fuzz_channel:
   rules:
     - when: always
 
-random_scheduler:
+random-scheduler:
   tags: [ $RUNNER_TAG ]
-  stage: fuzz
+  stage: test
   image: rust:latest
   timeout: 5m
   cache:
@@ -98,7 +99,7 @@ rust-latest:
   tags: [ $RUNNER_TAG ]
   stage: build
   image: rust:latest
-  needs: [ "get_bitcoin" ]
+  needs: [ "get-bitcoin" ]
   cache:
     key: vls-compile-latest
     paths:
@@ -120,8 +121,16 @@ rust-latest:
     - cargo bench --no-run
     # ensure vls crates build without developer flag
     - cargo build --release
+    # build vlsd for integration tests
+    - cargo build  --bin vlsd --features developer
+    # build lnrod for integration tests
+    - cd lnrod && cargo build
   rules:
     - when: always
+  artifacts:
+    paths:
+      - "target/debug/vlsd"
+      - "lnrod/target/debug/lnrod"
 
 rust-latest-extras:
   tags: [ $RUNNER_TAG ]
@@ -150,6 +159,9 @@ rust-latest-extras:
     - cargo test
   rules:
     - when: always
+  artifacts:
+    paths:
+      - "target"
 
 rust-msrv:
   tags: [ $RUNNER_TAG ]
@@ -240,7 +252,7 @@ coverage:
   tags: [ $RUNNER_TAG ]
   stage: build
   image: rust:latest
-  needs: [ "get_bitcoin" ]
+  needs: [ "get-bitcoin" ]
   cache:
     key: vls-coverage
     paths:
@@ -278,6 +290,7 @@ cargo-audit:
     - cargo install --locked cargo-audit
     - cargo audit
     - (cd lightning-storage-server && cargo audit)
+    - (cd lnrod && cargo audit)
   rules:
     - when: always
 
@@ -328,7 +341,7 @@ cargo-mutants:
   tags: [ $RUNNER_TAG ]
   stage: build
   image: rust:latest
-  needs: [ "get_bitcoin" ]
+  needs: [ "get-bitcoin" ]
   cache:
     key: vls-mutants
     paths:
@@ -354,5 +367,68 @@ cargo-mutants:
     paths:
       - mutants.out/
     expire_in: 1 week
+  rules:
+    - when: always
+
+integration-lnrod-local:
+  stage: test
+  tags: [ $RUNNER_TAG ]
+  needs: [ "rust-latest", "get-bitcoin" ]
+  script:
+    - export PATH="$PATH:`pwd`/bin"
+    - apt-get update
+    - apt-get install -y protobuf-compiler
+    - cd lnrod
+    - python3 -m venv .venv
+    - source .venv/bin/activate
+    - pip3 install -r requirements.txt
+    - ./scripts/compile-proto
+    - SIGNER=vls-local ./tests/integration-test.py
+  artifacts:
+    when: always
+    paths:
+      - test-output
+  rules:
+    - when: always
+
+integration-lnrod-grpc:
+  stage: test
+  tags: [ $RUNNER_TAG ]
+  needs: [ "rust-latest", "get-bitcoin" ]
+  script:
+    - export PATH="$PATH:`pwd`/bin"
+    - apt-get update
+    - apt-get install -y protobuf-compiler
+    - cd lnrod
+    - python3 -m venv .venv
+    - source .venv/bin/activate
+    - pip3 install -r requirements.txt
+    - ./scripts/compile-proto
+    - SIGNER=vls-grpc  ./tests/integration-test.py
+  artifacts:
+    when: always
+    paths:
+      - test-output
+  rules:
+    - when: always
+
+integration-lnrod-grpc-disaster-recovery:
+  stage: test
+  tags: [ $RUNNER_TAG ]
+  needs: [ "rust-latest", "get-bitcoin" ]
+  script:
+    - export PATH="$PATH:`pwd`/bin"
+    - apt-get update
+    - apt-get install -y protobuf-compiler
+    - cd lnrod
+    - python3 -m venv .venv
+    - source .venv/bin/activate
+    - pip3 install -r requirements.txt
+    - ./scripts/compile-proto
+    - SIGNER=vls-grpc  ./tests/integration-test.py --test-disaster bitcoind
+  artifacts:
+    when: always
+    paths:
+      - test-output
   rules:
     - when: always
