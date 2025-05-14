@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.14.0] - 2025-05-14: "Dusty Dragonfly"
+
+### Added
+
+- lnrod: Brought the lnrod crate from its own repo into the main vls workspace.
+- lss: implemented automatic migration to redb 2.2.0.
+- vls-persist: implemented automatic migration to redb 2.2.0.
+- protocol: new bolt12_2 and bolt12_2_reply messages
+- core: new signing method for bolt12_2 messages
+- proxy: new datadir parameter for socket_main
+- proxy: new log-trace cli flag for remote_hsmd_socket binary
+- lss: etcd driver
+
+### Changed
+
+- vlsd: the vlsd2 binary has been moved to a new crate
+- core: update LDK to 0.1.0 and bitcoin to 0.32
+- CI: Add cargo-mutants
+- CI: fix builds for external MRs
+- core: move allowlist into NodeState
+- core: rename sign_invoice to sign_bolt11_invoice and simplify params
+- vlsd2 has been renamed to vlsd
+
+### Fixed
+
+- core: Fixed bug where empty witness was returned when ipaths is empty but uck is provided
+- core: bumped `ring` to avoid vulnerability
+- core: bumped `crossbeam-channel` to avoid vulnerability
+- proxy: fix calling recovery methods.
+- proxy: remote_hsmd_* cli argument handling
+
+### Updated
+
+- overall MSRV set to 1.74.0
+- lss: lssd MSRV set to 1.75.0
+- core: bump bitcoin_hashes to v0.12.0
+- proxy: hyper to 1.0, jsonrpsee to version 0.24.8
+
+
 ## [0.13.0] - 2025-01-21: "Celestial Citadel"
 
 ### Added
