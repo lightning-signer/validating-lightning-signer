@@ -182,7 +182,7 @@ dependencies = [
 
 [[package]]
 name = "bolt-derive"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -744,14 +744,14 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vls-common"
-version = "0.13.0"
+version = "0.14.0-rc.1"
 dependencies = [
  "hex",
 ]
 
 [[package]]
 name = "vls-core"
-version = "0.13.0"
+version = "0.14.0-rc.1"
 dependencies = [
  "ahash",
  "anyhow",

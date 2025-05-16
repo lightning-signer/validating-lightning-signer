@@ -88,6 +88,8 @@ Cargo publishing should be done in this order with matching versions:
 - `cargo publish -p vls-protocol-signer`
 - `cargo publish -p vls-protocol-client`
 - `cargo publish -p vls-frontend`
+- `cargo publish -p vls-util`
+- `cargo publish -p vlsd`
 - `cargo publish -p vls-proxy`
 - `cargo publish -p vls-cli`
 

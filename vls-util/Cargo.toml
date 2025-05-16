@@ -1,7 +1,7 @@
 [package]
 name = "vls-util"
 license = "Apache-2.0"
-version = "0.13.0"
+version = "0.14.0-rc.1"
 authors = ["Devrandom <c1.devrandom@niftybox.net>"]
 edition = "2021"
 description = "Utility functions for the Validating Lightning Signer"
@@ -17,8 +17,8 @@ log_pretty_print = ["vls-core/log_pretty_print"]
 otlp = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "opentelemetry-semantic-conventions", "tracing-opentelemetry"]
 
 [dependencies]
-vls-core = { path = "../vls-core", version = "0.13.0" }
-vls-frontend = { path = "../vls-frontend", version = "0.13.0" }
+vls-core = { path = "../vls-core", version = "0.14.0-rc.1" }
+vls-frontend = { path = "../vls-frontend", version = "0.14.0-rc.1" }
 log = { workspace = true }
 fern = { version = "0.6", features = ["colored"], optional = true }
 time = { version = "=0.3.17", features = ["macros"], optional = true }
