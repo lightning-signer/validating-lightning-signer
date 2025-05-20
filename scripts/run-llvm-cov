@@ -5,8 +5,16 @@ set -e
 # increases coverage
 export RUST_LOG=debug
 
-echo "Running coverage over everything ..."
-cargo llvm-cov --no-report --workspace $@
+# Define specific packages for coverage
+PACKAGE_FLAGS="--package bolt-derive --package vls-policy-derive --package vls-cli \
+--package vls-common --package vls-core --package vls-persist --package vls-protocol \
+--package vls-protocol-client --package vls-protocol-signer \
+--package vls-util --package vlsd"
+echo "Generating coverage for packages: bolt-derive, vls-policy-derive, vls-cli, \
+vls-common, vls-core, vls-persist, vls-protocol, vls-protocol-client, vls-protocol-signer, vls-util, vlsd"
+
+echo "Running coverage..."
+cargo llvm-cov --no-report $PACKAGE_FLAGS $@
 
 # Always ignore some things
 ALWAYS_IGNORE_ARRAY=(
@@ -20,21 +28,21 @@ IGNORE=$(IFS='|'; echo "${ALWAYS_IGNORE_ARRAY[*]}")
 echo "Generating cobertura report over everything ..."
 cargo llvm-cov report \
       --cobertura \
-      --hide-instantiations \
+      $PACKAGE_FLAGS \
       --ignore-filename-regex="$IGNORE" \
       --output-path=target/cobertura.xml
 
 echo "Generating codecov.io report over everything ..."
 cargo llvm-cov report \
       --codecov \
-      --hide-instantiations \
+      $PACKAGE_FLAGS \
       --ignore-filename-regex="$IGNORE" \
       --output-path=target/codecov.json
 
 echo "Generating html report over everything ..."
 cargo llvm-cov report \
       --html \
-      --hide-instantiations \
+      $PACKAGE_FLAGS \
       --ignore-filename-regex="$IGNORE" \
       --output-dir=target/llvm-cov/all/
 
@@ -54,19 +62,25 @@ IGNORE=$(IFS='|'; echo "${CORE_IGNORE_ARRAY[*]}")
 echo "Generating html report for core components ..."
 cargo llvm-cov report \
       --html \
-      --hide-instantiations \
+      $PACKAGE_FLAGS \
       --ignore-filename-regex="$IGNORE" \
       --output-dir=target/llvm-cov/core/
 
-echo "Generating text summary report for core components ..."
+# Coverage for GitLab display
+LINE_COV_IGNORE_ARRAY=(
+    "${ALWAYS_IGNORE_ARRAY[@]}"
+)
+IGNORE=$(IFS='|'; echo "${LINE_COV_IGNORE_ARRAY[*]}")
+
+echo "Generating text summary report for all components ..."
 cargo llvm-cov report \
-      --hide-instantiations \
+      $PACKAGE_FLAGS \
       --ignore-filename-regex="$IGNORE"
 
-echo "Extracting the core line coverage percentage ..."
+echo "Extracting line coverage percentage..."
 COV_OUTPUT=$(cargo llvm-cov report \
                    --json \
-                   --hide-instantiations \
+                   $PACKAGE_FLAGS \
                    --ignore-filename-regex="$IGNORE")
-CORE_LINE_COVERAGE=$(echo "$COV_OUTPUT" | jq '.data[0].totals.lines.percent')
-echo "CORE_LINE_COVERAGE: $CORE_LINE_COVERAGE"
+LINE_COVERAGE=$(echo "$COV_OUTPUT" | jq '.data[0].totals.lines.percent')
+echo "LINE_COVERAGE: $LINE_COVERAGE"
