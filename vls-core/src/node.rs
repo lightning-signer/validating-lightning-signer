@@ -979,7 +979,6 @@ impl SignedHeartbeat {
 /// use lightning_signer::signer::ClockStartingTimeFactory;
 /// use lightning_signer::signer::derive::KeyDerivationStyle;
 /// use lightning_signer::util::clock::StandardClock;
-/// use lightning_signer::util::test_logger::TestLogger;
 /// use lightning_signer::bitcoin;
 /// use bitcoin::Network;
 ///
