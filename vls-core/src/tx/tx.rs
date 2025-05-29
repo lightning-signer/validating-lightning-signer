@@ -691,17 +691,17 @@ impl CommitmentInfo {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use bitcoin::blockdata::script::Builder;
-    use bitcoin::secp256k1::{Secp256k1, SecretKey};
+    use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use bitcoin::{Address, Amount, CompressedPublicKey, Network};
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
     use lightning::ln::channel_keys::{DelayedPaymentKey, RevocationKey};
+    use lightning::types::payment::PaymentHash;
 
     use crate::channel::CommitmentType;
     use crate::util::test_utils::key::make_test_pubkey;
     use crate::util::test_utils::{hex_encode, make_test_channel_keys, make_test_channel_setup};
-
-    use super::*;
 
     use test_log::test;
 
@@ -909,5 +909,112 @@ mod tests {
             res.unwrap_err(),
             transaction_format_error("script pubkey doesn't match inner script: OP_0 OP_PUSHBYTES_32 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 != OP_0 OP_PUSHBYTES_32 3588420a18eae1ca84705137f9cccc52254273e9fb36577cb0ce7ebb4dd73a06".to_string())
         );
+    }
+
+    #[test]
+    fn test_commitment_info2_htlc_balance_empty() {
+        let info = CommitmentInfo2::new(false, 1000, 2000, vec![], vec![], 1000);
+        let (received, offered, received_count, offered_count) = info.htlc_balance();
+        assert_eq!(received, 0);
+        assert_eq!(offered, 0);
+        assert_eq!(received_count, 0);
+        assert_eq!(offered_count, 0);
+
+        let info_counterparty = CommitmentInfo2::new(true, 1000, 2000, vec![], vec![], 1000);
+        let (received, offered, received_count, offered_count) = info_counterparty.htlc_balance();
+        assert_eq!(received, 0);
+        assert_eq!(offered, 0);
+        assert_eq!(received_count, 0);
+        assert_eq!(offered_count, 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_commitment_info2_htlc_balance_overflow() {
+        let large_value = u64::MAX / 2 + 1;
+        let offered = vec![
+            HTLCInfo2 {
+                value_sat: large_value,
+                payment_hash: PaymentHash([1; 32]),
+                cltv_expiry: 500000,
+            },
+            HTLCInfo2 {
+                value_sat: large_value,
+                payment_hash: PaymentHash([2; 32]),
+                cltv_expiry: 500001,
+            },
+        ];
+        let received = vec![HTLCInfo2 {
+            value_sat: large_value,
+            payment_hash: PaymentHash([3; 32]),
+            cltv_expiry: 500002,
+        }];
+
+        let info = CommitmentInfo2::new(true, 1000, 2000, offered, received, 1000);
+        let _ = info.htlc_balance();
+    }
+
+    #[test]
+    fn test_commitment_info2_htlc_balance_non_broadcaster() {
+        let offered = vec![
+            HTLCInfo2 { value_sat: 1000, payment_hash: PaymentHash([1; 32]), cltv_expiry: 500000 },
+            HTLCInfo2 { value_sat: 2000, payment_hash: PaymentHash([2; 32]), cltv_expiry: 500001 },
+        ];
+        let received = vec![HTLCInfo2 {
+            value_sat: 3000,
+            payment_hash: PaymentHash([3; 32]),
+            cltv_expiry: 500002,
+        }];
+        let info = CommitmentInfo2::new(false, 1000, 2000, offered, received, 1000);
+        let (received_sum, offered_sum, received_count, offered_count) = info.htlc_balance();
+        assert_eq!(received_sum, 3000);
+        assert_eq!(offered_sum, 3000);
+        assert_eq!(received_count, 1);
+        assert_eq!(offered_count, 2);
+    }
+
+    #[test]
+    fn test_commitment_info2_htlc_balance_broadcaster() {
+        let offered = vec![
+            HTLCInfo2 { value_sat: 1000, payment_hash: PaymentHash([1; 32]), cltv_expiry: 500000 },
+            HTLCInfo2 { value_sat: 2000, payment_hash: PaymentHash([2; 32]), cltv_expiry: 500001 },
+        ];
+        let received = vec![HTLCInfo2 {
+            value_sat: 3000,
+            payment_hash: PaymentHash([3; 32]),
+            cltv_expiry: 500002,
+        }];
+        let info = CommitmentInfo2::new(true, 1000, 2000, offered, received, 1000);
+        let (received_sum, offered_sum, received_count, offered_count) = info.htlc_balance();
+        assert_eq!(received_sum, 1000 + 2000);
+        assert_eq!(offered_sum, 3000);
+        assert_eq!(received_count, 2);
+        assert_eq!(offered_count, 1);
+    }
+
+    #[test]
+    fn test_commitment_info_broadcaster_anchor_value() {
+        let mut info = CommitmentInfo::new_for_holder();
+        info.to_broadcaster_anchor_count = 0;
+        assert_eq!(info.to_broadcaster_anchor_value_sat(), Amount::ZERO);
+
+        info.to_broadcaster_anchor_count = 1;
+        assert_eq!(info.to_broadcaster_anchor_value_sat(), ANCHOR_SAT);
+
+        info.to_broadcaster_anchor_count = 2;
+        assert_eq!(info.to_broadcaster_anchor_value_sat(), Amount::ZERO);
+    }
+
+    #[test]
+    fn test_commitment_info_countersigner_anchor_value() {
+        let mut info = CommitmentInfo::new_for_holder();
+        info.to_countersigner_anchor_count = 0;
+        assert_eq!(info.to_countersigner_anchor_value_sat(), Amount::ZERO);
+
+        info.to_countersigner_anchor_count = 1;
+        assert_eq!(info.to_countersigner_anchor_value_sat(), ANCHOR_SAT);
+
+        info.to_countersigner_anchor_count = 2;
+        assert_eq!(info.to_countersigner_anchor_value_sat(), Amount::ZERO);
     }
 }
