@@ -18,7 +18,9 @@ workflow:
     - if: '$CI_PROJECT_NAMESPACE !~ /lightning-signer/'
       variables:
         RUNNER_TAG: "saas-linux-medium-amd64"
-    - when: always 
+    - if: '$CI_MERGE_REQUEST_ID || $CI_COMMIT_BRANCH == "main"'
+      when: always
+    - when: never
 
 before_script:
   - ls -al
@@ -52,8 +54,6 @@ get-bitcoin:
     paths:
       - bin/bitcoind
     expire_in: 1 week
-  rules:
-    - when: always
 
 fuzz-channel:
   tags: [ $RUNNER_TAG ]
@@ -76,8 +76,6 @@ fuzz-channel:
     - cargo install cargo-fuzz || echo "cargo-fuzz install failed, likely due to licensing; continuing anyway"
     - cargo fuzz run channel -- -runs=0 || echo "Fuzzing skipped due to missing license or setup"
     - ./gitlab-cov-fuzz run --regression=$REGRESSION -- ./fuzz/target/x86_64-unknown-linux-gnu/release/channel || echo "gitlab-cov-fuzz not available; skipping"
-  rules:
-    - when: always
 
 random-scheduler:
   tags: [ $RUNNER_TAG ]
@@ -92,8 +90,6 @@ random-scheduler:
     - apt-get update
     - apt-get install -y protobuf-compiler
     - cargo test --features shuttle test_node_with_random_operations
-  rules:
-    - when: always
 
 rust-latest:
   tags: [ $RUNNER_TAG ]
@@ -125,8 +121,6 @@ rust-latest:
     - cargo build  --bin vlsd --features developer
     # build lnrod for integration tests
     - cd lnrod && cargo build
-  rules:
-    - when: always
   artifacts:
     paths:
       - "target/debug/vlsd"
@@ -157,8 +151,6 @@ rust-latest-extras:
     - cargo update -w --locked
     - cargo build --all-features
     - cargo test
-  rules:
-    - when: always
   artifacts:
     paths:
       - "target"
@@ -178,8 +170,6 @@ rust-msrv:
     # build command line binaries for integration tests
     - cargo build --bins
     - cargo test --features test_cli
-  rules:
-    - when: always
 
 rust-msrv-lss:
   tags: [$RUNNER_TAG]
@@ -196,8 +186,6 @@ rust-msrv-lss:
     # only lss library should be msrv compatible
     - cd lightning-storage-server
     - cargo test -p lightning-storage-server
-  rules:
-    - when: always
 
 embedded:
   tags: [ saas-linux-medium-amd64 ]
@@ -214,8 +202,6 @@ embedded:
     - cd embedded
     - cargo update -w --locked
     - cargo run --release --target thumbv7m-none-eabi
-  rules:
-    - when: always
 
 stm32:
   tags: [ saas-linux-medium-amd64 ]
@@ -229,8 +215,6 @@ stm32:
     - cd vls-signer-stm32
     - cargo update -w --locked
     - cargo build --features developer --release --bin demo_signer
-  rules:
-    - when: always
 
 wasm:
   tags: [ saas-linux-medium-amd64 ]
@@ -245,8 +229,6 @@ wasm:
     - cd wasm
     - cargo update -w --locked
     - wasm-pack test --firefox --headless && cargo test
-  rules:
-    - when: always
 
 coverage:
   tags: [ $RUNNER_TAG ]
@@ -275,8 +257,6 @@ coverage:
         coverage_format: cobertura
         path: target/cobertura.xml
     expire_in: 1 week
-  rules:
-    - when: always
 
 cargo-audit:
   tags: [ saas-linux-medium-amd64 ]
@@ -291,8 +271,6 @@ cargo-audit:
     - cargo audit
     - (cd lightning-storage-server && cargo audit)
     - (cd lnrod && cargo audit)
-  rules:
-    - when: always
 
 changelog:
   stage: build
@@ -314,8 +292,6 @@ changelog:
           exit 1;
         fi
       fi
-  rules:
-    - when: always
 
 cargo-fmt:
   tags: [ saas-linux-small-amd64 ]
@@ -334,8 +310,6 @@ cargo-fmt:
     - rustup toolchain install nightly-2024-10-13
     - rustup component add --toolchain nightly-2024-10-13 rustfmt
     - ./scripts/fmt-all --check
-  rules:
-    - when: always
 
 cargo-mutants:
   tags: [ $RUNNER_TAG ]
@@ -367,8 +341,6 @@ cargo-mutants:
     paths:
       - mutants.out/
     expire_in: 1 week
-  rules:
-    - when: always
 
 integration-lnrod-local:
   stage: test
@@ -388,8 +360,6 @@ integration-lnrod-local:
     when: always
     paths:
       - test-output
-  rules:
-    - when: always
 
 integration-lnrod-grpc:
   stage: test
@@ -409,8 +379,6 @@ integration-lnrod-grpc:
     when: always
     paths:
       - test-output
-  rules:
-    - when: always
 
 integration-lnrod-grpc-disaster-recovery:
   stage: test
@@ -430,5 +398,3 @@ integration-lnrod-grpc-disaster-recovery:
     when: always
     paths:
       - test-output
-  rules:
-    - when: always
