@@ -72,7 +72,9 @@ Note that several rules may be checked in one comparison, in which case the pref
 * Format - version, locktime and sequence must be as specified in BOLT 3 <br>
   `policy-commitment-version`,
   `policy-commitment-locktime`,
-  `policy-commitment-sequence`
+  `policy-commitment-sequence`,
+  `policy-commitment-scripts`,
+  `policy-commitment-other`
 
 * Output - the outputs must be at most one to-local, at most one
   to-remote and HTLCs (and anchors, as below). <br>
@@ -239,7 +241,8 @@ following rules are checked:
 * Format - version, locktime and sequence must be as specified in BOLT 3 <br>
   `policy-htlc-version`,
   `policy-htlc-locktime`,
-  `policy-htlc-sequence`
+  `policy-htlc-sequence`,
+  `policy-htlc-other`,
 
 * The HTLCTimeout locktime (`cltv_expiry`) must be reasonable <br>
   `policy-htlc-cltv-range` <br>

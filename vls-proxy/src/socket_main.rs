@@ -158,7 +158,8 @@ mod tests {
             .assert();
 
         assert.stdout(
-            predicate::str::is_match("remote_hsmd_socket git_desc=v0.13.0\\S+ starting").unwrap(),
+            predicate::str::is_match("remote_hsmd_socket git_desc=v0.\\d+.\\d+\\S+ starting")
+                .unwrap(),
         );
     }
 
@@ -175,8 +176,8 @@ mod tests {
         let mut cmd = Command::cargo_bin("remote_hsmd_socket").unwrap();
         let assert = cmd.arg("--git-desc").assert();
 
-        assert
-            .success()
-            .stdout(predicate::str::is_match("remote_hsmd_socket git_desc=v0.13.0\\S+").unwrap());
+        assert.success().stdout(
+            predicate::str::is_match("remote_hsmd_socket git_desc=v0.\\d+.\\d+\\S+").unwrap(),
+        );
     }
 }

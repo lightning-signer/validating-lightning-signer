@@ -1076,6 +1076,7 @@ mod tests {
                         make_test_pubkey(0x08),
                         commit_info.clone()
                     ),
+                    "policy-other",
                     "set_next_counterparty_commit_num: can\'t set next to 0"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 0);
@@ -1083,6 +1084,7 @@ mod tests {
                 // can't set next_revoke to 0 either
                 assert_policy_err!(
                     validator.set_next_counterparty_revoke_num(state, 0),
+                    "policy-other",
                     "set_next_counterparty_revoke_num: can\'t set next to 0"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 0);
@@ -1117,6 +1119,7 @@ mod tests {
                         make_test_pubkey(0x14),
                         commit_info.clone()
                     ),
+                    "policy-commitment-previous-revoked",
                     "set_next_counterparty_commit_num: invalid progression: 1 to 3"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 1);
@@ -1124,6 +1127,7 @@ mod tests {
                 // can't skip next_revoke forward
                 assert_policy_err!(
                     validator.set_next_counterparty_revoke_num(state, 1),
+                    "policy-commitment-previous-revoked",
                     "set_next_counterparty_revoke_num: \
                      1 too large relative to next_counterparty_commit_num 1"
                 );
@@ -1160,6 +1164,7 @@ mod tests {
                         make_test_pubkey(0x10),
                         commit_info.clone()
                     ),
+                    "policy-commitment-previous-revoked",
                     "set_next_counterparty_commit_num: invalid progression: 2 to 1"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 2);
@@ -1167,6 +1172,7 @@ mod tests {
                 // can't (ever) set next_revoke to 0
                 assert_policy_err!(
                     validator.set_next_counterparty_revoke_num(state, 0),
+                    "policy-other",
                     "set_next_counterparty_revoke_num: can\'t set next to 0"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 0);
@@ -1174,6 +1180,7 @@ mod tests {
                 // can't skip revoke ahead
                 assert_policy_err!(
                     validator.set_next_counterparty_revoke_num(state, 2),
+                    "policy-commitment-previous-revoked",
                     "set_next_counterparty_revoke_num: 2 too large relative to \
                      next_counterparty_commit_num 2"
                 );
@@ -1200,6 +1207,7 @@ mod tests {
                         make_test_pubkey(0x12),
                         commit_info.clone()
                     ),
+                    "policy-commitment-previous-revoked",
                     "set_next_counterparty_commit_num: 2 too small relative to \
                      next_counterparty_revoke_num 1"
                 );
@@ -1213,6 +1221,7 @@ mod tests {
                         make_test_pubkey(0x16),
                         commit_info.clone()
                     ),
+                    "policy-commitment-previous-revoked",
                     "set_next_counterparty_commit_num: invalid progression: 2 to 4"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 2);
@@ -1220,6 +1229,7 @@ mod tests {
                 // can't revoke backwards
                 assert_policy_err!(
                     validator.set_next_counterparty_revoke_num(state, 0),
+                    "policy-other",
                     "set_next_counterparty_revoke_num: can\'t set next to 0"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 1);
@@ -1227,6 +1237,7 @@ mod tests {
                 // can't skip revoke ahead
                 assert_policy_err!(
                     validator.set_next_counterparty_revoke_num(state, 2),
+                    "policy-commitment-previous-revoked",
                     "set_next_counterparty_revoke_num: 2 too large \
                      relative to next_counterparty_commit_num 2"
                 );
@@ -1263,6 +1274,7 @@ mod tests {
                 // Can't skip revoke ahead
                 assert_policy_err!(
                     validator.set_next_counterparty_revoke_num(state, 3),
+                    "policy-commitment-previous-revoked",
                     "set_next_counterparty_revoke_num: 3 too large relative to \
                      next_counterparty_commit_num 3"
                 );
@@ -1276,6 +1288,7 @@ mod tests {
                         make_test_pubkey(0x12),
                         commit_info.clone()
                     ),
+                    "policy-commitment-previous-revoked",
                     "set_next_counterparty_commit_num: 2 too small relative to \
                      next_counterparty_revoke_num 1"
                 );
@@ -1297,6 +1310,7 @@ mod tests {
                 // can't revoke backwards
                 assert_policy_err!(
                     validator.set_next_counterparty_revoke_num(state, 1),
+                    "policy-commitment-previous-revoked",
                     "set_next_counterparty_revoke_num: invalid progression: 2 to 1"
                 );
                 assert_eq!(state.next_counterparty_revoke_num, 2);
@@ -1304,6 +1318,7 @@ mod tests {
                 // can't revoke ahead until next commit
                 assert_policy_err!(
                     validator.set_next_counterparty_revoke_num(state, 3),
+                    "policy-commitment-previous-revoked",
                     "set_next_counterparty_revoke_num: 3 too large relative to \
                      next_counterparty_commit_num 3"
                 );
@@ -1317,6 +1332,7 @@ mod tests {
                         make_test_pubkey(0x14),
                         commit_info.clone()
                     ),
+                    "policy-commitment-previous-revoked",
                     "set_next_counterparty_commit_num: 3 too small relative to \
                      next_counterparty_revoke_num 2"
                 );
@@ -1330,6 +1346,7 @@ mod tests {
                         make_test_pubkey(0x18),
                         commit_info.clone()
                     ),
+                    "policy-commitment-previous-revoked",
                     "set_next_counterparty_commit_num: invalid progression: 3 to 5"
                 );
                 assert_eq!(state.next_counterparty_commit_num, 3);

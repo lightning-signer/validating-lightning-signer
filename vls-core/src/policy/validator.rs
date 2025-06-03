@@ -284,7 +284,7 @@ pub trait Validator {
         current_commitment_info: CommitmentInfo2,
     ) -> Result<(), ValidationError> {
         if num == 0 {
-            policy_err!(self, "policy-commitment-previous-revoked", "can't set next to 0");
+            policy_err!(self, "policy-other", "can't set next to 0");
         }
 
         // The initial commitment is special, it can advance even though next_revoke is 0.

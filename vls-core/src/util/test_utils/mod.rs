@@ -122,10 +122,13 @@ macro_rules! assert_validation_ok {
 
 #[cfg(test)]
 macro_rules! assert_policy_err {
-    ($res: expr, $msg: expr) => {
+    ($res: expr, $tag: expr, $msg: expr) => {
         assert!($res.is_err());
+        let expected = policy_error($tag, $msg);
+        let unwrapped = $res.unwrap_err();
         // avoid printing the backtrace ...
-        assert_eq!($res.unwrap_err().kind, policy_error($msg.to_string()).kind);
+        assert_eq!(unwrapped.kind, expected.kind);
+        assert_eq!(unwrapped.tag, expected.tag);
     };
 }
 

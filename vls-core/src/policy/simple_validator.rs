@@ -139,7 +139,7 @@ impl Policy for SimplePolicy {
     }
 
     fn policy_log(&self, tag: String, msg: String) {
-        if self.filter.filter(tag) == FilterResult::Error {
+        if self.filter.filter(&tag) == FilterResult::Error {
             error!("{}", msg);
         } else {
             warn!("{}", msg);
@@ -272,7 +272,7 @@ impl SimpleValidator {
         weight: usize,
     ) -> Result<(), ValidationError> {
         let fee = sum_inputs.checked_sub(sum_outputs).ok_or_else(|| {
-            policy_error(format!("fee underflow: {} - {}", sum_inputs, sum_outputs))
+            policy_error(tag, format!("fee underflow: {} - {}", sum_inputs, sum_outputs))
         })?;
         let feerate_perkw = estimate_feerate_per_kw(fee, weight as u64);
         debug!("validate_fee fee:{} / weight:{} = feerate_perkw:{}", fee, weight, feerate_perkw);
@@ -304,10 +304,13 @@ impl SimpleValidator {
         weight: usize,
     ) -> Result<u64, ValidationError> {
         let non_beneficial = sum_our_inputs.checked_sub(sum_our_outputs).ok_or_else(|| {
-            policy_error(format!(
-                "non-beneficial value underflow: sum of our inputs {} < sum of our outputs {}",
-                sum_our_inputs, sum_our_outputs
-            ))
+            policy_error(
+                "policy-onchain-format-standard",
+                format!(
+                    "non-beneficial value underflow: sum of our inputs {} < sum of our outputs {}",
+                    sum_our_inputs, sum_our_outputs
+                ),
+            )
         })?;
         let feerate_perkw = estimate_feerate_per_kw(non_beneficial, weight as u64);
         if feerate_perkw > self.policy.max_feerate_per_kw {
@@ -361,11 +364,13 @@ impl SimpleValidator {
 
         for out in tx.output.iter() {
             let dest_script = &out.script_pubkey;
-            if !wallet
-                .can_spend(wallet_path, dest_script)
-                .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
-                && !wallet.allowlist_contains(dest_script, wallet_path)
-            {
+            let spendable = wallet.can_spend(wallet_path, dest_script).map_err(|err| {
+                policy_error(
+                    "policy-onchain-output-scriptpubkey",
+                    format!("wallet can_spend error: {}", err),
+                )
+            })?;
+            if !spendable && !wallet.allowlist_contains(dest_script, wallet_path) {
                 info!(
                     "dest_script not matched: path={:?}, {}",
                     wallet_path,
@@ -423,10 +428,16 @@ impl Validator for SimpleValidator {
         self.validate_delay("counterparty", setup.holder_selected_contest_delay as u32)?;
 
         if let Some(holder_shutdown_script) = &setup.holder_shutdown_script {
-            if !wallet
-                .can_spend(holder_shutdown_key_path, &holder_shutdown_script)
-                .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
-                && !wallet.allowlist_contains(&holder_shutdown_script, holder_shutdown_key_path)
+            let spendable = wallet
+                .can_spend(holder_shutdown_key_path, holder_shutdown_script)
+                .map_err(|err| {
+                    policy_error(
+                        "policy-onchain-output-scriptpubkey",
+                        format!("wallet can_spend error: {}", err),
+                    )
+                })?;
+            if !spendable
+                && !wallet.allowlist_contains(holder_shutdown_script, holder_shutdown_key_path)
             {
                 info!(
                     "holder_shutdown_script not matched: path={:?}, {}",
@@ -501,10 +512,13 @@ impl Validator for SimpleValidator {
             macro_rules! add_beneficial_output {
                 ($sum: expr, $val: expr, $which: expr) => {
                     $sum.checked_add($val).ok_or_else(|| {
-                        policy_error(format!(
-                            "beneficial outputs overflow: sum {} + {} {}",
-                            $sum, $which, $val
-                        ))
+                        policy_error(
+                            "policy-onchain-fee-range",
+                            format!(
+                                "beneficial outputs overflow: sum {} + {} {}",
+                                $sum, $which, $val
+                            ),
+                        )
                     })
                 };
             }
@@ -513,7 +527,10 @@ impl Validator for SimpleValidator {
                 // Possible change output to our wallet
                 let mut spendable =
                     wallet.can_spend(opath, &output.script_pubkey).map_err(|err| {
-                        policy_error(format!("output[{}]: wallet_can_spend error: {}", outndx, err))
+                        policy_error(
+                            "policy-onchain-output-scriptpubkey",
+                            format!("output[{}]: wallet_can_spend error: {}", outndx, err),
+                        )
                     })?;
                 if spendable {
                     debug!("output {} ({}) is to our wallet", outndx, output.value.to_sat());
@@ -612,11 +629,13 @@ impl Validator for SimpleValidator {
                         let our_value =
                             chan.setup.channel_value_sat.checked_sub(push_val_sat).ok_or_else(
                                 || {
-                                    // no tag for this, since it's a programming error and cannot result in a valid commitment tx anyway
-                                    policy_error(format!(
-                                        "channel value underflow: {} - {}",
-                                        chan.setup.channel_value_sat, push_val_sat
-                                    ))
+                                    policy_error(
+                                        "policy-onchain-fee-range",
+                                        format!(
+                                            "channel value underflow: {} - {}",
+                                            chan.setup.channel_value_sat, push_val_sat
+                                        ),
+                                    )
                                 },
                             )?;
                         debug!(
@@ -644,9 +663,9 @@ impl Validator for SimpleValidator {
         // policy-onchain-fee-range
         let mut sum_inputs: u64 = 0;
         for val in values_sat {
-            sum_inputs = sum_inputs
-                .checked_add(*val)
-                .ok_or_else(|| policy_error(format!("funding sum inputs overflow")))?;
+            sum_inputs = sum_inputs.checked_add(*val).ok_or_else(|| {
+                policy_error("policy-onchain-fee-range", "funding sum inputs overflow")
+            })?;
         }
         let non_beneficial = self
             .validate_beneficial_value(sum_inputs, beneficial_sum, weight_lower_bound)
@@ -961,7 +980,12 @@ impl Validator for SimpleValidator {
         };
         let original_tx_sighash = SighashCache::new(tx)
             .p2wsh_signature_hash(0, &redeemscript, Amount::from_sat(htlc_amount_sat), sighash_type)
-            .map_err(|_| policy_error("could not compute sighash on provided HTLC tx"))?;
+            .map_err(|_| {
+                policy_error(
+                    "policy-commitment-other",
+                    "could not compute sighash on provided HTLC tx",
+                )
+            })?;
 
         let offered = if parse_offered_htlc_script(redeemscript, setup.is_anchors()).is_ok() {
             true
@@ -977,7 +1001,7 @@ impl Validator for SimpleValidator {
                 htlc_amount_sat,
                 output_witscript
             );
-            return Err(policy_error("invalid redeemscript".to_string()));
+            return Err(policy_error("policy-commitment-scripts", "invalid redeemscript"));
         };
 
         // Extract some parameters from the submitted transaction.
@@ -986,7 +1010,7 @@ impl Validator for SimpleValidator {
         let commitment_txid = tx.input[0].previous_output.txid;
         let total_fee = htlc_amount_sat
             .checked_sub(tx.output[0].value.to_sat())
-            .ok_or_else(|| policy_error("fee underflow".to_string()))?;
+            .ok_or_else(|| policy_error("policy-commitment-fee-range", "fee underflow"))?;
 
         let features = setup.features();
         let build_feerate = if setup.is_zero_fee_htlc() {
@@ -1061,7 +1085,7 @@ impl Validator for SimpleValidator {
                 to_self_delay,
                 &txkeys.broadcaster_delayed_payment_key.0
             );
-            return Err(policy_error("sighash mismatch".to_string()));
+            return Err(policy_error("policy-htlc-other", "sighash mismatch".to_string()));
         }
 
         // The sighash comparison in the previous block will fail if any of the
@@ -1331,15 +1355,20 @@ impl Validator for SimpleValidator {
             counterparty_script
         );
 
-        let holder_info = estate
-            .current_holder_commit_info
-            .as_ref()
-            .ok_or_else(|| policy_error("current_holder_commit_info missing"))?;
+        let holder_info = estate.current_holder_commit_info.as_ref().ok_or_else(|| {
+            policy_error(
+                "policy-mutual-value-matches-commitment",
+                "current_holder_commit_info missing",
+            )
+        })?;
 
-        let counterparty_info = estate
-            .current_counterparty_commit_info
-            .as_ref()
-            .ok_or_else(|| policy_error("current_counterparty_commit_info missing"))?;
+        let counterparty_info =
+            estate.current_counterparty_commit_info.as_ref().ok_or_else(|| {
+                policy_error(
+                    "policy-mutual-value-matches-commitment",
+                    "current_counterparty_commit_info missing",
+                )
+            })?;
 
         if to_holder_value_sat > 0 && holder_script.is_none() {
             policy_err!(
@@ -1388,9 +1417,10 @@ impl Validator for SimpleValidator {
         );
 
         // policy-mutual-fee-range
-        let sum_outputs = to_holder_value_sat
-            .checked_add(to_counterparty_value_sat)
-            .ok_or_else(|| policy_error("consumed overflow".to_string()))?;
+        let sum_outputs =
+            to_holder_value_sat.checked_add(to_counterparty_value_sat).ok_or_else(|| {
+                policy_error("policy-mutual-value-matches-commitment", "consumed overflow")
+            })?;
         self.validate_fee("policy-mutual-fee-range", setup.channel_value_sat, sum_outputs, weight)
             .map_err(|ve| ve.prepend_msg(format!("{}: ", containing_function!())))?;
 
@@ -1458,10 +1488,9 @@ impl Validator for SimpleValidator {
         }
 
         if let Some(script) = &holder_script {
-            if !wallet
-                .can_spend(holder_wallet_path_hint, script)
-                .map_err(|err| policy_error(format!("wallet can_spend error: {}", err)))?
-                && !wallet.allowlist_contains(script, holder_wallet_path_hint)
+            if !wallet.can_spend(holder_wallet_path_hint, script).map_err(|err| {
+                policy_error("policy-mutual-scripts", format!("wallet can_spend error: {}", err))
+            })? && !wallet.allowlist_contains(script, holder_wallet_path_hint)
             {
                 policy_err!(
                     self,
@@ -1713,10 +1742,10 @@ impl Validator for SimpleValidator {
 
             // check if the payment is payment an percentage of the fee
             let fee = outgoing_msat - invoiced_amount_msat - incoming_msat;
-            let actual_fee_percentage = fee
-                .checked_mul(100)
-                .ok_or(policy_error(format!("policy-generic-error: invoice amount too big")))?
-                / core::cmp::max(invoiced_amount_msat, 1);
+            let actual_fee_percentage = fee.checked_mul(100).ok_or(policy_error(
+                "policy-commitment-payment-velocity",
+                "policy-generic-error: invoice amount too big",
+            ))? / core::cmp::max(invoiced_amount_msat, 1);
             if actual_fee_percentage > self.policy.max_feerate_percentage.into() {
                 policy_err!(
                     self,
@@ -1805,9 +1834,12 @@ impl SimpleValidator {
             // policy-commitment-htlc-cltv-range
             self.validate_expiry("offered HTLC", htlc.cltv_expiry, cstate.current_height)?;
 
-            htlc_value_sat = htlc_value_sat
-                .checked_add(htlc.value_sat)
-                .ok_or_else(|| policy_error("offered HTLC value overflow".to_string()))?;
+            htlc_value_sat = htlc_value_sat.checked_add(htlc.value_sat).ok_or_else(|| {
+                policy_error(
+                    "policy-commitment-payment-velocity",
+                    "offered HTLC value overflow".to_string(),
+                )
+            })?;
 
             if htlc.value_sat < offered_htlc_dust_limit {
                 policy_err!(
@@ -1833,9 +1865,12 @@ impl SimpleValidator {
             // policy-commitment-htlc-cltv-range
             self.validate_expiry("received HTLC", htlc.cltv_expiry, cstate.current_height)?;
 
-            htlc_value_sat = htlc_value_sat
-                .checked_add(htlc.value_sat)
-                .ok_or_else(|| policy_error("received HTLC value overflow".to_string()))?;
+            htlc_value_sat = htlc_value_sat.checked_add(htlc.value_sat).ok_or_else(|| {
+                policy_error(
+                    "policy-commitment-payment-velocity",
+                    "received HTLC value overflow".to_string(),
+                )
+            })?;
 
             if htlc.value_sat < received_htlc_dust_limit {
                 policy_err!(
@@ -1866,9 +1901,19 @@ impl SimpleValidator {
         let sum_outputs = info
             .to_broadcaster_value_sat
             .checked_add(info.to_countersigner_value_sat)
-            .ok_or_else(|| policy_error("channel value overflow".to_string()))?
+            .ok_or_else(|| {
+                policy_error(
+                    "policy-commitment-payment-velocity",
+                    "channel value overflow".to_string(),
+                )
+            })?
             .checked_add(htlc_value_sat)
-            .ok_or_else(|| policy_error("channel value overflow on HTLC".to_string()))?;
+            .ok_or_else(|| {
+                policy_error(
+                    "policy-commitment-payment-velocity",
+                    "channel value overflow on HTLC".to_string(),
+                )
+            })?;
         self.validate_fee(
             "policy-commitment-fee-range",
             setup.channel_value_sat,
@@ -2034,7 +2079,11 @@ mod tests {
             &tx,
             &vec![vec![]],
         );
-        assert_policy_err!(res, "decode_commitment_tx: bad commitment version: 1");
+        assert_policy_err!(
+            res,
+            "policy-commitment-version",
+            "decode_commitment_tx: bad commitment version: 1"
+        );
     }
 
     #[test]
@@ -2117,6 +2166,7 @@ mod tests {
         setup.holder_selected_contest_delay = 4;
         assert_policy_err!(
             validator.validate_setup_channel(&*node, &setup, &vec![]),
+            "policy-channel-contest-delay-range-counterparty",
             "validate_delay: counterparty contest-delay too small: 4 < 5"
         );
     }
@@ -2146,6 +2196,7 @@ mod tests {
         setup.holder_selected_contest_delay = 1441;
         assert_policy_err!(
             validator.validate_setup_channel(&*node, &setup, &vec![]),
+            "policy-channel-contest-delay-range-counterparty",
             "validate_delay: counterparty contest-delay too large: 1441 > 1440"
         );
     }
@@ -2162,6 +2213,7 @@ mod tests {
         setup.counterparty_selected_contest_delay = 4;
         assert_policy_err!(
             validator.validate_setup_channel(&*node, &setup, &vec![]),
+            "policy-channel-contest-delay-range-holder",
             "validate_delay: holder contest-delay too small: 4 < 5"
         );
     }
@@ -2178,6 +2230,7 @@ mod tests {
         setup.counterparty_selected_contest_delay = 1441;
         assert_policy_err!(
             validator.validate_setup_channel(&*node, &setup, &vec![]),
+            "policy-channel-contest-delay-range-holder",
             "validate_delay: holder contest-delay too large: 1441 > 1440"
         );
     }
@@ -2201,6 +2254,7 @@ mod tests {
                 &cstate,
                 &info_bad,
             ),
+            "policy-commitment-fee-range",
             "validate_commitment_tx: fee underflow: 3000000 - 3000001"
         );
     }
@@ -2240,6 +2294,7 @@ mod tests {
                 &cstate,
                 &info_bad,
             ),
+            "policy-commitment-fee-range",
             "validate_commitment_tx: fee underflow: 3000000 - 3100000"
         );
     }
@@ -2265,7 +2320,11 @@ mod tests {
             &cstate,
             &info,
         );
-        assert_policy_err!(status, "validate_commitment_tx: initial commitment may not have HTLCS");
+        assert_policy_err!(
+            status,
+            "policy-commitment-first-no-htlcs",
+            "validate_commitment_tx: initial commitment may not have HTLCS"
+        );
     }
 
     // policy-commitment-initial-funding-value
@@ -2289,6 +2348,7 @@ mod tests {
         );
         assert_policy_err!(
             status,
+            "policy-commitment-initial-funding-value",
             "validate_commitment_tx: initial commitment may only send push_value_msat (0) to fundee"
         );
     }
@@ -2313,6 +2373,7 @@ mod tests {
                 &cstate,
                 &info_bad,
             ),
+            "policy-commitment-htlc-count-limit",
             "validate_commitment_tx: too many HTLCs"
         );
     }
@@ -2343,6 +2404,7 @@ mod tests {
                 &cstate,
                 &info_bad,
             ),
+            "policy-commitment-htlc-inflight-limit",
             "validate_commitment_tx: sum of HTLC values 10001000 too large"
         );
     }
@@ -2389,6 +2451,7 @@ mod tests {
                 &cstate,
                 &info_bad,
             ),
+            "policy-commitment-htlc-cltv-range",
             "validate_expiry: received HTLC expiry too early: 1004 < 1005"
         );
         let info_bad =
@@ -2402,6 +2465,7 @@ mod tests {
                 &cstate,
                 &info_bad,
             ),
+            "policy-commitment-htlc-cltv-range",
             "validate_expiry: received HTLC expiry too late: 2441 > 2440"
         );
     }
@@ -2422,6 +2486,7 @@ mod tests {
                 point0.clone(),
                 commit_info.clone()
             ),
+            "policy-other",
             "set_next_counterparty_commit_num: can\'t set next to 0"
         );
 
@@ -2439,6 +2504,7 @@ mod tests {
                 point0.clone(),
                 commit_info.clone()
             ),
+            "policy-commitment-previous-revoked",
             "set_next_counterparty_commit_num: invalid progression: 0 to 2"
         );
 
@@ -2469,6 +2535,7 @@ mod tests {
                 point1.clone(),
                 commit_info.clone()
             ),
+            "policy-commitment-previous-revoked",
             "set_next_counterparty_commit_num: \
              invalid progression: 1 to 3"
         );
@@ -2497,6 +2564,7 @@ mod tests {
                 point1.clone(),
                 commit_info.clone()
             ),
+            "policy-commitment-previous-revoked",
             "set_next_counterparty_commit_num: invalid progression: 2 to 4"
         );
         assert_eq!(state.next_counterparty_commit_num, 2);

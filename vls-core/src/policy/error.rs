@@ -28,13 +28,15 @@ pub enum ValidationErrorKind {
 // Explicit PartialEq which ignores backtrace.
 impl PartialEq for ValidationError {
     fn eq(&self, other: &ValidationError) -> bool {
-        self.kind == other.kind
+        self.kind == other.kind && self.tag == other.tag
     }
 }
 
 /// Validation error
 #[derive(Clone)]
 pub struct ValidationError {
+    /// The tag
+    pub tag: String,
     /// The kind of error
     pub kind: ValidationErrorKind,
     /// A non-resolved backtrace
@@ -52,38 +54,40 @@ impl ValidationError {
     }
 
     /// Return a new ValidationError with the message prepended
-    pub fn prepend_msg(&self, premsg: String) -> ValidationError {
+    pub fn prepend_msg(self, premsg: String) -> ValidationError {
         let modkind = match &self.kind {
-            TransactionFormat(s0) => TransactionFormat(premsg + &s0),
-            ScriptFormat(s0) => ScriptFormat(premsg + &s0),
-            Mismatch(s0) => Mismatch(premsg + &s0),
-            Policy(s0) => Policy(premsg + &s0),
-            TemporaryPolicy(s0) => TemporaryPolicy(premsg + &s0),
-            UnknownDestinations(s0, indices) => UnknownDestinations(premsg + &s0, indices.clone()),
+            TransactionFormat(s0) => TransactionFormat(premsg + s0),
+            ScriptFormat(s0) => ScriptFormat(premsg + s0),
+            Mismatch(s0) => Mismatch(premsg + s0),
+            Policy(s0) => Policy(premsg + s0),
+            TemporaryPolicy(s0) => TemporaryPolicy(premsg + s0),
+            UnknownDestinations(s0, indices) => UnknownDestinations(premsg + s0, indices.clone()),
         };
         ValidationError {
+            tag: self.tag,
             kind: modkind,
             #[cfg(feature = "use_backtrace")]
-            bt: self.bt.clone(),
+            bt: self.bt,
         }
     }
 }
 
 impl core::fmt::Display for ValidationError {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "{:?}", self.kind)
+        write!(f, "{:?}[{}]", self.kind, self.tag)
     }
 }
 
 impl core::fmt::Debug for ValidationError {
     #[cfg(not(feature = "use_backtrace"))]
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("ValidationError").field("kind", &self.kind).finish()
+        f.debug_struct("ValidationError").field("kind", &self.kind).field("tag", &self.tag).finish()
     }
     #[cfg(feature = "use_backtrace")]
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("ValidationError")
             .field("kind", &self.kind)
+            .field("tag", &self.tag)
             .field("bt", &self.resolved_backtrace())
             .finish()
     }
@@ -106,6 +110,7 @@ impl Into<String> for ValidationError {
 
 pub(crate) fn transaction_format_error(msg: impl Into<String>) -> ValidationError {
     ValidationError {
+        tag: "policy-commitment-scripts".to_string(),
         kind: TransactionFormat(msg.into()),
         #[cfg(feature = "use_backtrace")]
         bt: Backtrace::new_unresolved(),
@@ -114,6 +119,7 @@ pub(crate) fn transaction_format_error(msg: impl Into<String>) -> ValidationErro
 
 pub(crate) fn script_format_error(msg: impl Into<String>) -> ValidationError {
     ValidationError {
+        tag: "policy-commitment-scripts".to_string(),
         kind: ScriptFormat(msg.into()),
         #[cfg(feature = "use_backtrace")]
         bt: Backtrace::new_unresolved(),
@@ -122,22 +128,25 @@ pub(crate) fn script_format_error(msg: impl Into<String>) -> ValidationError {
 
 pub(crate) fn mismatch_error(msg: impl Into<String>) -> ValidationError {
     ValidationError {
+        tag: "policy-commitment-scripts".to_string(),
         kind: Mismatch(msg.into()),
         #[cfg(feature = "use_backtrace")]
         bt: Backtrace::new_unresolved(),
     }
 }
 
-pub(crate) fn policy_error(msg: impl Into<String>) -> ValidationError {
+pub(crate) fn policy_error(tag: impl Into<String>, msg: impl Into<String>) -> ValidationError {
     ValidationError {
+        tag: tag.into(),
         kind: Policy(msg.into()),
         #[cfg(feature = "use_backtrace")]
         bt: Backtrace::new_unresolved(),
     }
 }
 
-pub(crate) fn temporary_policy_error(msg: impl Into<String>) -> ValidationError {
+pub(crate) fn temporary_policy_error(tag: String, msg: impl Into<String>) -> ValidationError {
     ValidationError {
+        tag,
         kind: TemporaryPolicy(msg.into()),
         #[cfg(feature = "use_backtrace")]
         bt: Backtrace::new_unresolved(),
@@ -146,6 +155,7 @@ pub(crate) fn temporary_policy_error(msg: impl Into<String>) -> ValidationError 
 
 pub(crate) fn unknown_destinations_error(unknowns: Vec<usize>) -> ValidationError {
     ValidationError {
+        tag: "policy-onchain-no-unknown-outputs".to_string(),
         kind: UnknownDestinations("".to_string(), unknowns),
         #[cfg(feature = "use_backtrace")]
         bt: Backtrace::new_unresolved(),
@@ -214,30 +224,27 @@ mod tests {
     #[test]
     fn validation_error_test() {
         assert_eq!(
-            format!("{}", transaction_format_error("testing".to_string())),
-            "TransactionFormat(\"testing\")"
+            format!("{}", transaction_format_error("testing")),
+            "TransactionFormat(\"testing\")[policy-commitment-scripts]"
         );
         assert_eq!(
-            Into::<String>::into(transaction_format_error("testing".to_string())),
+            Into::<String>::into(transaction_format_error("testing")),
             "transaction format: testing"
         );
         assert_eq!(
-            format!("{}", script_format_error("testing".to_string())),
-            "ScriptFormat(\"testing\")"
+            format!("{}", script_format_error("testing")),
+            "ScriptFormat(\"testing\")[policy-commitment-scripts]"
+        );
+        assert_eq!(Into::<String>::into(script_format_error("testing")), "script format: testing");
+        assert_eq!(
+            format!("{}", mismatch_error("testing")),
+            "Mismatch(\"testing\")[policy-commitment-scripts]"
         );
         assert_eq!(
-            Into::<String>::into(script_format_error("testing".to_string())),
-            "script format: testing"
-        );
-        assert_eq!(format!("{}", mismatch_error("testing".to_string())), "Mismatch(\"testing\")");
-        assert_eq!(
-            Into::<String>::into(mismatch_error("testing".to_string())),
+            Into::<String>::into(mismatch_error("testing")),
             "script template mismatch: testing"
         );
-        assert_eq!(format!("{}", policy_error("testing".to_string())), "Policy(\"testing\")");
-        assert_eq!(
-            Into::<String>::into(policy_error("testing".to_string())),
-            "policy failure: testing"
-        );
+        assert_eq!(format!("{}", policy_error("tag", "testing")), "Policy(\"testing\")[tag]");
+        assert_eq!(Into::<String>::into(policy_error("", "testing")), "policy failure: testing");
     }
 }
