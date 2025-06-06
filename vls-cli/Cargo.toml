@@ -16,10 +16,10 @@ system-test = []
 [dependencies]
 clap = { workspace = true }
 jsonrpsee = { version = "0.24.8", features = ["http-client", "client-core"] }
-tokio = { version = "1.27", features = ["macros"] }
-anyhow = "1"
-tracing = "0.1.34"
-serde_json = { version = "1" }
+tokio = { workspace = true, features = ["macros"] }
+anyhow = { workspace = true, features = ["std"] }
+tracing = { workspace = true, features = ["std"] }
+serde_json = { workspace = true }
 tracing-subscriber = "0.3"
 vlsd = { path = "../vlsd", version = "0.14.0-rc.1" }
 http = { version = "1.0" }

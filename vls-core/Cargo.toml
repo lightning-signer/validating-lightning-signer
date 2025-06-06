@@ -50,24 +50,24 @@ path = "src/lib.rs"
 
 [dependencies]
 vls-common = { path = "../vls-common", version = "0.14.0-rc.1" }
-serde = { version = "1.0", default-features = false, features = ["alloc"] }
+serde = { workspace = true, features = ["alloc"] }
 serde_derive = { version = "1.0" }
 bitcoin-consensus-derive = { version = "0.2.0" }
 serde_with = { version = "3.6", default-features = false, features = ["hex", "macros"] }
 bolt-derive = { path = "../bolt-derive", version = "0.4.0" }
 vls-policy-derive = { path = "../policy-derive", version = "0.1.0" }
 
-hex = { version = "0.4", default-features = false, features = ["alloc"] }
+hex = { workspace = true, features = ["alloc"] }
 
 # Disable default enabled “std” feature
-anyhow = { version = "1.0", default-features = false }
+anyhow = { workspace = true }
 
 # Disable default enabled “use_std” feature
 scopeguard = { version = "1.1.0", default-features = false }
 
 # Don't use "std" feature
 log = { workspace = true }
-tracing = { version = "0.1.40", features = ["attributes", "log"], default-features = false }
+tracing = { workspace = true, default-features = false, features = ["attributes", "log"] }
 
 env_logger = { workspace = true, optional = true }
 backtrace = { version = "0.3", optional = true }
@@ -95,7 +95,7 @@ workspace = true
 features = ["dummy-source"]
 
 [dev-dependencies]
-tokio = { version = "1.0", default-features = false, features = ["macros"] }
+tokio = { workspace = true, features = ["macros"] }
 paste = "1.0"
 # For logging in unit tests
 test-log = { workspace = true }
