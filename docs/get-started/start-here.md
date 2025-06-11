@@ -18,8 +18,8 @@ It’s designed to help you:
 - Provide **non-custodial Lightning services** to users, avoiding the risks of holding their keys
 
 🧠 **New to VLS?** Learn why validation matters:  
-- 👉 [Why Validating Signing?](../Overview/why-validating-signing.md)
-- Learn more about [what VLS does](../Overview/intro.md)
+- 👉 [Why Validating Signing?](../overview/why-validating-signing.md)
+- Learn more about [what VLS does](../overview/intro.md)
 
 ---
 
@@ -86,5 +86,5 @@ Check out our [Sequence Diagrams](../seq-diagrams/) for:
 ## 🤝 Need Help?
 
 - Join our [Matrix chat](https://matrix.to/#/#vls-general:matrix.org)
-- Review our [Policy Engine & Security Rules](../Security/policy-controls.md)
+- Review our [Policy Engine & Security Rules](../security/policy-controls.md)
 - Or message us directly—we’re happy to help!

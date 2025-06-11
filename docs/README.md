@@ -10,9 +10,9 @@ These docs are organized to help developers understand what VLS is, how to integ
 
 | Section           | Purpose                                                             |
 |------------------|----------------------------------------------------------------------|
-| **[Overview](./Overview/intro.md)**        | What VLS is, why it matters, and how it compares to blind signing        |
-| **[Get Started](./Get-Started/start-here.md)**    | Step-by-step integration guides for CLN, LDK, Docker setups               |
-| **[Security](./Security/index.md)**     | Details on VLS policy engine, exploits it prevents, and implementation pitfalls |
+| **[Overview](./overview/intro.md)**        | What VLS is, why it matters, and how it compares to blind signing        |
+| **[Get Started](./get-started/start-here.md)**    | Step-by-step integration guides for CLN, LDK, Docker setups               |
+| **[Security](./security/index.md)**     | Details on VLS policy engine, exploits it prevents, and implementation pitfalls |
 | **[Sequence Diagrams](./seq-diagrams/index.md)**  | Protocol sequence diagrams for VLS implementations              |
 
 ---
@@ -21,8 +21,8 @@ These docs are organized to help developers understand what VLS is, how to integ
 
 Start with:
 
-👉 [Why Validating Signing?](./Overview/why-validating-signing.md)  
-👉 [Start Here](./Get-Started/start-here.md)
+👉 [Why Validating Signing?](./overview/why-validating-signing.md)  
+👉 [Start Here](./get-started/start-here.md)
 
 ---
 

@@ -83,7 +83,7 @@ A validating signer prevents known Lightning attack paths like:
 - Approving mutual closes that send funds to an attacker
 - Accepting malicious counterparty behavior without triggering remediation
 
-For a deeper dive, see a list of [Potential Exploits that VLS Blocks](../Security/potential-exploits.md)
+For a deeper dive, see a list of [Potential Exploits that VLS Blocks](../security/potential-exploits.md)
 
 ---
 
@@ -95,4 +95,4 @@ For a deeper dive, see a list of [Potential Exploits that VLS Blocks](../Securit
 
 Ready to build with real Lightning security?
 
-👉 [Start Here](../Get-Started/start-here.md)
+👉 [Start Here](../get-started/start-here.md)

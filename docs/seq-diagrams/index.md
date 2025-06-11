@@ -4,7 +4,7 @@ title: Sequence Diagrams
 description: Protocol sequence diagrams for VLS implementations
 eleventyNavigation:
   key: Sequence Diagrams
-  parent: v0.13
+  parent: __VERSION__
   order: 5
 ---
 
