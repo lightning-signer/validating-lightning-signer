@@ -3,6 +3,6 @@ layout: layouts/docs.njk
 title: Get Started
 eleventyNavigation:
   key: Get Started
-  parent: v0.13
+  parent: __VERSION__
   order: 2
 ---

@@ -1,9 +1,9 @@
 ---
 layout: layouts/docs.njk
-title: VLS Documentation (v0.13)
+title: VLS Documentation (__VERSION__)
 eleventyNavigation:
   key: Overview
-  parent: v0.13
+  parent: __VERSION__
   order: 1
 ---
 
@@ -33,7 +33,7 @@ signing devices.
 
 The external signing device applies a complete set of policy controls
 to ensure that the proposed transaction is safe to sign. Having a
-[complete set of policy controls](../Security/policy-controls.md)
+[complete set of policy controls](../security/policy-controls.md)
 protects the funds even in the case of
 a complete compromise of the node software. This will require some
 overlap in logic between the node software and the policy signer.
@@ -60,4 +60,4 @@ You can join us on [Matrix](https://matrix.to/#/#vls-general:matrix.org).
 
 * [Securing Lightning Nodes](https://medium.com/@devrandom/securing-lightning-nodes-39410747734b?)
 
-* [Lightning Signing Policy Controls](../Security/policy-controls.md)
+* [Lightning Signing Policy Controls](../security/policy-controls.md)

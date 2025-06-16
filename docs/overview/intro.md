@@ -1,6 +1,6 @@
 ---
 layout: layouts/docs.njk
-title: 
+title: Intro
 eleventyNavigation:
   key: Intro
   parent: Overview
@@ -8,7 +8,6 @@ eleventyNavigation:
 ---
 
 
-## Intro
 Validating Lightning Signer (VLS) is an open-source **Rust library for secure, self-custodial Lightning signers**. Unlike hot wallets or blind signers, VLS keeps your private keys off the node **and** validates each signing request, ensuring only legitimate channel operations are approved. In other words, even if your Lightning node were compromised, funds remain safe thanks to the signer’s rigorous policy checks.
 
 ---
@@ -17,7 +16,7 @@ Validating Lightning Signer (VLS) is an open-source **Rust library for secure, s
 > 👉 [Why Validating Signing?](./why-validating-signing.md)
 
 > ⚡ **Ready to integrate?**  
-> 👉 [Start Here → Choose your stack](../Get-Started/start-here.md)
+> 👉 [Start Here → Choose your stack](../get-started/start-here.md)
 
 ---
 
@@ -101,7 +100,7 @@ Below is a simplified technical breakdown of how VLS integrates with Lightning n
 ## Getting Started
 ---
 ### Option 1: CLN + VLS
-- [CLN & VLS Setup Guide](../Get-Started/cln-vls.md)  
+- [CLN & VLS Setup Guide](../get-started/cln-vls.md)  
 - Basic steps:
   1. Perform one-time dependencies install.  
   2. Build and install `vls-hsmd`.  
@@ -109,20 +108,20 @@ Below is a simplified technical breakdown of how VLS integrates with Lightning n
   4. Start your LN node + VLS signer processes.
 
 ### Option 2: LDK + VLS
-- [LDK & VLS Guide](../Get-Started/ldk-vls.md)  
+- [LDK & VLS Guide](../get-started/ldk-vls.md)  
 - Basic steps:
   1. Clone the `lnrod` repository (a reference LDK node).  
   2. Integrate the `vls-proxy` crate for signing.  
   3. Test basic LN operations to confirm validation.
 
 ### Option 3: Dockerized VLS
-- [Docker Setup Guide](../Get-Started/docker.md)  
+- [Docker Setup Guide](../get-started/docker.md)  
 - Use pre-built Docker images for a single test environment or multi-service deployment including `bitcoind`, `CLN`, `txood` (UTXO oracle), and VLS signer.
 
 ## Next Steps / Further Resources
 ---
 1. **Policy & Security Deep Dive**  
-   - [Security Policies & Pitfalls](../Security/policy-controls.md)  
+   - [Security Policies & Pitfalls](../security/policy-controls.md)  
    - Understand the specific policy rules that protect channel funds from typical LN exploits.
 
 2. **Sequence Diagrams & Protocol**  

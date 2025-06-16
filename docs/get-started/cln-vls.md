@@ -22,11 +22,11 @@ In development and testing the `CLNHOST`, `VLSHOST`, and `TXOHOST` may be the sa
 
 Steps:
 
-1. [One Time Setup](./CLN-VLS/one-time-setup.md)
-2. [Setup Bitcoind testnet Service](./CLN-VLS/setup-bitcoind.md)
-3. [Setup TXOOD testnet Service](./CLN-VLS/setup-txood.md)
-4. [Setup CLN testnet Service](./CLN-VLS/setup-cln.md)
-5. [Setup VLS testnet Service](./CLN-VLS/setup-vls.md)
-6. [Setup CLBOSS and CLN Plugins](./CLN-VLS/setup-clboss.md)
-7. [Update CLN+VLS Software](./CLN-VLS/update-cln-vls.md)
-8. [Configure journalctl](./CLN-VLS/config-journalctl.md)
+1. [One Time Setup](./cln-vls/one-time-setup.md)
+2. [Setup Bitcoind testnet Service](./cln-vls/setup-bitcoind.md)
+3. [Setup TXOOD testnet Service](./cln-vls/setup-txood.md)
+4. [Setup CLN testnet Service](./cln-vls/setup-cln.md)
+5. [Setup VLS testnet Service](./cln-vls/setup-vls.md)
+6. [Setup CLBOSS and CLN Plugins](./cln-vls/setup-clboss.md)
+7. [Update CLN+VLS Software](./cln-vls/update-cln-vls.md)
+8. [Configure journalctl](./cln-vls/config-journalctl.md)

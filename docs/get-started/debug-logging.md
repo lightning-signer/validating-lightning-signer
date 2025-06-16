@@ -11,7 +11,7 @@ eleventyNavigation:
 # Enabling Debug Logging
 
 First since the logs will be much larger, consider [increasing journalctl
-limits](./CLN-VLS/config-journalctl.md)
+limits](./cln-vls/config-journalctl.md)
 
 The following lines need to be changed:
 

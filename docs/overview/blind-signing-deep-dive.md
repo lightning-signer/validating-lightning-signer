@@ -29,7 +29,7 @@ While a Blind Signer is a technical step on the road to the higher security of a
 
 The Validating Lightning Signer project aims to close the gap for securing the Lightning ecosystem. It is an open-source Rust library and reference implementation. The project is approaching Beta, which is the point where the main goal will be met: _funds are safe even if the node is completely compromised_.
 
-The task is relatively complex because of the complexity of the Lightning protocol. There are more than [50 policies](../Security/policy-controls/) that must be enforced, and many of them require stateful inspection of the protocol.
+The task is relatively complex because of the complexity of the Lightning protocol. There are more than [50 policies](../security/policy-controls.md) that must be enforced, and many of them require stateful inspection of the protocol.
 
 Both servers and consumer devices are targeted, the latter via a Rust `no_std` compilation mode.
 
@@ -60,13 +60,13 @@ A compromised node can unilaterally submit transactions to be signed by the blin
 
 * The node submits a mutual closing transaction which sends funds to the attacker's address
 * The node asks the blind signer to sign a revoked transaction which will cause loss of all funds when published
-* And [many more ...](../Security/potential-exploits)
+* And [many more ...](../security/potential-exploits)
 
 A compromised node can also lose funds when it doesn't follow the Lightning protocol. Some potential exploits include:
 
 * The node fails to validate the counter-party's revocation, and the counter-party broadcasts an old commitment transaction that sends most of the funds to the counter-party
 * The node fails to claim input HTLCs when routing payments, leading to the gradual loss of all funds
-* And [many more ...](../Security/potential-exploits)
+* And [many more ...](../security/potential-exploits)
 
 ## Validating Signers
 
@@ -83,6 +83,6 @@ Some of the validation rules that a validated Signer can implement include:
 
 ## Conclusion
 
-Blind signers reduce the security of Lightning nodes and are subject to [many exploits](../Security/potential-exploits).
+Blind signers reduce the security of Lightning nodes and are subject to [many exploits](../security/potential-exploits).
 
 Validating signers improve security by reducing the attack surface. The VLS project aims to provide a library and reference implementation for enterprise servers and consumer devices.
