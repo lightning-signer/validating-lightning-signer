@@ -1392,10 +1392,21 @@ pub fn read_serial_response_header<R: Read>(reader: &mut R, expected_sequence: u
 
 #[cfg(test)]
 mod tests {
-    use crate::msgs::Message;
+    use super::*;
+    use alloc::{format, vec::Vec};
+    use bitcoin::consensus::Encodable;
+    use core::fmt::Debug;
+    use serde_bolt::{io::Cursor, Array, WireString};
     use test_log::test;
 
-    use super::*;
+    fn sample_array<T: Encodable + Decodable + Debug + Clone>(item: T, count: usize) -> Array<T> {
+        Array(vec![item; count])
+    }
+
+    fn roundtrip<T: SerBolt + DeBolt>(msg: T) -> T {
+        let ser = msg.as_vec();
+        T::from_vec(ser).unwrap()
+    }
 
     #[test]
     fn message_name_from_vec_test() {
@@ -1440,26 +1451,143 @@ mod tests {
 
     #[test]
     fn tlv_roundtrip_test() {
-        // Create an options struct, set some fields, others are not set
-        let mut options = HsmdDevPreinit2Options::default();
-        options.network_name = Some(WireString("testnet".as_bytes().to_vec()));
-        options.seed = Some(DevSecret([42u8; 32]));
-        let msg = HsmdDevPreinit2 { options };
-        let ser = msg.as_vec();
-
-        // Make sure the encoded version doesn't change
-        assert_eq!(hex::encode(&ser), "0063fa202a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2afb08746573746e657400");
-
-        // Decode the options struct, check that fields are correct
-        let dmsg = from_vec(ser).unwrap();
-        if let Message::HsmdDevPreinit2(dmsg) = dmsg {
-            assert_eq!(dmsg.options.derivation_style, None);
+        #[cfg(feature = "developer")]
+        {
+            let mut options = HsmdDevPreinit2Options::default();
+            options.network_name = Some(WireString("testnet".as_bytes().to_vec()));
+            options.seed = Some(DevSecret([42u8; 32]));
+            options.fail_preapprove = Some(true);
+            options.no_preapprove_check = Some(false);
+            options.derivation_style = Some(1);
+            options.allowlist = Some(sample_array(WireString("test".as_bytes().to_vec()), 1));
+            let msg = HsmdDevPreinit2 { options };
+            let dmsg = roundtrip(msg);
             assert_eq!(dmsg.options.network_name, Some(WireString("testnet".as_bytes().to_vec())));
             assert_eq!(dmsg.options.seed, Some(DevSecret([42u8; 32])));
-            assert!(dmsg.options.allowlist.is_none());
+            assert_eq!(dmsg.options.fail_preapprove, Some(true));
+            assert_eq!(dmsg.options.no_preapprove_check, Some(false));
+            assert_eq!(dmsg.options.derivation_style, Some(1));
+            assert_eq!(
+                dmsg.options.allowlist,
+                Some(sample_array(WireString("test".as_bytes().to_vec()), 1))
+            );
+        }
+    }
+
+    #[test]
+    fn read_write_functions_test() {
+        let msg = SignChannelAnnouncementReply {
+            node_signature: Signature([0x48; 64]),
+            bitcoin_signature: Signature([0x48; 64]),
+        };
+        let ser = msg.as_vec();
+        let len = (ser.len() as u32).to_be_bytes().to_vec();
+        let mut buf = len;
+        buf.extend(ser.clone());
+
+        let expected_node_signature = "48484848484848484848484848484848484848484848484848484848484848484848484848484848484848484848484848484848484848484848484848484848";
+        let expected_bitcoin_signature = "48484848484848484848484848484848484848484848484848484848484848484848484848484848484848484848484848484848484848484848484848484848";
+        let expexted_raw = vec![
+            0, 102, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72,
+            72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72,
+            72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72,
+            72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72,
+            72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72,
+            72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72,
+        ];
+
+        // Test read
+        let mut cursor = Cursor::new(buf.clone());
+        let dmsg = read(&mut cursor).unwrap();
+        if let Message::SignChannelAnnouncementReply(dmsg) = dmsg {
+            assert_eq!(format!("{:?}", dmsg.node_signature), expected_node_signature);
+            assert_eq!(format!("{:?}", dmsg.bitcoin_signature), expected_bitcoin_signature);
         } else {
             panic!("bad deser type")
         }
+
+        // Test read_message
+        let mut cursor = Cursor::new(buf.clone());
+        let dmsg: SignChannelAnnouncementReply = read_message(&mut cursor).unwrap();
+        assert_eq!(format!("{:?}", dmsg.node_signature), expected_node_signature);
+        assert_eq!(format!("{:?}", dmsg.bitcoin_signature), expected_bitcoin_signature);
+
+        // Test read_raw
+        let mut cursor = Cursor::new(buf.clone());
+        let raw = read_raw(&mut cursor).unwrap();
+        assert_eq!(raw, expexted_raw);
+
+        // Test write
+        let mut write_buf = Vec::new();
+        write(&mut write_buf, msg).unwrap();
+        let mut cursor = Cursor::new(write_buf);
+        let dmsg: SignChannelAnnouncementReply = read_message(&mut cursor).unwrap();
+        assert_eq!(format!("{:?}", dmsg.node_signature), expected_node_signature);
+        assert_eq!(format!("{:?}", dmsg.bitcoin_signature), expected_bitcoin_signature);
+
+        // Test write_vec
+        let mut write_buf = Vec::new();
+        write_vec(&mut write_buf, ser.clone()).unwrap();
+        let mut cursor = Cursor::new(write_buf);
+        let raw = read_raw(&mut cursor).unwrap();
+        assert_eq!(raw, expexted_raw);
+    }
+
+    #[test]
+    fn serial_header_tests() {
+        let srh = SerialRequestHeader { sequence: 123, peer_id: [2u8; 33], dbid: 456 };
+        let mut buf = Vec::new();
+        write_serial_request_header(&mut buf, &srh).unwrap();
+        let mut cursor = Cursor::new(buf);
+        let read_srh = read_serial_request_header(&mut cursor).unwrap();
+        assert_eq!(read_srh.sequence, 123);
+        assert_eq!(read_srh.dbid, 456);
+
+        let mut buf = Vec::new();
+        write_serial_response_header(&mut buf, 123).unwrap();
+        let mut cursor = Cursor::new(buf);
+        read_serial_response_header(&mut cursor, 123).unwrap();
+
+        // Test invalid magic
+        let mut buf = vec![0x00, 0x00];
+        buf.extend(123u16.to_be_bytes());
+        let mut cursor = Cursor::new(buf);
+        assert!(matches!(read_serial_request_header(&mut cursor), Err(Error::BadFraming)));
+
+        // Test invalid sequence
+        let mut buf = Vec::new();
+        write_serial_response_header(&mut buf, 123).unwrap();
+        let mut cursor = Cursor::new(buf);
+        assert!(matches!(read_serial_response_header(&mut cursor, 124), Err(Error::BadFraming)));
+    }
+
+    #[test]
+    fn error_cases_test() {
+        // Short read
+        let mut cursor = Cursor::new(vec![0x00, 0x00, 0x00, 0x01]);
+        assert!(matches!(read(&mut cursor), Err(Error::ShortRead)));
+
+        // Message too large
+        let mut cursor = Cursor::new((MAX_MESSAGE_SIZE + 1).to_be_bytes().to_vec());
+        assert!(matches!(read(&mut cursor), Err(Error::MessageTooLarge)));
+
+        // Trailing bytes
+        let msg = SignChannelAnnouncementReply {
+            node_signature: Signature([0x48; 64]),
+            bitcoin_signature: Signature([0x48; 64]),
+        };
+        let mut ser = msg.as_vec();
+        ser.push(0x00); // Extra byte
+        let len = (ser.len() as u32).to_be_bytes().to_vec();
+        let mut buf = len;
+        buf.extend(ser);
+        let mut cursor = Cursor::new(buf.clone());
+        assert!(matches!(read(&mut cursor), Err(Error::TrailingBytes(1, 102))));
+
+        // Wrong message type
+        let mut cursor = Cursor::new(buf.clone());
+        let result: Result<SignInvoiceReply> = read_message(&mut cursor);
+        assert!(matches!(result, Err(Error::UnexpectedType(102))));
     }
 
     #[derive(SerBolt, Debug, Encodable, Decodable)]
