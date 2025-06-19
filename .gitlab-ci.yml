@@ -267,8 +267,8 @@ cargo-audit:
     paths:
       - .cache/cargo
   script:
-    - cargo install --locked cargo-audit
-    - cargo audit
+    - cargo install --locked cargo-deny
+    - cargo deny check
     - (cd lightning-storage-server && cargo audit)
     - (cd lnrod && cargo audit)
 

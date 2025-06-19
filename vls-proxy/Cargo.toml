@@ -11,7 +11,7 @@ rust-version = "1.74.0"
 
 [features]
 default = ["grpc", "main", "debug"]
-grpc = ["tokio", "tonic", "async-stream", "url", "backoff"]
+grpc = ["tokio", "tonic", "async-stream", "url", "backon"]
 
 main = ["clap", "ctrlc"]
 log_pretty_print = ["vls-core/log_pretty_print", "vls-frontend/log_pretty_print", "vls-protocol-signer/log_pretty_print"]
@@ -48,9 +48,9 @@ anyhow = "1.0"
 async-trait = "0.1"
 url = { version = "2.3", optional = true }
 hex = "0.4"
-backoff = { version = "0.4", features = ["tokio"], optional = true }
 lru = ">=0.11.0,<0.13.0"
 txoo-bitcoind-client = { workspace = true }
+backon = { version = "1.4.1", optional = true }
 
 [dev-dependencies]
 tempfile = "3"

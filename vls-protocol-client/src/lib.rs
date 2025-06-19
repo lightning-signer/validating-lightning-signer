@@ -72,10 +72,11 @@ use lightning_signer::lightning_invoice::RawBolt11Invoice;
 pub use signer_port::SignerPort;
 use vls_protocol::psbt::StreamedPSBT;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
     Protocol(ProtocolError),
     Transport,
+    TransportTransient,
 }
 
 pub type ClientResult<T> = Result<T, Error>;
