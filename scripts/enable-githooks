@@ -4,8 +4,7 @@
 GITHOOKSDIR=$(git rev-parse --git-path hooks)
 
 # Construct a relative path for the pre-commit script
-PRECOMMIT=$(realpath .githooks/pre-commit)
-RELPATH=$(realpath --relative-to=$GITHOOKSDIR $PRECOMMIT)
+ABSOLUTE_PATH=$(realpath .githooks/pre-commit)
 
 # Make sure we are invoking from the correct place
 if [ ! -f $PRECOMMIT ]; then
@@ -14,5 +13,5 @@ if [ ! -f $PRECOMMIT ]; then
 fi
 
 # Make a relative symbolic link
-echo "Making link to $RELPATH in $(realpath $GITHOOKSDIR)"
-(cd $GITHOOKSDIR && ln -fs $RELPATH)
+echo "Making link to $ABSOLUTE_PATH in $GITHOOKSDIR)"
+ln -fs $ABSOLUTE_PATH $GITHOOKSDIR/

@@ -31,7 +31,7 @@ fern = { version = "0.6", features = ["colored"], optional = true }
 clap = { workspace = true, optional = true, features = ["derive"] }
 toml = { version = "0.5", optional = true }
 http = "1.0"
-tokio = { version = "1.27", features = ["macros", "rt-multi-thread"], optional = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"], optional = true }
 tokio-stream = { version = "0.1", optional = true }
 jsonrpsee = { version = "0.24.8", features = ["server"] }
 tower = { workspace = true }
@@ -41,13 +41,13 @@ prost = { workspace = true, optional = true }
 ctrlc = { version = "3.4.5", features = ["termination"], optional = true }
 triggered = "0.1"
 async-stream = { version = "0.3", optional = true }
-anyhow = "1.0"
+anyhow = { workspace = true, features = ["std"] }
 thiserror = "1.0"
-url = { version = "2.3", optional = true }
+url = { workspace = true, optional = true }
 dirs = "4"
-tracing = { version = "0.1.40", features = ["attributes"] }
+tracing = { workspace = true, features = ["attributes", "std"] }
 txoo-bitcoind-client = { workspace = true }
-serde = "1.0"
+serde = { workspace = true, features = ["std"] }
 tempfile = "3.17.1"
 
 [build-dependencies]

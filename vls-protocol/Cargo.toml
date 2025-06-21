@@ -13,7 +13,7 @@ bitcoin-consensus-derive = { version = "0.2.0" }
 bolt-derive = { path = "../bolt-derive", version = "0.4.0" }
 log = "0.4"
 as-any = "0.3"
-hex = { version = "0.4", default-features = false }
+hex = { workspace = true }
 vls-core = { path = "../vls-core", version = "0.14.0-rc.1", default-features = false }
 
 [dependencies.serde_bolt]

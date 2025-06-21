@@ -14,4 +14,4 @@ rust-version = "1.74.0"
 std = []
 
 [dependencies]
-hex = { version = "0.4", default-features = false, features = ["alloc"] }
+hex = { workspace = true, features = ["alloc"] }

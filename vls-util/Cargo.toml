@@ -22,8 +22,8 @@ vls-frontend = { path = "../vls-frontend", version = "0.14.0-rc.1" }
 log = { workspace = true }
 fern = { version = "0.6", features = ["colored"], optional = true }
 time = { version = "=0.3.17", features = ["macros"], optional = true }
-tokio = { version = "1.27", features = ["macros", "rt-multi-thread"] }
-tracing = { version = "0.1.40", features = ["attributes"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tracing = { workspace = true, features = ["attributes", "std"] }
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["tracing-log", "env-filter", "fmt", "parking_lot", "ansi"] }
 tracing-appender = "0.2.3"
 opentelemetry = { version = "0.27.0", default-features = false, features = ["trace"], optional = true }

@@ -18,6 +18,6 @@ vls-protocol-signer = { path = "../vls-protocol-signer", version = "0.14.0-rc.1"
 vls-protocol = { path = "../vls-protocol", version = "0.14.0-rc.1" }
 vls-core = { path = "../vls-core", version = "0.14.0-rc.1" }
 log = "0.4"
-anyhow = "1.0"
-async-trait = "0.1"
+anyhow = { workspace = true, features = ["std"] }
+async-trait = { workspace = true }
 delegate = "0.12.0"
