@@ -239,7 +239,7 @@ coverage:
     key: vls-coverage
     paths:
       - .cache/cargo
-  coverage: '/^CORE_LINE_COVERAGE: \d+.\d+$/'
+  coverage: '/^LINE_COVERAGE: \d+.\d+$/'
   script:
     - rustup show
     - cargo install cargo-llvm-cov
