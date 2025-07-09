@@ -257,15 +257,65 @@ mod tests {
     use super::*;
     use crate::model::ChainTrackerEntry;
     use bitcoin::blockdata::constants::genesis_block;
+    use bitcoin::hashes::hex::FromHex;
+    use bitcoin::secp256k1::PublicKey;
     use bitcoin::Network;
     use core::iter::FromIterator;
     use lightning_signer::bitcoin::hash_types::FilterHeader;
     use lightning_signer::bitcoin::hashes::Hash;
     use lightning_signer::chain::tracker::{ChainTracker, Error, Headers};
+    use lightning_signer::channel::ChannelId;
     use lightning_signer::monitor::ChainMonitorBase;
     use lightning_signer::policy::simple_validator::SimpleValidatorFactory;
     use lightning_signer::util::test_utils::*;
     use test_log::test;
+
+    #[test]
+    fn test_node_channel_id() {
+        let node_id = PublicKey::from_slice(
+            &Vec::from_hex("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798")
+                .unwrap(),
+        )
+        .unwrap();
+        let channel_id = ChannelId::new(&[42u8; 32]);
+
+        let node_channel_id = NodeChannelId::new(&node_id, &channel_id);
+
+        assert_eq!(node_channel_id.0.len(), 65);
+
+        let expected = {
+            let mut v = node_id.serialize().to_vec();
+            v.extend_from_slice(channel_id.inner());
+            v
+        };
+        assert_eq!(node_channel_id.0, expected);
+        assert_eq!(node_channel_id.as_ref(), expected.as_slice());
+        assert_eq!(node_channel_id.node_id(), node_id);
+        assert_eq!(node_channel_id.channel_id(), channel_id);
+    }
+
+    #[test]
+    fn test_node_channel_id_new_prefix() {
+        let node_id = PublicKey::from_slice(
+            &Vec::from_hex("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798")
+                .unwrap(),
+        )
+        .unwrap();
+
+        let node_channel_id = NodeChannelId::new_prefix(&node_id);
+
+        assert_eq!(node_channel_id.0.len(), 33);
+
+        let expected = node_id.serialize().to_vec();
+        assert_eq!(node_channel_id.0, expected);
+    }
+
+    #[test]
+    #[should_panic(expected = "range end index 33 out of range for slice of length 32")]
+    fn test_node_channel_id_invalid_node_id() {
+        let node_channel_id = NodeChannelId(vec![0u8; 32]);
+        let _ = node_channel_id.node_id();
+    }
 
     #[test]
     fn test_chain_tracker() -> Result<(), Error> {
