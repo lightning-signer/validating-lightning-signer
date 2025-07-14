@@ -23,8 +23,32 @@ const MIN_DEPTH: u32 = 100;
 // the maximum depth we will watch for HTLC sweeps on closed channels
 const MAX_CLOSING_DEPTH: u32 = 2016;
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct SecondLevelHTLCOutput {
+    outpoint: OutPoint,
+    spent: bool,
+}
+
+impl SecondLevelHTLCOutput {
+    fn new(outpoint: OutPoint) -> Self {
+        Self { outpoint, spent: false }
+    }
+
+    fn set_spent(&mut self, spent: bool) {
+        self.spent = spent;
+    }
+
+    fn is_spent(&self) -> bool {
+        self.spent
+    }
+
+    fn matches_outpoint(&self, outpoint: &OutPoint) -> bool {
+        self.outpoint == *outpoint
+    }
+}
+
 // Keep track of closing transaction outpoints.
-// These include the to-us output (if it exists) and all HTLC outputs.
+// These include the to-us output (if it exists), all HTLC outputs, and second-level HTLC outputs.
 // For each output, we keep track of whether it has been spent yet.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ClosingOutpoints {
@@ -32,6 +56,7 @@ struct ClosingOutpoints {
     our_output: Option<(u32, bool)>,
     htlc_outputs: Vec<u32>,
     htlc_spents: Vec<bool>,
+    second_level_htlc_outputs: Vec<SecondLevelHTLCOutput>,
 }
 
 impl ClosingOutpoints {
@@ -43,6 +68,7 @@ impl ClosingOutpoints {
             our_output: our_output_index.map(|i| (i, false)),
             htlc_outputs: htlc_output_indexes,
             htlc_spents: v,
+            second_level_htlc_outputs: Vec::new(),
         }
     }
 
@@ -69,10 +95,38 @@ impl ClosingOutpoints {
         self.htlc_spents[i] = spent;
     }
 
-    // are all outputs spent?
+    /// Returns true if all relevant outputs are considered spent.
+    /// This includes:
+    /// - our main output
+    /// - first-level HTLC outputs
+    /// - second-level HTLC outputs
     fn is_all_spent(&self) -> bool {
-        self.our_output.as_ref().map(|(_, b)| *b).unwrap_or(true)
-            && self.htlc_spents.iter().all(|b| *b)
+        let our_output_spent = self.our_output.as_ref().map(|(_, b)| *b).unwrap_or(true);
+        let htlc_outputs_spent = self.htlc_spents.iter().all(|b| *b);
+        let second_level_htlcs_spent = self.second_level_htlc_outputs.iter().all(|h| h.is_spent());
+
+        our_output_spent && htlc_outputs_spent && second_level_htlcs_spent
+    }
+
+    fn add_second_level_htlc_output(&mut self, outpoint: OutPoint) {
+        self.second_level_htlc_outputs.push(SecondLevelHTLCOutput::new(outpoint));
+    }
+
+    fn includes_second_level_htlc_output(&self, outpoint: &OutPoint) -> bool {
+        self.second_level_htlc_outputs.iter().any(|h| h.matches_outpoint(outpoint))
+    }
+
+    fn set_second_level_htlc_spent(&mut self, outpoint: OutPoint, spent: bool) {
+        let htlc_outpoint = self
+            .second_level_htlc_outputs
+            .iter_mut()
+            .find(|h| h.matches_outpoint(&outpoint))
+            .expect("second-level HTLC outpoint");
+        htlc_outpoint.set_spent(spent);
+    }
+
+    fn remove_second_level_htlc_output(&mut self, outpoint: &OutPoint) {
+        self.second_level_htlc_outputs.retain(|h| !h.matches_outpoint(outpoint));
     }
 }
 
@@ -140,8 +194,11 @@ enum StateChange {
     MutualCloseConfirmed(Txid, OutPoint),
     /// Our commitment output was spent
     OurOutputSpent(u32),
-    /// An HTLC commitment output was spent
-    HTLCOutputSpent(u32),
+    // An HTLC commitment output was spent
+    // The htlc output index and the second-level HTLC outpoint are provided
+    HTLCOutputSpent(u32, OutPoint),
+    /// A second-level HTLC output was spent
+    SecondLevelHTLCOutputSpent(OutPoint),
 }
 
 // Keep track of the state of a block push-decoder parse state
@@ -157,6 +214,9 @@ struct BlockDecodeState {
     output_num: u32,
     // The closing transaction, if we detect one
     closing_tx: Option<Transaction>,
+    // Tracks which HTLC outputs (vouts) were spent and where
+    // Format: [(htlc_vout, spending_input_index)]
+    spent_htlc_outputs: Vec<(u32, u32)>,
     // The block hash
     block_hash: Option<BlockHash>,
     // A temporary copy of the current state, for keeping track
@@ -172,6 +232,7 @@ impl BlockDecodeState {
             input_num: 0,
             output_num: 0,
             closing_tx: None,
+            spent_htlc_outputs: Vec::new(),
             block_hash: None,
             state: state.clone(),
         }
@@ -184,6 +245,7 @@ impl BlockDecodeState {
             input_num: 0,
             output_num: 0,
             closing_tx: None,
+            spent_htlc_outputs: Vec::new(),
             block_hash: Some(*block_hash),
             state: state.clone(),
         }
@@ -242,6 +304,7 @@ impl<'a> push_decoder::Listener for PushListener<'a> {
         state.input_num = 0;
         state.output_num = 0;
         state.closing_tx = None;
+        state.spent_htlc_outputs = Vec::new();
     }
 
     fn on_transaction_input(&mut self, input: &TxIn) {
@@ -276,8 +339,13 @@ impl<'a> push_decoder::Listener for PushListener<'a> {
                 // We spent our output of a closing transaction
                 Some(StateChange::OurOutputSpent(input.previous_output.vout))
             } else if c.includes_htlc_output(&input.previous_output) {
-                // We spent an HTLC output of a closing transaction
-                Some(StateChange::HTLCOutputSpent(input.previous_output.vout))
+                // Track vout and input index for second-level HTLC creation in on_transaction_end
+                decode_state
+                    .spent_htlc_outputs
+                    .push((input.previous_output.vout, decode_state.input_num));
+                None
+            } else if c.includes_second_level_htlc_output(&input.previous_output) {
+                Some(StateChange::SecondLevelHTLCOutputSpent(input.previous_output))
             } else {
                 None
             }
@@ -369,6 +437,19 @@ impl<'a> push_decoder::Listener for PushListener<'a> {
                 info!("mutual close {} confirmed", txid);
             }
         }
+
+        let htlc_changes: Vec<StateChange> = decode_state
+            .spent_htlc_outputs
+            .drain(..)
+            .map(|(spent_vout, input_index)| {
+                let second_level_outpoint = OutPoint { txid, vout: input_index };
+                StateChange::HTLCOutputSpent(spent_vout, second_level_outpoint)
+            })
+            .collect();
+
+        for change in htlc_changes {
+            decode_state.add_change(change);
+        }
     }
 
     fn on_block_end(&mut self) {
@@ -433,7 +514,6 @@ impl State {
         // - unilateral closed, and our output, as well as all HTLCs were swept
         // and, the last confirmation is buried
         //
-        // TODO(472) check 2nd level HTLCs
         // TODO(472) disregard received HTLCs that we can't claim (we don't have the preimage)
 
         if self.deep_enough_and_saw_node_forget(self.funding_double_spent_height, MIN_DEPTH) {
@@ -641,10 +721,17 @@ impl State {
                 let outpoint = OutPoint { txid: outpoints.txid, vout };
                 removes.push(outpoint);
             }
-            StateChange::HTLCOutputSpent(vout) => {
+            StateChange::HTLCOutputSpent(vout, second_level_htlc_outpoint) => {
                 let outpoints = self.closing_outpoints.as_mut().unwrap();
                 outpoints.set_htlc_output_spent(vout, true);
                 let outpoint = OutPoint { txid: outpoints.txid, vout };
+                outpoints.add_second_level_htlc_output(second_level_htlc_outpoint);
+                removes.push(outpoint);
+                adds.push(second_level_htlc_outpoint);
+            }
+            StateChange::SecondLevelHTLCOutputSpent(outpoint) => {
+                let closing_outpoints = self.closing_outpoints.as_mut().unwrap();
+                closing_outpoints.set_second_level_htlc_spent(outpoint, true);
                 removes.push(outpoint);
             }
             StateChange::MutualCloseConfirmed(_txid, funding_outpoint) => {
@@ -705,11 +792,18 @@ impl State {
                 let outpoint = OutPoint { txid: outpoints.txid, vout };
                 removes.push(outpoint);
             }
-            StateChange::HTLCOutputSpent(vout) => {
+            StateChange::HTLCOutputSpent(vout, second_level_htlc_outpoint) => {
                 let outpoints = self.closing_outpoints.as_mut().unwrap();
                 outpoints.set_htlc_output_spent(vout, false);
                 let outpoint = OutPoint { txid: outpoints.txid, vout };
-                removes.push(outpoint);
+                outpoints.remove_second_level_htlc_output(&second_level_htlc_outpoint);
+                adds.push(outpoint);
+                removes.push(second_level_htlc_outpoint);
+            }
+            StateChange::SecondLevelHTLCOutputSpent(outpoint) => {
+                let closing_outpoints = self.closing_outpoints.as_mut().unwrap();
+                closing_outpoints.set_second_level_htlc_spent(outpoint, false);
+                adds.push(outpoint);
             }
             StateChange::MutualCloseConfirmed(_txid, funding_outpoint) => {
                 self.mutual_closing_height = None;
@@ -1146,6 +1240,95 @@ mod tests {
     }
 
     #[test]
+    fn test_streamed_block_operations() {
+        let outpoint = OutPoint::new(Txid::from_slice(&[1; 32]).unwrap(), 0);
+        let cpp = Box::new(DummyCommitmentPointProvider {});
+        let chan_id = ChannelId::new(&[33u8; 32]);
+        let monitor = ChainMonitorBase::new(outpoint, 0, &chan_id).as_monitor(cpp);
+        let block_hash = BlockHash::all_zeros();
+
+        // Test when not ready (saw_block = false)
+        let (adds, removes) = monitor.on_add_streamed_block_end(&block_hash);
+        assert!(adds.is_empty());
+        assert!(removes.is_empty());
+
+        let (adds, removes) = monitor.on_remove_streamed_block_end(&block_hash);
+        assert!(adds.is_empty());
+        assert!(removes.is_empty());
+
+        let funding_tx = make_tx(vec![make_txin(1), make_txin(2)]);
+        let funding_outpoint = OutPoint::new(funding_tx.compute_txid(), 0);
+        let monitor2 = ChainMonitorBase::new(funding_outpoint, 0, &chan_id)
+            .as_monitor(Box::new(DummyCommitmentPointProvider {}));
+        monitor2.add_funding(&funding_tx, 0);
+
+        let header = BlockHeader {
+            version: Version::from_consensus(0),
+            prev_blockhash: BlockHash::all_zeros(),
+            merkle_root: TxMerkleNode::all_zeros(),
+            time: 0,
+            bits: CompactTarget::from_consensus(0),
+            nonce: 0,
+        };
+        let header_block_hash = header.block_hash();
+
+        monitor2.on_push(|listener| {
+            listener.on_block_start(&header);
+            listener.on_transaction_start(funding_tx.version.0);
+
+            for input in &funding_tx.input {
+                listener.on_transaction_input(input);
+            }
+
+            for output in &funding_tx.output {
+                listener.on_transaction_output(output);
+            }
+
+            listener.on_transaction_end(funding_tx.lock_time, funding_tx.compute_txid());
+            listener.on_block_end();
+        });
+
+        let (adds, _) = monitor2.on_add_streamed_block_end(&header_block_hash);
+        assert!(!adds.is_empty());
+
+        monitor2.on_push(|listener| {
+            listener.on_block_start(&header);
+            listener.on_transaction_start(funding_tx.version.0);
+
+            for input in &funding_tx.input {
+                listener.on_transaction_input(input);
+            }
+
+            for output in &funding_tx.output {
+                listener.on_transaction_output(output);
+            }
+
+            listener.on_transaction_end(funding_tx.lock_time, funding_tx.compute_txid());
+            listener.on_block_end();
+        });
+
+        let (adds, _) = monitor2.on_remove_streamed_block_end(&header_block_hash);
+        assert!(!adds.is_empty());
+    }
+
+    #[test]
+    fn test_chain_monitor_conversions_and_getters() {
+        let outpoint = OutPoint::new(Txid::from_slice(&[1; 32]).unwrap(), 0);
+        let chan_id = ChannelId::new(&[33u8; 32]);
+        let base = ChainMonitorBase::new(outpoint, 0, &chan_id);
+
+        let cpp = Box::new(DummyCommitmentPointProvider {});
+        let monitor = base.as_monitor(cpp);
+        let base2 = monitor.as_base();
+        assert_eq!(base2.funding_outpoint, outpoint);
+
+        assert_eq!(base.funding_outpoint(), None);
+        assert!(!base.forget_seen());
+
+        base.forget_channel();
+        assert!(base.forget_seen());
+    }
+    #[test]
     fn test_mutual_close() {
         let block_hash = BlockHash::all_zeros();
         let (node, channel_id, monitor, funding_txid) = setup_funded_channel();
@@ -1359,11 +1542,12 @@ mod tests {
             payment_hash: PaymentHash([0; 32]),
             transaction_output_index: None,
         }];
+
         let closing_commitment_tx = node
             .with_channel(&channel_id, |chan| {
                 let per_commitment_point = make_test_pubkey(12);
                 chan.set_next_counterparty_commit_num_for_testing(
-                    commit_num,
+                    commit_num + 1,
                     per_commitment_point.clone(),
                 );
                 Ok(chan.make_counterparty_commitment_tx(
@@ -1376,6 +1560,7 @@ mod tests {
                 ))
             })
             .expect("make_holder_commitment_tx failed");
+
         let closing_tx = closing_commitment_tx.trust().built_transaction().transaction.clone();
         let closing_txid = closing_tx.compute_txid();
         let holder_output_index =
@@ -1388,28 +1573,58 @@ mod tests {
             .iter()
             .position(|out| out.value.to_sat() == htlcs[0].amount_msat / 1000)
             .unwrap() as u32;
+
+        assert_eq!(monitor.closing_depth(), 0);
+        assert!(!monitor.is_done());
+
         monitor.on_add_block(&[closing_tx.clone()], &block_hash);
         assert_eq!(monitor.closing_depth(), 1);
         assert!(!monitor.is_done());
-        // we never forget the channel if we didn't sweep our output
+
+        let state = monitor.get_state();
+        let closing_outpoints = state.closing_outpoints.as_ref().unwrap();
+
+        assert!(!closing_outpoints.is_all_spent());
+
+        let holder_outpoint = OutPoint { txid: closing_txid, vout: holder_output_index };
+        let cp_outpoint = OutPoint { txid: closing_txid, vout: cp_output_index };
+        let htlc_outpoint = OutPoint { txid: closing_txid, vout: htlc_output_index };
+
+        assert!(closing_outpoints.includes_our_output(&holder_outpoint));
+        assert!(!closing_outpoints.includes_our_output(&cp_outpoint));
+        assert!(closing_outpoints.includes_htlc_output(&htlc_outpoint));
+        assert!(!closing_outpoints.includes_htlc_output(&holder_outpoint));
+
+        assert!(!closing_outpoints.includes_second_level_htlc_output(&htlc_outpoint));
+
+        drop(state);
+
         for _ in 1..MAX_CLOSING_DEPTH {
             monitor.on_add_block(&[], &block_hash);
         }
         assert!(!monitor.is_done());
+
         let sweep_cp_tx = make_tx(vec![make_txin2(closing_txid, cp_output_index)]);
         monitor.on_add_block(&[sweep_cp_tx], &block_hash);
-        // we still never forget the channel
+
+        // Still not done because our output isn't swept
         for _ in 1..MAX_CLOSING_DEPTH {
             monitor.on_add_block(&[], &block_hash);
         }
         assert!(!monitor.is_done());
+
         let sweep_holder_tx = make_tx(vec![make_txin2(closing_txid, holder_output_index)]);
         monitor.on_add_block(&[sweep_holder_tx], &block_hash);
+
+        let state = monitor.get_state();
+        let closing_outpoints = state.closing_outpoints.as_ref().unwrap();
+        // Our output should be marked as spent, but HTLCs not yet
+        assert!(!closing_outpoints.is_all_spent());
+        drop(state);
 
         let monitor1 = monitor.clone();
 
         // TIMELINE 1 - HTLC output not swept
-        // we forget the channel once we sweep our output and MAX_CLOSING_DEPTH blocks have passed
         for _ in 1..MAX_CLOSING_DEPTH - 1 {
             monitor.on_add_block(&[], &block_hash);
         }
@@ -1419,9 +1634,32 @@ mod tests {
 
         // TIMELINE 2 - HTLC output swept
         let sweep_htlc_tx = make_tx(vec![make_txin2(closing_txid, htlc_output_index)]);
+        let sweep_htlc_txid = sweep_htlc_tx.compute_txid();
         monitor1.on_add_block(&[sweep_htlc_tx], &block_hash);
 
-        for _ in 1..MIN_DEPTH {
+        let state = monitor1.get_state();
+        let closing_outpoints = state.closing_outpoints.as_ref().unwrap();
+        let second_level_outpoint = OutPoint { txid: sweep_htlc_txid, vout: 0 };
+        assert!(closing_outpoints.includes_second_level_htlc_output(&second_level_outpoint));
+        // Second-level not swept yet
+        assert!(!closing_outpoints.is_all_spent());
+        drop(state);
+
+        for _ in 1..MAX_CLOSING_DEPTH {
+            monitor1.on_add_block(&[], &block_hash);
+        }
+        assert!(!monitor1.is_done());
+
+        let sweep_second_level_tx = make_tx(vec![make_txin2(sweep_htlc_txid, 0)]);
+        monitor1.on_add_block(&[sweep_second_level_tx], &block_hash);
+
+        let state = monitor1.get_state();
+        let closing_outpoints = state.closing_outpoints.as_ref().unwrap();
+        // Now all outputs should be spent
+        assert!(closing_outpoints.is_all_spent());
+        drop(state);
+
+        for _ in 1..MAX_CLOSING_DEPTH {
             monitor1.on_add_block(&[], &block_hash);
         }
         // still not done, need forget from node
@@ -1431,6 +1669,372 @@ mod tests {
         node.forget_channel(&channel_id).unwrap();
         assert!(monitor.is_done());
         assert!(monitor1.is_done());
+    }
+
+    #[test]
+    fn test_unilateral_cp_and_htlcs_backward_change() {
+        let block_hash = BlockHash::all_zeros();
+        let (node, channel_id, monitor, _funding_txid) = setup_funded_channel();
+
+        let commit_num = 23;
+        let feerate_per_kw = 1000;
+        let to_holder = 100000;
+        let to_cp = 200000;
+        let htlcs = vec![HTLCOutputInCommitment {
+            offered: false,
+            amount_msat: 10000,
+            cltv_expiry: 0,
+            payment_hash: PaymentHash([0; 32]),
+            transaction_output_index: None,
+        }];
+
+        let closing_commitment_tx = node
+            .with_channel(&channel_id, |chan| {
+                let per_commitment_point = make_test_pubkey(12);
+                chan.set_next_counterparty_commit_num_for_testing(
+                    commit_num + 1,
+                    per_commitment_point.clone(),
+                );
+                Ok(chan.make_counterparty_commitment_tx(
+                    &per_commitment_point,
+                    commit_num,
+                    feerate_per_kw,
+                    to_holder,
+                    to_cp,
+                    htlcs.clone(),
+                ))
+            })
+            .expect("make_counterparty_commitment_tx failed");
+
+        let closing_tx = closing_commitment_tx.trust().built_transaction().transaction.clone();
+        let closing_txid = closing_tx.compute_txid();
+        let holder_output_index =
+            closing_tx.output.iter().position(|out| out.value.to_sat() == to_holder).unwrap()
+                as u32;
+        let htlc_output_index = closing_tx
+            .output
+            .iter()
+            .position(|out| out.value.to_sat() == htlcs[0].amount_msat / 1000)
+            .unwrap() as u32;
+
+        monitor.on_add_block(&[closing_tx.clone()], &block_hash);
+        assert_eq!(monitor.closing_depth(), 1);
+        let state = monitor.get_state();
+        let closing_outpoints = state.closing_outpoints.as_ref().unwrap();
+        let htlc_outpoint = OutPoint { txid: closing_txid, vout: htlc_output_index };
+        assert!(closing_outpoints.includes_htlc_output(&htlc_outpoint));
+        assert!(!closing_outpoints.is_all_spent());
+        drop(state);
+
+        let sweep_holder_tx = make_tx(vec![make_txin2(closing_txid, holder_output_index)]);
+        monitor.on_add_block(&[sweep_holder_tx.clone()], &block_hash);
+
+        let sweep_htlc_tx = make_tx(vec![make_txin2(closing_txid, htlc_output_index)]);
+        let sweep_htlc_txid = sweep_htlc_tx.compute_txid();
+        monitor.on_add_block(&[sweep_htlc_tx.clone()], &block_hash);
+
+        let state = monitor.get_state();
+        let closing_outpoints = state.closing_outpoints.as_ref().unwrap();
+        let second_level_outpoint = OutPoint { txid: sweep_htlc_txid, vout: 0 };
+        assert!(closing_outpoints.includes_second_level_htlc_output(&second_level_outpoint));
+        assert!(!closing_outpoints.is_all_spent());
+        drop(state);
+
+        let sweep_second_level_tx = make_tx(vec![make_txin2(sweep_htlc_txid, 0)]);
+        monitor.on_add_block(&[sweep_second_level_tx.clone()], &block_hash);
+
+        let state = monitor.get_state();
+        let closing_outpoints = state.closing_outpoints.as_ref().unwrap();
+        assert!(closing_outpoints.is_all_spent());
+        drop(state);
+
+        // Roll back second-level HTLC spend
+        monitor.on_remove_block(&[sweep_second_level_tx], &block_hash);
+        let state = monitor.get_state();
+        let closing_outpoints = state.closing_outpoints.as_ref().unwrap();
+        assert!(!closing_outpoints.is_all_spent());
+        drop(state);
+
+        // Roll back first-level HTLC spend
+        monitor.on_remove_block(&[sweep_htlc_tx], &block_hash);
+        let state = monitor.get_state();
+        let closing_outpoints = state.closing_outpoints.as_ref().unwrap();
+        assert!(!closing_outpoints.includes_second_level_htlc_output(&second_level_outpoint));
+        assert!(!closing_outpoints.is_all_spent());
+        drop(state);
+
+        // Roll back holder output spend
+        monitor.on_remove_block(&[sweep_holder_tx], &block_hash);
+        let state = monitor.get_state();
+        let closing_outpoints = state.closing_outpoints.as_ref().unwrap();
+        let holder_outpoint = OutPoint { txid: closing_txid, vout: holder_output_index };
+        assert!(closing_outpoints.includes_our_output(&holder_outpoint));
+        assert!(!closing_outpoints.is_all_spent());
+        drop(state);
+
+        // Roll back unilateral close
+        monitor.on_remove_block(&[closing_tx], &block_hash);
+        let state = monitor.get_state();
+        assert!(state.closing_outpoints.is_none());
+        assert_eq!(state.unilateral_closing_height, None);
+    }
+
+    #[test]
+    fn test_apply_backward_change_funding_confirmed() {
+        let funding_tx = make_tx(vec![make_txin(1), make_txin(2)]);
+        let funding_outpoint = OutPoint::new(funding_tx.compute_txid(), 0);
+        let setup = make_channel_setup(funding_outpoint);
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], setup.clone());
+        let channel = node.get_channel(&channel_id).unwrap();
+        let cpp = Box::new(ChannelCommitmentPointProvider::new(channel.clone()));
+        let monitor = node
+            .with_channel(&channel_id, |chan| Ok(chan.monitor.clone().as_monitor(cpp.clone())))
+            .unwrap();
+        let block_hash = BlockHash::all_zeros();
+
+        monitor.on_add_block(&[], &block_hash);
+        monitor.on_add_block(&[funding_tx.clone()], &block_hash);
+        assert_eq!(monitor.funding_depth(), 1);
+        assert!(monitor.get_state().funding_outpoint.is_some());
+
+        monitor.on_remove_block(&[funding_tx], &block_hash);
+        assert_eq!(monitor.funding_depth(), 0);
+        assert!(monitor.get_state().funding_outpoint.is_none());
+    }
+
+    #[test]
+    fn test_apply_backward_change_mutual_close() {
+        let block_hash = BlockHash::all_zeros();
+        let (_, _, monitor, funding_txid) = setup_funded_channel();
+
+        let close_tx = make_tx(vec![TxIn {
+            previous_output: OutPoint::new(funding_txid, 0),
+            script_sig: Default::default(),
+            sequence: Default::default(),
+            witness: Default::default(),
+        }]);
+
+        monitor.on_add_block(&[close_tx.clone()], &block_hash);
+        assert_eq!(monitor.closing_depth(), 1);
+        assert!(monitor.get_state().mutual_closing_height.is_some());
+
+        monitor.on_remove_block(&[close_tx], &block_hash);
+        assert_eq!(monitor.closing_depth(), 0);
+        assert!(monitor.get_state().mutual_closing_height.is_none());
+    }
+
+    #[test]
+    fn test_closing_outpoints_is_all_spent_logic() {
+        let txid = Txid::all_zeros();
+        let mut closing_outpoints = ClosingOutpoints::new(txid, Some(0), vec![1, 2]);
+
+        assert!(!closing_outpoints.is_all_spent());
+
+        closing_outpoints.set_our_output_spent(0, true);
+        assert!(!closing_outpoints.is_all_spent());
+
+        closing_outpoints.set_htlc_output_spent(1, true);
+        assert!(!closing_outpoints.is_all_spent());
+
+        closing_outpoints.set_htlc_output_spent(2, true);
+        // All first-level spent, no second-level
+        assert!(closing_outpoints.is_all_spent());
+
+        let second_level_outpoint = OutPoint { txid, vout: 10 };
+        closing_outpoints.add_second_level_htlc_output(second_level_outpoint);
+        assert!(!closing_outpoints.is_all_spent());
+
+        closing_outpoints.set_second_level_htlc_spent(second_level_outpoint, true);
+        assert!(closing_outpoints.is_all_spent());
+    }
+
+    #[test]
+    fn test_closing_outpoints_without_our_output() {
+        let txid = Txid::all_zeros();
+        let mut closing_outpoints = ClosingOutpoints::new(txid, None, vec![1]);
+
+        assert!(!closing_outpoints.is_all_spent());
+
+        closing_outpoints.set_htlc_output_spent(1, true);
+        assert!(closing_outpoints.is_all_spent());
+    }
+
+    #[test]
+    fn test_closing_outpoints_boolean_logic_edge_cases() {
+        let txid = Txid::all_zeros();
+
+        let closing_outpoints = ClosingOutpoints::new(txid, None, vec![]);
+        assert!(closing_outpoints.is_all_spent());
+
+        let mut closing_outpoints = ClosingOutpoints::new(txid, Some(0), vec![1]);
+
+        closing_outpoints.set_our_output_spent(0, false);
+        closing_outpoints.set_htlc_output_spent(1, false);
+        assert!(!closing_outpoints.is_all_spent());
+
+        closing_outpoints.set_our_output_spent(0, true);
+        closing_outpoints.set_htlc_output_spent(1, false);
+        assert!(!closing_outpoints.is_all_spent());
+    }
+
+    #[test]
+    fn test_closing_outpoints_second_level_management() {
+        let txid = Txid::all_zeros();
+        let mut closing_outpoints = ClosingOutpoints::new(txid, None, vec![]);
+
+        let outpoint1 = OutPoint { txid, vout: 10 };
+        let outpoint2 = OutPoint { txid, vout: 11 };
+
+        closing_outpoints.add_second_level_htlc_output(outpoint1);
+        closing_outpoints.add_second_level_htlc_output(outpoint2);
+
+        assert!(closing_outpoints.includes_second_level_htlc_output(&outpoint1));
+        assert!(closing_outpoints.includes_second_level_htlc_output(&outpoint2));
+
+        closing_outpoints.set_second_level_htlc_spent(outpoint1, true);
+        assert!(!closing_outpoints.is_all_spent());
+
+        closing_outpoints.set_second_level_htlc_spent(outpoint2, true);
+        assert!(closing_outpoints.is_all_spent());
+
+        closing_outpoints.remove_second_level_htlc_output(&outpoint1);
+        assert!(!closing_outpoints.includes_second_level_htlc_output(&outpoint1));
+        assert!(closing_outpoints.includes_second_level_htlc_output(&outpoint2));
+        assert!(closing_outpoints.is_all_spent());
+    }
+
+    #[test]
+    fn test_second_level_htlc_output_methods() {
+        let outpoint = OutPoint { txid: Txid::all_zeros(), vout: 0 };
+        let mut htlc_output = SecondLevelHTLCOutput::new(outpoint);
+
+        assert!(!htlc_output.is_spent());
+        assert!(htlc_output.matches_outpoint(&outpoint));
+
+        let different_outpoint = OutPoint { txid: Txid::all_zeros(), vout: 1 };
+        assert!(!htlc_output.matches_outpoint(&different_outpoint));
+
+        htlc_output.set_spent(true);
+        assert!(htlc_output.is_spent());
+
+        htlc_output.set_spent(false);
+        assert!(!htlc_output.is_spent());
+    }
+
+    #[test]
+    fn test_transaction_state_isolation() {
+        let block_hash = BlockHash::all_zeros();
+        let (_, _, monitor, funding_txid) = setup_funded_channel();
+        let funding_outpoint = OutPoint::new(funding_txid, 0);
+
+        let closing_tx = make_tx(vec![TxIn {
+            previous_output: funding_outpoint,
+            script_sig: Default::default(),
+            sequence: Default::default(),
+            witness: Default::default(),
+        }]);
+        let closing_txid = closing_tx.compute_txid();
+
+        let unrelated_tx = make_tx(vec![make_txin2(Txid::all_zeros(), 0)]);
+
+        let mut decode_state =
+            BlockDecodeState::new_with_block_hash(&monitor.get_state(), &block_hash);
+        let mut listener = PushListener {
+            commitment_point_provider: &*monitor.commitment_point_provider,
+            decode_state: &mut decode_state,
+            saw_block: true,
+        };
+
+        listener.on_transaction_start(closing_tx.version.0);
+        listener.on_transaction_input(&closing_tx.input[0]);
+        listener.on_transaction_output(&closing_tx.output[0]);
+        listener.on_transaction_end(closing_tx.lock_time, closing_txid);
+
+        assert!(listener.decode_state.closing_tx.is_none());
+
+        listener.on_transaction_start(unrelated_tx.version.0);
+
+        assert_eq!(listener.decode_state.version, unrelated_tx.version.0);
+        assert_eq!(listener.decode_state.input_num, 0);
+        assert_eq!(listener.decode_state.output_num, 0);
+        assert!(listener.decode_state.closing_tx.is_none());
+        assert!(listener.decode_state.spent_htlc_outputs.is_empty());
+    }
+
+    #[test]
+    fn test_is_done_conditions() {
+        let outpoint = OutPoint::new(Txid::from_slice(&[1; 32]).unwrap(), 0);
+        let chan_id = ChannelId::new(&[33u8; 32]);
+
+        let base1 = ChainMonitorBase::new(outpoint, MIN_DEPTH + 10, &chan_id);
+        {
+            let mut state = base1.get_state();
+            state.funding_double_spent_height = Some(10);
+            state.saw_forget_channel = true;
+        }
+        assert!(base1.is_done());
+
+        let base2 = ChainMonitorBase::new(outpoint, MAX_CLOSING_DEPTH + 10, &chan_id);
+        {
+            let mut state = base2.get_state();
+            state.our_output_swept_height = Some(10);
+            state.saw_forget_channel = true;
+        }
+        assert!(base2.is_done());
+    }
+
+    #[test]
+    fn test_diagnostic_all_states() {
+        let outpoint = OutPoint::new(Txid::from_slice(&[1; 32]).unwrap(), 0);
+        let chan_id = ChannelId::new(&[33u8; 32]);
+        let base = ChainMonitorBase::new(outpoint, 100, &chan_id);
+
+        let diagnostic = base.diagnostic(false);
+        assert_eq!(
+            diagnostic,
+            format!("UNCOMFIRMED hold till funding doublespent + {}", MIN_DEPTH)
+        );
+
+        {
+            let mut state = base.get_state();
+            state.funding_height = Some(90);
+        }
+        assert_eq!(base.diagnostic(false), "ACTIVE");
+        assert_eq!(base.diagnostic(true), "CLOSING");
+
+        // Test all aging states
+        let test_cases = vec![
+            ("funding_double_spent_height", 95, MIN_DEPTH, "AGING_FUNDING_DOUBLESPENT"),
+            ("mutual_closing_height", 98, MIN_DEPTH, "AGING_MUTUALLY_CLOSED"),
+            ("closing_swept_height", 99, MIN_DEPTH, "AGING_CLOSING_SWEPT"),
+            ("our_output_swept_height", 97, MAX_CLOSING_DEPTH, "AGING_OUR_OUTPUT_SWEPT"),
+        ];
+
+        for (field, height, depth_limit, expected_prefix) in test_cases {
+            {
+                let mut state = base.get_state();
+                state.funding_height = Some(90);
+                state.funding_double_spent_height = None;
+                state.mutual_closing_height = None;
+                state.closing_swept_height = None;
+                state.our_output_swept_height = None;
+
+                match field {
+                    "funding_double_spent_height" =>
+                        state.funding_double_spent_height = Some(height),
+                    "mutual_closing_height" => state.mutual_closing_height = Some(height),
+                    "closing_swept_height" => state.closing_swept_height = Some(height),
+                    "our_output_swept_height" => state.our_output_swept_height = Some(height),
+                    _ => unreachable!(),
+                }
+            }
+
+            let diagnostic = base.diagnostic(false);
+            let expected =
+                format!("{} at {} until {}", expected_prefix, height, height + depth_limit);
+            assert_eq!(diagnostic, expected);
+        }
     }
 
     fn setup_funded_channel() -> (Arc<Node>, ChannelId, ChainMonitor, Txid) {
