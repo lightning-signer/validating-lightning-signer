@@ -168,9 +168,10 @@ pub(crate) fn derive_public_revocation_key<T: secp256k1::Verification>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bitcoin::Network;
 
     #[test]
-    fn test_hkdf() {
+    fn hkdf_tests() {
         let secret = [1u8];
         let info = [2u8];
         let salt = [3u8];
@@ -183,16 +184,30 @@ mod tests {
             hex::encode(output),
             "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0"
         );
+
+        let secret = [1u8];
+        let info = [2u8];
+        let salt = [3u8];
+        let result = hkdf_sha256(&secret, &info, &salt);
+        assert_eq!(
+            hex::encode(result),
+            "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0"
+        );
+
+        let secret = [1u8];
+        let info = [2u8];
+        let salt = [3u8];
+        let result = hkdf_sha256_keys(&secret, &info, &salt);
+        assert_eq!(result.len(), 32 * 6);
+        let expected_prefix = "13a04658302cc5173a8077f2f296662a7a3ddb2359be92770b13e0b9e63a23d0";
+        assert_eq!(hex::encode(&result[..32]), expected_prefix);
     }
 
     #[test]
     fn test_schnorr_signature_to_bitcoin_vec() {
         let test_signature_bytes: Vec<u8> = vec![0; 64];
-
         let test_signature = schnorr::Signature::from_slice(&test_signature_bytes).unwrap();
-
         let result = schnorr_signature_to_bitcoin_vec(test_signature);
-
         assert_eq!(test_signature_bytes, result);
     }
 
@@ -200,60 +215,128 @@ mod tests {
     fn test_bitcoin_vec_to_signature() {
         let sighash_type = EcdsaSighashType::All;
         let sigvec: Vec<u8> = vec![];
-
         let result = bitcoin_vec_to_signature(&sigvec, sighash_type);
-
         assert_eq!(result, Err(secp256k1::Error::InvalidSignature));
 
         let mut sigvec = hex::decode(
             "304402202e1f64d831e89e2b4a0dc8565cb2d0a4d6061a89f9b48f2c26d5ac0b3b9a0bb102200c8d396f8b2e9c6c623bebc015c47f1f41e8824fabe7cb028f174a0e5df3c0a0"
         ).unwrap();
-
         sigvec.push(1 as u8);
-
         let result = bitcoin_vec_to_signature(&sigvec, sighash_type).unwrap();
-
         sigvec.pop();
-
         let parsed_signature = Signature::from_der(&sigvec).expect("valid DER signature");
-
         assert_eq!(result, parsed_signature);
     }
 
     #[test]
     fn test_maybe_generate_seed() {
         let known_seed: [u8; 32] = [1; 32];
-
         let result = maybe_generate_seed(Some(known_seed));
-
         assert_eq!(result, known_seed);
 
         let result = maybe_generate_seed(None);
-
         assert_eq!(result.len(), 32);
     }
 
     #[test]
     fn test_taproot_sign() {
         let secp = Secp256k1::new();
-
         let privkey_bytes =
             hex::decode("d8d3a3140ba89f14144b0dfe40e04220e02ed68736a5773e050a3c4116b1e31c")
                 .unwrap();
         let secret_key =
             SecretKey::from_slice(&privkey_bytes).expect("32 bytes, within curve order");
-
-        let privkey = PrivateKey::new(secret_key, bitcoin::Network::Bitcoin);
-
+        let privkey = PrivateKey::new(secret_key, Network::Bitcoin);
         let sighash = TapSighash::hash(&[0]);
-
         let aux_rand: [u8; 32] = [0u8; 32];
-
         let signature = taproot_sign(&secp, &privkey, sighash, &aux_rand);
-
         let expected_signature_hex =
             "14262eb13409cd8928536ab60f431b95193d2d9c7cc476e9f43e8b8f98a8d5a8c38d3edc7bf43c389a12c9e5fad9485ee5d59df2d35f46c3f77ca07197ee1db2";
-
         assert_eq!(expected_signature_hex, signature.to_string());
+    }
+
+    #[test]
+    fn test_derive_public_key() {
+        let secp = Secp256k1::new();
+        let per_commitment_secret = SecretKey::from_slice(&[2; 32]).unwrap();
+        let base_secret = SecretKey::from_slice(&[3; 32]).unwrap();
+        let per_commitment_point = PublicKey::from_secret_key(&secp, &per_commitment_secret);
+        let base_point = PublicKey::from_secret_key(&secp, &base_secret);
+
+        let result = derive_public_key(&secp, &per_commitment_point, &base_point).unwrap();
+        let expected = PublicKey::from_slice(
+            &hex::decode("038f363030fd6822d5b3cfaa650fe3c37ed218e3761bbd5e7585779aeb5ac191f3")
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_signature_to_bitcoin_vec() {
+        let secp = Secp256k1::new();
+        let secret_key = SecretKey::from_slice(&[1; 32]).unwrap();
+        let message = Message::from_digest([2; 32]);
+        let sig = secp.sign_ecdsa(&message, &secret_key);
+        let result = signature_to_bitcoin_vec(sig);
+        let expected = vec![
+            48, 69, 2, 33, 0, 151, 239, 48, 35, 62, 173, 37, 209, 15, 123, 178, 191, 158, 175, 87,
+            26, 22, 242, 222, 179, 58, 117, 242, 8, 25, 40, 79, 12, 184, 255, 60, 193, 2, 32, 72,
+            112, 202, 5, 148, 1, 153, 193, 19, 180, 220, 119, 134, 111, 0, 23, 2, 105, 28, 222, 38,
+            159, 104, 53, 88, 30, 122, 234, 30, 173, 38, 96, 1,
+        ];
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_generate_seed() {
+        #[cfg(feature = "std")]
+        {
+            let seed = generate_seed();
+            assert_eq!(seed.len(), 32);
+            assert_ne!(seed, [0; 32]);
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            let result = std::panic::catch_unwind(|| generate_seed());
+            assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn test_sighash_from_heartbeat() {
+        let ser_heartbeat = [1, 2, 3];
+        let result = sighash_from_heartbeat(&ser_heartbeat);
+        let expected_hash = BitcoinSha256::hash(
+            &["vls".as_bytes(), "heartbeat".as_bytes(), &ser_heartbeat].concat(),
+        );
+        let expected = Message::from_digest(expected_hash.to_byte_array());
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_ecdsa_sign() {
+        let secp = Secp256k1::new();
+        let secret_key = SecretKey::from_slice(&[1; 32]).unwrap();
+        let privkey = PrivateKey::new(secret_key, Network::Bitcoin);
+        let sighash = sha256d::Hash::hash(&[2; 32]);
+        let sig = ecdsa_sign(&secp, &privkey, sighash);
+        let message = Message::from_digest(sighash.to_byte_array());
+        let pubkey = PublicKey::from_secret_key(&secp, &secret_key);
+        secp.verify_ecdsa(&message, &sig, &pubkey).unwrap();
+    }
+
+    #[test]
+    fn test_derive_public_revocation_key() {
+        let secp = Secp256k1::new();
+        let per_commitment_secret = SecretKey::from_slice(&[2; 32]).unwrap();
+        let base_secret = SecretKey::from_slice(&[3; 32]).unwrap();
+        let per_commitment_point = PublicKey::from_secret_key(&secp, &per_commitment_secret);
+        let base_point = RevocationBasepoint::from(PublicKey::from_secret_key(&secp, &base_secret));
+
+        let result =
+            derive_public_revocation_key(&secp, &per_commitment_point, &base_point).unwrap();
+        let expected = RevocationKey::from_basepoint(&secp, &base_point, &per_commitment_point);
+        assert_eq!(result, expected);
     }
 }
