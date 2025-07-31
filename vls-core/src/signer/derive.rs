@@ -438,53 +438,134 @@ pub(crate) fn derive_key_lnd(
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::Network::Testnet;
-
     use super::*;
+    use bitcoin::Network::Testnet;
+    use hex;
 
-    #[test]
-    fn node_keys_native_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::new();
-        let derive = key_derive(KeyDerivationStyle::Native, Testnet);
-        let (node_id, _) = derive.node_keys(&[0u8; 32], &secp_ctx);
-        let node_id_bytes = node_id.serialize().to_vec();
-        assert_eq!(
-            hex::encode(node_id_bytes),
-            "02058e8b6c2ad363ec59aa136429256d745164c2bdc87f98f0a68690ec2c5c9b0b"
-        );
-        Ok(())
+    struct ExpectedValues {
+        master_key: &'static str,
+        node_secret_key: &'static str,
+        node_id: &'static str,
+        channels_seed: &'static str,
+        keys_id: &'static str,
+        funding_key: &'static str,
+        commitment_seed: &'static str,
+        account_extended_key: &'static str,
     }
 
     #[test]
-    fn node_keys_lnd_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::new();
-        let derive = key_derive(KeyDerivationStyle::Lnd, Testnet);
-        let (node_id, _) = derive.node_keys(&[0u8; 32], &secp_ctx);
-        let node_id_bytes = node_id.serialize().to_vec();
-        assert_eq!(
-            hex::encode(node_id_bytes),
-            "0287a5eab0a005ea7f08a876257b98868b1e5b5a9167385904396743faa61a4745"
-        );
-        Ok(())
-    }
+    fn test_derivation() {
+        let tests = [
+            (
+                KeyDerivationStyle::Native,
+                ExpectedValues {
+                    master_key: "tprv8ZgxMBicQKsPfBjs724zXetsAfo8GqUTLKFgWsb92txrGoW9De1DTABH7htVkp1jS9ZhNws7do3UNPZreZru8MNXvWDrTxoecc2wnTYrb4S",
+                    node_secret_key: "aae7ec5943df6bf7f26773729b3ac9a12ee428bbc4e6e2fbd27f3cf78cfe6d86",
+                    node_id: "026f61d7ee82f937f9697f4f3e44bfaaa25849cc4f526b3a57326130eba6346002",
+                    channels_seed: "7e273adccc072169f5a1cb1aee23a2d6986b6cbbeff4f0995d2762ac7c0b2511",
+                    keys_id: "36814b08b8410cf33c02217de2c24f800b46642355d5c4be3a78c7d5d924af38",
+                    funding_key: "b70812d9d05617ac829ffa666bd0a7ddbbd5303b562fa2ead2a842440333eff4",
+                    commitment_seed: "fd8c46daa8eda9211b6cf4461003c8cc6aaa98024b438779f08254e4e67ae60c",
+                    account_extended_key: "tprv8eoZddcAfpUQZNYYcJEVkpyfpss9vmBPvFMQ3CZrAxhoKpc6cM36XQJZ8jRbSuH7bouYBbKL6iQ5F4W3H2sh6NobCi4A9CJ3LJEUfDvmKib",
+                },
+            ),
+            (
+                KeyDerivationStyle::Ldk,
+                ExpectedValues {
+                    master_key: "tprv8ZgxMBicQKsPdDdJFAqvG3mt4VqsVV125X4vsor5NxK366upt6qvovLQqaCi5SJiCE1aLkt3HtxsnTpzeGu27kPC5RUCr4h3oPBPYnAvhdE",
+                    node_secret_key: "31bbbef9e06c9ffe3fec8fa24030bccd561ca8e92dded97af7cea6ca3ac85a84",
+                    node_id: "0355f8d2238a322d16b602bd0ceaad5b01019fb055971eaadcc9b29226a4da6c23",
+                    channels_seed: "7e273adccc072169f5a1cb1aee23a2d6986b6cbbeff4f0995d2762ac7c0b2511",
+                    keys_id: "0000000038410cf33c02217de2c24f800b46642355d5c4be3a78c7d5d924af38",
+                    funding_key: "6c0816a87b3a49abcf9fb4d8f2dfa8fd422a26c80ed1c8ca125a5ef2b028308b",
+                    commitment_seed: "4589ed83ea68e56ce041918fdd17bd3bb47ca8bcc992f8be1495da0a05a54ba5",
+                    account_extended_key: "tprv8eoZddcAfpUQZNYYcJEVkpyfpss9vmBPvFMQ3CZrAxhoKpc6cM36XQJZ8jRbSuH7bouYBbKL6iQ5F4W3H2sh6NobCi4A9CJ3LJEUfDvmKib",
+                },
+            ),
+            (
+                KeyDerivationStyle::Lnd,
+                ExpectedValues {
+                    master_key: "tprv8ZgxMBicQKsPdDdJFAqvG3mt4VqsVV125X4vsor5NxK366upt6qvovLQqaCi5SJiCE1aLkt3HtxsnTpzeGu27kPC5RUCr4h3oPBPYnAvhdE",
+                    node_secret_key: "a0794f0889ab261bd7ebdd8f33bfcea8497a0c429c58bde6e60ef157923fa787",
+                    node_id: "02be197c34dccb4c23a6312404b78f8570519105f79dea0bdc947200354b6d1d34",
+                    channels_seed: "7e273adccc072169f5a1cb1aee23a2d6986b6cbbeff4f0995d2762ac7c0b2511",
+                    keys_id: "36814b08b8410cf33c02217de2c24f800b46642355d5c4be3a78c7d5d924af38",
+                    funding_key: "78575e487b25b2cb527a0a67596841e4663e3b37c1da8015f290d1b951d701c2",
+                    commitment_seed: "fd8c46daa8eda9211b6cf4461003c8cc6aaa98024b438779f08254e4e67ae60c",
+                    account_extended_key: "tprv8fwV3nqr6mWFtQMxEmSGN9gbgxaoNzRms4dVeFSp3nG8chPHTmHA6razFaCUrtStcczbFDpazwBnsLkQ2uXK7rR9SxW3L92E7k6ZwTiMpwZ",
+                },
+            ),
+        ];
 
-    #[test]
-    fn get_account_extended_key_test() -> Result<(), ()> {
-        let secp_ctx = Secp256k1::new();
-        let key = get_account_extended_key_native(&secp_ctx, Network::Testnet, &[0u8; 32]);
-        assert_eq!(format!("{}", key), "tprv8ejySXSgpWvEBguEGNFYNcHz29W7QxEodgnwbfLzBCccBnxGAq4vBkgqUYPGR5EnCbLvJE7YQsod6qpid85JhvAfizVpqPg3WsWB6UG3fEL");
-        Ok(())
-    }
+        for (style, expected) in tests {
+            let secp_ctx = Secp256k1::new();
+            let seed = [0x01; 32];
+            let channel_id = ChannelId::new(&[0x01; 32]);
+            let channel_seed_base = [0x02; 32];
+            let keys_id = [0u8; 32];
+            let derive = key_derive(style, Testnet);
 
-    #[test]
-    fn channels_seed_test() -> Result<(), ()> {
-        let derive = key_derive(KeyDerivationStyle::Native, Testnet);
+            // Test master_key
+            let master_key = derive.master_key(&seed);
+            assert_eq!(
+                master_key.to_string(),
+                expected.master_key,
+                "master_key mismatch for {}",
+                style
+            );
 
-        let seed = derive.channels_seed(&[0u8; 32]);
-        assert_eq!(
-            hex::encode(seed),
-            "ab7f29780659755f14afb82342dc19db7d817ace8c312e759a244648dfc25e53"
-        );
-        Ok(())
+            // Test node_keys
+            let (node_id, node_secret_key) = derive.node_keys(&seed, &secp_ctx);
+            assert_eq!(
+                hex::encode(node_secret_key.secret_bytes()),
+                expected.node_secret_key,
+                "node_secret_key mismatch for {}",
+                style
+            );
+            assert_eq!(node_id.to_string(), expected.node_id, "node_id mismatch for {}", style);
+
+            // Test channels_seed
+            let channels_seed = derive.channels_seed(&seed);
+            assert_eq!(
+                hex::encode(channels_seed),
+                expected.channels_seed,
+                "channels_seed mismatch for {}",
+                style
+            );
+
+            // Test keys_id
+            let keys_id_result = derive.keys_id(channel_id.clone(), &channel_seed_base);
+            assert_eq!(
+                hex::encode(keys_id_result),
+                expected.keys_id,
+                "keys_id mismatch for {}",
+                style
+            );
+
+            // Test channel_keys
+            let (funding_key, _, _, _, _, commitment_seed) =
+                derive.channel_keys(&seed, &keys_id, 0, &master_key, &secp_ctx);
+            assert_eq!(
+                hex::encode(funding_key.secret_bytes()),
+                expected.funding_key,
+                "funding_key mismatch for {}",
+                style
+            );
+            assert_eq!(
+                hex::encode(commitment_seed),
+                expected.commitment_seed,
+                "commitment_seed mismatch for {}",
+                style
+            );
+
+            // Test get_account_extended_key
+            let account_key = style.get_account_extended_key(&secp_ctx, Testnet, &seed);
+            assert_eq!(
+                account_key.to_string(),
+                expected.account_extended_key,
+                "account_extended_key mismatch for {}",
+                style
+            );
+        }
     }
 }
