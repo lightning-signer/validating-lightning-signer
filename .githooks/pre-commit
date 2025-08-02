@@ -1,6 +1,6 @@
 #!/bin/bash
 
-FMTCMD="${CARGO_FMT_CMD:cargo +nightly fmt -- --check}"
+FMTCMD="${CARGO_FMT_CMD:./scripts/fmt-all --check}"
 
 # Redirect output to stderr.
 exec 1>&2
