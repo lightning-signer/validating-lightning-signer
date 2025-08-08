@@ -3,6 +3,7 @@ extern crate scopeguard;
 use core::cmp::{max, min};
 use core::fmt::{self, Debug, Formatter};
 
+use bitcoin::bip32::DerivationPath;
 use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::blockdata::script::ScriptBuf;
 use bitcoin::hash_types::FilterHeader;
@@ -43,7 +44,7 @@ pub trait Validator {
         &self,
         wallet: &dyn Wallet,
         setup: &ChannelSetup,
-        holder_shutdown_key_path: &[u32],
+        holder_shutdown_key_path: &DerivationPath,
     ) -> Result<(), ValidationError>;
 
     /// Validate channel value after it is late-filled
@@ -71,7 +72,7 @@ pub trait Validator {
         tx: &Transaction,
         segwit_flags: &[bool],
         values_sat: &[u64],
-        opaths: &[Vec<u32>],
+        opaths: &[DerivationPath],
         weight_lower_bound: usize,
     ) -> Result<u64, ValidationError>;
 
@@ -146,7 +147,7 @@ pub trait Validator {
         setup: &ChannelSetup,
         state: &EnforcementState,
         tx: &Transaction,
-        opaths: &[Vec<u32>],
+        opaths: &[DerivationPath],
     ) -> Result<ClosingTransaction, ValidationError>;
 
     /// Phase 2 Validatation of mutual_close
@@ -159,7 +160,7 @@ pub trait Validator {
         to_counterparty_value_sat: u64,
         holder_shutdown_script: &Option<ScriptBuf>,
         counterparty_shutdown_script: &Option<ScriptBuf>,
-        holder_wallet_path_hint: &[u32],
+        holder_wallet_path_hint: &DerivationPath,
     ) -> Result<(), ValidationError>;
 
     /// Validation of delayed sweep transaction
@@ -171,7 +172,7 @@ pub trait Validator {
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
-        key_path: &[u32],
+        key_path: &DerivationPath,
     ) -> Result<(), ValidationError>;
 
     /// Validation of counterparty htlc sweep transaction (first level
@@ -185,7 +186,7 @@ pub trait Validator {
         redeemscript: &ScriptBuf,
         input: usize,
         amount_sat: u64,
-        key_path: &[u32],
+        key_path: &DerivationPath,
     ) -> Result<(), ValidationError>;
 
     /// Validation of justice sweep transaction
@@ -197,7 +198,7 @@ pub trait Validator {
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
-        key_path: &[u32],
+        key_path: &DerivationPath,
     ) -> Result<(), ValidationError>;
 
     /// Validation of the payment state for a payment hash.

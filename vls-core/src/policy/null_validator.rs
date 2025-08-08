@@ -1,3 +1,4 @@
+use bitcoin::bip32::DerivationPath;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::sighash::{EcdsaSighashType, SegwitV0Sighash};
 use bitcoin::{self, Network, ScriptBuf, Transaction};
@@ -51,7 +52,7 @@ impl Validator for NullValidator {
         &self,
         _wallet: &dyn Wallet,
         _setup: &ChannelSetup,
-        _holder_shutdown_key_path: &[u32],
+        _holder_shutdown_key_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         Ok(())
     }
@@ -67,7 +68,7 @@ impl Validator for NullValidator {
         _tx: &Transaction,
         _segwit_flags: &[bool],
         _values_sat: &[u64],
-        _opaths: &[Vec<u32>],
+        _opaths: &[DerivationPath],
         _weight: usize,
     ) -> Result<u64, ValidationError> {
         Ok(0)
@@ -160,7 +161,7 @@ impl Validator for NullValidator {
         setup: &ChannelSetup,
         estate: &EnforcementState,
         tx: &Transaction,
-        wallet_paths: &[Vec<u32>],
+        wallet_paths: &[DerivationPath],
     ) -> Result<ClosingTransaction, ValidationError> {
         // Delegate to SimplePolicy
         self.0.decode_and_validate_mutual_close_tx(wallet, setup, estate, tx, wallet_paths)
@@ -175,7 +176,7 @@ impl Validator for NullValidator {
         _to_counterparty_value_sat: u64,
         _holder_script: &Option<ScriptBuf>,
         _counterparty_script: &Option<ScriptBuf>,
-        _holder_wallet_path_hint: &[u32],
+        _holder_wallet_path_hint: &DerivationPath,
     ) -> Result<(), ValidationError> {
         Ok(())
     }
@@ -188,7 +189,7 @@ impl Validator for NullValidator {
         _tx: &Transaction,
         _input: usize,
         _amount_sat: u64,
-        _wallet_path: &[u32],
+        _wallet_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         Ok(())
     }
@@ -202,7 +203,7 @@ impl Validator for NullValidator {
         _redeemscript: &ScriptBuf,
         _input: usize,
         _amount_sat: u64,
-        _wallet_path: &[u32],
+        _wallet_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         Ok(())
     }
@@ -215,7 +216,7 @@ impl Validator for NullValidator {
         _tx: &Transaction,
         _input: usize,
         _amount_sat: u64,
-        _wallet_path: &[u32],
+        _wallet_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         Ok(())
     }

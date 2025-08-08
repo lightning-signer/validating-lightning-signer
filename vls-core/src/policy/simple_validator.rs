@@ -1,4 +1,5 @@
 use bitcoin::absolute::{Height, Time};
+use bitcoin::bip32::DerivationPath;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin::sighash::{EcdsaSighashType, SegwitV0Sighash, SighashCache};
 use bitcoin::transaction::Version;
@@ -349,7 +350,7 @@ impl SimpleValidator {
         tx: &Transaction,
         _input: usize,
         _amount_sat: u64,
-        wallet_path: &[u32],
+        wallet_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         if tx.version != Version::TWO {
             transaction_format_err!(self, "policy-sweep-version", "bad version: {}", tx.version);
@@ -393,7 +394,7 @@ impl Validator for SimpleValidator {
         &self,
         wallet: &dyn Wallet,
         setup: &ChannelSetup,
-        holder_shutdown_key_path: &[u32],
+        holder_shutdown_key_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         let mut debug_on_return = scoped_debug_return!(setup, holder_shutdown_key_path);
 
@@ -474,7 +475,7 @@ impl Validator for SimpleValidator {
         tx: &Transaction,
         segwit_flags: &[bool],
         values_sat: &[u64],
-        opaths: &[Vec<u32>],
+        opaths: &[DerivationPath],
         weight_lower_bound: usize,
     ) -> Result<u64, ValidationError> {
         let mut debug_on_return = scoped_debug_return!(tx, values_sat, opaths);
@@ -561,7 +562,7 @@ impl Validator for SimpleValidator {
                         outndx
                     );
                 }
-            } else if wallet.allowlist_contains(&output.script_pubkey, &[]) {
+            } else if wallet.allowlist_contains(&output.script_pubkey, &DerivationPath::master()) {
                 // Possible output to allowlisted address
                 debug!("output {} ({}) is allowlisted", outndx, output.value.to_sat());
                 beneficial_sum =
@@ -1150,7 +1151,7 @@ impl Validator for SimpleValidator {
         setup: &ChannelSetup,
         estate: &EnforcementState,
         tx: &Transaction,
-        wallet_paths: &[Vec<u32>],
+        wallet_paths: &[DerivationPath],
     ) -> Result<ClosingTransaction, ValidationError> {
         // Log state and inputs if we don't succeed.
         let should_debug = true;
@@ -1208,7 +1209,7 @@ impl Validator for SimpleValidator {
             to_counterparty_value_sat: u64,
             holder_script: Option<ScriptBuf>,
             counterparty_script: Option<ScriptBuf>,
-            wallet_path: Vec<u32>,
+            wallet_path: DerivationPath,
         }
 
         // If the commitments are not in the expected state, or the values
@@ -1237,7 +1238,7 @@ impl Validator for SimpleValidator {
                 to_counterparty_value_sat: tx.output[0].value.to_sat(),
                 holder_script: None,
                 counterparty_script: Some(tx.output[0].script_pubkey.clone()),
-                wallet_path: vec![],
+                wallet_path: DerivationPath::master(),
             };
             if holder_value_is_larger {
                 debug!("{}: likely the holder's output", short_function!());
@@ -1344,7 +1345,7 @@ impl Validator for SimpleValidator {
         to_counterparty_value_sat: u64,
         holder_script: &Option<ScriptBuf>,
         counterparty_script: &Option<ScriptBuf>,
-        holder_wallet_path_hint: &[u32],
+        holder_wallet_path_hint: &DerivationPath,
     ) -> Result<(), ValidationError> {
         let mut debug_on_return = scoped_debug_return!(
             setup,
@@ -1512,7 +1513,7 @@ impl Validator for SimpleValidator {
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
-        wallet_path: &[u32],
+        wallet_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         let mut debug_on_return =
             scoped_debug_return!(setup, cstate, tx, input, amount_sat, wallet_path);
@@ -1561,7 +1562,7 @@ impl Validator for SimpleValidator {
         redeemscript: &ScriptBuf,
         input: usize,
         amount_sat: u64,
-        wallet_path: &[u32],
+        wallet_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         let mut debug_on_return =
             scoped_debug_return!(setup, cstate, tx, input, amount_sat, wallet_path);
@@ -1659,7 +1660,7 @@ impl Validator for SimpleValidator {
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
-        wallet_path: &[u32],
+        wallet_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         let mut debug_on_return =
             scoped_debug_return!(_setup, cstate, tx, input, amount_sat, wallet_path);
@@ -2162,10 +2163,11 @@ mod tests {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.holder_selected_contest_delay = 5;
-        assert!(validator.validate_setup_channel(&*node, &setup, &vec![]).is_ok());
+        let derivation_path = DerivationPath::master();
+        assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_ok());
         setup.holder_selected_contest_delay = 4;
         assert_policy_err!(
-            validator.validate_setup_channel(&*node, &setup, &vec![]),
+            validator.validate_setup_channel(&*node, &setup, &derivation_path),
             "policy-channel-contest-delay-range-counterparty",
             "validate_delay: counterparty contest-delay too small: 4 < 5"
         );
@@ -2177,11 +2179,15 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
-        assert!(validator.validate_setup_channel(&*node, &setup, &vec![]).is_ok());
+
+        let derivation_path = DerivationPath::master();
+        assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_ok());
+
         setup.commitment_type = CommitmentType::Anchors;
-        assert!(validator.validate_setup_channel(&*node, &setup, &vec![]).is_err());
+        assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_err());
+
         setup.commitment_type = CommitmentType::Legacy;
-        assert!(validator.validate_setup_channel(&*node, &setup, &vec![]).is_err());
+        assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_err());
     }
 
     // policy-channel-contest-delay-range-holder
@@ -2192,10 +2198,11 @@ mod tests {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.holder_selected_contest_delay = 1440;
-        assert!(validator.validate_setup_channel(&*node, &setup, &vec![]).is_ok());
+        let derivation_path = DerivationPath::master();
+        assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_ok());
         setup.holder_selected_contest_delay = 1441;
         assert_policy_err!(
-            validator.validate_setup_channel(&*node, &setup, &vec![]),
+            validator.validate_setup_channel(&*node, &setup, &derivation_path),
             "policy-channel-contest-delay-range-counterparty",
             "validate_delay: counterparty contest-delay too large: 1441 > 1440"
         );
@@ -2209,10 +2216,12 @@ mod tests {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.counterparty_selected_contest_delay = 5;
-        assert!(validator.validate_setup_channel(&*node, &setup, &vec![]).is_ok());
+        let derivation_path = DerivationPath::master();
+        assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_ok());
+
         setup.counterparty_selected_contest_delay = 4;
         assert_policy_err!(
-            validator.validate_setup_channel(&*node, &setup, &vec![]),
+            validator.validate_setup_channel(&*node, &setup, &derivation_path),
             "policy-channel-contest-delay-range-holder",
             "validate_delay: holder contest-delay too small: 4 < 5"
         );
@@ -2226,10 +2235,12 @@ mod tests {
         let mut setup = make_test_channel_setup();
         let validator = make_test_validator();
         setup.counterparty_selected_contest_delay = 1440;
-        assert!(validator.validate_setup_channel(&*node, &setup, &vec![]).is_ok());
+        let derivation_path = DerivationPath::master();
+        assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_ok());
+
         setup.counterparty_selected_contest_delay = 1441;
         assert_policy_err!(
-            validator.validate_setup_channel(&*node, &setup, &vec![]),
+            validator.validate_setup_channel(&*node, &setup, &derivation_path),
             "policy-channel-contest-delay-range-holder",
             "validate_delay: holder contest-delay too large: 1441 > 1440"
         );

@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use bitcoin::absolute::{Height, LockTime};
+    use bitcoin::bip32::DerivationPath;
     use bitcoin::secp256k1::{PublicKey, Secp256k1};
     use bitcoin::transaction::Version;
     use bitcoin::{
@@ -70,7 +71,7 @@ mod tests {
         mutate_signing_input: InputMutator,
     ) -> Result<(), Status>
     where
-        MakeDestination: Fn(&TestNodeContext) -> (ScriptBuf, Vec<u32>),
+        MakeDestination: Fn(&TestNodeContext) -> (ScriptBuf, DerivationPath),
         InputMutator: Fn(
             &mut Channel,
             &mut ChainState,
