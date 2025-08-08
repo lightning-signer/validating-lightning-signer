@@ -126,13 +126,11 @@ version = "0.33.1"
 default-features = false
 
 [dependencies.bitcoin]
-version = "0.32.2"
-default-features = false
+workspace = true
 features = ["serde"]
 
 [dev-dependencies.bitcoin]
-version = "0.32.2"
-default-features = false
+workspace = true
 features = ["serde", "bitcoinconsensus", "rand-std"]
 
 # fake dependency to turn on the test_utils feature when testing
