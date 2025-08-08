@@ -2,13 +2,16 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::time::Duration;
+use vls_common::to_derivation_path;
 
 use bitcoin::absolute::LockTime;
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::Secp256k1;
-use bitcoin::{Address, Network, OutPoint, PrivateKey, Txid, Witness};
-use bitcoin::{ScriptBuf, Sequence, TxIn, TxOut};
+use bitcoin::{
+    bip32::DerivationPath, Address, Network, OutPoint, PrivateKey, ScriptBuf, Sequence, TxIn,
+    TxOut, Txid, Witness,
+};
 #[cfg(feature = "device")]
 use cortex_m_semihosting::hprintln;
 use lightning::ln::chan_utils::ChannelPublicKeys;
@@ -79,22 +82,20 @@ fn make_test_funding_tx(
     node: &Node,
     inputs: Vec<TxIn>,
     value: u64,
-) -> (Vec<u32>, bitcoin::Transaction) {
-    let opath = vec![0];
+) -> (DerivationPath, bitcoin::Transaction) {
+    let opath = to_derivation_path(&[0u32]);
     let change_addr = node.get_native_address(&opath).unwrap();
-    make_test_funding_tx_with_change(inputs, value, opath, &change_addr)
+    (opath, make_test_funding_tx_with_change(inputs, value, &change_addr))
 }
 
 fn make_test_funding_tx_with_change(
     inputs: Vec<TxIn>,
     value: u64,
-    opath: Vec<u32>,
     change_addr: &Address,
-) -> (Vec<u32>, bitcoin::Transaction) {
+) -> bitcoin::Transaction {
     let outputs =
         vec![TxOut { value: Amount::from_sat(value), script_pubkey: change_addr.script_pubkey() }];
-    let tx = make_test_funding_tx_with_ins_outs(inputs, outputs);
-    (opath, tx)
+    make_test_funding_tx_with_ins_outs(inputs, outputs)
 }
 
 pub fn make_test_funding_tx_with_ins_outs(
@@ -185,7 +186,7 @@ pub fn test_lightning_signer(postscript: fn()) {
 
     sign_funding(&node);
 
-    let holder_shutdown_key_path = Vec::new();
+    let holder_shutdown_key_path = DerivationPath::master();
     let points = node.get_channel(&channel_id).unwrap().lock().unwrap().get_channel_basepoints();
     let points1 = node1.get_channel(&channel_id1).unwrap().lock().unwrap().get_channel_basepoints();
     let mut channel = node
@@ -227,7 +228,7 @@ pub fn test_lightning_signer(postscript: fn()) {
 
     channel.sign_holder_commitment_tx_phase2(2).unwrap();
 
-    let holder_address = node.get_native_address(&vec![0]).unwrap();
+    let holder_address = node.get_native_address(&to_derivation_path(&[0u32])).unwrap();
     let counterparty_script = channel1.get_ldk_shutdown_script();
 
     channel
@@ -236,7 +237,7 @@ pub fn test_lightning_signer(postscript: fn()) {
             1_000_000,
             &Some(holder_address.script_pubkey()),
             &Some(counterparty_script),
-            &vec![0],
+            &to_derivation_path(&[0u32]),
         )
         .unwrap();
 
@@ -251,7 +252,7 @@ pub fn test_lightning_signer(postscript: fn()) {
 }
 
 fn sign_funding(node: &Arc<Node>) {
-    let ipaths = vec![vec![0u32], vec![1u32]];
+    let ipaths = vec![to_derivation_path(&[0u32]), to_derivation_path(&[1u32])];
     let prev_outs = vec![
         TxOut {
             value: Amount::from_sat(100),

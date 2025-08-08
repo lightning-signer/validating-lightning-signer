@@ -351,6 +351,7 @@ dependencies = [
  "cortex-m 0.6.7",
  "cortex-m-rt",
  "cortex-m-semihosting",
+ "vls-common",
  "vls-core",
  "vls-persist",
 ]
@@ -886,6 +887,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 name = "vls-common"
 version = "0.14.0-rc.1"
 dependencies = [
+ "bitcoin",
  "hex",
 ]
 

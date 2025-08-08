@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use bitcoin::secp256k1::{ecdsa::Signature as BitcoinSignature, PublicKey, Secp256k1, SecretKey};
-use bitcoin::{Network, OutPoint};
+use bitcoin::{bip32::DerivationPath, Network, OutPoint};
 use lightning::ln::chan_utils::ChannelPublicKeys;
 use log::LevelFilter;
 use wasm_bindgen::prelude::*;
@@ -220,8 +220,10 @@ impl JSNode {
             counterparty_shutdown_script: None,
             commitment_type: CommitmentType::StaticRemoteKey,
         };
-        let _channel =
-            self.node.setup_channel(id.0.clone(), None, setup, &vec![]).map_err(from_status)?;
+        let _channel = self
+            .node
+            .setup_channel(id.0.clone(), None, setup, &DerivationPath::master())
+            .map_err(from_status)?;
         Ok(())
     }
 

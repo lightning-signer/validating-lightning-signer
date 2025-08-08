@@ -20,6 +20,7 @@ alloc-cortex-m = { version = "0.4.1", optional = true }
 
 vls-core = { path = "../vls-core", default-features = false, features = ["no-std"] }
 vls-persist = { path = "../vls-persist", default-features = false, features = ["no-std"] }
+vls-common = { path = "../vls-common" }
 
 [[bin]]
 name = "embedded"
