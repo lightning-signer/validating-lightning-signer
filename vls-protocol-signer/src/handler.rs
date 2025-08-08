@@ -1,5 +1,6 @@
 #![allow(deprecated)]
 
+use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::format;
@@ -14,6 +15,7 @@ use lightning_signer::bitcoin::script::PushBytesBuf;
 use lightning_signer::bitcoin::ScriptBuf;
 use lightning_signer::lightning::ln::channel_keys::RevocationKey;
 use lightning_signer::lightning_invoice::RawBolt11Invoice;
+use vls_common::to_derivation_path;
 use vls_protocol::msgs::SignBolt12V2Reply;
 use vls_protocol::psbt::PsbtWrapper;
 
@@ -411,7 +413,7 @@ impl RootHandler {
             if let Some(utxo) = utxos.iter().find(|u| {
                 u.txid == input.previous_output.txid && u.outnum == input.previous_output.vout
             }) {
-                ipaths.push(vec![utxo.keyindex]);
+                ipaths.push(to_derivation_path(&[utxo.keyindex]));
                 if let Some(ci) = utxo.close_info.as_ref() {
                     let channel_id = Self::channel_id(&ci.peer_id, ci.channel_id);
                     let per_commitment_point = ci
@@ -432,7 +434,7 @@ impl RootHandler {
                     uniclosekeys.push(None)
                 }
             } else {
-                ipaths.push(vec![]);
+                ipaths.push(DerivationPath::from(vec![]));
                 uniclosekeys.push(None);
             }
         }
@@ -956,13 +958,16 @@ impl Handler for RootHandler {
                     signature: Signature(node_sig.serialize_compact()),
                 }))
             }
-            Message::CheckPubKey(m) => Ok(Box::new(msgs::CheckPubKeyReply {
-                ok: self.node.check_wallet_pubkey(
-                    &[m.index],
-                    bitcoin::PublicKey::from_slice(&m.pubkey.0)
-                        .map_err(|_| Status::invalid_argument("bad public key"))?,
-                )?,
-            })),
+            Message::CheckPubKey(m) => {
+                let wallet_index = to_derivation_path(&[m.index]);
+                Ok(Box::new(msgs::CheckPubKeyReply {
+                    ok: self.node.check_wallet_pubkey(
+                        &wallet_index,
+                        bitcoin::PublicKey::from_slice(&m.pubkey.0)
+                            .map_err(|_| Status::invalid_argument("bad public key"))?,
+                    )?,
+                }))
+            }
             Message::SignAnyDelayedPaymentToUs(m) => sign_delayed_payment_to_us(
                 &self.node,
                 &Self::channel_id(&m.peer_id, m.dbid),
@@ -1078,14 +1083,16 @@ impl Handler for RootHandler {
 fn extract_output_path(
     bip32_derivation: &BTreeMap<PublicKey, KeySource>,
     tap_key_origins: &BTreeMap<XOnlyPublicKey, (Vec<TapLeafHash>, KeySource)>,
-) -> Vec<u32> {
-    let path = if !bip32_derivation.is_empty() {
+) -> DerivationPath {
+    if !bip32_derivation.is_empty() {
         if bip32_derivation.len() > 1 {
             unimplemented!("len > 1");
         }
         let (_fingerprint, path) = bip32_derivation.iter().next().unwrap().1;
-        path.clone()
-    } else if !tap_key_origins.is_empty() {
+        return path.to_owned();
+    }
+
+    if !tap_key_origins.is_empty() {
         if tap_key_origins.len() > 1 {
             unimplemented!("len > 1");
         }
@@ -1093,18 +1100,17 @@ fn extract_output_path(
         if !hashes.is_empty() {
             unimplemented!("hashes not empty");
         }
-        source.1.clone()
-    } else {
-        DerivationPath::from(vec![])
-    };
-    path.into_iter().map(|i| i.clone().into()).collect()
+        return source.1.to_owned();
+    }
+
+    DerivationPath::master()
 }
 
-fn extract_psbt_output_paths(psbt: &Psbt) -> Vec<Vec<u32>> {
+fn extract_psbt_output_paths(psbt: &Psbt) -> Vec<DerivationPath> {
     psbt.outputs
         .iter()
         .map(|o| extract_output_path(&o.bip32_derivation, &o.tap_key_origins))
-        .collect::<Vec<Vec<u32>>>()
+        .collect::<Vec<DerivationPath>>()
 }
 
 /// Protocol handler
@@ -1201,7 +1207,7 @@ impl Handler for ChannelHandler {
                 };
 
                 // FIXME
-                let holder_shutdown_key_path = vec![];
+                let holder_shutdown_key_path = DerivationPath::master();
                 let setup = ChannelSetup {
                     is_outbound: m.is_outbound,
                     channel_value_sat: m.channel_value,
@@ -1375,13 +1381,14 @@ impl Handler for ChannelHandler {
                 Ok(Box::new(msgs::SignTxReply { signature: to_bitcoin_sig(sig) }))
             }
             Message::SignMutualCloseTx2(m) => {
+                let local_wallet_path_hint = to_derivation_path(&m.local_wallet_path_hint);
                 let sig = self.node.with_channel(&self.channel_id, |chan| {
                     chan.sign_mutual_close_tx_phase2(
                         m.to_local_value_sat,
                         m.to_remote_value_sat,
                         &to_script(&m.local_script),
                         &to_script(&m.remote_script),
-                        &m.local_wallet_path_hint,
+                        &local_wallet_path_hint,
                     )
                 })?;
                 Ok(Box::new(msgs::SignTxReply { signature: to_bitcoin_sig(sig) }))

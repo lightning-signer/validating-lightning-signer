@@ -1,6 +1,7 @@
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{Transaction, TxOut};
 use lightning_signer::bitcoin;
+use lightning_signer::bitcoin::bip32::DerivationPath;
 use lightning_signer::prelude::*;
 use log::*;
 
@@ -141,7 +142,7 @@ pub trait Approve: SendSync {
         segwit_flags: &[bool],
         prev_outs: &[TxOut],
         uniclosekeys: &[Option<(SecretKey, Vec<Vec<u8>>)>],
-        opaths: &[Vec<u32>],
+        opaths: &[DerivationPath],
     ) -> Result<bool, Status> {
         let check_result =
             node.check_onchain_tx(&tx, segwit_flags, &prev_outs, &uniclosekeys, &opaths);
