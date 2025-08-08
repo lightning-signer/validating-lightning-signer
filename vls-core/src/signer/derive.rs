@@ -339,17 +339,17 @@ impl core::str::FromStr for KeyDerivationStyle {
 }
 
 impl KeyDerivationStyle {
-    pub(crate) fn get_key_path_len(&self) -> usize {
+    pub(crate) fn get_key_path_len(&self) -> Option<usize> {
         match self {
             // CLN uses a single BIP32 chain for both external
             // and internal (change) addresses.
-            KeyDerivationStyle::Native => 1,
-            // LDK uses a single BIP32 chain for both external
-            // and internal (change) addresses.
-            KeyDerivationStyle::Ldk => 1,
+            KeyDerivationStyle::Native => Some(1),
+            // LDK can use any BIP32 chain for both external
+            // and internal addresses based on the implementation.
+            KeyDerivationStyle::Ldk => None,
             // lnd uses two BIP32 branches, one for external and one
             // for internal (change) addresses.
-            KeyDerivationStyle::Lnd => 2,
+            KeyDerivationStyle::Lnd => Some(2),
         }
     }
 
@@ -451,6 +451,13 @@ mod tests {
         funding_key: &'static str,
         commitment_seed: &'static str,
         account_extended_key: &'static str,
+    }
+
+    #[test]
+    fn test_key_path_len() {
+        assert_eq!(Some(1), KeyDerivationStyle::Native.get_key_path_len());
+        assert_eq!(Some(2), KeyDerivationStyle::Lnd.get_key_path_len());
+        assert_eq!(None, KeyDerivationStyle::Ldk.get_key_path_len());
     }
 
     #[test]

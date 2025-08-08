@@ -6,7 +6,7 @@ use core::time::Duration;
 
 use scopeguard::defer;
 
-use bitcoin::bip32::{ChildNumber, Xpriv, Xpub};
+use bitcoin::bip32::{ChildNumber, DerivationPath, Xpriv, Xpub};
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
@@ -1537,8 +1537,9 @@ impl Node {
         let slot_arc = self.get_channel(channel_id)?;
         let mut slot = slot_arc.lock().unwrap();
         match &mut *slot {
-            ChannelSlot::Stub(_) =>
-                Err(invalid_argument(format!("channel not ready: {}", &channel_id))),
+            ChannelSlot::Stub(_) => {
+                Err(invalid_argument(format!("channel not ready: {}", &channel_id)))
+            }
             ChannelSlot::Ready(chan) => f(chan),
         }
     }
@@ -2305,21 +2306,21 @@ impl Node {
     }
 
     pub(crate) fn get_wallet_privkey(&self, child_path: &[u32]) -> Result<PrivateKey, Status> {
-        if child_path.len() != self.node_config.key_derivation_style.get_key_path_len() {
+        let key_path_len = self.node_config.key_derivation_style.get_key_path_len();
+        if key_path_len.is_some() && child_path.len() != key_path_len.unwrap() {
             return Err(invalid_argument(format!(
                 "get_wallet_key: bad child_path len : {}",
                 child_path.len()
             )));
         }
-        // Start with the base xpriv for this wallet.
-        let mut xkey = self.get_account_extended_key().clone();
 
-        // Derive the rest of the child_path.
-        for elem in child_path {
-            xkey = xkey
-                .derive_priv(&self.secp_ctx, &[ChildNumber::from_normal_idx(*elem).unwrap()])
-                .map_err(|err| internal_error(format!("derive child_path failed: {}", err)))?;
-        }
+        let derivation_path: DerivationPath =
+            DerivationPath::from_iter(child_path.iter().map(|child| {
+                ChildNumber::from_normal_idx(*child)
+                    .expect("index should be a normal index less than 2^31")
+            }));
+        let xkey =
+            self.get_account_extended_key().derive_priv(&self.secp_ctx, &derivation_path).unwrap();
         Ok(PrivateKey::new(xkey.private_key, self.network()))
     }
 
@@ -2931,10 +2932,11 @@ fn find_channel_with_funding_outpoint(
     for (_, slot_arc) in channels_lock.iter() {
         let slot = slot_arc.lock().unwrap();
         match &*slot {
-            ChannelSlot::Ready(chan) =>
+            ChannelSlot::Ready(chan) => {
                 if chan.setup.funding_outpoint == *outpoint {
                     return Some(Arc::clone(slot_arc));
-                },
+                }
+            }
             ChannelSlot::Stub(_stub) => {
                 // ignore stubs ...
             }
