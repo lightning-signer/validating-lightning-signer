@@ -116,7 +116,7 @@ pub struct SignerArgs {
 
     #[clap(
         long,
-        value_parser,
+        value_parser = clap::value_parser!(u32),
         help = "recover l1 funds by sweeping BIP32 addresses up to the given derivation index",
         value_name = "RANGE"
     )]

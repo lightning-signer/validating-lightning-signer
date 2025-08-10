@@ -10,6 +10,7 @@ use crate::policy::Policy;
 use crate::prelude::{Arc, Mutex};
 use crate::tx::tx::{CommitmentInfo, CommitmentInfo2};
 use crate::wallet::Wallet;
+use bitcoin::bip32::DerivationPath;
 use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::hash_types::FilterHeader;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
@@ -68,7 +69,7 @@ impl Validator for MockValidator {
         &self,
         wallet: &dyn Wallet,
         setup: &ChannelSetup,
-        holder_shutdown_key_path: &[u32],
+        holder_shutdown_key_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         todo!()
     }
@@ -84,7 +85,7 @@ impl Validator for MockValidator {
         tx: &Transaction,
         segwit_flags: &[bool],
         values_sat: &[u64],
-        opaths: &[Vec<u32>],
+        opaths: &[DerivationPath],
         weight_lower_bound: usize,
     ) -> Result<u64, ValidationError> {
         todo!()
@@ -165,7 +166,7 @@ impl Validator for MockValidator {
         setup: &ChannelSetup,
         state: &EnforcementState,
         tx: &Transaction,
-        opaths: &[Vec<u32>],
+        opaths: &[DerivationPath],
     ) -> Result<ClosingTransaction, ValidationError> {
         todo!()
     }
@@ -179,7 +180,7 @@ impl Validator for MockValidator {
         to_counterparty_value_sat: u64,
         holder_shutdown_script: &Option<ScriptBuf>,
         counterparty_shutdown_script: &Option<ScriptBuf>,
-        holder_wallet_path_hint: &[u32],
+        holder_wallet_path_hint: &DerivationPath,
     ) -> Result<(), ValidationError> {
         todo!()
     }
@@ -192,7 +193,7 @@ impl Validator for MockValidator {
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
-        key_path: &[u32],
+        key_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         todo!()
     }
@@ -206,7 +207,7 @@ impl Validator for MockValidator {
         redeemscript: &ScriptBuf,
         input: usize,
         amount_sat: u64,
-        key_path: &[u32],
+        key_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         todo!()
     }
@@ -219,7 +220,7 @@ impl Validator for MockValidator {
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
-        key_path: &[u32],
+        key_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         todo!()
     }

@@ -19,6 +19,7 @@ heapmon_requests = []
 
 [dependencies]
 vls-core = { path = "../vls-core", version = "0.14.0-rc.1", features = ["use_backtrace"] }
+vls-common = { path = "../vls-common", version = "0.14.0-rc.1" }
 vls-protocol-signer = { path = "../vls-protocol-signer", version = "0.14.0-rc.1" }
 vls-protocol = { path = "../vls-protocol", version = "0.14.0-rc.1" }
 vls-frontend = { path = "../vls-frontend", version = "0.14.0-rc.1" }

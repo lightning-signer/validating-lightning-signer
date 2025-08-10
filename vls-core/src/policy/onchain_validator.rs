@@ -1,3 +1,4 @@
+use bitcoin::bip32::DerivationPath;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::sighash::{EcdsaSighashType, SegwitV0Sighash};
 use bitcoin::{Network, ScriptBuf, Transaction};
@@ -106,7 +107,7 @@ impl Validator for OnchainValidator {
         &self,
         wallet: &dyn Wallet,
         setup: &ChannelSetup,
-        holder_shutdown_key_path: &[u32],
+        holder_shutdown_key_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         self.inner.validate_setup_channel(wallet, setup, holder_shutdown_key_path)
     }
@@ -122,7 +123,7 @@ impl Validator for OnchainValidator {
         tx: &Transaction,
         segwit_flags: &[bool],
         values_sat: &[u64],
-        opaths: &[Vec<u32>],
+        opaths: &[DerivationPath],
         weight: usize,
     ) -> Result<u64, ValidationError> {
         self.inner.validate_onchain_tx(
@@ -243,7 +244,7 @@ impl Validator for OnchainValidator {
         setup: &ChannelSetup,
         estate: &EnforcementState,
         tx: &Transaction,
-        wallet_paths: &[Vec<u32>],
+        wallet_paths: &[DerivationPath],
     ) -> Result<ClosingTransaction, ValidationError> {
         // Delegate to SimplePolicy
         self.inner.decode_and_validate_mutual_close_tx(wallet, setup, estate, tx, wallet_paths)
@@ -258,7 +259,7 @@ impl Validator for OnchainValidator {
         to_counterparty_value_sat: u64,
         holder_script: &Option<ScriptBuf>,
         counterparty_script: &Option<ScriptBuf>,
-        holder_wallet_path_hint: &[u32],
+        holder_wallet_path_hint: &DerivationPath,
     ) -> Result<(), ValidationError> {
         self.inner.validate_mutual_close_tx(
             wallet,
@@ -280,7 +281,7 @@ impl Validator for OnchainValidator {
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
-        wallet_path: &[u32],
+        wallet_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         self.inner.validate_delayed_sweep(wallet, setup, cstate, tx, input, amount_sat, wallet_path)
     }
@@ -294,7 +295,7 @@ impl Validator for OnchainValidator {
         redeemscript: &ScriptBuf,
         input: usize,
         amount_sat: u64,
-        wallet_path: &[u32],
+        wallet_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         self.inner.validate_counterparty_htlc_sweep(
             wallet,
@@ -316,7 +317,7 @@ impl Validator for OnchainValidator {
         tx: &Transaction,
         input: usize,
         amount_sat: u64,
-        wallet_path: &[u32],
+        wallet_path: &DerivationPath,
     ) -> Result<(), ValidationError> {
         self.inner.validate_justice_sweep(wallet, setup, cstate, tx, input, amount_sat, wallet_path)
     }

@@ -6,7 +6,7 @@ use core::time::Duration;
 
 use scopeguard::defer;
 
-use bitcoin::bip32::{ChildNumber, Xpriv, Xpub};
+use bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::hashes::sha256::Hash as Sha256Hash;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
@@ -1045,7 +1045,11 @@ pub struct NodeServices {
 }
 
 impl Wallet for Node {
-    fn can_spend(&self, child_path: &[u32], script_pubkey: &ScriptBuf) -> Result<bool, Status> {
+    fn can_spend(
+        &self,
+        child_path: &DerivationPath,
+        script_pubkey: &ScriptBuf,
+    ) -> Result<bool, Status> {
         // If there is no path we can't spend it ...
         if child_path.len() == 0 {
             return Ok(false);
@@ -1067,7 +1071,7 @@ impl Wallet for Node {
             || *script_pubkey == taproot_addr.script_pubkey())
     }
 
-    fn get_native_address(&self, child_path: &[u32]) -> Result<Address, Status> {
+    fn get_native_address(&self, child_path: &DerivationPath) -> Result<Address, Status> {
         if child_path.len() == 0 {
             return Err(invalid_argument("empty child path"));
         }
@@ -1077,7 +1081,7 @@ impl Wallet for Node {
         Ok(Address::p2wpkh(&pubkey, self.network()))
     }
 
-    fn get_taproot_address(&self, child_path: &[u32]) -> Result<Address, Status> {
+    fn get_taproot_address(&self, child_path: &DerivationPath) -> Result<Address, Status> {
         if child_path.len() == 0 {
             return Err(invalid_argument("empty child path"));
         }
@@ -1087,7 +1091,7 @@ impl Wallet for Node {
         Ok(Address::p2tr(&self.secp_ctx, untweaked_pubkey, None, self.network()))
     }
 
-    fn get_wrapped_address(&self, child_path: &[u32]) -> Result<Address, Status> {
+    fn get_wrapped_address(&self, child_path: &DerivationPath) -> Result<Address, Status> {
         if child_path.len() == 0 {
             return Err(invalid_argument("empty child path"));
         }
@@ -1101,28 +1105,21 @@ impl Wallet for Node {
         self.get_state().allowlist.contains(&Allowable::Payee(payee))
     }
 
-    fn allowlist_contains(&self, script_pubkey: &ScriptBuf, path: &[u32]) -> bool {
+    fn allowlist_contains(&self, script_pubkey: &ScriptBuf, path: &DerivationPath) -> bool {
         let state = self.get_state();
         if state.allowlist.contains(&Allowable::Script(script_pubkey.clone())) {
             return true;
         }
+
         if path.is_empty() {
             return false;
         }
-        let child_path: Vec<_> = path
-            .iter()
-            .map(|i| ChildNumber::from_normal_idx(*i).ok())
-            .collect::<Option<_>>()
-            .unwrap_or_default();
-        if child_path.is_empty() {
-            return false;
-        }
+
         for a in state.allowlist.iter() {
             if let Allowable::XPub(xp) = a {
                 // cannot fail because we did not generate hardened paths
-                let pubkey = CompressedPublicKey(
-                    xp.derive_pub(&Secp256k1::new(), &child_path).unwrap().public_key,
-                );
+                let pubkey =
+                    CompressedPublicKey(xp.derive_pub(&Secp256k1::new(), path).unwrap().public_key);
 
                 // this is infallible because the pubkey is compressed
                 if *script_pubkey == Address::p2wpkh(&pubkey, self.network()).script_pubkey() {
@@ -1783,7 +1780,7 @@ impl Node {
         channel_id0: ChannelId,
         opt_channel_id: Option<ChannelId>,
         setup: ChannelSetup,
-        holder_shutdown_key_path: &[u32],
+        holder_shutdown_key_path: &DerivationPath,
     ) -> Result<Channel, Status> {
         let mut tracker = self.get_tracker();
         let validator = self.validator_factory().make_validator(
@@ -1940,10 +1937,10 @@ impl Node {
         &self,
         tx: &Transaction,
         segwit_flags: &[bool],
-        ipaths: &[Vec<u32>],
+        ipaths: &[DerivationPath],
         prev_outs: &[TxOut],
         uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
-        opaths: &[Vec<u32>],
+        opaths: &[DerivationPath],
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
         self.check_onchain_tx(tx, segwit_flags, prev_outs, &uniclosekeys, opaths)?;
         self.unchecked_sign_onchain_tx(tx, ipaths, prev_outs, uniclosekeys)
@@ -1970,7 +1967,7 @@ impl Node {
     pub fn unchecked_sign_onchain_tx(
         &self,
         tx: &Transaction,
-        ipaths: &[Vec<u32>],
+        ipaths: &[DerivationPath],
         prev_outs: &[TxOut],
         uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
@@ -2207,7 +2204,7 @@ impl Node {
         segwit_flags: &[bool],
         prev_outs: &[TxOut],
         uniclosekeys: &[Option<(SecretKey, Vec<Vec<u8>>)>],
-        opaths: &[Vec<u32>],
+        opaths: &[DerivationPath],
     ) -> Result<(), ValidationError> {
         let channels_lock = self.get_channels();
 
@@ -2304,28 +2301,26 @@ impl Node {
         channel_transaction_parameters
     }
 
-    pub(crate) fn get_wallet_privkey(&self, child_path: &[u32]) -> Result<PrivateKey, Status> {
-        if child_path.len() != self.node_config.key_derivation_style.get_key_path_len() {
+    pub(crate) fn get_wallet_privkey(
+        &self,
+        derivation_path: &DerivationPath,
+    ) -> Result<PrivateKey, Status> {
+        let key_path_len = self.node_config.key_derivation_style.get_key_path_len();
+        if key_path_len.is_some() && derivation_path.len() != key_path_len.unwrap() {
             return Err(invalid_argument(format!(
                 "get_wallet_key: bad child_path len : {}",
-                child_path.len()
+                derivation_path.len()
             )));
         }
-        // Start with the base xpriv for this wallet.
-        let mut xkey = self.get_account_extended_key().clone();
 
-        // Derive the rest of the child_path.
-        for elem in child_path {
-            xkey = xkey
-                .derive_priv(&self.secp_ctx, &[ChildNumber::from_normal_idx(*elem).unwrap()])
-                .map_err(|err| internal_error(format!("derive child_path failed: {}", err)))?;
-        }
+        let xkey =
+            self.get_account_extended_key().derive_priv(&self.secp_ctx, &derivation_path).unwrap();
         Ok(PrivateKey::new(xkey.private_key, self.network()))
     }
 
     pub(crate) fn get_wallet_pubkey(
         &self,
-        child_path: &[u32],
+        child_path: &DerivationPath,
     ) -> Result<CompressedPublicKey, Status> {
         Ok(CompressedPublicKey(
             self.get_wallet_privkey(child_path)?.public_key(&self.secp_ctx).inner,
@@ -2335,10 +2330,10 @@ impl Node {
     /// Check the submitted wallet pubkey
     pub fn check_wallet_pubkey(
         &self,
-        child_path: &[u32],
+        child_path: &DerivationPath,
         pubkey: bitcoin::PublicKey,
     ) -> Result<bool, Status> {
-        Ok(self.get_wallet_pubkey(&child_path)?.0 == pubkey.inner)
+        Ok(self.get_wallet_pubkey(child_path)?.0 == pubkey.inner)
     }
 
     /// Get shutdown_pubkey to use as PublicKey at channel closure
@@ -3024,6 +3019,7 @@ mod tests {
     use lightning_invoice::{Currency, InvoiceBuilder};
     use std::time::{SystemTime, UNIX_EPOCH};
     use test_log::test;
+    use vls_common::to_derivation_path;
 
     use crate::channel::{ChannelBase, CommitmentType};
     use crate::policy::filter::{FilterRule, PolicyFilter};
@@ -3148,7 +3144,7 @@ mod tests {
             node.get_channel(&channel_id).unwrap().lock().unwrap().get_channel_basepoints();
         let points1 =
             node1.get_channel(&channel_id1).unwrap().lock().unwrap().get_channel_basepoints();
-        let holder_shutdown_key_path = Vec::new();
+        let holder_shutdown_key_path = DerivationPath::master();
 
         // note that these channels are clones of the ones in the node, so the ones in the nodes
         // will not be updated in this test
@@ -3986,7 +3982,7 @@ mod tests {
             node.get_channel(&channel_id).unwrap().lock().unwrap().get_channel_basepoints();
         let points1 =
             node1.get_channel(&channel_id1).unwrap().lock().unwrap().get_channel_basepoints();
-        let holder_shutdown_key_path = Vec::new();
+        let holder_shutdown_key_path = DerivationPath::master();
 
         // note that these channels are clones of the ones in the node, so the ones in the nodes
         // will not be updated in this test
@@ -4045,7 +4041,8 @@ mod tests {
         let mut setup = make_test_channel_setup();
         setup.commitment_type = CommitmentType::AnchorsZeroFeeHtlc;
 
-        node.setup_channel(channel_id.clone(), None, setup, &vec![]).expect("ready channel");
+        node.setup_channel(channel_id.clone(), None, setup, &DerivationPath::master())
+            .expect("ready channel");
 
         let uck = node
             .with_channel(&channel_id, |chan| chan.get_unilateral_close_key(&None, &None))
@@ -4072,8 +4069,13 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
         let (channel_id, chan) = node.new_channel_with_random_id(&node).unwrap();
 
-        node.setup_channel(channel_id.clone(), None, make_test_channel_setup(), &vec![])
-            .expect("ready channel");
+        node.setup_channel(
+            channel_id.clone(),
+            None,
+            make_test_channel_setup(),
+            &DerivationPath::master(),
+        )
+        .expect("ready channel");
 
         let uck = node
             .with_channel(&channel_id, |chan| chan.get_unilateral_close_key(&None, &None))
@@ -4150,7 +4152,7 @@ mod tests {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         assert_eq!(
             node.check_wallet_pubkey(
-                &vec![1],
+                &to_derivation_path(&[1u32]),
                 bitcoin::PublicKey::from_slice(
                     hex_decode(
                         "0330febba06ba074378dec994669cf5ebf6b15e24a04ec190fb93a9482e841a0ca"
@@ -4165,7 +4167,7 @@ mod tests {
         );
         assert_eq!(
             node.check_wallet_pubkey(
-                &vec![1],
+                &to_derivation_path(&[1u32]),
                 bitcoin::PublicKey::from_slice(
                     hex_decode(
                         "0207ec2b35534712d86ae030dd9bfaec08e2ddea1ec1cecffb9725ed7acb12ab66"
@@ -4299,12 +4301,13 @@ mod tests {
     #[test]
     fn node_wallet_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
-        let a = node.get_native_address(&[0]).unwrap();
+        let derivation_path = to_derivation_path(&[0u32]);
+        let a = node.get_native_address(&derivation_path).unwrap();
         assert_eq!(a.to_string(), "tb1qr8j660jqglj0x2axua26u0qcyuxhanycx4sr49");
-        assert!(node.can_spend(&[0], &a.script_pubkey()).unwrap());
-        assert!(!node.can_spend(&[1], &a.script_pubkey()).unwrap());
+        assert!(node.can_spend(&derivation_path, &a.script_pubkey()).unwrap());
+        assert!(!node.can_spend(&to_derivation_path(&[1u32]), &a.script_pubkey()).unwrap());
         #[allow(deprecated)]
-        let a = node.get_wrapped_address(&[0]).unwrap();
+        let a = node.get_wrapped_address(&derivation_path).unwrap();
         assert_eq!(a.to_string(), "2NBaG2jeH1ahh6cMcYBF1RAcZRZsTPqLNLZ");
     }
 
@@ -4329,20 +4332,21 @@ mod tests {
             .require_network(Network::Testnet)
             .unwrap()
             .script_pubkey();
-        assert!(node.allowlist_contains(&script2, &[2]));
+        let derivation_path = to_derivation_path(&[2u32]);
+        assert!(node.allowlist_contains(&script2, &derivation_path));
         // check if third child matches the xpub in the allowlist with wrong index
         let script2 = Address::from_str("mpW3iVi2Td1vqDK8Nfie29ddZXf9spmZkX")
             .unwrap()
             .require_network(Network::Testnet)
             .unwrap()
             .script_pubkey();
-        assert!(!node.allowlist_contains(&script2, &[2]));
+        assert!(!node.allowlist_contains(&script2, &derivation_path));
         let p2wpkh_script = Address::from_str("tb1qfshzhu5qdyz94r4kylyrnlerq6mnhw3sjz7w8p")
             .unwrap()
             .require_network(Network::Testnet)
             .unwrap()
             .script_pubkey();
-        assert!(node.allowlist_contains(&p2wpkh_script, &[2]));
+        assert!(node.allowlist_contains(&p2wpkh_script, &derivation_path));
     }
 
     #[test]

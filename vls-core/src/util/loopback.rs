@@ -1,5 +1,6 @@
 #![allow(missing_docs)]
 
+use bitcoin::bip32::DerivationPath;
 use bitcoin::hashes::Hash;
 use bitcoin::io::Error as IOError;
 use bitcoin::secp256k1::ecdh::SharedSecret;
@@ -37,6 +38,7 @@ use lightning::sign::{
 use lightning::util::ser::{Readable, Writeable, Writer};
 use lightning_invoice::RawBolt11Invoice;
 use log::{debug, error, info};
+use vls_common::to_derivation_path;
 
 /// Adapt MySigner to NodeSigner
 pub struct LoopbackSignerKeysInterface {
@@ -137,8 +139,8 @@ impl LoopbackChannelSigner {
         (offered_htlcs, received_htlcs)
     }
 
-    fn dest_wallet_path() -> Vec<u32> {
-        vec![1]
+    fn dest_wallet_path() -> DerivationPath {
+        to_derivation_path(&[1u32])
     }
 
     fn features(&self) -> ChannelTypeFeatures {
@@ -253,8 +255,7 @@ impl ChannelSigner for LoopbackChannelSigner {
         };
         let node = self.signer.get_node(&self.node_id).expect("no such node");
 
-        let holder_shutdown_key_path = vec![];
-        node.setup_channel(self.channel_id.clone(), None, setup, &holder_shutdown_key_path)
+        node.setup_channel(self.channel_id.clone(), None, setup, &DerivationPath::master())
             .expect("channel already ready or does not exist");
     }
 }
@@ -510,7 +511,7 @@ impl EcdsaChannelSigner for LoopbackChannelSigner {
         self.signer
             .with_channel(&self.node_id, &self.channel_id, |chan| {
                 // matches ldk_shutdown_pubkey derivation in [`MyKeysManager::new`]
-                let holder_wallet_path_hint = vec![2];
+                let holder_wallet_path_hint = to_derivation_path(&[2u32]);
 
                 chan.sign_mutual_close_tx_phase2(
                     closing_tx.to_holder_value_sat(),

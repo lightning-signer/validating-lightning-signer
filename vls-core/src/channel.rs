@@ -2,6 +2,7 @@ use core::any::Any;
 use core::fmt;
 use core::fmt::{Debug, Error, Formatter};
 
+use bitcoin::bip32::DerivationPath;
 use bitcoin::hashes::hex::FromHex;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::hashes::Hash;
@@ -1553,7 +1554,7 @@ impl Channel {
         to_counterparty_value_sat: u64,
         holder_script: &Option<ScriptBuf>,
         counterparty_script: &Option<ScriptBuf>,
-        holder_wallet_path_hint: &[u32],
+        holder_wallet_path_hint: &DerivationPath,
     ) -> Result<Signature, Status> {
         self.validator().validate_mutual_close_tx(
             &*self.get_node(),
@@ -1592,7 +1593,7 @@ impl Channel {
         commitment_number: u64,
         redeemscript: &Script,
         amount_sat: u64,
-        wallet_path: &[u32],
+        wallet_path: &DerivationPath,
     ) -> Result<Signature, Status> {
         if input >= tx.input.len() {
             return Err(invalid_argument(format!(
@@ -1645,7 +1646,7 @@ impl Channel {
         remote_per_commitment_point: &PublicKey,
         redeemscript: &ScriptBuf,
         htlc_amount_sat: u64,
-        wallet_path: &[u32],
+        wallet_path: &DerivationPath,
     ) -> Result<Signature, Status> {
         if input >= tx.input.len() {
             return Err(invalid_argument(format!(
@@ -1698,7 +1699,7 @@ impl Channel {
         revocation_secret: &SecretKey,
         redeemscript: &Script,
         amount_sat: u64,
-        wallet_path: &[u32],
+        wallet_path: &DerivationPath,
     ) -> Result<Signature, Status> {
         if input >= tx.input.len() {
             return Err(invalid_argument(format!(
@@ -2507,7 +2508,7 @@ impl Channel {
     pub fn sign_mutual_close_tx(
         &mut self,
         tx: &Transaction,
-        opaths: &[Vec<u32>],
+        opaths: &[DerivationPath],
     ) -> Result<Signature, Status> {
         dbgvals!(tx.compute_txid(), self.get_node().allowlist());
         if opaths.len() != tx.output.len() {

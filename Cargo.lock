@@ -3381,6 +3381,7 @@ dependencies = [
 name = "vls-common"
 version = "0.14.0-rc.1"
 dependencies = [
+ "bitcoin",
  "hex",
 ]
 
@@ -3506,6 +3507,7 @@ dependencies = [
  "env_logger",
  "log",
  "test-log",
+ "vls-common",
  "vls-core",
  "vls-protocol",
  "vls-protocol-signer",
@@ -3599,6 +3601,7 @@ dependencies = [
  "triggered",
  "txoo-bitcoind-client",
  "url",
+ "vls-common",
  "vls-core",
  "vls-frontend",
  "vls-persist",

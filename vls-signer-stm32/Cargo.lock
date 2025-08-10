@@ -1038,6 +1038,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 name = "vls-common"
 version = "0.14.0-rc.1"
 dependencies = [
+ "bitcoin",
  "hex",
 ]
 
@@ -1109,6 +1110,7 @@ version = "0.14.0-rc.1"
 dependencies = [
  "bit-vec",
  "log",
+ "vls-common",
  "vls-core",
  "vls-protocol",
 ]

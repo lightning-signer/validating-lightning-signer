@@ -2,6 +2,7 @@
 mod tests {
     use std::mem;
 
+    use bitcoin::bip32::DerivationPath;
     use bitcoin::hashes::hex::FromHex;
     use bitcoin::{self, Address, Amount, Network, OutPoint, ScriptBuf, Transaction, TxOut};
     use lightning::ln::chan_utils::{
@@ -10,6 +11,7 @@ mod tests {
     use lightning::types::payment::PaymentHash;
 
     use test_log::test;
+    use vls_common::to_derivation_path;
 
     use crate::channel::{Channel, ChannelBase, ChannelId, ChannelSetup, TypedSignature};
     use crate::node::{Node, NodeMonitor};
@@ -26,7 +28,7 @@ mod tests {
     fn setup_mutual_close_tx(
         outbound: bool,
     ) -> Result<
-        (ChannelSetup, Arc<Node>, ChannelId, u64, u64, u64, Vec<u32>, ChannelPublicKeys),
+        (ChannelSetup, Arc<Node>, ChannelId, u64, u64, u64, DerivationPath, ChannelPublicKeys),
         Status,
     > {
         let mut setup = make_test_channel_setup();
@@ -37,7 +39,7 @@ mod tests {
         let counterparty_points = make_test_counterparty_points();
         let holder_commit_num = 22;
         let counterparty_commit_num = 43;
-        let holder_wallet_path_hint = vec![7];
+        let holder_wallet_path_hint = to_derivation_path(&[7u32]);
 
         let feerate_per_kw = 7500;
         let fee = 2000;
@@ -105,7 +107,7 @@ mod tests {
     where
         MutualCloseInputMutator:
             Fn(&mut Channel, &mut u64, &mut u64, &mut ScriptBuf, &mut ScriptBuf, &mut OutPoint),
-        MutualCloseTxMutator: Fn(&mut Transaction, &mut Vec<Vec<u32>>, &mut Vec<String>),
+        MutualCloseTxMutator: Fn(&mut Transaction, &mut Vec<DerivationPath>, &mut Vec<String>),
         ChannelStateValidator: Fn(&Channel),
     {
         let (
@@ -162,7 +164,7 @@ mod tests {
             assert!(chan.get_per_commitment_secret(holder_commit_num - 1).is_ok());
 
             let mut mtx = tx.clone();
-            let mut wallet_paths = vec![vec![], holder_wallet_path_hint.clone()];
+            let mut wallet_paths = vec![DerivationPath::master(), holder_wallet_path_hint];
             let mut allowlist = vec![];
 
             mutate_close_tx(&mut mtx, &mut wallet_paths, &mut allowlist);
@@ -222,7 +224,7 @@ mod tests {
             &mut ScriptBuf,
             &mut ScriptBuf,
             &mut OutPoint,
-            &mut Vec<u32>,
+            &mut DerivationPath,
             &mut Vec<String>,
         ),
         ChannelStateValidator: Fn(&Channel),
@@ -234,7 +236,7 @@ mod tests {
             holder_commit_num,
             to_holder_value_sat,
             to_counterparty_value_sat,
-            init_holder_wallet_path_hint,
+            mut init_holder_wallet_path_hint,
             counterparty_points,
         ) = setup_mutual_close_tx(outbound)?;
 
@@ -246,12 +248,13 @@ mod tests {
             funding_outpoint,
             sig,
         ) = node.with_channel(&channel_id, |chan| {
-            let mut wallet_path = init_holder_wallet_path_hint.clone();
             let mut holder_value_sat = to_holder_value_sat;
             let mut counterparty_value_sat = to_counterparty_value_sat;
-            let mut holder_shutdown_script =
-                Address::p2wpkh(&node.get_wallet_pubkey(&wallet_path).unwrap(), Network::Testnet)
-                    .script_pubkey();
+            let mut holder_shutdown_script = Address::p2wpkh(
+                &node.get_wallet_pubkey(&init_holder_wallet_path_hint).unwrap(),
+                Network::Testnet,
+            )
+            .script_pubkey();
             let mut counterparty_shutdown_script =
                 ScriptBuf::from_hex("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565")
                     .expect("script_pubkey");
@@ -269,7 +272,7 @@ mod tests {
                 &mut holder_shutdown_script,
                 &mut counterparty_shutdown_script,
                 &mut funding_outpoint,
-                &mut wallet_path,
+                &mut init_holder_wallet_path_hint,
                 &mut allowlist,
             );
 
@@ -282,7 +285,7 @@ mod tests {
                 counterparty_value_sat,
                 &Some(holder_shutdown_script.clone()),
                 &Some(counterparty_shutdown_script.clone()),
-                &wallet_path,
+                &init_holder_wallet_path_hint,
             );
             // This will panic if the state is not good.
             validate_channel_state(chan);
@@ -553,7 +556,7 @@ mod tests {
                 // remove all the walletpaths
                 wallet_paths.pop();
                 wallet_paths.pop();
-                wallet_paths.push(vec![]); // only push one back, one output
+                wallet_paths.push(DerivationPath::master()); // only push one back, one output
 
                 // add allowlist entry
                 allowlist.push("tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z".to_string());
@@ -576,8 +579,8 @@ mod tests {
                 // empty the wallet paths
                 wallet_paths.pop();
                 wallet_paths.pop();
-                wallet_paths.push(vec![]);
-                wallet_paths.push(vec![]);
+                wallet_paths.push(DerivationPath::master());
+                wallet_paths.push(DerivationPath::master());
                 // use the allowlist
                 allowlist.push("tb1qkakav8jpkhhs22hjrndrycyg3srshwd09gax07".to_string());
             },
@@ -601,7 +604,7 @@ mod tests {
              wallet_path,
              allowlist| {
                 // Remove the wallet_path and use allowlist instead.
-                *wallet_path = vec![];
+                *wallet_path = DerivationPath::master();
                 allowlist.push("tb1qkakav8jpkhhs22hjrndrycyg3srshwd09gax07".to_string());
             },
             |chan| {
@@ -625,7 +628,7 @@ mod tests {
                  wallet_path,
                  _allowlist| {
                     // Remove the wallet_path
-                    *wallet_path = vec![];
+                    *wallet_path = DerivationPath::master();
                 },
                 |chan| {
                     // Channel should not be marked closed
@@ -737,7 +740,8 @@ mod tests {
                             "76a9149f9a7abd600c0caa03983a77c8c3df8e062cb2fa88ac"
                         ),
                     });
-                    wallet_paths.push(vec![]); // needs to match
+                    wallet_paths.push(DerivationPath::master());
+                    // needs to match
                 },
                 |chan| {
                     // Channel should not be marked closed
@@ -761,7 +765,8 @@ mod tests {
                     // don't need to mutate these
                 },
                 |_tx, wallet_paths, _allowlist| {
-                    wallet_paths.push(vec![]); // an extra opath element
+                    wallet_paths.push(DerivationPath::master());
+                    // an extra opath element
                 },
                 |chan| {
                     // Channel should be not marked closed
@@ -788,8 +793,8 @@ mod tests {
                 |_tx, wallet_paths, _allowlist| {
                     wallet_paths.pop();
                     wallet_paths.pop();
-                    wallet_paths.push(vec![]);
-                    wallet_paths.push(vec![]);
+                    wallet_paths.push(vec![].into());
+                    wallet_paths.push(vec![].into());
                 },
                 |chan| {
                     // Channel should not be marked closed
@@ -838,8 +843,8 @@ mod tests {
                 // remove the wallet paths
                 wallet_paths.pop();
                 wallet_paths.pop();
-                wallet_paths.push(vec![]);
-                wallet_paths.push(vec![]);
+                wallet_paths.push(DerivationPath::master());
+                wallet_paths.push(DerivationPath::master());
 
                 // add both outputs to the allowlist
                 allowlist.push("tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z".to_string());

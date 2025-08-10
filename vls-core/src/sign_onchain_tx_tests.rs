@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use bitcoin::absolute::LockTime;
+    use bitcoin::bip32::DerivationPath;
     use bitcoin::hashes::hash160::Hash as Hash160;
 
     use bitcoin::blockdata::opcodes;
@@ -14,6 +15,7 @@ mod tests {
         Transaction, TxIn, TxOut, Txid, Witness,
     };
     use test_log::test;
+    use vls_common::to_derivation_path;
 
     use crate::channel::CommitmentType;
     use crate::node::SpendType;
@@ -28,14 +30,14 @@ mod tests {
     #[test]
     fn onchain_size_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let destination = node.get_native_address(&[0]).unwrap();
+        let destination = node.get_native_address(&to_derivation_path(&[0u32])).unwrap();
         let (tx, opaths) = make_large_tx(&destination, 1050);
         let txo = TxOut { value: Amount::ZERO, script_pubkey: ScriptBuf::new() };
-        node.check_onchain_tx(&tx, &vec![], &[txo.clone()], &[None], &opaths)
+        node.check_onchain_tx(&tx, &[], &[txo.clone()], &[None], &opaths)
             .expect("should have been under size limit");
         let (tx, opaths) = make_large_tx(&destination, 1060);
         assert_eq!(
-            node.check_onchain_tx(&tx, &vec![], &[txo], &[None], &opaths),
+            node.check_onchain_tx(&tx, &[], &[txo], &[None], &opaths),
             Err(policy_error(
                 "policy-onchain-max-size",
                 "validate_onchain_tx: tx too large: 32913 > 32768"
@@ -43,11 +45,11 @@ mod tests {
         );
     }
 
-    fn make_large_tx(destination: &Address, nout: u32) -> (Transaction, Vec<Vec<u32>>) {
+    fn make_large_tx(destination: &Address, nout: u32) -> (Transaction, Vec<DerivationPath>) {
         let output: Vec<_> = (0..nout)
             .map(|_| TxOut { value: Amount::ZERO, script_pubkey: destination.script_pubkey() })
             .collect();
-        let opaths: Vec<_> = output.iter().map(|_| vec![0]).collect();
+        let opaths: Vec<_> = output.iter().map(|_| to_derivation_path(&[0u32])).collect();
         let tx = Transaction {
             version: Version::TWO,
             lock_time: LockTime::ZERO,
@@ -80,11 +82,17 @@ mod tests {
         let txo = TxOut { value: Amount::from_sat(20000), script_pubkey: ScriptBuf::new() };
         for i in 0..50 {
             println!("i = {}", i);
-            node.check_onchain_tx(&tx, &vec![], &[txo.clone()], &[None], &[vec![]])
-                .expect("should have been under fee velocity");
+            node.check_onchain_tx(
+                &tx,
+                &vec![],
+                &[txo.clone()],
+                &[None],
+                &[DerivationPath::master()],
+            )
+            .expect("should have been under fee velocity");
         }
         assert_eq!(
-            node.check_onchain_tx(&tx, &vec![], &[txo], &[None], &[vec![]]),
+            node.check_onchain_tx(&tx, &vec![], &[txo], &[None], &[DerivationPath::master()]),
             Err(policy_error(
                 "policy-onchain-fee-range",
                 "check_onchain_tx: fee velocity would be exceeded 1000000000 + 20000000 > 1000000000"
@@ -114,14 +122,21 @@ mod tests {
             witness: Witness::default(),
         };
         let (opath, mut tx) = make_test_funding_tx(&node, vec![input1, input2], chanamt);
-        let ipaths = values.iter().map(|v| vec![v.0]).collect::<Vec<_>>();
+        let ipaths = values.iter().map(|v| to_derivation_path(&[v.0])).collect::<Vec<_>>();
 
         let txos = previous_tx.output.clone();
 
         let uniclosekeys = vec![None, None];
 
         let witvec = node
-            .check_and_sign_onchain_tx(&tx, &vec![true], &ipaths, &txos, uniclosekeys, &vec![opath])
+            .check_and_sign_onchain_tx(
+                &tx,
+                &vec![true],
+                &ipaths,
+                &txos,
+                uniclosekeys,
+                &vec![opath.clone()],
+            )
             .expect("good sigs");
         assert_eq!(witvec.len(), 2);
 
@@ -157,7 +172,7 @@ mod tests {
             witness: Witness::default(),
         };
         let (opath, mut tx) = make_test_funding_tx(&node, vec![input1, input2], chanamt);
-        let ipaths = values.iter().map(|v| vec![v.0]).collect::<Vec<_>>();
+        let ipaths = values.iter().map(|v| to_derivation_path(&[v.0])).collect::<Vec<_>>();
         let txos = previous_tx.output.clone();
 
         let uniclosekeys = vec![None, None];
@@ -169,7 +184,7 @@ mod tests {
                 &ipaths,
                 &txos,
                 uniclosekeys,
-                &vec![opath],
+                &vec![opath.clone()],
             )
             .expect("good sigs");
         assert_eq!(witvec.len(), 2);
@@ -200,13 +215,20 @@ mod tests {
         };
 
         let (opath, mut tx) = make_test_funding_tx(&node, vec![input1], chanamt);
-        let ipaths = values.iter().map(|v| vec![v.0]).collect::<Vec<_>>();
+        let ipaths = values.iter().map(|v| to_derivation_path(&[v.0])).collect::<Vec<_>>();
         let txos = previous_tx.output.clone();
 
         let uniclosekeys = vec![None];
 
         let witvec = node
-            .check_and_sign_onchain_tx(&tx, &vec![true], &ipaths, &txos, uniclosekeys, &vec![opath])
+            .check_and_sign_onchain_tx(
+                &tx,
+                &vec![true],
+                &ipaths,
+                &txos,
+                uniclosekeys,
+                &vec![opath.clone()],
+            )
             .expect("good sigs");
         assert_eq!(witvec.len(), 1);
 
@@ -236,7 +258,7 @@ mod tests {
         };
 
         let (opath, tx) = make_test_funding_tx(&node, vec![input1], chanamt);
-        let ipaths = values.iter().map(|v| vec![v.0]).collect::<Vec<_>>();
+        let ipaths = values.iter().map(|v| to_derivation_path(&[v.0])).collect::<Vec<_>>();
         let txos = previous_tx.output.clone();
 
         let uniclosekeys = vec![None];
@@ -259,7 +281,7 @@ mod tests {
     fn sign_funding_tx_unilateral_close_info_test() -> Result<(), ()> {
         let secp_ctx = Secp256k1::signing_only();
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[0]);
-        let values = vec![(0, 300u64, SpendType::P2wpkh)];
+        let values = vec![(0u32, 300u64, SpendType::P2wpkh)];
         let chanamt = 200u64;
         let uniclose_key = SecretKey::from_slice(
             hex_decode("4220531d6c8b15d66953c46b5c4d67c921943431452d5543d8805b9903c6b858")
@@ -294,7 +316,7 @@ mod tests {
         };
 
         let (opath, mut tx) = make_test_funding_tx(&node, vec![input1], chanamt);
-        let ipaths = values.iter().map(|v| vec![v.0]).collect::<Vec<_>>();
+        let ipaths = values.iter().map(|v| to_derivation_path(&[v.0])).collect::<Vec<_>>();
         let uniclosepubkey = bitcoin::PublicKey::from_slice(
             &PublicKey::from_secret_key(&secp_ctx, &uniclose_key).serialize()[..],
         )
@@ -354,14 +376,17 @@ mod tests {
             }],
             output: vec![TxOut {
                 value: Amount::from_sat(90_000),
-                script_pubkey: node.get_native_address(&[0]).unwrap().script_pubkey(),
+                script_pubkey: node
+                    .get_native_address(&to_derivation_path(&[0u32]))
+                    .unwrap()
+                    .script_pubkey(),
             }],
         };
 
-        let ipaths = vec![vec![]];
+        let ipaths = vec![DerivationPath::master()];
         let txos = previous_tx.output.clone();
         let uck_tuple = (uck_sk, vec![uck_pubkey.0.serialize().to_vec()]);
-        let opaths = vec![vec![0]];
+        let opaths = vec![to_derivation_path(&[0u32])];
 
         let witvec = node
             .check_and_sign_onchain_tx(&tx, &[true], &ipaths, &txos, vec![Some(uck_tuple)], &opaths)
@@ -413,13 +438,16 @@ mod tests {
             }],
             output: vec![TxOut {
                 value: Amount::from_sat(90_000),
-                script_pubkey: node.get_native_address(&[0]).unwrap().script_pubkey(),
+                script_pubkey: node
+                    .get_native_address(&to_derivation_path(&[0u32]))
+                    .unwrap()
+                    .script_pubkey(),
             }],
         };
 
-        let ipaths = vec![vec![]];
+        let ipaths = vec![DerivationPath::master()];
         let txos = previous_tx.output.clone();
-        let opaths = vec![vec![0]];
+        let opaths = vec![to_derivation_path(&[0u32])];
 
         let empty_witvec = node
             .check_and_sign_onchain_tx(&tx, &[true], &ipaths, &txos, vec![None], &opaths)
@@ -446,7 +474,7 @@ mod tests {
         };
 
         let (opath, mut tx) = make_test_funding_tx(&node, vec![input1], 100);
-        let ipaths = values.iter().map(|v| vec![v.0]).collect::<Vec<_>>();
+        let ipaths = values.iter().map(|v| to_derivation_path(&[v.0])).collect::<Vec<_>>();
         let txos = previous_tx.output.clone();
 
         // NOTE - this does not trigger policy-onchain-funding-non-malleable because
@@ -494,7 +522,7 @@ mod tests {
 
         let (opath, mut tx) =
             make_test_funding_tx_with_p2shwpkh_change(&node, vec![input1], chanamt);
-        let ipaths = values.iter().map(|v| vec![v.0]).collect::<Vec<_>>();
+        let ipaths = values.iter().map(|v| to_derivation_path(&[v.0])).collect::<Vec<_>>();
         let txos = previous_tx.output.clone();
 
         // NOTE - this does not trigger policy-onchain-funding-non-malleable because
@@ -569,7 +597,11 @@ mod tests {
         let (opath, tx) = make_test_funding_tx(&node, inputs, 100);
         let uniclosekeys = vec![None, None, None];
 
-        let ipaths = vec![vec![], vec![values1[0].0], vec![]];
+        let ipaths = vec![
+            DerivationPath::master(),
+            to_derivation_path(&[values1[0].0]),
+            DerivationPath::master(),
+        ];
         let txos = vec![
             previous_txs[0].output[0].clone(),
             previous_txs[1].output[0].clone(),
@@ -693,7 +725,7 @@ mod tests {
     fn wallet_cannot_spend() {
         assert_failed_precondition_err!(
             sign_funding_tx_with_mutator(|fms| {
-                fms.tx_ctx.opaths[0] = vec![33];
+                fms.tx_ctx.opaths[0] = to_derivation_path(&[33u32]);
             }),
             "policy failure: validate_onchain_tx: output[0] is unknown"
         );
@@ -1163,7 +1195,7 @@ mod tests {
         validate_holder_commitment(&node_ctx, &chan_ctx, &commit_tx_ctx, &csig, &hsigs)
             .expect("valid holder commitment");
 
-        tx_ctx.ipaths[0] = vec![42, 42]; // bad input path
+        tx_ctx.ipaths[0] = to_derivation_path(&[42u32, 42u32]); // bad input path
 
         assert_invalid_argument_err!(
             tx_ctx.sign(&node_ctx, &tx),
@@ -1192,7 +1224,7 @@ mod tests {
 
         funding_tx_setup_channel(&node_ctx, &mut chan_ctx, &tx, outpoint_ndx);
 
-        tx_ctx.opaths[0] = vec![42, 42]; // bad output path
+        tx_ctx.opaths[0] = to_derivation_path(&[42u32, 42u32]); // bad output path
 
         assert_failed_precondition_err!(
             tx_ctx.sign(&node_ctx, &tx),

@@ -2,11 +2,13 @@
 mod tests {
     use crate::channel::ChannelId;
     use bitcoin;
+    use bitcoin::bip32::DerivationPath;
     use bitcoin::hashes::hex::FromHex;
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::ScriptBuf;
     use lightning::ln::chan_utils::ChannelPublicKeys;
     use test_log::test;
+    use vls_common::to_derivation_path;
 
     use crate::util::status::{Code, Status};
     use crate::util::test_utils::*;
@@ -55,8 +57,12 @@ mod tests {
     fn setup_channel_not_exist_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let channel_id_x = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[1]).unwrap());
-        let status: Result<_, Status> =
-            node.setup_channel(channel_id_x.clone(), None, make_test_channel_setup(), &vec![]);
+        let status: Result<_, Status> = node.setup_channel(
+            channel_id_x.clone(),
+            None,
+            make_test_channel_setup(),
+            &DerivationPath::master(),
+        );
         assert!(status.is_err());
         let err = status.unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
@@ -86,7 +92,7 @@ mod tests {
             channel_id.clone(),
             Some(channel_id_x.clone()),
             make_test_channel_setup(),
-            &vec![],
+            &DerivationPath::master(),
         )
         .expect("setup_channel");
 
@@ -204,7 +210,7 @@ mod tests {
         // Trying to ready it again with different values should fail.
         let mut setup1 = make_test_channel_setup();
         setup1.channel_value_sat += 1;
-        let result = node.setup_channel(channel_id, None, setup1, &vec![]);
+        let result = node.setup_channel(channel_id, None, setup1, &DerivationPath::master());
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code(), Code::InvalidArgument);
@@ -222,7 +228,7 @@ mod tests {
         let mut setup = make_test_channel_setup();
         setup.holder_shutdown_script =
             Some(hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565"));
-        let holder_shutdown_key_path = vec![];
+        let holder_shutdown_key_path = DerivationPath::master();
         let result = node.setup_channel(channel_id, None, setup.clone(), &holder_shutdown_key_path);
         assert_failed_precondition_err!(
             result,
@@ -241,7 +247,7 @@ mod tests {
             Some(hex_script!("0014be56df7de366ad8ee9ccdad54e9a9993e99ef565"));
         node.add_allowlist(&vec!["tb1qhetd7l0rv6kca6wvmt25ax5ej05eaat9q29z7z".to_string()])
             .expect("added allowlist");
-        let holder_shutdown_key_path = vec![];
+        let holder_shutdown_key_path = DerivationPath::master();
         let result = node.setup_channel(channel_id, None, setup.clone(), &holder_shutdown_key_path);
         assert_status_ok!(result);
     }
@@ -254,7 +260,7 @@ mod tests {
         let mut setup = make_test_channel_setup();
         setup.holder_shutdown_script =
             Some(hex_script!("0014b76dd61e41b5ef052af21cda3260888c070bb9af"));
-        let holder_shutdown_key_path = vec![7];
+        let holder_shutdown_key_path = to_derivation_path(&[7u32]);
         let result = node.setup_channel(channel_id, None, setup.clone(), &holder_shutdown_key_path);
         assert_status_ok!(result);
     }

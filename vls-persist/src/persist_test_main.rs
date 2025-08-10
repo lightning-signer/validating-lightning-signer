@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use lightning_signer::bitcoin::bip32::DerivationPath;
 use lightning_signer::channel::ChannelId;
 use lightning_signer::lightning::types::payment::PaymentHash;
 use lightning_signer::node::{PaymentState, PaymentType};
@@ -36,7 +37,8 @@ pub fn main() {
 
     let dummy_pubkey = make_test_key(0x12).0;
     let setup = test_utils::create_test_channel_setup(dummy_pubkey);
-    let channel = node.setup_channel(stub.id0, Some(channel_id1), setup, &vec![]).unwrap();
+    let channel =
+        node.setup_channel(stub.id0, Some(channel_id1), setup, &DerivationPath::master()).unwrap();
 
     for (id, entry) in persister.get_node_channels(&node_id).unwrap() {
         println!("{} {:?}", id, entry);

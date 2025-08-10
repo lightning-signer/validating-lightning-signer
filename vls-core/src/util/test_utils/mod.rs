@@ -7,6 +7,8 @@ use core::cmp;
 
 use bitcoin::absolute::LockTime;
 use bitcoin::bech32::Fe32;
+use bitcoin::bip32::ChildNumber;
+use bitcoin::bip32::DerivationPath;
 use bitcoin::block::Version as BlockVersion;
 use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::blockdata::constants::genesis_block;
@@ -521,14 +523,14 @@ pub fn init_channel(setup: ChannelSetup, node: Arc<Node>) -> ChannelId {
     }
     let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
     node.new_channel_with_id(channel_id.clone(), &node).expect("new_channel");
-    let holder_shutdown_key_path = vec![];
+    let holder_shutdown_key_path = DerivationPath::master();
     node.setup_channel(channel_id.clone(), None, setup, &holder_shutdown_key_path)
         .expect("ready channel");
     channel_id
 }
 
 pub fn make_test_funding_wallet_addr(node: &Node, i: u32, stype: SpendType) -> Address {
-    let child_path = vec![i];
+    let child_path: DerivationPath = vec![ChildNumber::from_normal_idx(i).unwrap()].into();
     let pubkey = node.get_wallet_pubkey(&child_path).unwrap();
     match stype {
         SpendType::P2pkh => Address::p2pkh(&pubkey, node.network()),
@@ -585,7 +587,7 @@ pub fn make_test_funding_wallet_input(
 }
 
 pub fn make_test_funding_wallet_output(node: &Node, i: u32, value: u64, stype: SpendType) -> TxOut {
-    let child_path = vec![i];
+    let child_path: DerivationPath = vec![ChildNumber::from_normal_idx(i).unwrap()].into();
     let pubkey = node.get_wallet_pubkey(&child_path).unwrap();
 
     // Lightning layer-1 wallets can spend native segwit or wrapped segwit addresses.
@@ -624,8 +626,9 @@ pub fn make_test_wallet_dest(
     node_ctx: &TestNodeContext,
     wallet_index: u32,
     stype: SpendType,
-) -> (ScriptBuf, Vec<u32>) {
-    let child_path = vec![wallet_index];
+) -> (ScriptBuf, DerivationPath) {
+    let child_path: DerivationPath =
+        vec![ChildNumber::from_normal_idx(wallet_index).unwrap()].into();
     let pubkey = node_ctx.node.get_wallet_pubkey(&child_path).unwrap();
 
     let script_pubkey = match stype {
@@ -635,14 +638,14 @@ pub fn make_test_wallet_dest(
     }
     .script_pubkey();
 
-    (script_pubkey, vec![wallet_index])
+    (script_pubkey, child_path)
 }
 
 pub fn make_test_nonwallet_dest(
     node_ctx: &TestNodeContext,
     index: u8,
     stype: SpendType,
-) -> (ScriptBuf, Vec<u32>) {
+) -> (ScriptBuf, DerivationPath) {
     let pubkey = make_test_bitcoin_pubkey(index);
     let script_pubkey = match stype {
         SpendType::P2wpkh => Address::p2wpkh(&pubkey, node_ctx.node.network()),
@@ -651,7 +654,7 @@ pub fn make_test_nonwallet_dest(
     }
     .script_pubkey();
 
-    (script_pubkey, vec![])
+    (script_pubkey, DerivationPath::master())
 }
 
 // Bundles node-specific context used for unit tests.
@@ -670,12 +673,12 @@ pub struct TestChannelContext {
 // Bundles funding tx context used for unit tests.
 pub struct TestFundingTxContext {
     pub inputs: Vec<TxIn>,
-    pub ipaths: Vec<Vec<u32>>,
+    pub ipaths: Vec<DerivationPath>,
     pub prev_outs: Vec<TxOut>,
     pub ispnds: Vec<SpendType>,
     pub iuckeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
     pub outputs: Vec<TxOut>,
-    pub opaths: Vec<Vec<u32>>,
+    pub opaths: Vec<DerivationPath>,
     pub input_txs: Vec<Transaction>,
 }
 
@@ -847,7 +850,7 @@ impl TestFundingTxContext {
         let (input_tx, txin) =
             make_test_funding_wallet_input(&node_ctx.node, spendtype, wallet_ndx, value_sat);
         self.inputs.push(txin);
-        self.ipaths.push(vec![wallet_ndx]);
+        self.ipaths.push(vec![ChildNumber::from_normal_idx(wallet_ndx).unwrap()].into());
         self.prev_outs.push(input_tx.output[0].clone());
         self.ispnds.push(spendtype);
         self.iuckeys.push(None);
@@ -867,7 +870,7 @@ impl TestFundingTxContext {
             value_sat,
             spendtype,
         ));
-        self.opaths.push(vec![wallet_ndx]);
+        self.opaths.push(vec![ChildNumber::from_normal_idx(wallet_ndx).unwrap()].into());
     }
 
     pub fn add_channel_outpoint(
@@ -883,7 +886,7 @@ impl TestFundingTxContext {
             &chan_ctx.channel_id,
             value_sat,
         ));
-        self.opaths.push(vec![]);
+        self.opaths.push(vec![].into());
         ndx as u32
     }
 
@@ -900,7 +903,7 @@ impl TestFundingTxContext {
             value_sat,
             spendtype,
         ));
-        self.opaths.push(vec![]); // this is what makes it unknown
+        self.opaths.push(vec![].into()); // this is what makes it unknown
     }
 
     pub fn add_allowlist_output(
@@ -917,8 +920,8 @@ impl TestFundingTxContext {
             value_sat,
             stype,
         ));
-        self.opaths.push(vec![]); // don't consider wallet
-        let child_path = vec![wallet_ndx];
+        self.opaths.push(vec![].into()); // don't consider wallet
+        let child_path = vec![ChildNumber::from_normal_idx(wallet_ndx).unwrap()].into();
         let pubkey = node_ctx.node.get_wallet_pubkey(&child_path).unwrap();
         let addr = Address::p2wpkh(&pubkey, node_ctx.node.network());
         node_ctx.node.add_allowlist(&vec![addr.to_string()]).expect("add_allowlist");
@@ -991,7 +994,7 @@ pub fn funding_tx_setup_channel(
 ) -> Option<Status> {
     let txid = tx.compute_txid();
     chan_ctx.setup.funding_outpoint = bitcoin::OutPoint { txid, vout };
-    let holder_shutdown_key_path = vec![];
+    let holder_shutdown_key_path = DerivationPath::master();
     node_ctx
         .node
         .setup_channel(
@@ -1010,7 +1013,7 @@ pub fn synthesize_setup_channel(
     next_holder_commit_num: u64,
 ) {
     chan_ctx.setup.funding_outpoint = outpoint;
-    let holder_shutdown_key_path = vec![];
+    let holder_shutdown_key_path = DerivationPath::master();
     node_ctx
         .node
         .setup_channel(
@@ -1326,29 +1329,31 @@ pub fn sign_holder_commitment(
 pub fn make_test_funding_tx_with_change(
     inputs: Vec<TxIn>,
     value: u64,
-    opath: Vec<u32>,
     change_addr: &Address,
-) -> (Vec<u32>, Transaction) {
+) -> Transaction {
     let outputs =
         vec![TxOut { value: Amount::from_sat(value), script_pubkey: change_addr.script_pubkey() }];
-    let tx = make_test_funding_tx_with_ins_outs(inputs, outputs);
-    (opath, tx)
+    make_test_funding_tx_with_ins_outs(inputs, outputs)
 }
 
-pub fn make_test_funding_tx(node: &Node, inputs: Vec<TxIn>, value: u64) -> (Vec<u32>, Transaction) {
-    let opath = vec![0];
+pub fn make_test_funding_tx(
+    node: &Node,
+    inputs: Vec<TxIn>,
+    value: u64,
+) -> (DerivationPath, Transaction) {
+    let opath: DerivationPath = vec![ChildNumber::from_normal_idx(0).unwrap()].into();
     let change_addr = Address::p2wpkh(&node.get_wallet_pubkey(&opath).unwrap(), Network::Testnet);
-    make_test_funding_tx_with_change(inputs, value, opath, &change_addr)
+    (opath, make_test_funding_tx_with_change(inputs, value, &change_addr))
 }
 
 pub fn make_test_funding_tx_with_p2shwpkh_change(
     node: &Node,
     inputs: Vec<TxIn>,
     value: u64,
-) -> (Vec<u32>, Transaction) {
-    let opath = vec![0];
+) -> (DerivationPath, Transaction) {
+    let opath: DerivationPath = vec![ChildNumber::from_normal_idx(0).unwrap()].into();
     let change_addr = Address::p2shwpkh(&node.get_wallet_pubkey(&opath).unwrap(), Network::Testnet);
-    make_test_funding_tx_with_change(inputs, value, opath, &change_addr)
+    (opath, make_test_funding_tx_with_change(inputs, value, &change_addr))
 }
 
 pub fn make_test_commitment_tx() -> Transaction {

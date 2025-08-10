@@ -1,12 +1,14 @@
 #[cfg(test)]
 mod tests {
     use bitcoin::absolute::{Height, LockTime};
+    use bitcoin::bip32::DerivationPath;
     use bitcoin::transaction::Version;
     use bitcoin::{
         self, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
     };
     use lightning::ln::chan_utils::get_revokeable_redeemscript;
     use test_log::test;
+    use vls_common::to_derivation_path;
 
     use crate::channel::{Channel, ChannelBase, TypedSignature};
     use crate::node::SpendType::{P2shP2wpkh, P2wpkh};
@@ -44,7 +46,7 @@ mod tests {
         mutate_signing_input: InputMutator,
     ) -> Result<(), Status>
     where
-        MakeDestination: Fn(&TestNodeContext) -> (ScriptBuf, Vec<u32>),
+        MakeDestination: Fn(&TestNodeContext) -> (ScriptBuf, DerivationPath),
         InputMutator: Fn(
             &mut Channel,
             &mut ChainState,
@@ -213,7 +215,9 @@ mod tests {
             sign_delayed_sweep_with_mutators(
                 |node_ctx| {
                     // Build the dest from index 19, but report index 21.
-                    (make_test_wallet_dest(node_ctx, 19, P2wpkh).0, vec![21])
+                    let script = make_test_wallet_dest(node_ctx, 19, P2wpkh).0;
+                    let derivation_path = to_derivation_path(&[21u32]);
+                    (script, derivation_path)
                 },
                 |_chan, _cstate, _tx, _input, _commit_num, _redeemscript, _amount_sat| {},
             ),
