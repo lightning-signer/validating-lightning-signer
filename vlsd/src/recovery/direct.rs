@@ -1,5 +1,6 @@
 use super::{Iter, RecoveryKeys, RecoverySign};
 use lightning::chain::transaction::OutPoint;
+use lightning_signer::bitcoin::bip32::{ChildNumber, DerivationPath};
 use lightning_signer::bitcoin::secp256k1::{PublicKey, SecretKey};
 use lightning_signer::bitcoin::{Address, ScriptBuf, Transaction, TxOut};
 use lightning_signer::channel::{Channel, ChannelBase, ChannelSlot};
@@ -42,21 +43,21 @@ impl RecoveryKeys for DirectRecoveryKeys {
         &self,
         tx: &Transaction,
         segwit_flags: &[bool],
-        ipaths: &Vec<Vec<u32>>,
+        ipaths: &Vec<DerivationPath>,
         prev_outs: &Vec<TxOut>,
         uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
-        opaths: &Vec<Vec<u32>>,
+        opaths: &Vec<DerivationPath>,
     ) -> Result<Vec<Vec<Vec<u8>>>, Status> {
         self.node.check_onchain_tx(tx, segwit_flags, prev_outs, &uniclosekeys, opaths)?;
         self.node.unchecked_sign_onchain_tx(tx, ipaths, prev_outs, uniclosekeys)
     }
 
-    fn wallet_address_native(&self, index: u32) -> Result<Address, Status> {
-        self.node.get_native_address(&[index])
+    fn wallet_address_native(&self, index: ChildNumber) -> Result<Address, Status> {
+        self.node.get_native_address(&vec![index].into())
     }
 
-    fn wallet_address_taproot(&self, index: u32) -> Result<Address, Status> {
-        self.node.get_taproot_address(&[index])
+    fn wallet_address_taproot(&self, index: ChildNumber) -> Result<Address, Status> {
+        self.node.get_taproot_address(&vec![index].into())
     }
 }
 

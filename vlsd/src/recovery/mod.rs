@@ -11,6 +11,7 @@ use bitcoind_client::{explorer_from_url, BlockExplorerType, Explorer};
 use lightning::chain::transaction::OutPoint;
 use lightning::sign::DelayedPaymentOutputDescriptor;
 use lightning_signer::bitcoin::address::{NetworkChecked, NetworkUnchecked};
+use lightning_signer::bitcoin::bip32::{ChildNumber, DerivationPath};
 use lightning_signer::bitcoin::consensus::encode::serialize_hex;
 use lightning_signer::bitcoin::{Amount, Sequence, TxOut, Txid};
 use lightning_signer::lightning::ln::channel_keys::RevocationKey;
@@ -49,13 +50,13 @@ pub trait RecoveryKeys {
         &self,
         tx: &Transaction,
         segwit_flags: &[bool],
-        ipaths: &Vec<Vec<u32>>,
+        ipaths: &Vec<DerivationPath>,
         prev_outs: &Vec<TxOut>,
         uniclosekeys: Vec<Option<(SecretKey, Vec<Vec<u8>>)>>,
-        opaths: &Vec<Vec<u32>>,
+        opaths: &Vec<DerivationPath>,
     ) -> Result<Vec<Vec<Vec<u8>>>, Status>;
-    fn wallet_address_native(&self, index: u32) -> Result<Address, Status>;
-    fn wallet_address_taproot(&self, index: u32) -> Result<Address, Status>;
+    fn wallet_address_native(&self, index: ChildNumber) -> Result<Address, Status>;
+    fn wallet_address_taproot(&self, index: ChildNumber) -> Result<Address, Status>;
 }
 
 /// Provide enough signer functionality to force-close a channel
@@ -91,6 +92,8 @@ pub async fn recover_l1<R: RecoveryKeys>(
 
     let mut utxos = Vec::new();
     for index in 0..max_index {
+        // TODO(king-11): add support for LDK L1 recovery by allowing random paths
+        let index = ChildNumber::from(index);
         let address = keys.wallet_address_native(index).expect("address");
         let script_pubkey = address.script_pubkey();
         utxos.append(
@@ -142,7 +145,7 @@ pub async fn recover_l1<R: RecoveryKeys>(
 fn make_l1_sweep<R: RecoveryKeys>(
     keys: &R,
     destination_address: &Address<NetworkChecked>,
-    chunk: &[(u32, UtxoResponse, ScriptBuf)],
+    chunk: &[(ChildNumber, UtxoResponse, ScriptBuf)],
     feerate_per_kw: u64,
 ) -> Option<Transaction> {
     let value = chunk.iter().map(|(_, u, _)| u.value).sum::<u64>();
@@ -172,7 +175,7 @@ fn make_l1_sweep<R: RecoveryKeys>(
     tx.output[0].value -= Amount::from_sat(total_fee);
     info!("sending tx {} - {}", tx.compute_txid().to_string(), serialize_hex(&tx));
 
-    let ipaths = chunk.iter().map(|(i, _, _)| vec![*i]).collect::<Vec<_>>();
+    let ipaths = chunk.iter().map(|(i, _, _)| vec![*i].into()).collect::<Vec<_>>();
     let prev_outs = chunk
         .iter()
         .map(|(_, u, script_pubkey)| TxOut {
@@ -184,7 +187,7 @@ fn make_l1_sweep<R: RecoveryKeys>(
 
     // sign transaction
     let witnesses = keys
-        .sign_onchain_tx(&tx, &vec![], &ipaths, &prev_outs, unicosekeys, &vec![vec![]])
+        .sign_onchain_tx(&tx, &vec![], &ipaths, &prev_outs, unicosekeys, &vec![vec![].into()])
         .expect("sign tx");
 
     for (i, witness) in witnesses.into_iter().enumerate() {
@@ -303,7 +306,7 @@ pub async fn recover_close<R: RecoveryKeys>(
         return;
     }
 
-    let wallet_path = vec![];
+    let wallet_path: DerivationPath = DerivationPath::master();
     let destination_allowable = Allowable::from_str(destination, network).expect("address");
     info!("sweeping to {}", destination_allowable.to_string(network));
     let output_script = destination_allowable.to_script().expect("script");
@@ -330,14 +333,14 @@ fn spend_delayed_outputs<R: RecoveryKeys>(
     descriptors: &[DelayedPaymentOutputDescriptor],
     unilateral_close_key: (SecretKey, Vec<Vec<u8>>),
     output_script: ScriptBuf,
-    opath: Vec<u32>,
+    opath: DerivationPath,
     feerate_sat_per_1000_weight: u32,
 ) -> Transaction {
     let mut tx =
         create_spending_transaction(descriptors, output_script, feerate_sat_per_1000_weight)
             .expect("create_spending_transaction");
     let values_sat = descriptors.iter().map(|d| d.output.clone()).collect();
-    let ipaths = descriptors.iter().map(|_| vec![]).collect();
+    let ipaths = descriptors.iter().map(|_| vec![].into()).collect();
     let uniclosekeys = descriptors.iter().map(|_| Some(unilateral_close_key.clone())).collect();
     let input_txs = vec![]; // only need input txs for funding tx
     let witnesses = keys
@@ -395,7 +398,11 @@ mod tests {
         let tx = make_l1_sweep(
             &keys,
             &address,
-            &[(123, utxo, input_tx.output[0].script_pubkey.clone())],
+            &[(
+                ChildNumber::from_normal_idx(123).unwrap(),
+                utxo,
+                input_tx.output[0].script_pubkey.clone(),
+            )],
             1000,
         )
         .expect("make_l1_sweep");
@@ -413,7 +420,11 @@ mod tests {
         let tx = make_l1_sweep(
             &keys,
             &address,
-            &[(123, utxo, input_tx.output[0].script_pubkey.clone())],
+            &[(
+                ChildNumber::from_normal_idx(123).unwrap(),
+                utxo,
+                input_tx.output[0].script_pubkey.clone(),
+            )],
             1000,
         )
         .expect("make_l1_sweep");
