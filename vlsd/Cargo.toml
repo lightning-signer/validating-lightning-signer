@@ -35,6 +35,7 @@ http = "1.0"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"], optional = true }
 tokio-stream = { version = "0.1", optional = true }
 jsonrpsee = { version = "0.24.8", features = ["server"] }
+serde_json = { workspace = true, features = ["alloc"]}
 tower = { workspace = true }
 tower-http = { version = "0.6.0", features = ["auth"] }
 tonic = { workspace = true, optional = true, features = ["server", "codegen", "channel", "prost"] }
@@ -50,6 +51,9 @@ tracing = { workspace = true, features = ["attributes", "std"] }
 txoo-bitcoind-client = { workspace = true }
 serde = { workspace = true, features = ["std"] }
 tempfile = "3.17.1"
+
+[dev-dependencies]
+vls-core = { path = "../vls-core", version = "0.14.0-rc.1", features = ["use_backtrace", "test_utils"] }
 
 [build-dependencies]
 tonic-build = "0.12.0"

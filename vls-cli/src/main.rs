@@ -1,7 +1,8 @@
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use http::{HeaderMap, HeaderValue, Uri};
-use jsonrpsee::core::{client::ClientT, params::ArrayParams};
+use jsonrpsee::core::client::ClientT;
+use jsonrpsee::core::traits::ToRpcParams;
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use jsonrpsee::rpc_params;
 use std::path::PathBuf;
@@ -116,10 +117,10 @@ impl RpcRequestClient {
         Self { client: client }
     }
 
-    pub async fn request(
+    pub async fn request<T: ToRpcParams + Send>(
         self,
         method: RpcMethods,
-        params: ArrayParams,
+        params: T,
     ) -> anyhow::Result<serde_json::Value> {
         let response = self.client.request(method.as_str(), params).await;
 
