@@ -237,6 +237,7 @@ impl MultiSigner {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::persist::{DummyPersister, DummySeedPersister};
     use crate::policy::simple_validator::SimpleValidatorFactory;
     use crate::util::clock::StandardClock;
@@ -244,8 +245,7 @@ mod tests {
     use crate::util::test_utils::hex_decode;
     use crate::util::test_utils::*;
     use bitcoin::secp256k1::Secp256k1;
-
-    use super::*;
+    use std::sync::Arc;
 
     fn make_test_services() -> NodeServices {
         let validator_factory = Arc::new(SimpleValidatorFactory::new());
@@ -259,6 +259,34 @@ mod tests {
             clock,
             trusted_oracle_pubkeys: vec![],
         }
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn new_node_and_node_service_test() {
+        let services = make_test_services();
+        let signer = MultiSigner::new(services.clone());
+
+        assert_eq!(signer.test_mode, false);
+        assert_eq!(signer.get_node_ids().len(), 0);
+        assert!(signer.nodes.lock().unwrap().is_empty());
+        assert_eq!(Arc::as_ptr(&signer.persister), Arc::as_ptr(&services.persister));
+
+        let seed_persister = Arc::new(DummySeedPersister {});
+        let node_config = TEST_NODE_CONFIG;
+        let result = signer.new_node(node_config, seed_persister);
+        assert!(result.is_ok());
+        let (node_id, _) = result.unwrap();
+        assert_eq!(signer.get_node_ids(), vec![node_id]);
+
+        let returned_services = signer.node_services();
+        assert_eq!(Arc::as_ptr(&returned_services.persister), Arc::as_ptr(&services.persister));
+        assert_eq!(
+            Arc::as_ptr(&returned_services.validator_factory),
+            Arc::as_ptr(&services.validator_factory)
+        );
+        assert_eq!(Arc::as_ptr(&returned_services.clock), Arc::as_ptr(&services.clock));
+        assert_eq!(returned_services.trusted_oracle_pubkeys, services.trusted_oracle_pubkeys);
     }
 
     #[test]
@@ -285,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn bad_node_lookup_test() -> Result<(), ()> {
+    fn bad_node_lookup_test() {
         let secp_ctx = Secp256k1::signing_only();
         let signer = MultiSigner::new(make_test_services());
         let node_id = pubkey_from_secret_hex(
@@ -296,7 +324,5 @@ mod tests {
         let channel_id = ChannelId::new(&hex_decode(TEST_CHANNEL_ID[0]).unwrap());
         assert!(signer.get_channel(&node_id, &channel_id).is_err());
         assert!(signer.get_node(&node_id).is_err());
-
-        Ok(())
     }
 }

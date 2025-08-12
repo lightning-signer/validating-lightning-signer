@@ -634,6 +634,10 @@ mod tests {
     use crate::util::test_utils::{
         hex_decode, hex_encode, FixedStartingTimeFactory, TEST_CHANNEL_ID,
     };
+    use bitcoin::secp256k1::Message;
+    use bitcoin::Amount;
+    use lightning::chain::transaction::OutPoint;
+    use lightning::sign::SpendableOutputDescriptor::StaticOutput;
     use lightning::sign::{ChannelSigner, KeysManager};
     use test_log::test;
 
@@ -648,13 +652,20 @@ mod tests {
             FixedStartingTimeFactory::new(1, 1).borrow(),
         );
         let client_pubkey = manager.get_persistence_pubkey();
-        let shared_secret = SharedSecret::new(&client_pubkey, &server_key);
         let shared_secret2 = manager.get_persistence_shared_secret(&server_pubkey);
-        assert_eq!(shared_secret.secret_bytes(), shared_secret2);
+
+        assert_eq!(
+            client_pubkey.to_string(),
+            "0200b2cd9b0c63b292cfc22a44b6085809c715d889041df3dee1ae4bb752d75d41"
+        );
+        assert_eq!(
+            hex::encode(shared_secret2),
+            "9c2d2c9d7605a1efe8ff0b81d0b01a2859de2861d89f01e2a617faa3e05c704b"
+        );
     }
 
     #[test]
-    fn compare_ldk_keys_manager_test() -> Result<(), ()> {
+    fn compare_ldk_keys_manager_test() {
         let seed = [0x11u8; 32];
         let ldk = KeysManager::new(&seed, 1, 1);
         let my = MyKeysManager::new(
@@ -686,11 +697,10 @@ mod tests {
         );
         // a bit redundant, because we checked them all above
         assert!(ldk_chan.pubkeys() == my_chan.pubkeys());
-        Ok(())
     }
 
     #[test]
-    fn keys_test_native() -> Result<(), ()> {
+    fn keys_test_native() {
         let manager = MyKeysManager::new(
             KeyDerivationStyle::Native,
             &[0u8; 32],
@@ -722,7 +732,6 @@ mod tests {
             hex_encode(&keys.delayed_payment_base_key[..]),
             "9f5c122778b12ad35f555437d88b76b726ae4e472897af33e22616fb0d0b0a44"
         );
-        Ok(())
     }
 
     fn make_test_keys(manager: MyKeysManager) -> InMemorySigner {
@@ -731,7 +740,7 @@ mod tests {
     }
 
     #[test]
-    fn keys_test_lnd() -> Result<(), ()> {
+    fn keys_test_lnd() {
         let manager = MyKeysManager::new(
             KeyDerivationStyle::Lnd,
             &[0u8; 32],
@@ -765,11 +774,10 @@ mod tests {
             hex_encode(&keys.delayed_payment_base_key[..]),
             "47a6c0532b9e593e84d91451104dc6fe10ba4aa30cd7c95ed039916d3e908b10"
         );
-        Ok(())
     }
 
     #[test]
-    fn per_commit_test() -> Result<(), ()> {
+    fn per_commit_test() {
         let manager = MyKeysManager::new(
             KeyDerivationStyle::Native,
             &[0u8; 32],
@@ -793,6 +801,247 @@ mod tests {
             hex_encode(&per_commit_point.serialize().to_vec()),
             "03b5497ca60ff3165908c521ea145e742c25dedd14f5602f3f502d1296c39618a5"
         );
-        Ok(())
+    }
+
+    #[test]
+    fn test_get_bolt12_keypair_no_tweak() {
+        let seed = [0x11u8; 32];
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Ldk,
+            &seed,
+            Network::Testnet,
+            FixedStartingTimeFactory::new(1, 1).borrow(),
+        );
+
+        let keypair = manager.get_bolt12_keypair(None, None).unwrap();
+        assert_eq!(
+            keypair.public_key().to_string(),
+            "0328c0ca4140f514b1f1405c385676297752c11703cd92dfe859822cf8a1898902"
+        );
+    }
+
+    #[test]
+    fn test_get_bolt12_keypair_with_tweak_no_info() {
+        let seed = [0x11u8; 32];
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Ldk,
+            &seed,
+            Network::Testnet,
+            FixedStartingTimeFactory::new(1, 1).borrow(),
+        );
+
+        let tweak_message = b"test_tweak";
+        let keypair = manager.get_bolt12_keypair(None, Some(tweak_message)).unwrap();
+
+        assert_eq!(
+            keypair.public_key().to_string(),
+            "02bca94aa77e296be4f9506857f01de0652e19d5a14f035cd88c67471a08c67bec"
+        );
+    }
+
+    #[test]
+    fn test_get_bolt12_keypair_with_tweak_and_info() {
+        let seed = [0x11u8; 32];
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Ldk,
+            &seed,
+            Network::Testnet,
+            FixedStartingTimeFactory::new(1, 1).borrow(),
+        );
+
+        let info = b"test_info";
+        let tweak_message = b"test_tweak";
+        let keypair = manager.get_bolt12_keypair(Some(info), Some(tweak_message)).unwrap();
+
+        assert_eq!(
+            keypair.public_key().to_string(),
+            "03b1c6b776c5144c6aa790005b05e48027480877cc232224001662bde75d9112e8"
+        );
+    }
+
+    #[test]
+    fn test_sign_bolt12_2() {
+        let seed = [0x11u8; 32];
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Ldk,
+            &seed,
+            Network::Testnet,
+            FixedStartingTimeFactory::new(1, 1).borrow(),
+        );
+        let secp_ctx = Secp256k1::new();
+
+        let messagename = b"invoice";
+        let fieldname = b"signature";
+        let merkleroot = &[0x22u8; 32];
+        let info = b"test_info";
+        let tweak_message = b"test_tweak";
+
+        let signature = manager
+            .sign_bolt12_2(messagename, fieldname, merkleroot, info, Some(tweak_message))
+            .unwrap();
+
+        let sig_hash = manager.bolt12_message_hash(messagename, fieldname, merkleroot);
+        let keypair = manager.get_bolt12_keypair(Some(info), Some(tweak_message)).unwrap();
+        let msg = Message::from_digest(sig_hash.to_byte_array());
+        assert!(secp_ctx.verify_schnorr(&signature, &msg, &keypair.x_only_public_key().0).is_ok());
+
+        let signature_no_tweak =
+            manager.sign_bolt12_2(messagename, fieldname, merkleroot, info, None).unwrap();
+        let keypair_no_tweak = manager.get_bolt12_keypair(Some(info), None).unwrap();
+        assert!(secp_ctx
+            .verify_schnorr(&signature_no_tweak, &msg, &keypair_no_tweak.x_only_public_key().0)
+            .is_ok());
+    }
+
+    #[test]
+    fn test_derive_secret() {
+        let seed = [0x11u8; 32];
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Ldk,
+            &seed,
+            Network::Testnet,
+            FixedStartingTimeFactory::new(1, 1).borrow(),
+        );
+
+        let info1 = b"info1";
+        let secret1 = manager.derive_secret(info1);
+
+        assert_eq!(
+            hex::encode(secret1.secret_bytes()),
+            "f616e36571ed5696cff2b96d54e0c48b0c1e373364d540fd0274e05b6880a0b9"
+        );
+    }
+
+    #[test]
+    fn test_spend_spendable_outputs_static_output() {
+        let seed = [0x11u8; 32];
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Ldk,
+            &seed,
+            Network::Testnet,
+            FixedStartingTimeFactory::new(1, 1).borrow(),
+        );
+        let secp_ctx = Secp256k1::new();
+
+        let output = TxOut {
+            value: Amount::from_sat(50_000),
+            script_pubkey: manager.destination_script.clone(),
+        };
+        let descriptor = StaticOutput {
+            outpoint: OutPoint { txid: bitcoin::Txid::all_zeros(), index: 0 },
+            output: output.clone(),
+            channel_keys_id: None,
+        };
+
+        let output_tx = TxOut {
+            value: Amount::from_sat(49_000),
+            script_pubkey: ScriptBuf::new_p2wpkh(&WPubkeyHash::hash(&[0u8; 32])),
+        };
+        let change_script = manager.destination_script.clone();
+        let descriptors = vec![&descriptor as &SpendableOutputDescriptor];
+        let result = manager.spend_spendable_outputs(
+            &descriptors,
+            vec![output_tx],
+            change_script,
+            1000,
+            &secp_ctx,
+        );
+
+        assert!(result.is_ok());
+        let tx = result.unwrap();
+        assert_eq!(tx.input.len(), 1);
+        assert_eq!(tx.input[0].witness.len(), 2);
+
+        let witness = &tx.input[0].witness;
+        let sig = &witness[0][..witness[0].len() - 1];
+        let pubkey = PublicKey::from_slice(&witness[1]).unwrap();
+        let witness_script =
+            bitcoin::Address::p2pkh(&bitcoin::PublicKey::new(pubkey), Network::Testnet)
+                .script_pubkey();
+        let sighash = sighash::SighashCache::new(&tx)
+            .p2wsh_signature_hash(0, &witness_script, output.value, EcdsaSighashType::All)
+            .unwrap();
+        let msg = Message::from(sighash);
+        let sig = secp256k1::ecdsa::Signature::from_der(sig).unwrap();
+        assert!(secp_ctx.verify_ecdsa(&msg, &sig, &pubkey).is_ok());
+    }
+
+    #[test]
+    fn test_spend_spendable_outputs_insufficient_funds() {
+        let seed = [0x11u8; 32];
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Ldk,
+            &seed,
+            Network::Testnet,
+            FixedStartingTimeFactory::new(1, 1).borrow(),
+        );
+        let secp_ctx = Secp256k1::new();
+
+        let output = TxOut {
+            value: Amount::from_sat(50_000),
+            script_pubkey: manager.destination_script.clone(),
+        };
+        let descriptor = StaticOutput {
+            outpoint: OutPoint { txid: bitcoin::Txid::all_zeros(), index: 1 },
+            output: output.clone(),
+            channel_keys_id: None,
+        };
+
+        let output_tx = TxOut {
+            value: Amount::from_sat(60_000),
+            script_pubkey: ScriptBuf::new_p2wpkh(&WPubkeyHash::hash(&[0u8; 32])),
+        };
+        let change_script = manager.destination_script.clone();
+        let descriptors = vec![&descriptor as &SpendableOutputDescriptor];
+        let result = manager.spend_spendable_outputs(
+            &descriptors,
+            vec![output_tx],
+            change_script,
+            1000,
+            &secp_ctx,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_spend_spendable_outputs_duplicate_descriptors() {
+        let seed = [0x11u8; 32];
+        let manager = MyKeysManager::new(
+            KeyDerivationStyle::Ldk,
+            &seed,
+            Network::Testnet,
+            FixedStartingTimeFactory::new(1, 1).borrow(),
+        );
+        let secp_ctx = Secp256k1::new();
+
+        let output = TxOut {
+            value: Amount::from_sat(50_000),
+            script_pubkey: manager.destination_script.clone(),
+        };
+        let descriptor = StaticOutput {
+            outpoint: OutPoint { txid: bitcoin::Txid::all_zeros(), index: 0 },
+            output: output.clone(),
+            channel_keys_id: None,
+        };
+
+        let descriptors = vec![
+            &descriptor as &SpendableOutputDescriptor,
+            &descriptor as &SpendableOutputDescriptor,
+        ];
+        let output_tx = TxOut {
+            value: Amount::from_sat(49_000),
+            script_pubkey: ScriptBuf::new_p2wpkh(&WPubkeyHash::hash(&[0u8; 32])),
+        };
+        let change_script = manager.destination_script.clone();
+        let result = manager.spend_spendable_outputs(
+            &descriptors,
+            vec![output_tx],
+            change_script,
+            1000,
+            &secp_ctx,
+        );
+
+        assert!(result.is_err());
     }
 }
