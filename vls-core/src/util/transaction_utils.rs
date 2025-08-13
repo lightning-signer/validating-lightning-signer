@@ -373,9 +373,17 @@ mod tests {
     use bitcoin::consensus::deserialize;
     use bitcoin::hashes::hex::FromHex;
     use bitcoin::secp256k1::SecretKey;
-    use bitcoin::Transaction;
     use lightning::ln::chan_utils::{htlc_success_tx_weight, htlc_timeout_tx_weight};
     use lightning::types::features::ChannelTypeFeatures;
+
+    use bitcoin::blockdata::constants::genesis_block;
+    use bitcoin::blockdata::transaction::TxIn;
+    use bitcoin::hashes::Hash;
+    use bitcoin::secp256k1::Secp256k1;
+    use bitcoin::Network;
+    use bitcoin::{Amount, ScriptBuf, Transaction, TxOut, Witness};
+    use lightning::chain::transaction::OutPoint as LightningOutPoint;
+    use lightning::sign::{SpendableOutputDescriptor, StaticPaymentOutputDescriptor};
 
     #[test]
     fn test_parse_closing_tx_holder() {
@@ -520,5 +528,238 @@ mod tests {
         assert_eq!(expected_tx_weight, tx_weight.to_wu());
         // CLN was actually missing the pubkey length byte, so the feerate is genuinely too low
         assert_eq!(estimated_feerate, 252);
+    }
+
+    fn create_mock_transaction(outputs: Vec<TxOut>) -> Transaction {
+        Transaction {
+            version: Version::TWO,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: bitcoin::OutPoint::new(
+                    genesis_block(Network::Bitcoin).txdata[0].compute_txid(),
+                    0,
+                ),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ZERO,
+                witness: Witness::new(),
+            }],
+            output: outputs,
+        }
+    }
+
+    fn create_mock_script() -> ScriptBuf {
+        let hash = bitcoin::WPubkeyHash::from_slice(&[
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        ])
+        .unwrap();
+        ScriptBuf::new_p2wpkh(&hash)
+    }
+
+    #[test]
+    fn test_maybe_add_change_output_success() {
+        let mut tx = create_mock_transaction(vec![TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: create_mock_script(),
+        }]);
+        let input_value = 150_000;
+        let witness_max_weight = 100;
+        let feerate_sat_per_1000_weight = 1000;
+        let change_destination_script = create_mock_script();
+
+        let result = maybe_add_change_output(
+            &mut tx,
+            input_value,
+            witness_max_weight,
+            feerate_sat_per_1000_weight,
+            change_destination_script.clone(),
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(tx.output.len(), 2);
+        assert_eq!(
+            tx.output[1].script_pubkey.to_string(),
+            "OP_0 OP_PUSHBYTES_20 0102030405060708090a0b0c0d0e0f1011121314"
+        );
+        assert_eq!(tx.output[1].value.to_sat(), 49446);
+    }
+
+    #[test]
+    fn test_maybe_add_change_output_input_too_large() {
+        let mut tx = create_mock_transaction(vec![TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: create_mock_script(),
+        }]);
+        let input_value = MAX_VALUE_MSAT / 1000 + 1;
+        let witness_max_weight = 100;
+        let feerate_sat_per_1000_weight = 1000;
+        let change_destination_script = create_mock_script();
+
+        let result = maybe_add_change_output(
+            &mut tx,
+            input_value,
+            witness_max_weight,
+            feerate_sat_per_1000_weight,
+            change_destination_script,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_maybe_add_change_output_output_exceeds_input() {
+        let mut tx = create_mock_transaction(vec![TxOut {
+            value: Amount::from_sat(200_000),
+            script_pubkey: create_mock_script(),
+        }]);
+        let input_value = 100_000;
+        let witness_max_weight = 100;
+        let feerate_sat_per_1000_weight = 1000;
+        let change_destination_script = create_mock_script();
+
+        let result = maybe_add_change_output(
+            &mut tx,
+            input_value,
+            witness_max_weight,
+            feerate_sat_per_1000_weight,
+            change_destination_script,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_maybe_add_change_output_insufficient_for_fee() {
+        let mut tx = create_mock_transaction(vec![TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: create_mock_script(),
+        }]);
+        let input_value = 100_100;
+        let witness_max_weight = 100;
+        let feerate_sat_per_1000_weight = 1000;
+        let change_destination_script = create_mock_script();
+
+        let result = maybe_add_change_output(
+            &mut tx,
+            input_value,
+            witness_max_weight,
+            feerate_sat_per_1000_weight,
+            change_destination_script,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_spending_transaction_static_payment() {
+        let _secp = Secp256k1::new();
+        let bitcoin_outpoint =
+            bitcoin::OutPoint::new(genesis_block(Network::Bitcoin).txdata[0].compute_txid(), 0);
+        let outpoint =
+            LightningOutPoint { txid: bitcoin_outpoint.txid, index: bitcoin_outpoint.vout as u16 };
+        let descriptor =
+            SpendableOutputDescriptor::StaticPaymentOutput(StaticPaymentOutputDescriptor {
+                outpoint,
+                output: TxOut {
+                    value: Amount::from_sat(100_000),
+                    script_pubkey: create_mock_script(),
+                },
+                channel_keys_id: [0u8; 32],
+                channel_value_satoshis: 100_000,
+                channel_transaction_parameters: None,
+            });
+        let outputs =
+            vec![TxOut { value: Amount::from_sat(50_000), script_pubkey: create_mock_script() }];
+        let change_destination_script = create_mock_script();
+        let feerate_sats_per_1000_weight = 1000;
+
+        let result = create_spending_transaction(
+            &[&descriptor],
+            outputs.clone(),
+            change_destination_script.clone(),
+            feerate_sats_per_1000_weight,
+        );
+
+        assert!(result.is_ok());
+        let tx = result.unwrap();
+        assert_eq!(tx.input.len(), 1);
+        assert_eq!(
+            tx.input[0].previous_output.to_string(),
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b:0"
+        );
+        assert_eq!(tx.input[0].sequence, Sequence(1));
+        assert_eq!(tx.output.len(), 2);
+        assert_eq!(tx.output[0], outputs[0]);
+        assert_eq!(
+            tx.output[1].script_pubkey.to_string(),
+            "OP_0 OP_PUSHBYTES_20 0102030405060708090a0b0c0d0e0f1011121314"
+        );
+    }
+
+    #[test]
+    fn test_create_spending_transaction_duplicate_outpoint() {
+        let _secp = Secp256k1::new();
+        let bitcoin_outpoint =
+            bitcoin::OutPoint::new(genesis_block(Network::Bitcoin).txdata[0].compute_txid(), 0);
+        let outpoint =
+            LightningOutPoint { txid: bitcoin_outpoint.txid, index: bitcoin_outpoint.vout as u16 };
+        let descriptor =
+            SpendableOutputDescriptor::StaticPaymentOutput(StaticPaymentOutputDescriptor {
+                outpoint,
+                output: TxOut {
+                    value: Amount::from_sat(100_000),
+                    script_pubkey: create_mock_script(),
+                },
+                channel_keys_id: [0u8; 32],
+                channel_value_satoshis: 100_000,
+                channel_transaction_parameters: None,
+            });
+        let outputs =
+            vec![TxOut { value: Amount::from_sat(50_000), script_pubkey: create_mock_script() }];
+        let change_destination_script = create_mock_script();
+        let feerate_sats_per_1000_weight = 1000;
+
+        let result = create_spending_transaction(
+            &[&descriptor, &descriptor],
+            outputs,
+            change_destination_script,
+            feerate_sats_per_1000_weight,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "duplicate");
+    }
+
+    #[test]
+    fn test_create_spending_transaction_value_overflow() {
+        let _secp = Secp256k1::new();
+        let bitcoin_outpoint =
+            bitcoin::OutPoint::new(genesis_block(Network::Bitcoin).txdata[0].compute_txid(), 0);
+        let outpoint =
+            LightningOutPoint { txid: bitcoin_outpoint.txid, index: bitcoin_outpoint.vout as u16 };
+        let descriptor =
+            SpendableOutputDescriptor::StaticPaymentOutput(StaticPaymentOutputDescriptor {
+                outpoint,
+                output: TxOut {
+                    value: Amount::from_sat(MAX_VALUE_MSAT / 1000 + 1),
+                    script_pubkey: create_mock_script(),
+                },
+                channel_keys_id: [0u8; 32],
+                channel_value_satoshis: MAX_VALUE_MSAT / 1000 + 1,
+                channel_transaction_parameters: None,
+            });
+        let outputs =
+            vec![TxOut { value: Amount::from_sat(50_000), script_pubkey: create_mock_script() }];
+        let change_destination_script = create_mock_script();
+        let feerate_sats_per_1000_weight = 1000;
+
+        let result = create_spending_transaction(
+            &[&descriptor],
+            outputs,
+            change_destination_script,
+            feerate_sats_per_1000_weight,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "overflow");
     }
 }

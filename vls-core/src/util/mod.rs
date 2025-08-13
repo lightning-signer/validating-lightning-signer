@@ -18,8 +18,6 @@ pub mod log_utils;
 /// An implementation of the LDK Sign trait for integration with LDK based nodes
 pub mod loopback;
 #[allow(missing_docs)]
-pub mod test_logger;
-#[allow(missing_docs)]
 #[cfg(any(test, feature = "test_utils"))]
 #[macro_use]
 pub mod test_utils;
