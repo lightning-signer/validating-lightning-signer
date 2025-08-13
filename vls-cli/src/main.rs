@@ -1,15 +1,19 @@
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use bitcoin::bip32::DerivationPath;
 use http::{HeaderMap, HeaderValue, Uri};
-use jsonrpsee::core::{client::ClientT, params::ArrayParams};
+use jsonrpsee::core::client::ClientT;
+use jsonrpsee::core::traits::ToRpcParams;
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use jsonrpsee::rpc_params;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use clap::{Args, Parser, Subcommand};
 
 use vlsd::config::RPC_SERVER_ENDPOINT;
-use vlsd::rpc_server::RpcMethods;
+use vlsd::rpc_server::server::RpcMethods;
+use vlsd::rpc_server::{AddressListRequest, AddressType, AddressVerifyRequest};
 use vlsd::util::get_rpc_credentials;
 
 #[derive(Parser)]
@@ -80,6 +84,9 @@ enum Commands {
     /// Retrieve or edit allowlist
     #[clap(name = "allowlist")]
     AllowList(AllowListArgs),
+    /// Address generation and verification commands
+    #[clap(name = "addresses")]
+    Addresses(AddressArgs),
 }
 
 #[derive(Debug, Args)]
@@ -96,6 +103,50 @@ enum AllowListCommands {
     /// remove address from allowlist
     #[clap(name = "remove")]
     Remove { address: String },
+}
+
+#[derive(Debug, Args)]
+struct AddressArgs {
+    #[clap(subcommand)]
+    command: AddressAction,
+}
+
+#[derive(Debug, Subcommand)]
+enum AddressAction {
+    #[clap(name = "list")]
+    List {
+        #[clap(long, help = "address types to generate (default: native segwit)")]
+        address_type: Option<AddressType>,
+        #[clap(
+            long,
+            help = "child index to start address generation (default: 0)",
+            default_value = "0"
+        )]
+        start: Option<u32>,
+        #[clap(long, help = "number of addresses to generate (default: 10)", default_value = "10")]
+        count: Option<u32>,
+        #[clap(
+            short,
+            long,
+            help = "bip32 derivation path to use as the base address for generating addresses (default: master)"
+        )]
+        path: Option<String>,
+    },
+    #[clap(name = "verify")]
+    Verify {
+        #[clap(long, help = "bitcoin layer 1 address to verify")]
+        address: String,
+        #[clap(long, help = "starting index for address discovery")]
+        start: Option<u32>,
+        #[clap(long, help = "number of addresses to check")]
+        limit: Option<u32>,
+        #[clap(
+            short,
+            long,
+            help = "bip32 derivation path to use as the base address for searching addresses (default: master)"
+        )]
+        path: Option<String>,
+    },
 }
 
 struct RpcRequestClient {
@@ -116,10 +167,10 @@ impl RpcRequestClient {
         Self { client: client }
     }
 
-    pub async fn request(
+    pub async fn request<T: ToRpcParams + Send>(
         self,
         method: RpcMethods,
-        params: ArrayParams,
+        params: T,
     ) -> anyhow::Result<serde_json::Value> {
         let response = self.client.request(method.as_str(), params).await;
 
@@ -129,8 +180,6 @@ impl RpcRequestClient {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // install global collector configured based on RUST_LOG env var.
-    tracing_subscriber::fmt::init();
     let args = Cli::parse();
     let auth_header_value = args.get_auth_header_value();
     let rpc_client = RpcRequestClient::new(&args.rpc_uri, Some(&auth_header_value));
@@ -138,37 +187,61 @@ async fn main() -> anyhow::Result<()> {
     let response = match args.command {
         Commands::Info => {
             let params = rpc_params![];
-            let response = rpc_client.request(RpcMethods::Info, params).await?;
-            Some(response)
+            rpc_client.request(RpcMethods::Info, params).await.map(|result| Some(result))
         }
         Commands::Version => {
             let params = rpc_params![];
-            let response = rpc_client.request(RpcMethods::Version, params).await?;
-            Some(response)
+            rpc_client.request(RpcMethods::Version, params).await.map(|result| Some(result))
         }
         Commands::AllowList(allow_list_args) => match allow_list_args.command {
             None => {
                 let params = rpc_params![];
-                let response = rpc_client.request(RpcMethods::AllowlistDisplay, params).await?;
-                Some(response)
+                rpc_client
+                    .request(RpcMethods::AllowlistDisplay, params)
+                    .await
+                    .map(|result| Some(result))
             }
             Some(allow_list_command) => match allow_list_command {
                 AllowListCommands::Add { address } => {
                     let params = rpc_params![address];
-                    rpc_client.request(RpcMethods::AllowlistAdd, params).await?;
-                    None
+                    rpc_client.request(RpcMethods::AllowlistAdd, params).await.map(|_| None)
                 }
                 AllowListCommands::Remove { address } => {
                     let params = rpc_params![address];
-                    rpc_client.request(RpcMethods::AllowlistRemove, params).await?;
-                    None
+                    rpc_client.request(RpcMethods::AllowlistRemove, params).await.map(|_| None)
                 }
             },
         },
+        Commands::Addresses(address_args) => match address_args.command {
+            AddressAction::List { address_type, count, start, path } => {
+                let derivation_path = DerivationPath::from_str(&path.unwrap_or("".to_owned()))?;
+                let request =
+                    AddressListRequest { address_type, count, start, path: Some(derivation_path) };
+                rpc_client
+                    .request(RpcMethods::AddressList, request)
+                    .await
+                    .map(|result| Some(result))
+            }
+            AddressAction::Verify { address, start, limit, path } => {
+                let derivation_path = DerivationPath::from_str(&path.unwrap_or("".to_owned()))?;
+                let request =
+                    AddressVerifyRequest { address, start, limit, path: Some(derivation_path) };
+                rpc_client
+                    .request(RpcMethods::AddressVerify, request)
+                    .await
+                    .map(|result| Some(result))
+            }
+        },
     };
 
-    if let Some(json_result) = response {
-        println!("{}", serde_json::to_string_pretty(&json_result)?)
+    match response {
+        Ok(Some(json_result)) => println!(
+            "{}",
+            serde_json::to_string_pretty(&json_result)
+                .expect("Return value from server is valid json")
+        ),
+        Err(e) => eprintln!("Command failed: {}", e),
+        _ => (),
     }
 
     Ok(())
@@ -179,6 +252,7 @@ mod tests {
     use clap::Parser;
     use std::io::Write;
     use tempfile::NamedTempFile;
+    use vlsd::rpc_server::AddressType;
 
     #[test]
     fn test_cli() {
@@ -194,7 +268,6 @@ mod tests {
         assert!(cli.is_err())
     }
 
-    /// Test that the cli can be parsed with a cookie file
     #[test]
     fn test_cli_cookie() {
         let cookie_file = NamedTempFile::new().unwrap();
@@ -210,11 +283,77 @@ mod tests {
         assert_eq!(auth_header, "dXNlcjpwYXNzd29yZA==");
     }
 
-    /// Test that parsing fails if username is passed without password
     #[test]
     fn test_fail_without_password() {
         let args = vec!["vls-cli", "--rpc-user=user", "info"];
         let cli = super::Cli::try_parse_from(args);
         assert!(cli.is_err())
+    }
+
+    #[test]
+    fn test_addresses_list_with_types_parsing_succeeds() {
+        let args = vec![
+            "vls-cli",
+            "--rpc-user=user",
+            "--rpc-password=password",
+            "addresses",
+            "list",
+            "--address-type",
+            "taproot",
+            "--count",
+            "11",
+        ];
+        let result = super::Cli::try_parse_from(args);
+        assert!(result.is_ok());
+
+        let cli = result.unwrap();
+        if let super::Commands::Addresses(addr_args) = cli.command {
+            if let super::AddressAction::List { address_type, start, count, path } =
+                addr_args.command
+            {
+                assert_eq!(Some(AddressType::Taproot), address_type);
+                assert_eq!(Some(0), start);
+                assert_eq!(Some(11), count);
+                assert_eq!(None, path);
+            } else {
+                panic!("Expected List command");
+            }
+        } else {
+            panic!("Expected Addresses command");
+        }
+    }
+
+    #[test]
+    fn test_addresses_verify_with_start_parsing_succeeds() {
+        let args = vec![
+            "vls-cli",
+            "--rpc-user=user",
+            "--rpc-password=password",
+            "addresses",
+            "verify",
+            "--address",
+            "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+            "--start",
+            "5",
+            "--path",
+            "1h/42'/11",
+        ];
+        let result = super::Cli::try_parse_from(args);
+        assert!(result.is_ok());
+
+        let cli = result.unwrap();
+        if let super::Commands::Addresses(addr_args) = cli.command {
+            if let super::AddressAction::Verify { address, start, limit, path } = addr_args.command
+            {
+                assert_eq!(address, "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4");
+                assert_eq!(start, Some(5));
+                assert_eq!(limit, None);
+                assert_eq!(path, Some("1h/42'/11".to_owned()))
+            } else {
+                panic!("Expected Verify command");
+            }
+        } else {
+            panic!("Expected Addresses command");
+        }
     }
 }
