@@ -11,6 +11,7 @@ use lightning_signer::util::test_utils::{
 use vls_persist::kvv::redb::RedbKVVStore;
 use vls_persist::kvv::{JsonFormat, KVVPersister, KVVStore};
 
+#[test]
 pub fn main() {
     let tempdir = tempfile::tempdir().unwrap();
     let persister = KVVPersister(RedbKVVStore::new(&tempdir), JsonFormat);

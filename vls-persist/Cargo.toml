@@ -43,17 +43,17 @@ redb1 = { package = "redb", version = "1.3" }
 redb = { version = "2.2.0" }
 uuid = { version = "1.4", features = ["v4"] }
 
-[[bin]]
+[[test]]
 name = "persist_test"
-path = "src/persist_test_main.rs"
+path = "tests/persist_test_main.rs"
 required-features = ["redb-kvv", "test_utils"]
 
-[[bin]]
+[[test]]
 name = "gen_sample_data"
-path = "src/gen_sample_data_main.rs"
+path = "tests/gen_sample_data_main.rs"
 required-features = ["redb-kvv"]
 
-[[bin]]
+[[test]]
 name = "dump_sample_data"
-path = "src/dump_sample_data_main.rs"
+path = "tests/dump_sample_data_main.rs"
 required-features = ["redb-kvv"]

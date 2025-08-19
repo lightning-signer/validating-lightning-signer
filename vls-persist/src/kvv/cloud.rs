@@ -216,7 +216,157 @@ impl<L: KVVStore> KVVStore for CloudKVVStore<L> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kvv::memory::MemoryKVVStore;
     use crate::kvv::redb::RedbKVVStore;
+    use lightning_signer::persist::SignerId;
+    use test_log::test;
+
+    fn make_kvv(key: &str, version: u64, value: Vec<u8>) -> KVV {
+        KVV(key.to_string(), (version, value))
+    }
+
+    fn make_cloud_store() -> CloudKVVStore<MemoryKVVStore> {
+        let signer_id: SignerId = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let local = MemoryKVVStore::new(signer_id);
+        CloudKVVStore::new(local)
+    }
+
+    #[test]
+    fn test_get_local() {
+        let cloud = make_cloud_store();
+        let key = "key1";
+        let value = vec![1, 2, 3];
+
+        assert!(cloud.get_local(key).unwrap().is_none());
+
+        cloud.local.put(key, value.clone()).unwrap();
+        let result = cloud.get_local(key).unwrap().unwrap();
+        assert_eq!(result, (0, value));
+    }
+
+    #[test]
+    fn test_do_get_version() {
+        let cloud = make_cloud_store();
+        let key = "key1";
+        let value = vec![1, 2, 3];
+
+        let commit_log = BTreeMap::new();
+        assert!(cloud.do_get_version(&commit_log, key).unwrap().is_none());
+
+        cloud.local.put(key, value.clone()).unwrap();
+        assert_eq!(cloud.do_get_version(&commit_log, key).unwrap(), Some(0));
+
+        let mut commit_log = BTreeMap::new();
+        commit_log.insert(key.to_string(), (1, vec![4, 5, 6]));
+        assert_eq!(cloud.do_get_version(&commit_log, key).unwrap(), Some(1));
+    }
+
+    #[test]
+    fn test_put_batch() {
+        let cloud = make_cloud_store();
+        cloud.enter().unwrap();
+
+        let kvvs = vec![make_kvv("key1", 0, vec![1, 2, 3]), make_kvv("key2", 0, vec![4, 5, 6])];
+
+        assert!(cloud.put_batch(kvvs).is_ok());
+        assert_eq!(cloud.get("key1").unwrap().unwrap(), (0, vec![1, 2, 3]));
+        assert_eq!(cloud.get("key2").unwrap().unwrap(), (0, vec![4, 5, 6]));
+
+        cloud.commit().unwrap();
+        cloud.enter().unwrap();
+
+        let valid_kvvs = vec![make_kvv("key1", 0, vec![1, 2, 3])];
+        assert!(cloud.put_batch(valid_kvvs).is_ok());
+
+        let new_kvvs = vec![make_kvv("key1", 1, vec![7, 8, 9])];
+        assert!(cloud.put_batch(new_kvvs).is_ok());
+        assert_eq!(cloud.get("key1").unwrap().unwrap(), (1, vec![7, 8, 9]));
+    }
+
+    #[test]
+    fn test_get() {
+        let cloud = make_cloud_store();
+        let key = "key1";
+        let value = vec![1, 2, 3];
+
+        cloud.enter().unwrap();
+        assert!(cloud.get(key).unwrap().is_none());
+
+        cloud.local.put(key, value.clone()).unwrap();
+        assert_eq!(cloud.get(key).unwrap().unwrap(), (0, value.clone()));
+
+        cloud.put(key, vec![4, 5, 6]).unwrap();
+        assert_eq!(cloud.get(key).unwrap().unwrap(), (1, vec![4, 5, 6]));
+    }
+
+    #[test]
+    fn test_get_version() {
+        let cloud = make_cloud_store();
+        let key = "key1";
+        let value = vec![1, 2, 3];
+
+        cloud.enter().unwrap();
+        assert!(cloud.get_version(key).unwrap().is_none());
+
+        cloud.local.put(key, value.clone()).unwrap();
+        assert_eq!(cloud.get_version(key).unwrap(), Some(0));
+
+        cloud.put(key, vec![4, 5, 6]).unwrap();
+        assert_eq!(cloud.get_version(key).unwrap(), Some(1));
+    }
+
+    #[test]
+    fn test_get_prefix() {
+        let cloud = make_cloud_store();
+        cloud.enter().unwrap();
+
+        cloud.local.put("prefix/key1", vec![1, 2, 3]).unwrap();
+        cloud.local.put("prefix/key2", vec![4, 5, 6]).unwrap();
+        cloud.local.put("other/key", vec![7, 8, 9]).unwrap();
+
+        let iter: crate::kvv::memory::Iter = cloud.get_prefix("prefix/").unwrap();
+        let results: Vec<KVV> = iter.collect();
+        assert_eq!(results.len(), 2);
+
+        let iter = cloud.get_prefix("nonexistent/").unwrap();
+        let results: Vec<KVV> = iter.collect();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_delete() {
+        let cloud = make_cloud_store();
+        let key = "key1";
+        let value = vec![1, 2, 3];
+
+        cloud.enter().unwrap();
+        assert!(cloud.delete(key).is_ok());
+        assert_eq!(cloud.get(key).unwrap().unwrap(), (0, vec![]));
+
+        cloud.local.put(key, value).unwrap();
+        assert!(cloud.delete(key).is_ok());
+        assert_eq!(cloud.get(key).unwrap().unwrap(), (1, vec![]));
+    }
+
+    #[test]
+    fn test_clear_database() -> Result<(), Error> {
+        let cloud = make_cloud_store();
+        let key = "key1";
+        let value = vec![1, 2, 3];
+
+        cloud.enter()?;
+        cloud.local.put(key, value)?;
+        cloud.commit()?;
+
+        cloud.enter()?;
+        let mutations = cloud.prepare();
+        assert_eq!(mutations.len(), 0);
+        assert!(cloud.clear_database().is_ok());
+        assert!(cloud.local.get(key)?.is_none());
+        cloud.commit()?;
+
+        Ok(())
+    }
 
     #[test]
     fn cloud_test() -> Result<(), Error> {
