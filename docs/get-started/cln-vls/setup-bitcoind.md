@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Setup Bitcoind Service
+description: Configure bitcoind testnet service for VLS. Setup bitcoin user, systemd service, and RPC configuration for Lightning node integration.
 eleventyNavigation:
   key: Setup Bitcoind Service
   parent: CLN & VLS

@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Policy Controls
+description: VLS policy validation rules - 50+ mandatory checks ensuring Lightning protocol integrity. Comprehensive security controls for fund protection.
 eleventyNavigation:
   key: Policy Controls
   parent: Security

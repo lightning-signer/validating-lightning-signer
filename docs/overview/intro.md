@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Intro
+description: Introduction to VLS - Rust library for secure Lightning signers. How validation and key separation protect funds from node compromise.
 eleventyNavigation:
   key: Intro
   parent: Overview

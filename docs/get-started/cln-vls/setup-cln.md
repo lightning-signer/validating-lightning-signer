@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Setup CLN Service
+description: Setup Core Lightning service with VLS remote signing. Configure CLN with proper RPC settings and systemd integration.
 eleventyNavigation:
   key: Setup CLN Service
   parent: CLN & VLS

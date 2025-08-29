@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Run VLS on Docker
+description: Run VLS with Docker. Deploy containerized VLS with CLN, bitcoind, and txood using docker-compose for easy setup.
 eleventyNavigation:
   key: Run VLS on Docker
   parent: Get Started
@@ -270,5 +271,5 @@ Note: For `bitcoind` its also important to update the `BITCOIN_SHA256SUMS_HASH`.
 
 - [bitcoind](https://github.com/ruimarinho/docker-bitcoin-core/blob/master/23/alpine/Dockerfile) by @ruimarinho
 - [lightningd with clboss](https://github.com/tsjk/docker-core-lightning/blob/main/Dockerfile) by @tsjk
-- [elements lightning](https://github.com/ElementsProject/lightning/blob/master/contrib/docker/Dockerfile.alpine) by @ElementsProject
+- [elements lightning](https://github.com/ElementsProject/lightning/blob/master/contrib/docker/Dockerfile.builder.fedora) by @ElementsProject
 - [docker compose](https://github.com/LukasBahrenberg/lightning-dockercompose/blob/master/docker-compose.yaml) by @LukasBahrenberg

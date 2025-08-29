@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Setup VLS Service
+description: Configure VLS signer service with policy controls and allowlists. Setup secure validation for Lightning transaction signing.
 eleventyNavigation:
   key: Setup VLS Service
   parent: CLN & VLS

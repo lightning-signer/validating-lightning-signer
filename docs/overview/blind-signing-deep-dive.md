@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Blind Signing is Harmful
+description: Why blind signing worsens Lightning security. Technical analysis of vulnerabilities and how VLS validation prevents fund loss.
 eleventyNavigation:
   key: Blind Signing
   parent: Overview
@@ -43,8 +44,7 @@ Here are some of the potential configurations of a Lightning node:
 
 ## The (In)security of Blind Signing
 
-<img src="../assets/blind-signing-diagram.svg" class="theme-toggle-image" alt="Blind signing diagram">
-
+<img src="../assets/blind-signing-diagram.svg" class="theme-toggle-image" alt="Comparison diagram showing security vulnerabilities of blind signing versus validating signing, illustrating two points of attack versus one">
 
 * The monolithic case has one point of attack - at the node.
 * The blind signing case has **two points of attack** - at the node and at the Signer. A blind signer will perform any signing operation the node requests, so **a compromised node will still result in loss of funds**. And obviously, a compromised signer will also result in loss of funds. This is worse than a monolithic node because funds can be lost if **either** is compromised.

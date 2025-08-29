@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: New Node Integration
+description: VLS protocol integration for new Lightning nodes. Minimal message set and API requirements for implementing validated signing.
 eleventyNavigation:
   key: Node Integration
   parent: Get Started

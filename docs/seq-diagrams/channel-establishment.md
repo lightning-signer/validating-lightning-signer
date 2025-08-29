@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Channel Establishment
+description: Channel establishment sequence with VLS signing. BOLT 2 protocol flow showing remote signer API calls for Lightning channel setup.
 eleventyNavigation:
   key: Channel Establishment
   parent: Sequence Diagrams

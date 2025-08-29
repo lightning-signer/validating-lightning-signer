@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Transaction Diagrams
+description: Lightning transaction signing diagrams - HTLC, commitment, and closing transactions. Visual guide to VLS signing flows per BOLT 3.
 eleventyNavigation:
   key: Transaction Diagrams
   parent: Sequence Diagrams
@@ -32,7 +33,7 @@ Diagrams maintained using [app.diagrams.net](https://app.diagrams.net/)
 <br>
 
 <div align="center">
-    <img src="../assets/to-lclrmt-details.svg" width="600" height="600" class="rev-invert">
+    <img src="../assets/to-lclrmt-details.svg" width="600" height="600" class="rev-invert" alt="Transaction flow diagram for to_local and to_remote outputs showing signing paths and spending conditions per BOLT #3" >
 </div>
 
 <br>
@@ -44,7 +45,7 @@ Diagrams maintained using [app.diagrams.net](https://app.diagrams.net/)
 <br>
 
 <div align="center">
-    <img src="../assets/anchor-details.svg" width="600" height="600" class="rev-invert">
+    <img src="../assets/anchor-details.svg" width="600" height="600" class="rev-invert" alt="Anchor output signing flow showing to_local_anchor and to_remote_anchor transaction paths with CPFP fee bumping capability">
 </div>
 
 <br>
@@ -56,7 +57,7 @@ Diagrams maintained using [app.diagrams.net](https://app.diagrams.net/)
 <br>
 
 <div align="center">
-    <img src="../assets/offered-htlc-details.svg" width="600" height="800" class="rev-invert">
+    <img src="../assets/offered-htlc-details.svg" width="600" height="800" class="rev-invert" alt="Offered HTLC output signing sequence showing timeout and success paths, revocation keys, and second-level HTLC transactions">
 </div>
 
 <br>
@@ -68,7 +69,7 @@ Diagrams maintained using [app.diagrams.net](https://app.diagrams.net/)
 <br>
 
 <div align="center">
-    <img src="../assets/received-htlc-details.svg" width="600" height="800" class="rev-invert">
+    <img src="../assets/received-htlc-details.svg" width="600" height="800" class="rev-invert" alt="Received HTLC output signing flow showing claim paths for payment preimage reveal and timeout scenarios with VLS validation">
 </div>
 
 <br>
@@ -79,7 +80,7 @@ Diagrams maintained using [app.diagrams.net](https://app.diagrams.net/)
 <br>
 
 <div align="center">
-    <img src="../assets/closing-details.svg" width="600" height="400" class="rev-invert">
+    <img src="../assets/closing-details.svg" width="600" height="400" class="rev-invert" alt="Channel closing transaction signing flow showing mutual close cooperation between nodes and VLS signature validation process">
 </div>
 
 <br>

@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Setup CLBOSS Plugins
+description: Install CLBOSS and CLN plugins for automated Lightning channel management. Enhance node operations with auto-balancing features.
 eleventyNavigation:
   key: Setup CLBOSS Plugins
   parent: CLN & VLS

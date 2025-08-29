@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: VLS Documentation (__VERSION__)
+description: Lightning security with VLS - policy engine, exploit prevention, and runtime protections. Complete security documentation for signers.
 eleventyNavigation:
   key: Security
   parent: __VERSION__

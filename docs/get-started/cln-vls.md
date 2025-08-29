@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: CLN & VLS
+description: Complete CLN+VLS setup guide in SOCKET mode. Deploy secure Lightning node with validated signing and CLBOSS automation.
 eleventyNavigation:
   key: CLN & VLS
   parent: Get Started
