@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Setup TXOOD Service
+description: Deploy TXOOD oracle service for VLS chain validation. Configure nginx, web sync, and UTXO proofs for secure Lightning operations.
 eleventyNavigation:
   key: Setup TXOOD Service
   parent: CLN & VLS

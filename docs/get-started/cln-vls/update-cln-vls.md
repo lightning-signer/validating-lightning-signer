@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Update CLN & VLS
+description: Update CLN and VLS safely. Step-by-step upgrade process for Lightning nodes with proper daemon management and state preservation.
 eleventyNavigation:
   key: Update CLN & VLS
   parent: CLN & VLS

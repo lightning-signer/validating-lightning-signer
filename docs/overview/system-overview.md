@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: System Overview
+description: VLS system architecture - remote signers, UTXO oracles, and integration modes. Technical overview of Lightning security components.
 eleventyNavigation:
   key: System Overview
   parent: Overview
@@ -12,7 +13,7 @@ eleventyNavigation:
 <br>
 
 <div align="center">
-    <img src="../assets/c-lightning-demo.svg" width="600" height="400" class="rev-invert">
+    <img src="../assets/c-lightning-demo.svg" width="600" height="400" class="rev-invert" alt="Core Lightning demo setup with VLS signer.">
 </div>
 
 <br>
@@ -21,14 +22,14 @@ eleventyNavigation:
 
 ## VLS Integration Modes
 
-VLS components can be integrated with [C-Lightning (`CLN`)](https://gitlab.com/lightning-signer/vls-hsmd) or the [Lightning Development Kit (`LDK`)]( https://gitlab.com/lightning-signer/lnrod).
+VLS components can be integrated with [C-Lightning (`CLN`)](https://gitlab.com/lightning-signer/vls-hsmd) or the [Lightning Development Kit (`LDK`)](https://gitlab.com/lightning-signer/lnrod).
 
 NOTE - All combinations are not depicted, for example `LDK:SERIAL` is a valid mode.
 
 <br>
 
 <div align="center">
-    <img src="../assets/integration-modes.svg" width="600" height="1200" class="rev-invert">
+    <img src="../assets/integration-modes.svg" width="600" height="1200" class="rev-invert" alt="VLS integration modes diagram showing CLN with serial/socket connections and LDK with socket.">
 </div>
 
 <br>
@@ -43,7 +44,7 @@ signatures for lightning operations.
 <br>
 
 <div align="center">
-    <img src="../assets/system-overview.svg" width="700" height="500" class="rev-invert">
+    <img src="../assets/system-overview.svg" width="700" height="500" class="rev-invert" alt="VLS system architecture showing Lightning node connecting to remote signer, UTXO oracles, and state stores for secure transaction validation" >
 </div>
 
 <br>
@@ -75,7 +76,7 @@ computation to generate the signatures.
 <br>
 
 <div align="center">
-    <img src="../assets/multi-party-signing.svg" width="600" height="400" class="rev-invert">
+    <img src="../assets/multi-party-signing.svg" width="600" height="400" class="rev-invert" alt="Multi-party signing setup showing Lightning node connecting to multiple remote signers for enhanced security and flexibility.">
 </div>
 
 <br>
@@ -85,7 +86,7 @@ The Remote Signer Front End initiates the multi-party signing
 operation and relays the resulting signature(s) back to the
 Lightning Node.
 
-## 🧬 Protocol-Level Signing Flow
+## Protocol-Level Signing Flow
 
 Want to see how VLS fits into the Lightning lifecycle?
 

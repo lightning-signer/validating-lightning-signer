@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Enable Debug Logging
+description: Enable debug logging for VLS and CLN. Configure log levels, filters, and journalctl for troubleshooting Lightning signing issues.
 eleventyNavigation:
   key: Enable Debug Logging
   parent: Get Started

@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: LDK & VLS
+description: Get started with LDK and VLS. Includes disaster recovery testing.
 eleventyNavigation:
   key: LDK & VLS
   parent: Get Started

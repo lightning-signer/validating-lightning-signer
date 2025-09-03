@@ -1,7 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Start Here
-description: Choose your stack and follow the right guide to integrate VLS
+description: Get started with VLS. Choose between CLN, LDK, or hosted solutions like Greenlight. Find the right Lightning security setup for your needs.
 eleventyNavigation:
   key: Start Here
   parent: Get Started

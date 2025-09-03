@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Configure journalctl
+description: Configure journalctl for VLS logging. Increase retention, manage disk usage, and filter Lightning node logs for debugging and monitoring.
 eleventyNavigation:
   key: Configure journalctl
   parent: CLN & VLS

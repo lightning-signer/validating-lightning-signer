@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Pitfalls
+description: Security pitfalls VLS prevents - fee manipulation, shared allowlists, and validation exploits. Critical mitigations for Lightning signers.
 eleventyNavigation:
   key: Pitfalls
   parent: Security

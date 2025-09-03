@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Normal Operation
+description: Normal Lightning operation with VLS - commitment updates, revocation, and HTLC management. Detailed signing sequence for channel operations.
 eleventyNavigation:
   key: Normal Operation
   parent: Sequence Diagrams

@@ -2,6 +2,7 @@
 layout: layouts/docs.njk
 title: Sequence Diagrams
 description: Protocol sequence diagrams for VLS implementations
+description: VLS sequence diagrams - protocol flows for channel establishment, normal operation, and transaction signing in Lightning with remote signers.
 eleventyNavigation:
   key: Sequence Diagrams
   parent: __VERSION__

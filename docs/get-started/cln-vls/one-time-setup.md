@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: One Time Setup
+description: Initial VLS setup guide - install dependencies, Rust, bitcoind, and clone CLN+VLS repositories. Required first step for VLS deployment.
 eleventyNavigation:
   key: One Time Setup
   parent: CLN & VLS

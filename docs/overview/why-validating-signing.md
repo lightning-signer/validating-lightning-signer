@@ -1,7 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Why Validating Signing?
-description: Why blind signers fall short—and why VLS matters for secure Lightning
+description: Why Lightning needs validating signers: problems with hot wallets and blind signing. How VLS enables non-custodial services at scale.
 eleventyNavigation:
   key: Why Validating Signing
   parent: Overview

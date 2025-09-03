@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: UTXO Oracle
+description: UTXO oracle integration for VLS chain validation. Track on-chain state, detect breaches, and verify channel activity for security.
 eleventyNavigation:
   key: UTXO Oracle
   parent: Security

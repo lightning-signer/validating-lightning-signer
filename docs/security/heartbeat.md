@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Heartbeat and Operator Intervention
+description: VLS heartbeat monitoring for operator alerts. Detect compromised nodes and ensure timely breach remediation with dead-man's switch.
 eleventyNavigation:
   key: Heartbeat
   parent: Security

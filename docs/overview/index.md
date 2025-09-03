@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: VLS Documentation (__VERSION__)
+description: VLS overview - secure Lightning with validated remote signing. Protect node funds with comprehensive policy controls and hardened signers.
 eleventyNavigation:
   key: Overview
   parent: __VERSION__
@@ -39,7 +40,7 @@ a complete compromise of the node software. This will require some
 overlap in logic between the node software and the policy signer.
 
 <div align="center">
-    <img src="../assets/system-overview.svg" width="700" height="500" class="rev-invert"> 
+    <img src="../assets/system-overview.svg" width="700" height="500" class="rev-invert" alt="VLS system architecture showing Lightning node connecting to remote signer, UTXO oracles, and state stores for secure transaction validation"> 
 </div>
 
 
