@@ -1,17 +1,3 @@
 #!/bin/bash
 
-FMTCMD="${CARGO_FMT_CMD:./scripts/fmt-all --check}"
-
-# Redirect output to stderr.
-exec 1>&2
-
-unset RUST_LOG
-
-set -e
-# crates in the workspace exclude list must be checked individually
-for excluded in $(./scripts/list-excluded Cargo.toml); do
-    (cd $excluded && $FMTCMD)
-done
-
-# check everything else
-$FMTCMD
+./scripts/fmt-all --check
