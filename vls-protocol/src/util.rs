@@ -55,10 +55,6 @@ mod tests {
     }
 
     impl TestWriter {
-        fn new() -> Self {
-            Self { buffer: Vec::new(), error_on_write: false, partial_write: None }
-        }
-
         fn with_error() -> Self {
             Self { buffer: Vec::new(), error_on_write: true, partial_write: None }
         }
