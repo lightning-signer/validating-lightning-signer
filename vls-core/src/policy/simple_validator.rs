@@ -402,22 +402,12 @@ impl Validator for SimpleValidator {
 
         // policy-channel-safe-type
         if !SAFE_COMMITMENT_TYPE.contains(&setup.commitment_type) {
-            if setup.commitment_type == CommitmentType::Anchors {
-                // special case for anchors, so that they can be enabled until all
-                // dependent projects update to zero-fee HTLCs
-                policy_err!(
-                    self,
-                    "policy-channel-safe-type-anchors",
-                    "unsafe commitment type: plain anchors"
-                );
-            } else {
-                policy_err!(
-                    self,
-                    "policy-channel-safe-type",
-                    "unsafe commitment type: {:?}",
-                    setup.commitment_type
-                );
-            }
+            policy_err!(
+                self,
+                "policy-channel-safe-type",
+                "unsafe commitment type: {:?}",
+                setup.commitment_type
+            );
         }
 
         // policy-channel-contest-delay-range-counterparty
@@ -2018,6 +2008,7 @@ mod tests {
     use lightning::types::payment::PaymentHash;
     use test_log::test;
 
+    use crate::policy::filter::FilterRule;
     use crate::tx::tx::HTLCInfo2;
     use crate::util::test_utils::key::*;
     use crate::util::test_utils::*;
@@ -2183,11 +2174,23 @@ mod tests {
         let derivation_path = DerivationPath::master();
         assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_ok());
 
+        setup.commitment_type = CommitmentType::AnchorsZeroFeeHtlc;
+        assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_ok());
+
         setup.commitment_type = CommitmentType::Anchors;
+        assert_policy_err!(
+            validator.validate_setup_channel(&*node, &setup, &derivation_path),
+            "policy-channel-safe-type",
+            "validate_setup_channel: unsafe commitment type: Anchors"
+        );
         assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_err());
 
         setup.commitment_type = CommitmentType::Legacy;
-        assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_err());
+        assert_policy_err!(
+            validator.validate_setup_channel(&*node, &setup, &derivation_path),
+            "policy-channel-safe-type",
+            "validate_setup_channel: unsafe commitment type: Legacy"
+        );
     }
 
     // policy-channel-contest-delay-range-holder
