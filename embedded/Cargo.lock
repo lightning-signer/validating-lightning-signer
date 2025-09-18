@@ -120,9 +120,9 @@ dependencies = [
 
 [[package]]
 name = "bitcoin-consensus-derive"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b03a8b16632abb36cef402e6695f625f6f65c69112d2baf28e09748de7cb17a"
+checksum = "0468a0cbe4fb594b40940e107694c4edfc316a9d83bbeeff14ba1acbdfd291c2"
 dependencies = [
  "proc-macro2",
  "quote",
