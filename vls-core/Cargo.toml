@@ -52,7 +52,7 @@ path = "src/lib.rs"
 vls-common = { path = "../vls-common", version = "0.14.0-rc.1" }
 serde = { workspace = true, features = ["alloc"] }
 serde_derive = { version = "1.0" }
-bitcoin-consensus-derive = { version = "0.2.0" }
+bitcoin-consensus-derive = { workspace = true }
 serde_with = { version = "3.6", default-features = false, features = ["hex", "macros"] }
 bolt-derive = { path = "../bolt-derive", version = "0.4.0" }
 vls-policy-derive = { path = "../policy-derive", version = "0.1.0" }
