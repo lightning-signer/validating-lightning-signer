@@ -21,7 +21,7 @@ import re
 import subprocess
 import sys
 
-pattern = r'Changelog-(\S*): (.*)$'
+pattern = r'Changelog-([A-Z][a-zA-Z]*): (.*)$'
 
 
 def generate_changelog():
