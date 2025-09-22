@@ -1,7 +1,7 @@
 [package]
 name = "vlsd"
 license = "Apache-2.0"
-version = "0.14.0-rc.1"
+version = "0.14.0-rc.2"
 authors = ["Devrandom <c1.devrandom@niftybox.net>", "Ken Sedgwick <ken@bonsai.com>"]
 edition = "2021"
 description = "A Lightning signer that connects to the node using a gRPC protocol"
@@ -18,13 +18,13 @@ log_pretty_print = ["vls-core/log_pretty_print", "vls-frontend/log_pretty_print"
 heapmon_requests = []
 
 [dependencies]
-vls-core = { path = "../vls-core", version = "0.14.0-rc.1", features = ["use_backtrace"] }
-vls-common = { path = "../vls-common", version = "0.14.0-rc.1" }
-vls-protocol-signer = { path = "../vls-protocol-signer", version = "0.14.0-rc.1" }
-vls-protocol = { path = "../vls-protocol", version = "0.14.0-rc.1" }
-vls-frontend = { path = "../vls-frontend", version = "0.14.0-rc.1" }
-vls-persist = { path = "../vls-persist", version = "0.14.0-rc.1", default-features = false, features = ["std", "kvv", "redb-kvv"] }
-vls-util = { path = "../vls-util", version = "0.14.0-rc.1" }
+vls-core = { path = "../vls-core", version = "0.14.0-rc.2", features = ["use_backtrace"] }
+vls-common = { path = "../vls-common", version = "0.14.0-rc.2" }
+vls-protocol-signer = { path = "../vls-protocol-signer", version = "0.14.0-rc.2" }
+vls-protocol = { path = "../vls-protocol", version = "0.14.0-rc.2" }
+vls-frontend = { path = "../vls-frontend", version = "0.14.0-rc.2" }
+vls-persist = { path = "../vls-persist", version = "0.14.0-rc.2", default-features = false, features = ["std", "kvv", "redb-kvv"] }
+vls-util = { path = "../vls-util", version = "0.14.0-rc.2" }
 lightning-storage-server = { path = "../lightning-storage-server/lib", version = "0.5.0", default-features = false }
 log = { workspace = true }
 time = { version = "=0.3.17", features = ["macros"] }
@@ -53,7 +53,7 @@ serde = { workspace = true, features = ["std"] }
 tempfile = "3.17.1"
 
 [dev-dependencies]
-vls-core = { path = "../vls-core", version = "0.14.0-rc.1", features = ["use_backtrace", "test_utils"] }
+vls-core = { path = "../vls-core", version = "0.14.0-rc.2", features = ["use_backtrace", "test_utils"] }
 
 [build-dependencies]
 tonic-build = "0.12.0"
