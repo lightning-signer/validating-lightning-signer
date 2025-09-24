@@ -57,174 +57,127 @@ pub trait DeBolt: Debug + Sized + Encodable + Decodable {
     fn from_vec(ser: Vec<u8>) -> Result<Self>;
 }
 
-/// Developer setup for testing
-/// Must preceed `HsmdInit{,2}` message
-#[cfg(feature = "developer")]
+/// An unknown message
+#[derive(Debug, Decodable)]
+pub struct Unknown {
+    /// Message type
+    pub message_type: u16,
+}
+
+///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(90)]
-pub struct HsmdDevPreinit {
-    pub derivation_style: u8,
-    pub network_name: WireString,
-    pub seed: Option<DevSecret>,
-    pub allowlist: Array<WireString>,
+#[message_id(1)]
+pub struct Ecdh {
+    pub point: PubKey,
 }
 
-#[cfg(feature = "developer")]
+///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(190)]
-pub struct HsmdDevPreinitReply {
-    /// The derived nodeid (or generated if none was supplied)
-    pub node_id: PubKey,
+#[message_id(100)]
+pub struct EcdhReply {
+    pub secret: Secret,
 }
 
-/// Developer setup for testing
-/// Must preceed `HsmdInit{,2}` message
-#[cfg(feature = "developer")]
+///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(99)]
-pub struct HsmdDevPreinit2 {
-    pub options: HsmdDevPreinit2Options,
+#[message_id(2)]
+pub struct SignChannelAnnouncement {
+    pub announcement: Octets,
 }
 
-/// TLV encoded options for HsmdDevPreinit2
-#[cfg(feature = "developer")]
-#[derive(SerBoltTlvOptions, Default, Debug, Clone)]
-pub struct HsmdDevPreinit2Options {
-    // CLN: allocates from 1 ascending
-    #[tlv_tag = 1]
-    pub fail_preapprove: Option<bool>,
-    #[tlv_tag = 3]
-    pub no_preapprove_check: Option<bool>,
-
-    // VLS: allocates from 252 descending (largest single byte tag value is 252)
-    #[tlv_tag = 252]
-    pub derivation_style: Option<u8>,
-    #[tlv_tag = 251]
-    pub network_name: Option<WireString>,
-    #[tlv_tag = 250]
-    pub seed: Option<DevSecret>,
-    #[tlv_tag = 249]
-    pub allowlist: Option<Array<WireString>>,
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(102)]
+pub struct SignChannelAnnouncementReply {
+    pub node_signature: Signature,
+    pub bitcoin_signature: Signature,
 }
 
-/// HsmdDevPreinit2 does not return a reply
+/// Sign channel update
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(3)]
+pub struct SignChannelUpdate {
+    pub update: Octets,
+}
 
-/// hsmd Init
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(103)]
+pub struct SignChannelUpdateReply {
+    pub update: Octets,
+}
+
 /// CLN only
+/// Same as [SignChannelAnnouncement] but called from lightningd
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(11)]
-pub struct HsmdInit {
-    pub key_version: Bip32KeyVersion,
-    pub chain_params: BlockHash,
-    pub encryption_key: Option<DevSecret>,
-    pub dev_privkey: Option<DevPrivKey>,
-    pub dev_bip32_seed: Option<DevSecret>,
-    pub dev_channel_secrets: Option<Array<DevSecret>>,
-    pub dev_channel_secrets_shaseed: Option<Sha256>,
-    pub hsm_wire_min_version: u32,
-    pub hsm_wire_max_version: u32,
-}
-
-// // Removed in CLN v23.05
-// #[derive(SerBolt, Debug, Encodable, Decodable)]
-// #[message_id(111)]
-// pub struct HsmdInitReplyV1 {
-//     pub node_id: PubKey,
-//     pub bip32: ExtKey,
-//     pub bolt12: PubKey32,
-//     pub onion_reply_secret: Secret,
-// }
-
-/// deprecated after CLN v23.05
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(113)]
-pub struct HsmdInitReplyV2 {
-    pub node_id: PubKey,
-    pub bip32: ExtKey,
-    pub bolt12: PubKey,
-}
-
-// There doesn't seem to be a HsmdInitReplyV3
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(114)]
-pub struct HsmdInitReplyV4 {
-    /// This gets upgraded when the wire protocol changes in incompatible ways:
-    pub hsm_version: u32,
-    /// Capabilities, by convention are message numbers, indicating that the HSM
-    /// supports you sending this message.
-    pub hsm_capabilities: ArrayBE<u32>,
-    pub node_id: PubKey,
-    pub bip32: ExtKey,
-    pub bolt12: PubKey,
-}
-
-/// Signer Init for LDK
-/// LDK only
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(1011)]
-pub struct HsmdInit2 {
-    pub derivation_style: u8,
-    pub network_name: WireString,
-    pub dev_seed: Option<DevSecret>,
-    pub dev_allowlist: Array<WireString>,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(1111)]
-pub struct HsmdInit2Reply {
-    pub node_id: PubKey,
-    pub bip32: ExtKey,
-    pub bolt12: PubKey,
-}
-
-/// Get node public keys.
-/// Used by the frontend
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(1012)]
-pub struct NodeInfo {}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(1112)]
-pub struct NodeInfoReply {
-    pub network_name: WireString,
-    pub node_id: PubKey,
-    pub bip32: ExtKey,
-}
-
-/// Connect a new client
-/// CLN only
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(9)]
-pub struct ClientHsmFd {
+#[message_id(4)]
+pub struct SignAnyChannelAnnouncement {
+    pub announcement: Octets,
     pub peer_id: PubKey,
     pub dbid: u64,
-    pub capabilities: u64,
 }
 
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(109)]
-pub struct ClientHsmFdReply {
-    // TODO fd handling
+#[message_id(104)]
+pub struct SignAnyChannelAnnouncementReply {
+    pub node_signature: Signature,
+    pub bitcoin_signature: Signature,
 }
 
-/// Sign invoice
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(8)]
-pub struct SignInvoice {
-    pub u5bytes: Octets,
-    pub hrp: Octets,
+///
+/// CLN only
+#[derive(SerBolt, Encodable, Decodable)]
+#[message_id(5)]
+pub struct SignCommitmentTx {
+    pub peer_id: PubKey,
+    pub dbid: u64,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PsbtWrapper>,
+    pub remote_funding_key: PubKey,
+    pub commitment_number: u64,
+}
+
+impl Debug for SignCommitmentTx {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        // Sometimes c-lightning calls handle_sign_commitment_tx with mutual
+        // close transactions.  We can tell the difference because the locktime
+        // field will be set to 0 for a mutual close.
+        let name = if self.tx.0.lock_time.to_consensus_u32() == 0 {
+            "SignMutualCloseTx as a SignCommitmentTx"
+        } else {
+            "SignCommitmentTx"
+        };
+        f.debug_struct(name)
+            .field("peer_id", &self.peer_id)
+            .field("dbid", &self.dbid)
+            .field("tx", &self.tx)
+            .field("psbt", &self.psbt)
+            .field("remote_funding_key", &self.remote_funding_key)
+            .field("commitment_number", &self.commitment_number)
+            .finish()
+    }
 }
 
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(108)]
-pub struct SignInvoiceReply {
-    pub signature: RecoverableSignature,
+#[message_id(105)]
+pub struct SignCommitmentTxReply {
+    pub signature: BitcoinSignature,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(6)]
+pub struct SignNodeAnnouncement {
+    pub announcement: Octets,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(106)]
+pub struct SignNodeAnnouncementReply {
+    pub signature: Signature,
 }
 
 ///
@@ -242,31 +195,204 @@ pub struct SignWithdrawalReply {
     pub psbt: WithSize<PsbtWrapper>,
 }
 
-///
+/// Sign invoice
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(1)]
-pub struct Ecdh {
-    pub point: PubKey,
+#[message_id(8)]
+pub struct SignInvoice {
+    pub u5bytes: Octets,
+    pub hrp: Octets,
 }
 
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(100)]
-pub struct EcdhReply {
-    pub secret: Secret,
+#[message_id(108)]
+pub struct SignInvoiceReply {
+    pub signature: RecoverableSignature,
 }
 
-/// Memleak
+/// Connect a new client
 /// CLN only
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(33)]
-pub struct Memleak {}
+#[message_id(9)]
+pub struct ClientHsmFd {
+    pub peer_id: PubKey,
+    pub dbid: u64,
+    pub capabilities: u64,
+}
+
+/// TODO fd handling
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(109)]
+pub struct ClientHsmFdReply {}
 
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(133)]
-pub struct MemleakReply {
-    pub result: bool,
+#[message_id(10)]
+pub struct GetChannelBasepoints {
+    pub node_id: PubKey,
+    pub dbid: u64,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(110)]
+pub struct GetChannelBasepointsReply {
+    pub basepoints: Basepoints,
+    pub funding: PubKey,
+}
+
+/// hsmd Init
+/// CLN only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(11)]
+pub struct HsmdInit {
+    pub key_version: Bip32KeyVersion,
+    pub chain_params: BlockHash,
+    pub encryption_key: Option<DevSecret>,
+    pub dev_privkey: Option<DevPrivKey>,
+    pub dev_bip32_seed: Option<DevSecret>,
+    pub dev_channel_secrets: Option<Array<DevSecret>>,
+    pub dev_channel_secrets_shaseed: Option<Sha256>,
+    pub hsm_wire_min_version: u32,
+    pub hsm_wire_max_version: u32,
+}
+
+/// deprecated after CLN v23.05
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(113)]
+pub struct HsmdInitReplyV2 {
+    pub node_id: PubKey,
+    pub bip32: ExtKey,
+    pub bolt12: PubKey,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(114)]
+pub struct HsmdInitReplyV4 {
+    /// This gets upgraded when the wire protocol changes in incompatible ways:
+    pub hsm_version: u32,
+    /// Capabilities, by convention are message numbers, indicating that the HSM
+    /// supports you sending this message.
+    pub hsm_capabilities: ArrayBE<u32>,
+    pub node_id: PubKey,
+    pub bip32: ExtKey,
+    pub bolt12: PubKey,
+}
+
+///
+/// CLN only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(12)]
+pub struct SignDelayedPaymentToUs {
+    pub commitment_number: u64,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PsbtWrapper>,
+    pub wscript: Octets,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(112)]
+pub struct SignTxReply {
+    pub signature: BitcoinSignature,
+}
+
+///
+/// CLN only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(13)]
+pub struct SignRemoteHtlcToUs {
+    pub remote_per_commitment_point: PubKey,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PsbtWrapper>,
+    pub wscript: Octets,
+    pub option_anchors: bool,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(14)]
+pub struct SignPenaltyToUs {
+    pub revocation_secret: DisclosedSecret,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PsbtWrapper>,
+    pub wscript: Octets,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(16)]
+pub struct SignLocalHtlcTx {
+    pub commitment_number: u64,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PsbtWrapper>,
+    pub wscript: Octets,
+    pub option_anchors: bool,
+}
+
+/// Get per-commitment point n and optionally revoke a point n-2 by releasing the secret
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(18)]
+pub struct GetPerCommitmentPoint {
+    pub commitment_number: u64,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(118)]
+pub struct GetPerCommitmentPointReply {
+    pub point: PubKey,
+    pub secret: Option<DisclosedSecret>,
+}
+
+///
+/// CLN only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(19)]
+pub struct SignRemoteCommitmentTx {
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PsbtWrapper>,
+    pub remote_funding_key: PubKey,
+    pub remote_per_commitment_point: PubKey,
+    pub option_static_remotekey: bool,
+    pub commitment_number: u64,
+    pub htlcs: Array<Htlc>,
+    pub feerate: u32,
+}
+
+/// LDK message to sign a local HTLC transaction.
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(20)]
+pub struct SignLocalHtlcTx2 {
+    pub tx: WithSize<Transaction>,
+    pub input: u32,
+    pub per_commitment_number: u64,
+    pub offered: bool,
+    pub cltv_expiry: u32,
+    pub htlc_amount_msat: u64,
+    pub payment_hash: Sha256,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(20)]
+pub struct SignRemoteHtlcTx {
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PsbtWrapper>,
+    pub wscript: Octets,
+    pub remote_per_commitment_point: PubKey,
+    pub option_anchors: bool,
+}
+
+///
+/// CLN only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(21)]
+pub struct SignMutualCloseTx {
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PsbtWrapper>,
+    pub remote_funding_key: PubKey,
 }
 
 /// CheckFutureSecret
@@ -308,58 +434,11 @@ pub struct SignBolt12 {
     pub public_tweak: Octets,
 }
 
-// SignBolt12V2
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(41)]
-pub struct SignBolt12V2 {
-    pub message_name: WireString,
-    pub field_name: WireString,
-    pub merkle_root: Sha256,
-    pub info: Octets,
-    pub public_tweak: Octets,
-}
-
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(125)]
 pub struct SignBolt12Reply {
     pub signature: Signature,
-}
-
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(141)]
-pub struct SignBolt12V2Reply {
-    pub signature: Signature,
-}
-
-/// PreapproveInvoice {
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(38)]
-pub struct PreapproveInvoice {
-    pub invstring: WireString,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(138)]
-pub struct PreapproveInvoiceReply {
-    pub result: bool,
-}
-
-/// PreapproveKeysend {
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(39)]
-pub struct PreapproveKeysend {
-    pub destination: PubKey,
-    pub payment_hash: Sha256,
-    pub amount_msat: u64,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(139)]
-pub struct PreapproveKeysendReply {
-    pub result: bool,
 }
 
 /// DeriveSecret
@@ -392,112 +471,28 @@ pub struct CheckPubKeyReply {
 }
 
 ///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(147)]
-pub struct SignAnchorspend {
-    pub peer_id: PubKey,
-    pub dbid: u64,
-    pub utxos: Array<Utxo>,
-    pub psbt: WithSize<StreamedPSBT>,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(148)]
-pub struct SignAnchorspendReply {
-    pub psbt: WithSize<PsbtWrapper>,
-}
-
-/// Sign channel update
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(3)]
-pub struct SignChannelUpdate {
-    pub update: Octets,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(103)]
-pub struct SignChannelUpdateReply {
-    pub update: Octets,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(2)]
-pub struct SignChannelAnnouncement {
-    pub announcement: Octets,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(102)]
-pub struct SignChannelAnnouncementReply {
-    pub node_signature: Signature,
-    pub bitcoin_signature: Signature,
-}
-
 /// CLN only
-/// Same as [SignChannelAnnouncement] but called from lightningd
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(4)]
-pub struct SignAnyChannelAnnouncement {
-    pub announcement: Octets,
+#[message_id(29)]
+pub struct SignSpliceTx {
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PsbtWrapper>,
+    pub remote_funding_key: PubKey,
+    pub input_index: u32,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(30)]
+pub struct NewChannel {
     pub peer_id: PubKey,
     pub dbid: u64,
 }
 
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(104)]
-pub struct SignAnyChannelAnnouncementReply {
-    pub node_signature: Signature,
-    pub bitcoin_signature: Signature,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(6)]
-pub struct SignNodeAnnouncement {
-    pub announcement: Octets,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(106)]
-pub struct SignNodeAnnouncementReply {
-    pub signature: Signature,
-}
-
-/// Get per-commitment point n and optionally revoke a point n-2 by releasing the secret
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(18)]
-pub struct GetPerCommitmentPoint {
-    pub commitment_number: u64,
-}
-
-/// Get per-commitment point
-/// LDK only
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(1018)]
-pub struct GetPerCommitmentPoint2 {
-    pub commitment_number: u64,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(118)]
-pub struct GetPerCommitmentPointReply {
-    pub point: PubKey,
-    pub secret: Option<DisclosedSecret>,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(1118)]
-pub struct GetPerCommitmentPoint2Reply {
-    pub point: PubKey,
-}
+#[message_id(130)]
+pub struct NewChannelReply {}
 
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
@@ -525,19 +520,6 @@ pub struct SetupChannelReply {}
 
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(34)]
-pub struct ForgetChannel {
-    pub node_id: PubKey,
-    pub dbid: u64,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(134)]
-pub struct ForgetChannelReply {}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(32)]
 pub struct CheckOutpoint {
     pub funding_txid: Txid,
@@ -551,18 +533,31 @@ pub struct CheckOutpointReply {
     pub is_buried: bool,
 }
 
+/// Memleak
+/// CLN only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(33)]
+pub struct Memleak {}
+
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(37)]
-pub struct LockOutpoint {
-    pub funding_txid: Txid,
-    pub funding_txout: u16,
+#[message_id(133)]
+pub struct MemleakReply {
+    pub result: bool,
 }
 
 ///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(137)]
-pub struct LockOutpointReply {}
+#[message_id(34)]
+pub struct ForgetChannel {
+    pub node_id: PubKey,
+    pub dbid: u64,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(134)]
+pub struct ForgetChannelReply {}
 
 ///
 /// CLN only
@@ -579,25 +574,67 @@ pub struct ValidateCommitmentTx {
 }
 
 ///
-/// LDK only
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(1035)]
-pub struct ValidateCommitmentTx2 {
-    pub commitment_number: u64,
-    pub feerate: u32,
-    pub to_local_value_sat: u64,
-    pub to_remote_value_sat: u64,
-    pub htlcs: Array<Htlc>,
-    pub signature: BitcoinSignature,
-    pub htlc_signatures: Array<BitcoinSignature>,
-}
-
-///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(135)]
 pub struct ValidateCommitmentTxReply {
     pub old_commitment_secret: Option<DisclosedSecret>,
     pub next_per_commitment_point: PubKey,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(36)]
+pub struct ValidateRevocation {
+    pub commitment_number: u64,
+    pub commitment_secret: DisclosedSecret,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(136)]
+pub struct ValidateRevocationReply {}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(37)]
+pub struct LockOutpoint {
+    pub funding_txid: Txid,
+    pub funding_txout: u16,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(137)]
+pub struct LockOutpointReply {}
+
+/// PreapproveInvoice {
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(38)]
+pub struct PreapproveInvoice {
+    pub invstring: WireString,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(138)]
+pub struct PreapproveInvoiceReply {
+    pub result: bool,
+}
+
+/// PreapproveKeysend {
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(39)]
+pub struct PreapproveKeysend {
+    pub destination: PubKey,
+    pub payment_hash: Sha256,
+    pub amount_msat: u64,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(139)]
+pub struct PreapproveKeysendReply {
+    pub result: bool,
 }
 
 ///
@@ -616,51 +653,182 @@ pub struct RevokeCommitmentTxReply {
     pub next_per_commitment_point: PubKey,
 }
 
-///
+// SignBolt12V2
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(36)]
-pub struct ValidateRevocation {
-    pub commitment_number: u64,
-    pub commitment_secret: DisclosedSecret,
+#[message_id(41)]
+pub struct SignBolt12V2 {
+    pub message_name: WireString,
+    pub field_name: WireString,
+    pub merkle_root: Sha256,
+    pub info: Octets,
+    pub public_tweak: Octets,
 }
 
-///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(136)]
-pub struct ValidateRevocationReply {}
+#[message_id(141)]
+pub struct SignBolt12V2Reply {
+    pub signature: Signature,
+}
 
-///
+/// Developer setup for testing
+/// Must preceed `HsmdInit{,2}` message
+#[cfg(feature = "developer")]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(90)]
+pub struct HsmdDevPreinit {
+    pub derivation_style: u8,
+    pub network_name: WireString,
+    pub seed: Option<DevSecret>,
+    pub allowlist: Array<WireString>,
+}
+
+/// TLV encoded options for HsmdDevPreinit2
+#[cfg(feature = "developer")]
+#[derive(SerBoltTlvOptions, Default, Debug, Clone)]
+pub struct HsmdDevPreinit2Options {
+    // CLN: allocates from 1 ascending
+    #[tlv_tag = 1]
+    pub fail_preapprove: Option<bool>,
+    #[tlv_tag = 3]
+    pub no_preapprove_check: Option<bool>,
+
+    // VLS: allocates from 252 descending (largest single byte tag value is 252)
+    #[tlv_tag = 252]
+    pub derivation_style: Option<u8>,
+    #[tlv_tag = 251]
+    pub network_name: Option<WireString>,
+    #[tlv_tag = 250]
+    pub seed: Option<DevSecret>,
+    #[tlv_tag = 249]
+    pub allowlist: Option<Array<WireString>>,
+}
+
+/// Developer setup for testing
+/// Must preceed `HsmdInit{,2}` message
+#[cfg(feature = "developer")]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(99)]
+pub struct HsmdDevPreinit2 {
+    pub options: HsmdDevPreinit2Options,
+}
+
+/// HsmdDevPreinit2 does not return a reply
+
+#[cfg(feature = "developer")]
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(190)]
+pub struct HsmdDevPreinitReply {
+    /// The derived nodeid (or generated if none was supplied)
+    pub node_id: PubKey,
+}
+
 /// CLN only
-#[derive(SerBolt, Encodable, Decodable)]
-#[message_id(5)]
-pub struct SignCommitmentTx {
-    pub peer_id: PubKey,
-    pub dbid: u64,
+/// Same as [SignDelayedPaymentToUs] but called from lightningd
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(142)]
+pub struct SignAnyDelayedPaymentToUs {
+    pub commitment_number: u64,
     pub tx: WithSize<Transaction>,
     pub psbt: WithSize<PsbtWrapper>,
-    pub remote_funding_key: PubKey,
-    pub commitment_number: u64,
+    pub wscript: Octets,
+    pub input: u32,
+    pub peer_id: PubKey,
+    pub dbid: u64,
 }
 
-impl Debug for SignCommitmentTx {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        // Sometimes c-lightning calls handle_sign_commitment_tx with mutual
-        // close transactions.  We can tell the difference because the locktime
-        // field will be set to 0 for a mutual close.
-        let name = if self.tx.0.lock_time.to_consensus_u32() == 0 {
-            "SignMutualCloseTx as a SignCommitmentTx"
-        } else {
-            "SignCommitmentTx"
-        };
-        f.debug_struct(name)
-            .field("peer_id", &self.peer_id)
-            .field("dbid", &self.dbid)
-            .field("tx", &self.tx)
-            .field("psbt", &self.psbt)
-            .field("remote_funding_key", &self.remote_funding_key)
-            .field("commitment_number", &self.commitment_number)
-            .finish()
-    }
+/// CLN only
+/// Same as [SignRemoteHtlcToUs] but called from lightningd
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(143)]
+pub struct SignAnyRemoteHtlcToUs {
+    pub remote_per_commitment_point: PubKey,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PsbtWrapper>,
+    pub wscript: Octets,
+    pub option_anchors: bool,
+    pub input: u32,
+    pub peer_id: PubKey,
+    pub dbid: u64,
+}
+
+/// Same as [SignPenaltyToUs] but called from lightningd
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(144)]
+pub struct SignAnyPenaltyToUs {
+    pub revocation_secret: DisclosedSecret,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PsbtWrapper>,
+    pub wscript: Octets,
+    pub input: u32,
+    pub peer_id: PubKey,
+    pub dbid: u64,
+}
+
+/// CLN only
+/// Same as [SignLocalHtlcTx] but called from lightningd
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(146)]
+pub struct SignAnyLocalHtlcTx {
+    pub commitment_number: u64,
+    pub tx: WithSize<Transaction>,
+    pub psbt: WithSize<PsbtWrapper>,
+    pub wscript: Octets,
+    pub option_anchors: bool,
+    pub input: u32,
+    pub peer_id: PubKey,
+    pub dbid: u64,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(147)]
+pub struct SignAnchorspend {
+    pub peer_id: PubKey,
+    pub dbid: u64,
+    pub utxos: Array<Utxo>,
+    pub psbt: WithSize<StreamedPSBT>,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(148)]
+pub struct SignAnchorspendReply {
+    pub psbt: WithSize<PsbtWrapper>,
+}
+
+/// CLN only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(149)]
+pub struct SignHtlcTxMingle {
+    pub peer_id: PubKey,
+    pub dbid: u64,
+    pub utxos: Array<Utxo>,
+    pub psbt: WithSize<StreamedPSBT>,
+}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(150)]
+pub struct SignHtlcTxMingleReply {
+    pub psbt: WithSize<PsbtWrapper>,
+}
+
+/// Ping request
+/// LDK only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(1000)]
+pub struct Ping {
+    pub id: u16,
+    pub message: WireString,
+}
+
+/// Ping reply
+/// LDK only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(1100)]
+pub struct Pong {
+    pub id: u16,
+    pub message: WireString,
 }
 
 ///
@@ -685,37 +853,54 @@ pub struct SignGossipMessageReply {
     pub signature: Signature,
 }
 
+/// Signer Init for LDK
+/// LDK only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(1011)]
+pub struct HsmdInit2 {
+    pub derivation_style: u8,
+    pub network_name: WireString,
+    pub dev_seed: Option<DevSecret>,
+    pub dev_allowlist: Array<WireString>,
+}
+
 ///
-/// CLN only
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(19)]
-pub struct SignRemoteCommitmentTx {
-    pub tx: WithSize<Transaction>,
-    pub psbt: WithSize<PsbtWrapper>,
-    pub remote_funding_key: PubKey,
-    pub remote_per_commitment_point: PubKey,
-    pub option_static_remotekey: bool,
+#[message_id(1111)]
+pub struct HsmdInit2Reply {
+    pub node_id: PubKey,
+    pub bip32: ExtKey,
+    pub bolt12: PubKey,
+}
+
+/// Get node public keys.
+/// Used by the frontend
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(1012)]
+pub struct NodeInfo {}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(1112)]
+pub struct NodeInfoReply {
+    pub network_name: WireString,
+    pub node_id: PubKey,
+    pub bip32: ExtKey,
+}
+
+/// Get per-commitment point
+/// LDK only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(1018)]
+pub struct GetPerCommitmentPoint2 {
     pub commitment_number: u64,
-    pub htlcs: Array<Htlc>,
-    pub feerate: u32,
 }
 
-/// Ping request
-/// LDK only
+///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(1000)]
-pub struct Ping {
-    pub id: u16,
-    pub message: WireString,
-}
-
-/// Ping reply
-/// LDK only
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(1100)]
-pub struct Pong {
-    pub id: u16,
-    pub message: WireString,
+#[message_id(1118)]
+pub struct GetPerCommitmentPoint2Reply {
+    pub point: PubKey,
 }
 
 ///
@@ -740,111 +925,6 @@ pub struct SignCommitmentTxWithHtlcsReply {
 }
 
 ///
-/// CLN only
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(12)]
-pub struct SignDelayedPaymentToUs {
-    pub commitment_number: u64,
-    pub tx: WithSize<Transaction>,
-    pub psbt: WithSize<PsbtWrapper>,
-    pub wscript: Octets,
-}
-
-/// CLN only
-/// Same as [SignDelayedPaymentToUs] but called from lightningd
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(142)]
-pub struct SignAnyDelayedPaymentToUs {
-    pub commitment_number: u64,
-    pub tx: WithSize<Transaction>,
-    pub psbt: WithSize<PsbtWrapper>,
-    pub wscript: Octets,
-    pub input: u32,
-    pub peer_id: PubKey,
-    pub dbid: u64,
-}
-
-///
-/// CLN only
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(13)]
-pub struct SignRemoteHtlcToUs {
-    pub remote_per_commitment_point: PubKey,
-    pub tx: WithSize<Transaction>,
-    pub psbt: WithSize<PsbtWrapper>,
-    pub wscript: Octets,
-    pub option_anchors: bool,
-}
-
-/// CLN only
-/// Same as [SignRemoteHtlcToUs] but called from lightningd
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(143)]
-pub struct SignAnyRemoteHtlcToUs {
-    pub remote_per_commitment_point: PubKey,
-    pub tx: WithSize<Transaction>,
-    pub psbt: WithSize<PsbtWrapper>,
-    pub wscript: Octets,
-    pub option_anchors: bool,
-    pub input: u32,
-    pub peer_id: PubKey,
-    pub dbid: u64,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(16)]
-pub struct SignLocalHtlcTx {
-    pub commitment_number: u64,
-    pub tx: WithSize<Transaction>,
-    pub psbt: WithSize<PsbtWrapper>,
-    pub wscript: Octets,
-    pub option_anchors: bool,
-}
-
-/// CLN only
-/// Same as [SignLocalHtlcTx] but called from lightningd
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(146)]
-pub struct SignAnyLocalHtlcTx {
-    pub commitment_number: u64,
-    pub tx: WithSize<Transaction>,
-    pub psbt: WithSize<PsbtWrapper>,
-    pub wscript: Octets,
-    pub option_anchors: bool,
-    pub input: u32,
-    pub peer_id: PubKey,
-    pub dbid: u64,
-}
-
-/// CLN only
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(149)]
-pub struct SignHtlcTxMingle {
-    pub peer_id: PubKey,
-    pub dbid: u64,
-    pub utxos: Array<Utxo>,
-    pub psbt: WithSize<StreamedPSBT>,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(150)]
-pub struct SignHtlcTxMingleReply {
-    pub psbt: WithSize<PsbtWrapper>,
-}
-
-///
-/// CLN only
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(21)]
-pub struct SignMutualCloseTx {
-    pub tx: WithSize<Transaction>,
-    pub psbt: WithSize<PsbtWrapper>,
-    pub remote_funding_key: PubKey,
-}
-
-///
 /// LDK only
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(1021)]
@@ -857,104 +937,17 @@ pub struct SignMutualCloseTx2 {
 }
 
 ///
-/// CLN only
+/// LDK only
 #[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(29)]
-pub struct SignSpliceTx {
-    pub tx: WithSize<Transaction>,
-    pub psbt: WithSize<PsbtWrapper>,
-    pub remote_funding_key: PubKey,
-    pub input_index: u32,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(105)]
-pub struct SignCommitmentTxReply {
+#[message_id(1035)]
+pub struct ValidateCommitmentTx2 {
+    pub commitment_number: u64,
+    pub feerate: u32,
+    pub to_local_value_sat: u64,
+    pub to_remote_value_sat: u64,
+    pub htlcs: Array<Htlc>,
     pub signature: BitcoinSignature,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(112)]
-pub struct SignTxReply {
-    pub signature: BitcoinSignature,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(30)]
-pub struct NewChannel {
-    pub peer_id: PubKey,
-    pub dbid: u64,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(130)]
-pub struct NewChannelReply {}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(10)]
-pub struct GetChannelBasepoints {
-    pub node_id: PubKey,
-    pub dbid: u64,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(110)]
-pub struct GetChannelBasepointsReply {
-    pub basepoints: Basepoints,
-    pub funding: PubKey,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(20)]
-pub struct SignRemoteHtlcTx {
-    pub tx: WithSize<Transaction>,
-    pub psbt: WithSize<PsbtWrapper>,
-    pub wscript: Octets,
-    pub remote_per_commitment_point: PubKey,
-    pub option_anchors: bool,
-}
-
-/// LDK message to sign a local HTLC transaction.
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(20)]
-pub struct SignLocalHtlcTx2 {
-    pub tx: WithSize<Transaction>,
-    pub input: u32,
-    pub per_commitment_number: u64,
-    pub offered: bool,
-    pub cltv_expiry: u32,
-    pub htlc_amount_msat: u64,
-    pub payment_hash: Sha256,
-}
-
-///
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(14)]
-pub struct SignPenaltyToUs {
-    pub revocation_secret: DisclosedSecret,
-    pub tx: WithSize<Transaction>,
-    pub psbt: WithSize<PsbtWrapper>,
-    pub wscript: Octets,
-}
-
-/// Same as [SignPenaltyToUs] but called from lightningd
-#[derive(SerBolt, Debug, Encodable, Decodable)]
-#[message_id(144)]
-pub struct SignAnyPenaltyToUs {
-    pub revocation_secret: DisclosedSecret,
-    pub tx: WithSize<Transaction>,
-    pub psbt: WithSize<PsbtWrapper>,
-    pub wscript: Octets,
-    pub input: u32,
-    pub peer_id: PubKey,
-    pub dbid: u64,
+    pub htlc_signatures: Array<BitcoinSignature>,
 }
 
 ///
@@ -1085,12 +1078,7 @@ pub struct BlockChunk {
 #[message_id(2109)]
 pub struct BlockChunkReply {}
 
-/// An unknown message
-#[derive(Debug, Decodable)]
-pub struct Unknown {
-    /// Message type
-    pub message_type: u16,
-}
+// Watcher reply struct declarations moved next to their requests above.
 
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(3000)]
@@ -1110,103 +1098,106 @@ pub const UNKNOWN_PLACEHOLDER: UnknownPlaceholder = UnknownPlaceholder {};
 /// An enum representing all messages we can read and write
 #[derive(ReadMessage, Debug)]
 pub enum Message {
-    Ping(Ping),
-    Pong(Pong),
+    Ecdh(Ecdh),
+    EcdhReply(EcdhReply),
+    SignChannelAnnouncement(SignChannelAnnouncement),
+    SignChannelAnnouncementReply(SignChannelAnnouncementReply),
+    SignChannelUpdate(SignChannelUpdate),
+    SignChannelUpdateReply(SignChannelUpdateReply),
+    SignAnyChannelAnnouncement(SignAnyChannelAnnouncement),
+    SignAnyChannelAnnouncementReply(SignAnyChannelAnnouncementReply),
+    SignCommitmentTx(SignCommitmentTx),
+    SignCommitmentTxReply(SignCommitmentTxReply),
+    SignNodeAnnouncement(SignNodeAnnouncement),
+    SignNodeAnnouncementReply(SignNodeAnnouncementReply),
+    SignWithdrawal(SignWithdrawal),
+    SignWithdrawalReply(SignWithdrawalReply),
+    SignInvoice(SignInvoice),
+    SignInvoiceReply(SignInvoiceReply),
+    ClientHsmFd(ClientHsmFd),
+    ClientHsmFdReply(ClientHsmFdReply),
+    GetChannelBasepoints(GetChannelBasepoints),
+    GetChannelBasepointsReply(GetChannelBasepointsReply),
+    HsmdInit(HsmdInit),
+    #[allow(deprecated)]
+    HsmdInitReplyV2(HsmdInitReplyV2),
+    HsmdInitReplyV4(HsmdInitReplyV4),
+
+    SignDelayedPaymentToUs(SignDelayedPaymentToUs),
+    SignTxReply(SignTxReply),
+    SignRemoteHtlcToUs(SignRemoteHtlcToUs),
+    SignPenaltyToUs(SignPenaltyToUs),
+    SignLocalHtlcTx(SignLocalHtlcTx),
+    GetPerCommitmentPoint(GetPerCommitmentPoint),
+    GetPerCommitmentPointReply(GetPerCommitmentPointReply),
+    SignRemoteCommitmentTx(SignRemoteCommitmentTx),
+    SignRemoteHtlcTx(SignRemoteHtlcTx),
+    SignLocalHtlcTx2(SignLocalHtlcTx2),
+    SignMutualCloseTx(SignMutualCloseTx),
+    CheckFutureSecret(CheckFutureSecret),
+    CheckFutureSecretReply(CheckFutureSecretReply),
+    SignMessage(SignMessage),
+    SignMessageReply(SignMessageReply),
+    SignBolt12(SignBolt12),
+    SignBolt12Reply(SignBolt12Reply),
+    DeriveSecret(DeriveSecret),
+    DeriveSecretReply(DeriveSecretReply),
+    CheckPubKey(CheckPubKey),
+    CheckPubKeyReply(CheckPubKeyReply),
+    SignSpliceTx(SignSpliceTx),
+    NewChannel(NewChannel),
+    NewChannelReply(NewChannelReply),
+    SetupChannel(SetupChannel),
+    SetupChannelReply(SetupChannelReply),
+    CheckOutpoint(CheckOutpoint),
+    CheckOutpointReply(CheckOutpointReply),
+    Memleak(Memleak),
+    MemleakReply(MemleakReply),
+    ForgetChannel(ForgetChannel),
+    ForgetChannelReply(ForgetChannelReply),
+    ValidateCommitmentTx(ValidateCommitmentTx),
+    ValidateCommitmentTxReply(ValidateCommitmentTxReply),
+    ValidateRevocation(ValidateRevocation),
+    ValidateRevocationReply(ValidateRevocationReply),
+    LockOutpoint(LockOutpoint),
+    LockOutpointReply(LockOutpointReply),
+    PreapproveInvoice(PreapproveInvoice),
+    PreapproveInvoiceReply(PreapproveInvoiceReply),
+    PreapproveKeysend(PreapproveKeysend),
+    PreapproveKeysendReply(PreapproveKeysendReply),
+    RevokeCommitmentTx(RevokeCommitmentTx),
+    RevokeCommitmentTxReply(RevokeCommitmentTxReply),
+    SignBolt12V2(SignBolt12V2),
+    SignBolt12V2Reply(SignBolt12V2Reply),
+    SignAnyDelayedPaymentToUs(SignAnyDelayedPaymentToUs),
+    SignAnyRemoteHtlcToUs(SignAnyRemoteHtlcToUs),
+    SignAnyPenaltyToUs(SignAnyPenaltyToUs),
+    SignAnyLocalHtlcTx(SignAnyLocalHtlcTx),
+    SignAnchorspend(SignAnchorspend),
+    SignAnchorspendReply(SignAnchorspendReply),
+    SignHtlcTxMingle(SignHtlcTxMingle),
+    SignHtlcTxMingleReply(SignHtlcTxMingleReply),
     #[cfg(feature = "developer")]
     HsmdDevPreinit(HsmdDevPreinit),
     #[cfg(feature = "developer")]
     HsmdDevPreinit2(HsmdDevPreinit2),
     #[cfg(feature = "developer")]
     HsmdDevPreinitReply(HsmdDevPreinitReply),
-    HsmdInit(HsmdInit),
-    // HsmdInitReplyV1(HsmdInitReplyV1),
-    #[allow(deprecated)]
-    HsmdInitReplyV2(HsmdInitReplyV2),
-    HsmdInitReplyV4(HsmdInitReplyV4),
-    HsmdInit2(HsmdInit2),
-    HsmdInit2Reply(HsmdInit2Reply),
-    ClientHsmFd(ClientHsmFd),
-    ClientHsmFdReply(ClientHsmFdReply),
-    SignInvoice(SignInvoice),
-    SignInvoiceReply(SignInvoiceReply),
-    SignWithdrawal(SignWithdrawal),
-    SignWithdrawalReply(SignWithdrawalReply),
-    Ecdh(Ecdh),
-    EcdhReply(EcdhReply),
-    Memleak(Memleak),
-    MemleakReply(MemleakReply),
-    CheckFutureSecret(CheckFutureSecret),
-    CheckFutureSecretReply(CheckFutureSecretReply),
-    SignBolt12(SignBolt12),
-    SignBolt12V2(SignBolt12V2),
-    SignBolt12Reply(SignBolt12Reply),
-    SignBolt12V2Reply(SignBolt12V2Reply),
-    PreapproveInvoice(PreapproveInvoice),
-    PreapproveInvoiceReply(PreapproveInvoiceReply),
-    PreapproveKeysend(PreapproveKeysend),
-    PreapproveKeysendReply(PreapproveKeysendReply),
-    DeriveSecret(DeriveSecret),
-    DeriveSecretReply(DeriveSecretReply),
-    CheckPubKey(CheckPubKey),
-    CheckPubKeyReply(CheckPubKeyReply),
-    SignAnchorspend(SignAnchorspend),
-    SignAnchorspendReply(SignAnchorspendReply),
-    SignMessage(SignMessage),
-    SignMessageReply(SignMessageReply),
-    SignChannelUpdate(SignChannelUpdate),
-    SignChannelUpdateReply(SignChannelUpdateReply),
-    SignChannelAnnouncement(SignChannelAnnouncement),
-    SignChannelAnnouncementReply(SignChannelAnnouncementReply),
-    SignAnyChannelAnnouncement(SignAnyChannelAnnouncement),
-    SignAnyChannelAnnouncementReply(SignAnyChannelAnnouncementReply),
-    SignNodeAnnouncement(SignNodeAnnouncement),
-    SignNodeAnnouncementReply(SignNodeAnnouncementReply),
-    GetPerCommitmentPoint(GetPerCommitmentPoint),
-    GetPerCommitmentPointReply(GetPerCommitmentPointReply),
-    GetPerCommitmentPoint2(GetPerCommitmentPoint2),
-    GetPerCommitmentPoint2Reply(GetPerCommitmentPoint2Reply),
-    SetupChannel(SetupChannel),
-    SetupChannelReply(SetupChannelReply),
-    ForgetChannel(ForgetChannel),
-    ForgetChannelReply(ForgetChannelReply),
-    CheckOutpoint(CheckOutpoint),
-    CheckOutpointReply(CheckOutpointReply),
-    LockOutpoint(LockOutpoint),
-    LockOutpointReply(LockOutpointReply),
-    ValidateCommitmentTx(ValidateCommitmentTx),
-    ValidateCommitmentTx2(ValidateCommitmentTx2),
-    ValidateCommitmentTxReply(ValidateCommitmentTxReply),
-    RevokeCommitmentTx(RevokeCommitmentTx),
-    RevokeCommitmentTxReply(RevokeCommitmentTxReply),
-    ValidateRevocation(ValidateRevocation),
-    ValidateRevocationReply(ValidateRevocationReply),
-    SignRemoteCommitmentTx(SignRemoteCommitmentTx),
-    SignRemoteCommitmentTx2(SignRemoteCommitmentTx2),
-    SignCommitmentTxWithHtlcsReply(SignCommitmentTxWithHtlcsReply),
-    SignDelayedPaymentToUs(SignDelayedPaymentToUs),
-    SignAnyDelayedPaymentToUs(SignAnyDelayedPaymentToUs),
-    SignRemoteHtlcToUs(SignRemoteHtlcToUs),
-    SignAnyRemoteHtlcToUs(SignAnyRemoteHtlcToUs),
-    SignLocalHtlcTx(SignLocalHtlcTx),
-    SignAnyLocalHtlcTx(SignAnyLocalHtlcTx),
-    SignCommitmentTx(SignCommitmentTx),
+    Ping(Ping),
+    Pong(Pong),
     SignLocalCommitmentTx2(SignLocalCommitmentTx2),
     SignGossipMessage(SignGossipMessage),
-    SignMutualCloseTx(SignMutualCloseTx),
+    SignGossipMessageReply(SignGossipMessageReply),
+    HsmdInit2(HsmdInit2),
+    HsmdInit2Reply(HsmdInit2Reply),
+    NodeInfo(NodeInfo),
+    NodeInfoReply(NodeInfoReply),
+    GetPerCommitmentPoint2(GetPerCommitmentPoint2),
+    GetPerCommitmentPoint2Reply(GetPerCommitmentPoint2Reply),
+    SignRemoteCommitmentTx2(SignRemoteCommitmentTx2),
+    SignCommitmentTxWithHtlcsReply(SignCommitmentTxWithHtlcsReply),
     SignMutualCloseTx2(SignMutualCloseTx2),
-    SignTxReply(SignTxReply),
-    SignCommitmentTxReply(SignCommitmentTxReply),
-    GetChannelBasepoints(GetChannelBasepoints),
-    GetChannelBasepointsReply(GetChannelBasepointsReply),
-    NewChannel(NewChannel),
-    NewChannelReply(NewChannelReply),
-    SignRemoteHtlcTx(SignRemoteHtlcTx),
-    SignLocalHtlcTx2(SignLocalHtlcTx2),
-    SignPenaltyToUs(SignPenaltyToUs),
-    SignAnyPenaltyToUs(SignAnyPenaltyToUs),
-    SignSpliceTx(SignSpliceTx),
-    SignHtlcTxMingle(SignHtlcTxMingle),
-    SignHtlcTxMingleReply(SignHtlcTxMingleReply),
+    ValidateCommitmentTx2(ValidateCommitmentTx2),
     TipInfo(TipInfo),
     TipInfoReply(TipInfoReply),
     ForwardWatches(ForwardWatches),
@@ -1219,12 +1210,10 @@ pub enum Message {
     RemoveBlockReply(RemoveBlockReply),
     GetHeartbeat(GetHeartbeat),
     GetHeartbeatReply(GetHeartbeatReply),
-    NodeInfo(NodeInfo),
-    NodeInfoReply(NodeInfoReply),
     BlockChunk(BlockChunk),
     BlockChunkReply(BlockChunkReply),
-    Unknown(Unknown),
     SignerError(SignerError),
+    Unknown(Unknown),
 }
 
 /// Read a length framed BOLT message of any type:
