@@ -271,7 +271,8 @@ fn track_char(msg: &Message) -> char {
         | Message::AddBlockReply(_)
         | Message::RemoveBlockReply(_)
         | Message::GetHeartbeatReply(_)
-        | Message::SignGossipMessage(_) => {
+        | Message::SignGossipMessage(_)
+        | Message::SignGossipMessageReply(_) => {
             panic!("{:?} invalid in this context", msg);
         }
     }

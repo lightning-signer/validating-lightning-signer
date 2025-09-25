@@ -1,46 +1,106 @@
-msgtype,hsmstatus_client_bad_request,1000
-DONE msgtype,hsmd_init,11
-DONE msgtype,hsmd_init_reply,111
-
-DONE msgtype,hsmd_client_hsmfd,9
-DONE msgtype,hsmd_client_hsmfd_reply,109
-# but need to pass fd
-
-DONE msgtype,hsmd_get_channel_basepoints,10
-DONE msgtype,hsmd_get_channel_basepoints_reply,110
-msgtype,hsmd_node_announcement_sig_req,6
-msgtype,hsmd_node_announcement_sig_reply,106
-msgtype,hsmd_sign_withdrawal,7
-msgtype,hsmd_sign_withdrawal_reply,107
-DONE msgtype,hsmd_sign_invoice,8
-DONE msgtype,hsmd_sign_invoice_reply,108
-DONE msgtype,hsmd_ecdh_req,1
-DONE msgtype,hsmd_ecdh_resp,100
-msgtype,hsmd_cannouncement_sig_req,2
-msgtype,hsmd_cannouncement_sig_reply,102
-DONE msgtype,hsmd_cupdate_sig_req,3
-DONE msgtype,hsmd_cupdate_sig_reply,103
-msgtype,hsmd_sign_commitment_tx,5
-msgtype,hsmd_sign_commitment_tx_reply,105
-msgtype,hsmd_sign_delayed_payment_to_us,12
-msgtype,hsmd_sign_remote_htlc_to_us,13
-msgtype,hsmd_sign_penalty_to_us,14
-msgtype,hsmd_sign_local_htlc_tx,16
-DONE msgtype,hsmd_sign_remote_commitment_tx,19
-msgtype,hsmd_sign_remote_htlc_tx,20
-msgtype,hsmd_sign_mutual_close_tx,21
-DONE msgtype,hsmd_sign_tx_reply,112
-DONE msgtype,hsmd_get_per_commitment_point,18
-DONE msgtype,hsmd_get_per_commitment_point_reply,118
-DONE msgtype,hsmd_dev_memleak,33
-DONE msgtype,hsmd_dev_memleak_reply,133
-msgtype,hsmd_check_future_secret,22
-msgtype,hsmd_check_future_secret_reply,122
-msgtype,hsmd_sign_message,23
-msgtype,hsmd_sign_message_reply,123
-msgtype,hsmd_get_output_scriptpubkey,24
-msgtype,hsmd_get_output_scriptpubkey_reply,124
-msgtype,hsmd_sign_bolt12,25
-msgtype,hsmd_sign_bolt12_reply,125
-msgtype,hsmd_sign_option_will_fund_offer,26
-msgtype,hsmd_sign_option_will_fund_offer_reply,126
+msgtype,name,id,status
+msgtype,hsmd_ecdh_req,1,done
+msgtype,hsmd_ecdh_resp,100,done
+msgtype,hsmd_cannouncement_sig_req,2,done
+msgtype,hsmd_cannouncement_sig_reply,102,done
+msgtype,hsmd_cupdate_sig_req,3,done
+msgtype,hsmd_cupdate_sig_reply,103,done
+msgtype,hsmd_sign_any_cannouncement_req,4,done
+msgtype,hsmd_sign_any_cannouncement_reply,104,done
+msgtype,hsmd_sign_commitment_tx,5,done
+msgtype,hsmd_sign_commitment_tx_reply,105,done
+msgtype,hsmd_node_announcement_sig_req,6,done
+msgtype,hsmd_node_announcement_sig_reply,106,done
+msgtype,hsmd_sign_withdrawal,7,done
+msgtype,hsmd_sign_withdrawal_reply,107,done
+msgtype,hsmd_sign_invoice,8,done
+msgtype,hsmd_sign_invoice_reply,108,done
+msgtype,hsmd_client_hsmfd,9,done
+msgtype,hsmd_client_hsmfd_reply,109,partial
+msgtype,hsmd_get_channel_basepoints,10,done
+msgtype,hsmd_get_channel_basepoints_reply,110,done
+msgtype,hsmd_init,11,done
+msgtype,hsmd_init_reply_v2,113,done
+msgtype,hsmd_init_reply_v4,114,done
+msgtype,hsmd_sign_delayed_payment_to_us,12,done
+msgtype,hsmd_sign_tx_reply,112,done
+msgtype,hsmd_sign_remote_htlc_to_us,13,done
+msgtype,hsmd_sign_penalty_to_us,14,done
+msgtype,hsmd_sign_local_htlc_tx,16,done
+msgtype,hsmd_get_per_commitment_point,18,done
+msgtype,hsmd_get_per_commitment_point_reply,118,done
+msgtype,hsmd_sign_remote_commitment_tx,19,done
+msgtype,ldk_sign_local_htlc_tx_2,20,done
+msgtype,hsmd_sign_remote_htlc_tx,20,done
+msgtype,hsmd_sign_mutual_close_tx,21,done
+msgtype,hsmd_check_future_secret,22,done
+msgtype,hsmd_check_future_secret_reply,122,done
+msgtype,hsmd_sign_message,23,done
+msgtype,hsmd_sign_message_reply,123,done
+msgtype,hsmd_get_output_scriptpubkey,24,missing
+msgtype,hsmd_get_output_scriptpubkey_reply,124,missing
+msgtype,hsmd_sign_bolt12,25,done
+msgtype,hsmd_sign_bolt12_reply,125,done
+msgtype,hsmd_sign_option_will_fund_offer,26,missing
+msgtype,hsmd_sign_option_will_fund_offer_reply,126,missing
+msgtype,hsmd_derive_secret,27,done
+msgtype,hsmd_derive_secret_reply,127,done
+msgtype,hsmd_check_pubkey,28,done
+msgtype,hsmd_check_pubkey_reply,128,done
+msgtype,hsmd_sign_splice_tx,29,done
+msgtype,hsmd_new_channel,30,done
+msgtype,hsmd_new_channel_reply,130,done
+msgtype,hsmd_setup_channel,31,done
+msgtype,hsmd_setup_channel_reply,131,done
+msgtype,hsmd_check_outpoint,32,done
+msgtype,hsmd_check_outpoint_reply,132,done
+msgtype,hsmd_dev_memleak,33,done
+msgtype,hsmd_dev_memleak_reply,133,done
+msgtype,hsmd_forget_channel,34,done
+msgtype,hsmd_forget_channel_reply,134,done
+msgtype,hsmd_validate_commitment_tx,35,done
+msgtype,hsmd_validate_commitment_tx_reply,135,done
+msgtype,hsmd_validate_revocation,36,done
+msgtype,hsmd_validate_revocation_reply,136,done
+msgtype,hsmd_lock_outpoint,37,done
+msgtype,hsmd_lock_outpoint_reply,137,done
+msgtype,hsmd_preapprove_invoice,38,done
+msgtype,hsmd_preapprove_invoice_reply,138,done
+msgtype,hsmd_preapprove_keysend,39,done
+msgtype,hsmd_preapprove_keysend_reply,139,done
+msgtype,hsmd_revoke_commitment_tx,40,done
+msgtype,hsmd_revoke_commitment_tx_reply,140,done
+msgtype,hsmd_sign_bolt12_2,41,done
+msgtype,hsmd_sign_bolt12_2_reply,141,done
+msgtype,hsmd_bip137_sign_message,45,missing
+msgtype,hsmd_bip137_sign_message_reply,145,missing
+msgtype,hsmd_preapprove_invoice_check,51,missing
+msgtype,hsmd_preapprove_invoice_check_reply,151,missing
+msgtype,hsmd_preapprove_keysend_check,52,missing
+msgtype,hsmd_preapprove_keysend_check_reply,152,missing
+msgtype,hsmd_dev_preinit_v1,90,done
+msgtype,hsmd_dev_preinit,99,done
+msgtype,hsmd_dev_preinit_reply,190,done
+msgtype,hsmd_sign_any_delayed_payment_to_us,142,done
+msgtype,hsmd_sign_any_remote_htlc_to_us,143,done
+msgtype,hsmd_sign_any_penalty_to_us,144,done
+msgtype,hsmd_sign_any_local_htlc_tx,146,done
+msgtype,hsmd_sign_anchorspend,147,done
+msgtype,hsmd_sign_anchorspend_reply,148,done
+msgtype,hsmd_sign_htlc_tx_mingle,149,done
+msgtype,hsmd_sign_htlc_tx_mingle_reply,150,done
+msgtype,ldk_ping,1000,done
+msgtype,ldk_pong,1100,done
+msgtype,ldk_sign_local_commitment_tx_2,1005,done
+msgtype,ldk_sign_gossip_message,1006,done
+msgtype,ldk_sign_gossip_message_reply,1106,done
+msgtype,ldk_hsmd_init_2,1011,done
+msgtype,ldk_hsmd_init_2_reply,1111,done
+msgtype,ldk_node_info,1012,done
+msgtype,ldk_node_info_reply,1112,done
+msgtype,ldk_get_per_commitment_point_2,1018,done
+msgtype,ldk_get_per_commitment_point_2_reply,1118,done
+msgtype,ldk_sign_remote_commitment_tx_2,1019,done
+msgtype,ldk_sign_commitment_tx_with_htlcs_reply,1119,done
+msgtype,ldk_sign_mutual_close_tx_2,1021,done
+msgtype,ldk_validate_commitment_tx_2,1035,done
