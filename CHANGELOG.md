@@ -16,6 +16,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - proxy: new datadir parameter for socket_main
 - proxy: new log-trace cli flag for remote_hsmd_socket binary
 - lss: etcd driver
+- monitor: Implemented tracking of second-level HTLC outputs
+- vls-cli: new address list and verify commands
+- workspace: Add Cargo Deny config and CI job.
 
 ### Changed
 
@@ -26,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - core: move allowlist into NodeState
 - core: rename sign_invoice to sign_bolt11_invoice and simplify params
 - vlsd2 has been renamed to vlsd
+- core: Replace use of [u32] with DerivationPath struct to improve type safety
+- deps: unify workspace dependencies
 
 ### Fixed
 
