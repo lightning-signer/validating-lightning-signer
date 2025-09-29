@@ -422,6 +422,8 @@ impl ChannelSigner for SignerClient {
         let commitment_type = if features.supports_anchors_zero_fee_htlc_tx() {
             CommitmentType::AnchorsZeroFeeHtlc
         } else if features.supports_anchors_nonzero_fee_htlc_tx() {
+            // simple_validator::validate_setup_channel will
+            // stop non zero anchors fee with `policy-channel-safe-type`
             CommitmentType::Anchors
         } else {
             CommitmentType::StaticRemoteKey

@@ -55,12 +55,6 @@ Install log rotation config file (edit to suit preferences):
 sudo cp ~/lightning-signer/vls-hsmd/vls/contrib/howto/assets/vls-testnet.logrotate /etc/logrotate.d/vls-testnet
 ```
 
-If you would like to allow legacy anchor channels (non-zero-fee anchors) you should
-add the following line to `/home/vls/vlsd.toml`:
-```bash
-policy-filter = "policy-channel-safe-type-anchors:warn"
-```
-
 Enable the  service for automatic start on system boot:
 ```bash
 sudo systemctl enable vls-testnet

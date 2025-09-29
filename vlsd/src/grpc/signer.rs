@@ -14,7 +14,7 @@ use lightning_signer::node::{Node, NodeServices};
 use lightning_signer::persist::fs::FileSeedPersister;
 use lightning_signer::persist::Error as PersistError;
 use lightning_signer::persist::{ExternalPersistHelper, Mutations, Persist, SeedPersist};
-use lightning_signer::policy::filter::{FilterRule, PolicyFilter};
+use lightning_signer::policy::filter::PolicyFilter;
 use lightning_signer::policy::DEFAULT_FEE_VELOCITY_CONTROL;
 use lightning_signer::signer::ClockStartingTimeFactory;
 use lightning_signer::util::clock::StandardClock;
@@ -131,12 +131,7 @@ pub fn make_handler_builder(
     let seed = get_or_generate_seed(network, seed_persister, args.integration_test, Some(seeddir));
     let allowlist = read_allowlist();
     let starting_time_factory = ClockStartingTimeFactory::new();
-    let mut filter_opt = if args.integration_test {
-        // TODO(236)
-        Some(PolicyFilter { rules: vec![FilterRule::new_warn("policy-channel-safe-type-anchors")] })
-    } else {
-        None
-    };
+    let mut filter_opt = None;
 
     if !args.policy_filter.is_empty() {
         let mut filter = filter_opt.unwrap_or(PolicyFilter::default());
