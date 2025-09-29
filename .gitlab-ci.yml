@@ -379,7 +379,7 @@ integration-lnrod-grpc:
   artifacts:
     when: always
     paths:
-      - test-output
+      - lnrod/test-output
 
 integration-lnrod-grpc-disaster-recovery:
   stage: test
@@ -398,4 +398,4 @@ integration-lnrod-grpc-disaster-recovery:
   artifacts:
     when: always
     paths:
-      - test-output
+      - lnrod/test-output
