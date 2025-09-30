@@ -164,8 +164,7 @@ mod tests {
             .with_channel(&channel_id, |chan| {
                 let channel_parameters = chan.make_channel_parameters();
                 let parameters = channel_parameters.as_counterparty_broadcastable();
-                let mut htlcs =
-                    Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
+                let mut htlcs = Channel::htlcs_info2_to_oic(&offered_htlcs, &received_htlcs);
                 let keys = chan.make_counterparty_tx_keys(&remote_percommitment_point);
                 let to_broadcaster_value_sat = 1_000_000;
                 let to_countersignatory_value_sat = 1_979_997;
@@ -370,7 +369,7 @@ mod tests {
             // Mutate the tx creation keys.
             keysmut(&mut keys);
 
-            let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
+            let htlcs = Channel::htlcs_info2_to_oic(&offered_htlcs, &received_htlcs);
 
             let redeem_scripts = build_tx_scripts(
                 &keys,
@@ -966,7 +965,7 @@ mod tests {
         parameters: &DirectedChannelTransactionParameters,
         keys: TxCreationKeys,
     ) -> (Vec<Vec<u8>>, BuiltCommitmentTransaction) {
-        let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
+        let htlcs = Channel::htlcs_info2_to_oic(&offered_htlcs, &received_htlcs);
         let redeem_scripts = build_tx_scripts(
             &keys,
             to_countersignatory,

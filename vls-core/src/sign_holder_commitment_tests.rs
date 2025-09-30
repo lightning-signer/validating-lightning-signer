@@ -195,8 +195,8 @@ mod tests {
             let txkeys = chan.make_holder_tx_keys(&per_commitment_point);
 
             let htlcs = Channel::htlcs_info2_to_oic(
-                commit_tx_ctx.offered_htlcs.clone(),
-                commit_tx_ctx.received_htlcs.clone(),
+                &commit_tx_ctx.offered_htlcs,
+                &commit_tx_ctx.received_htlcs,
             );
 
             let commitment_tx = chan.make_holder_commitment_tx(

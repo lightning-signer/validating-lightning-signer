@@ -766,7 +766,7 @@ impl Channel {
             &info2,
         )?;
 
-        let htlcs = Self::htlcs_info2_to_oic(offered_htlcs, received_htlcs);
+        let htlcs = Self::htlcs_info2_to_oic(&offered_htlcs, &received_htlcs);
 
         #[cfg(fuzzing)]
         let htlcs_len = htlcs.len();
@@ -1107,8 +1107,7 @@ impl Channel {
                 ve
             })?;
 
-        let htlcs =
-            Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
+        let htlcs = Self::htlcs_info2_to_oic(&info2.offered_htlcs, &info2.received_htlcs);
 
         let txkeys = self.make_holder_tx_keys(&per_commitment_point);
         // policy-commitment-*
@@ -1250,7 +1249,7 @@ impl Channel {
         let info2 = validator
             .get_current_holder_commitment_info(&mut self.enforcement_state, commitment_number)?;
 
-        let htlcs = Self::htlcs_info2_to_oic(info2.offered_htlcs, info2.received_htlcs);
+        let htlcs = Self::htlcs_info2_to_oic(&info2.offered_htlcs, &info2.received_htlcs);
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };
@@ -1316,8 +1315,7 @@ impl Channel {
         let commitment_number = self.enforcement_state.next_holder_commit_num - 1;
         warn!("force-closing channel for recovery at commitment number {}", commitment_number);
 
-        let htlcs =
-            Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
+        let htlcs = Self::htlcs_info2_to_oic(&info2.offered_htlcs, &info2.received_htlcs);
         let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
 
         let build_feerate = if self.setup.is_zero_fee_htlc() { 0 } else { info2.feerate_per_kw };
@@ -1419,7 +1417,7 @@ impl Channel {
             &info2,
         )?;
 
-        let htlcs = Self::htlcs_info2_to_oic(offered_htlcs, received_htlcs);
+        let htlcs = Self::htlcs_info2_to_oic(&offered_htlcs, &received_htlcs);
 
         // We provide a dummy signature for the remote, since we don't require that sig
         // to be passed in to this call.  It would have been better if HolderCommitmentTransaction
@@ -1490,8 +1488,8 @@ impl Channel {
 
     /// Public for testing purposes
     pub fn htlcs_info2_to_oic(
-        offered_htlcs: Vec<HTLCInfo2>,
-        received_htlcs: Vec<HTLCInfo2>,
+        offered_htlcs: &[HTLCInfo2],
+        received_htlcs: &[HTLCInfo2],
     ) -> Vec<HTLCOutputInCommitment> {
         let mut htlcs = Vec::new();
         for htlc in offered_htlcs {
@@ -1818,7 +1816,7 @@ impl Channel {
             feerate,
             value_to_holder,
             0,
-            Channel::htlcs_info2_to_oic(offered_htlcs.clone(), vec![]),
+            Channel::htlcs_info2_to_oic(&offered_htlcs, &vec![]),
         );
 
         let trusted_tx = tx.trust();
@@ -2118,8 +2116,7 @@ impl Channel {
                 ve
             })?;
 
-        let htlcs =
-            Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
+        let htlcs = Self::htlcs_info2_to_oic(&info2.offered_htlcs, &info2.received_htlcs);
 
         let recomposed_tx = self.make_counterparty_commitment_tx(
             remote_per_commitment_point,
@@ -2299,8 +2296,7 @@ impl Channel {
                 ve
             })?;
 
-        let htlcs =
-            Self::htlcs_info2_to_oic(info2.offered_htlcs.clone(), info2.received_htlcs.clone());
+        let htlcs = Self::htlcs_info2_to_oic(&info2.offered_htlcs, &info2.received_htlcs);
 
         let recomposed_tx = self.make_holder_commitment_tx(
             commitment_number,

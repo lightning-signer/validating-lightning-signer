@@ -1741,7 +1741,7 @@ fn extract_psbt_witscripts(psbt: &Psbt) -> Vec<Vec<u8>> {
         .collect()
 }
 
-fn extract_htlcs(htlcs: &Vec<Htlc>) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
+fn extract_htlcs(htlcs: &[Htlc]) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
     let offered_htlcs: Vec<HTLCInfo2> = htlcs
         .iter()
         .filter(|h| h.side == Htlc::LOCAL)

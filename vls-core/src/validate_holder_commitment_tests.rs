@@ -110,8 +110,8 @@ mod tests {
             counterparty_sign_holder_commitment(&node_ctx, &chan_ctx, &mut commit_tx_ctx);
 
         let htlcs = Channel::htlcs_info2_to_oic(
-            commit_tx_ctx.offered_htlcs.clone(),
-            commit_tx_ctx.received_htlcs.clone(),
+            &commit_tx_ctx.offered_htlcs,
+            &commit_tx_ctx.received_htlcs,
         );
 
         let _ = node_ctx.node.with_channel(&chan_ctx.channel_id, |chan| {
@@ -401,8 +401,8 @@ mod tests {
             mutate_keys(&mut KeysMutationState { keys: &mut keys });
 
             let htlcs = Channel::htlcs_info2_to_oic(
-                commit_tx_ctx.offered_htlcs.clone(),
-                commit_tx_ctx.received_htlcs.clone(),
+                &commit_tx_ctx.offered_htlcs,
+                &commit_tx_ctx.received_htlcs,
             );
             let redeem_scripts = build_tx_scripts(
                 &keys,
