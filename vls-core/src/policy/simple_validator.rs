@@ -22,8 +22,8 @@ use super::filter::{FilterResult, PolicyFilter};
 use super::validator::EnforcementState;
 use super::validator::{ChainState, Validator, ValidatorFactory};
 use super::{
-    policy_error_with_filter, Policy, DEFAULT_FEE_VELOCITY_CONTROL, MAX_CHANNELS, MAX_INVOICES,
-    MAX_ONCHAIN_TX_SIZE,
+    policy_error_with_filter, Policy, DEFAULT_FEE_VELOCITY_CONTROL, MAX_CHANNELS, MAX_CLTV_EXPIRY,
+    MAX_INVOICES, MAX_ONCHAIN_TX_SIZE,
 };
 use crate::channel::{ChannelId, ChannelSetup, ChannelSlot, CommitmentType};
 use crate::policy::temporary_policy_error_with_filter;
@@ -238,6 +238,17 @@ impl SimpleValidator {
         current_height: u32,
     ) -> Result<(), ValidationError> {
         let policy = &self.policy;
+
+        if expiry >= MAX_CLTV_EXPIRY {
+            policy_err!(
+                self,
+                "policy-commitment-htlc-cltv-range",
+                "{} expiry too late: {} > {}",
+                name,
+                expiry,
+                MAX_CLTV_EXPIRY
+            );
+        }
 
         if policy.use_chain_state {
             if expiry < current_height + policy.min_delay as u32 {
@@ -2008,7 +2019,6 @@ mod tests {
     use lightning::types::payment::PaymentHash;
     use test_log::test;
 
-    use crate::policy::filter::FilterRule;
     use crate::tx::tx::HTLCInfo2;
     use crate::util::test_utils::key::*;
     use crate::util::test_utils::*;
@@ -2425,6 +2435,7 @@ mod tests {
 
     #[test]
     fn validate_commitment_tx_htlc_delay_test() {
+        // setup
         let validator = make_test_validator();
         let mut enforcement_state = EnforcementState::new(0);
         let commit_num = 23;
@@ -2434,6 +2445,7 @@ mod tests {
         let commit_point = make_test_pubkey(0x12);
         let cstate = make_test_chain_state();
         let setup = make_test_channel_setup();
+
         let info_good =
             make_counterparty_info(2_000_000, 990_000, vec![], vec![make_htlc_info2(1005)]);
         assert_validation_ok!(validator.validate_commitment_tx(
@@ -2444,6 +2456,7 @@ mod tests {
             &cstate,
             &info_good,
         ));
+
         let info_good =
             make_counterparty_info(2_000_000, 990_000, vec![], vec![make_htlc_info2(2440)]);
         assert_validation_ok!(validator.validate_commitment_tx(
@@ -2454,6 +2467,7 @@ mod tests {
             &cstate,
             &info_good,
         ));
+
         let info_bad =
             make_counterparty_info(2_000_000, 990_000, vec![], vec![make_htlc_info2(1004)]);
         assert_policy_err!(
@@ -2468,6 +2482,7 @@ mod tests {
             "policy-commitment-htlc-cltv-range",
             "validate_expiry: received HTLC expiry too early: 1004 < 1005"
         );
+
         let info_bad =
             make_counterparty_info(2_000_000, 990_000, vec![], vec![make_htlc_info2(2441)]);
         assert_policy_err!(
@@ -2481,6 +2496,21 @@ mod tests {
             ),
             "policy-commitment-htlc-cltv-range",
             "validate_expiry: received HTLC expiry too late: 2441 > 2440"
+        );
+
+        let info_bad =
+            make_counterparty_info(2_000_000, 990_000, vec![], vec![make_htlc_info2(500000010)]);
+        assert_policy_err!(
+            validator.validate_commitment_tx(
+                &enforcement_state,
+                commit_num,
+                &commit_point,
+                &setup,
+                &cstate,
+                &info_bad,
+            ),
+            "policy-commitment-htlc-cltv-range",
+            "validate_expiry: received HTLC expiry too late: 500000010 > 500000000"
         );
     }
 
