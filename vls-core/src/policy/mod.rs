@@ -42,6 +42,9 @@ pub const MIN_INVOICE_EXPIRY: Duration = Duration::from_secs(60);
 /// Allowed clock skew (e.g. from invoice issuer to us)
 pub const MAX_CLOCK_SKEW: Duration = Duration::from_secs(60);
 
+/// Maximum allowed CLTV expiry as per BOLT2
+pub const MAX_CLTV_EXPIRY: u32 = 500_000_000;
+
 /// An enforcement policy
 pub trait Policy: Send + Sync {
     /// A policy error has occurred.

@@ -1094,7 +1094,7 @@ pub fn channel_commitment(
     offered_htlcs: Vec<HTLCInfo2>,
     received_htlcs: Vec<HTLCInfo2>,
 ) -> TestCommitmentTxContext {
-    let htlcs = Channel::htlcs_info2_to_oic(offered_htlcs.clone(), received_htlcs.clone());
+    let htlcs = Channel::htlcs_info2_to_oic(&offered_htlcs, &received_htlcs);
     node_ctx
         .node
         .with_channel(&chan_ctx.channel_id, |chan| {
@@ -1254,10 +1254,8 @@ pub fn validate_holder_commitment(
     commit_sig: &Signature,
     htlc_sigs: &[Signature],
 ) -> Result<(PublicKey, Option<SecretKey>), Status> {
-    let htlcs = Channel::htlcs_info2_to_oic(
-        commit_tx_ctx.offered_htlcs.clone(),
-        commit_tx_ctx.received_htlcs.clone(),
-    );
+    let htlcs =
+        Channel::htlcs_info2_to_oic(&commit_tx_ctx.offered_htlcs, &commit_tx_ctx.received_htlcs);
     node_ctx.node.with_channel(&chan_ctx.channel_id, |chan| {
         let channel_parameters = chan.make_channel_parameters();
         let parameters = channel_parameters.as_holder_broadcastable();
@@ -1746,8 +1744,8 @@ where
         mutate_keys(&mut keys);
 
         let htlcs = Channel::htlcs_info2_to_oic(
-            commit_tx_ctx.offered_htlcs.clone(),
-            commit_tx_ctx.received_htlcs.clone(),
+            &commit_tx_ctx.offered_htlcs,
+            &commit_tx_ctx.received_htlcs,
         );
         let redeem_scripts = build_tx_scripts(
             &keys,
