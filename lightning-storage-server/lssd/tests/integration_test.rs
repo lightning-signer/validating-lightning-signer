@@ -59,7 +59,7 @@ async fn test_postgres_database() {
 #[cfg(feature = "etcd")]
 #[tokio::test]
 async fn test_etcd_database() {
-    let etcd_container = GenericImage::new("bitnami/etcd", "latest")
+    let etcd_container = GenericImage::new("bitnamilegacy/etcd", "3.6.4")
         .with_exposed_port(2379.tcp())
         .with_exposed_port(2380.tcp())
         .with_wait_for(WaitFor::seconds(10))
