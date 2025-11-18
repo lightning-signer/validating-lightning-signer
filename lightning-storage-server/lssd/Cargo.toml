@@ -7,8 +7,7 @@ edition = "2021"
 description = "The Lightning Storage Server Daemon"
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
-rust-version = "1.75.0"
-# testcontainers increase the MSRV to 1.75.0 for development
+rust-version = "1.74.0"
 
 [features]
 dangerous-flags = []
@@ -44,26 +43,7 @@ url = { version = "2.3", optional = true }
 bitcoin_hashes = { workspace = true, optional = true }
 etcd-client = { version = "0.14", optional = true }
 
-[dev-dependencies]
-lssd = { path = ".", features = ["postgres", "dangerous-flags", "cli", "etcd"] }
-tempfile = "3"
-bitcoin_hashes = { workspace = true }
-test-log = "0.2.12"
-testcontainers = "0.23.0"
-
 [[bin]]
 name = "lss-cli"
 path = "src/client_main.rs"
 required-features = ["cli"]
-
-[[bench]]
-name = "postgres_bench"
-harness = false
-
-[[bench]]
-name = "redb_bench"
-harness = false
-
-[[bench]]
-name = "etcd_bench"
-harness = false
