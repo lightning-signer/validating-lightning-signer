@@ -67,6 +67,13 @@ Changing linker to `mold` instead of `ld`:
 
     cp .cargo/config.sample.toml .cargo/config.toml
 
+### Updating Dependencies
+
+There are a few crates with lock files. You can update them all and
+view the results of `cargo audit` in one command:
+
+    scripts/update-all
+
 ## Benchmarks
 
 ### Running Benchmarks
