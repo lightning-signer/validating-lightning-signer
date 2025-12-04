@@ -1,0 +1,123 @@
+version: '3.8'
+
+services:
+  bitcoin:
+    image: bitcoin/bitcoin:28-alpine
+    container_name: bitcoin-regtest
+    command:
+      - bitcoind
+      - -regtest
+      - -rpcuser=user
+      - -rpcpassword=password
+      - -rpcport=18443
+      - -server=1
+      - -txindex=1
+      - -fallbackfee=0.00001
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -zmqpubrawblock=tcp://0.0.0.0:28332
+      - -zmqpubrawtx=tcp://0.0.0.0:28333
+    ports:
+      - "18443:18443"
+      - "28332:28332"
+      - "28333:28333"
+    volumes:
+      - bitcoin_data:/root/.bitcoin
+    networks:
+      - lightning_network
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-regtest", "-rpcuser=user", "-rpcpassword=password", "getblockchaininfo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  vls:
+    image: debian:bookworm-slim
+    container_name: vlsd
+    working_dir: /vls
+    network_mode: "service:cln"
+    environment:
+      - LIGHTNING_VLS_DIR=/vls/data
+      - GREENLIGHT_VERSION=v25.09.3-modded
+      - VLS_CLN_VERSION=v25.09.3-modded
+      - VLS_NETWORK=regtest
+      - BITCOIND_RPC_URL=http://user:password@bitcoin:18443
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+    volumes:
+      - ${PWD}/target/debug:/vls/bin:ro
+      - vls_data:/vls/data
+    depends_on:
+      bitcoin:
+        condition: service_healthy
+    command:
+      - /vls/bin/vlsd
+      - --datadir
+      - /vls/data/.lightning-signer
+      - --network
+      - regtest
+      - --connect
+      - http://127.0.0.1:7701
+      - --rpc-server-address
+      - 127.0.0.1
+      - --rpc-server-port
+      - "8000"
+      - --rpc-user
+      - vlsuser
+      - --rpc-pass
+      - vlspassword
+      - --log-level
+      - info
+
+  cln:
+    image: elementsproject/lightningd:v25.09.3
+    container_name: cln-vls
+    platform: linux/amd64
+    environment:
+      - GREENLIGHT_VERSION=v25.09.3-modded
+      - VLS_CLN_VERSION=v25.09.3-modded
+      - VLS_NETWORK=regtest
+      - BITCOIND_RPC_URL=http://user:password@bitcoin:18443
+      - LIGHTNINGD_NETWORK=regtest
+    volumes:
+      - ${PWD}/target/debug:/var/lib/vls/bin:ro
+      - cln_data:/root/.lightning
+      - bitcoin_data:/root/.bitcoin:ro
+    networks:
+      - lightning_network
+    depends_on:
+      bitcoin:
+        condition: service_healthy
+    command:
+      - --bitcoin-rpcconnect=bitcoin
+      - --bitcoin-rpcuser=user
+      - --bitcoin-rpcpassword=password
+      - --network=regtest
+      - --database-upgrade=true
+      - --bitcoin-datadir=/root/.bitcoin
+      - --log-level=debug
+      - --announce-addr=127.0.0.1:19750
+      - --bind-addr=0.0.0.0:8989
+      - --bind-addr=ws:0.0.0.0:5020
+      - --bind-addr=0.0.0.0:19750
+      - --bitcoin-rpcport=18443
+      - --clnrest-port=3020
+      - --grpc-port=9740
+      - --subdaemon=hsmd:/var/lib/vls/bin/remote_hsmd_socket
+    ports:
+      - "8989:8989"
+      - "5020:5020"
+      - "19750:19750"
+      - "3020:3020"
+      - "9740:9740"
+      - "8000:8000"
+      - "7701:7701"
+
+volumes:
+  bitcoin_data:
+  vls_data:
+  cln_data:
+
+networks:
+  lightning_network:
+    driver: bridge
