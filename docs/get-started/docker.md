@@ -265,7 +265,59 @@ docker compose --profile vls build
 
 Note: For `bitcoind` its also important to update the `BITCOIN_SHA256SUMS_HASH`. It is the *SHA256 HASH* of `SHA256SUMS` file.
 
+## VLS Core Lightning Docker Compose Setup
 
+This setup runs `bitcoind`, `lightningd`, and `vlsd` on `regtest` network for development and testing.
+
+### 1. Prerequisites
+
+- **Docker & Docker Compose** installed
+- **Rust toolchain** installed for building `vlsd`
+- **Git** for cloning repositories (if needed)
+
+### 2. Build the vlsd binary
+```bash
+  # From the project root directory
+  cargo build
+```
+
+### 3. Start all services
+```bash
+  # Ensure you're in the root directory (containing docker-compose.yml)
+  docker compose up
+  # To run in detached mode:
+  docker compose up -d
+```
+
+### 4. Verification
+After services are running, verify connectivity:
+
+```bash
+  # Check containers status
+  docker compose ps
+
+  # View logs for specific service
+  docker compose logs bitcoin
+  docker compose logs vls
+  docker compose logs cln
+
+  # Check bitcoin is running
+  docker exec bitcoin-regtest bitcoin-cli -regtest -rpcuser=user -rpcpassword=password -getinfo
+
+  # Check lightningd is running
+  docker exec cln-vls lightning-cli --regtest --lightning-dir=/root/.lightning getinfo
+
+  # Check vlsd is running (should show vlsd help)
+  docker exec vlsd /vls/bin/vlsd --help
+```
+
+### 5. Cleanup
+```bash
+  # Stop services but preserve data
+  docker compose down
+  # Stop and remove all containers and volumes
+  docker compose down -v
+```
 
 ## References
 
