@@ -3002,13 +3002,13 @@ pub trait SyncLogger: Logger + SendSync {}
 
 #[cfg(test)]
 mod tests {
-    use bitcoin;
     use bitcoin::consensus::deserialize;
     use bitcoin::hashes::sha256d::Hash as Sha256dHash;
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::transaction::Version;
+    use bitcoin::{self, Txid};
     use bitcoin::{secp256k1, BlockHash, Sequence, TxIn, Witness};
     use bitcoin::{Address, Amount, OutPoint};
     use lightning::ln::chan_utils;
@@ -3020,7 +3020,7 @@ mod tests {
     use test_log::test;
     use vls_common::to_derivation_path;
 
-    use crate::channel::{ChannelBase, CommitmentType};
+    use crate::channel::{ChannelBase, CommitmentType, InputUtxo};
     use crate::policy::filter::{FilterRule, PolicyFilter};
     use crate::policy::simple_validator::{make_default_simple_policy, SimpleValidatorFactory};
     use crate::tx::tx::ANCHOR_SAT;
@@ -4004,7 +4004,16 @@ mod tests {
         let commit_num = 0;
         next_state(&mut channel, &mut channel1, commit_num, 2_999_000, 0, vec![], vec![]);
 
-        let txs = channel.sign_holder_commitment_tx_for_recovery().unwrap();
+        let txs = channel
+            .sign_holder_commitment_tx_for_recovery(
+                100,
+                &[InputUtxo {
+                    outpoint: OutPoint { txid: Txid::from_slice(&[2u8; 32]).unwrap(), vout: 0 },
+                    value: Amount::from_sat(100000),
+                    derivation_path: DerivationPath::master(),
+                }],
+            )
+            .unwrap();
         let holder_tx = txs.0;
         // find anchor output by value
         let idx =

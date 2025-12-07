@@ -1,6 +1,8 @@
 use clap::{error::ErrorKind, Parser};
+use lightning_signer::bitcoin::bip32::DerivationPath;
 use lightning_signer::bitcoin::secp256k1::PublicKey;
-use lightning_signer::bitcoin::Network;
+use lightning_signer::bitcoin::{Amount, Network, OutPoint, Txid};
+use lightning_signer::channel::InputUtxo;
 use lightning_signer::policy::filter::{FilterResult, FilterRule};
 use lightning_signer::policy::simple_validator::OptionizedSimplePolicy;
 use lightning_signer::util::velocity::{VelocityControlIntervalType, VelocityControlSpec};
@@ -121,6 +123,22 @@ pub struct SignerArgs {
         value_name = "RANGE"
     )]
     pub recover_l1_range: Option<u32>,
+
+    #[clap(
+        long,
+        value_parser,
+        help = "transaction fee rate in satoshis per kw",
+        value_name = "FEE_RATE"
+    )]
+    pub fee_rate: Option<u32>,
+
+    #[clap(
+    long = "input-utxo", 
+    value_parser = parse_input_utxo,
+    help = "Additional UTXOs to include as transaction inputs (may be repeated). Format: txid:vout:value:derivation_path",
+    value_name = "INPUT_UTXO"
+)]
+    pub input_utxos: Vec<InputUtxo>,
 
     #[clap(long, value_parser = parse_velocity_control_spec, help = "global velocity control e.g. hour:10000 (satoshi)")]
     pub velocity_control: Option<VelocityControlSpec>,
@@ -314,8 +332,29 @@ fn parse_filter_rule(spec: &str) -> Result<FilterRule, String> {
     Ok(FilterRule { tag, action, is_prefix })
 }
 
+fn parse_input_utxo(spec: &str) -> Result<InputUtxo, String> {
+    let parts: Vec<&str> = spec.split(':').collect();
+    if parts.len() != 4 {
+        return Err(format!("Invalid input_utxo format: {}", spec));
+    }
+
+    let txid = Txid::from_str(parts[0]).map_err(|_| format!("Invalid txid: {}", parts[0]))?;
+    let vout = parts[1].parse().map_err(|_| format!("Invalid vout: {}", parts[1]))?;
+    let value_sat: u64 = parts[2].parse().map_err(|_| format!("Invalid value: {}", parts[2]))?;
+    let derivation_path = DerivationPath::from_str(parts[3])
+        .map_err(|e| format!("Invalid derivation path '{}': {}", parts[3], e))?;
+
+    Ok(InputUtxo {
+        outpoint: OutPoint { txid, vout },
+        value: Amount::from_sat(value_sat),
+        derivation_path,
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    use lightning_signer::bitcoin::{bip32::DerivationPath, Amount};
+
     use super::*;
     use std::io::Write;
 
@@ -432,5 +471,37 @@ mod tests {
         assert!(args.velocity_control.is_some());
         // config file overrides command line because it comes last
         assert_eq!(args.network, Network::Regtest);
+    }
+
+    #[test]
+    fn parse_input_utxo_test() {
+        let input =
+            "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab:0:50000:m/0/1/2";
+        let result = parse_input_utxo(input).unwrap();
+
+        assert_eq!(
+            result.outpoint.txid.to_string(),
+            "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
+        );
+        assert_eq!(result.outpoint.vout, 0);
+        assert_eq!(result.value, Amount::from_sat(50000));
+        assert_eq!(result.derivation_path, DerivationPath::from_str("m/0/1/2").unwrap());
+
+        let invalid_cases = vec![
+            "txid:0:50000",                 // Wrong number of parts (too few)
+            "txid:0:50000:m/0/1:extra",     // Wrong number of parts (too many)
+            "invalid_txid:0:50000:m/0/1/2", // Invalid txid format
+            "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab:abc:50000:m/0/1/2", // Non-numeric vout
+            "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab:0:invalid:m/0/1/2", // Non-numeric value
+            "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab:0:50000:invalid_path", // Invalid derivation path
+        ];
+
+        for invalid_input in invalid_cases {
+            assert!(
+                parse_input_utxo(invalid_input).is_err(),
+                "Expected error for: {}",
+                invalid_input
+            );
+        }
     }
 }
