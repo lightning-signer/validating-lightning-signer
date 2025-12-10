@@ -13,10 +13,21 @@
         pkgs = nixpkgs.legacyPackages.${system};
         # build rust application :)
         naersk' = pkgs.callPackage naersk { };
+
+        vlsd = naersk'.buildPackage {
+          pname = "vlsd";
+          src = ./.;
+          cargoBuildOptions = opts: opts ++ [ "-p" "vlsd" ];
+          nativeBuildInputs = with pkgs; [ pkg-config protobuf ];
+          buildInputs = with pkgs; [ openssl ];
+        };
       in
-      rec {
-        # Set up the nix flake derivation
-        packages = { };
+      {
+        packages = {
+          vlsd = vlsd;
+          default = vlsd;
+        };
+
         # FIXME: will be good to have this formatting also the rust code
         formatter = pkgs.nixpkgs-fmt;
 

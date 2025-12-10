@@ -19,3 +19,5 @@ rusty-tags.emacs
 # IDEs
 .vscode
 .idea
+
+result
