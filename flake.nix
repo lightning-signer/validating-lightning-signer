@@ -21,11 +21,26 @@
           nativeBuildInputs = with pkgs; [ pkg-config protobuf ];
           buildInputs = with pkgs; [ openssl ];
         };
+
+        vls-proxy = naersk'.buildPackage {
+          pname = "vls-proxy";
+          src = ./.;
+          cargoBuildOptions = opts: opts ++ [ "-p" "vls-proxy" ];
+          nativeBuildInputs = with pkgs; [ pkg-config protobuf ];
+          buildInputs = with pkgs; [ openssl ];
+        };
+
+        vls = pkgs.symlinkJoin {
+          name = "vls";
+          paths = [ vlsd vls-proxy ];
+        };
       in
       {
         packages = {
           vlsd = vlsd;
-          default = vlsd;
+          vls-proxy = vls-proxy;
+          vls = vls;
+          default = vls;
         };
 
         # FIXME: will be good to have this formatting also the rust code
