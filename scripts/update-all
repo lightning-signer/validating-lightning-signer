@@ -1,0 +1,53 @@
+#!/bin/bash
+
+PATHS=(
+    "."
+    "lnrod"
+    "lightning-storage-server"
+    "embedded"
+    "wasm"
+    "vls-signer-stm32"
+)
+
+echo "========================================"
+echo "Running cargo update and audit checks"
+echo "========================================"
+echo ""
+
+for i in "${!PATHS[@]}"; do
+    path="${PATHS[$i]}"
+    echo "Processing: $path"
+    echo ""
+
+    pushd "$path" > /dev/null
+
+    sed -i.bak -E 's/^resolver = (2|"2")$/resolver = "3"/' Cargo.toml
+
+    cargo update
+    UPDATE_SUCCESS=$?
+
+    cargo audit
+    AUDIT_SUCCESS=$?
+
+    mv Cargo.toml.bak Cargo.toml
+
+    if [ $UPDATE_SUCCESS -eq 0 ] && [ $AUDIT_SUCCESS -eq 0 ]; then
+        RESULTS[$i]="✓"
+    else
+        RESULTS[$i]="⚠️"
+    fi
+
+    popd > /dev/null
+
+    echo ""
+    echo "----------------------------------------"
+    echo ""
+done
+
+echo "========================================"
+echo "SUMMARY"
+echo "========================================"
+for i in "${!PATHS[@]}"; do
+    printf "%-60s %s\n" "${PATHS[$i]}" "${RESULTS[$i]}"
+done
+echo ""

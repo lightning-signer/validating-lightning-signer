@@ -45,7 +45,7 @@ regex = { version = "1.5.4", optional = true }
 tracing = { version = "0.1.32" }
 tracing-subscriber = { version = "0.3.9" }
 triggered = "0.1"
-ctrlc = { version = "3.1", features = ["termination"] }
+ctrlc = { version = "<3.5", features = ["termination"] }
 
 [dependencies.lightning-net-tokio]
 version = "0.1.0"

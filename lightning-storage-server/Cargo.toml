@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["lib", "lssd"]
+members = ["lib", "lssd", "tests"]
 
 [workspace.dependencies]
 bitcoin_hashes = ">=0.12.0,<=0.14.0"
