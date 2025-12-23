@@ -55,7 +55,7 @@ serde_derive = { version = "1.0" }
 bitcoin-consensus-derive = { workspace = true }
 serde_with = { version = "3.6", default-features = false, features = ["hex", "macros"] }
 bolt-derive = { path = "../bolt-derive", version = "0.4.0" }
-vls-policy-derive = { path = "../policy-derive", version = "0.1.0" }
+vls-policy-derive = { path = "../vls-policy-derive", version = "0.1.0" }
 
 hex = { workspace = true, features = ["alloc"] }
 
