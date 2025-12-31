@@ -19,6 +19,16 @@ Docker Engine is available on a variety of Linux distros, macOS, and Windows 10 
 
 **Note**: The compose files present within this repository make use of docker compose v2 the minimum supported version is `v2.26.0`.
 
+## Clone Repository
+
+The image specification for all the services is defined in [vls-container](https://gitlab.com/lightning-signer/vls-container) repository. The base used for all images is [alpine](https://www.alpinelinux.org/) to keep containers lean. To get started clone the repository first:
+```bash
+git clone git@gitlab.com:lightning-signer/vls-container.git
+cd vls-container
+```
+
+Note: All the commands below assume you are running them from the repository folder.
+
 ## VLS standalone Setup
 
 Below are the steps required to run `vlsd` as a standalone container.
