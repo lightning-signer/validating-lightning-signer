@@ -196,8 +196,12 @@ impl CommitmentInfo2 {
         let mut balance = self.value_to_parties().0;
         if is_outbound {
             let total_value = self.total_value();
-            let fee = channel_value.checked_sub(total_value).unwrap();
-            balance = balance.checked_add(fee).unwrap();
+            let fee = channel_value
+                .checked_sub(total_value)
+                .expect("channel_value should be >= total_value");
+            balance = balance
+                .checked_add(fee)
+                .expect("claimable balance should not overflow after adding fee");
         }
         let (offered, received) = if self.is_counterparty_broadcaster {
             (&self.received_htlcs, &self.offered_htlcs)
