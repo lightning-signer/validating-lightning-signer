@@ -593,6 +593,12 @@ impl NodeState {
             }
         }
 
+        for hash in fulfilled_issued_invoices.iter() {
+            if let Some(issued) = self.issued_invoices.get_mut(hash) {
+                issued.is_fulfilled = true;
+            }
+        }
+
         if validator.enforce_balance() {
             info!(
                 "{} apply payments adjust excess {} +{} -{}",
@@ -642,6 +648,12 @@ impl NodeState {
     ) -> bool {
         let payment_hash = PaymentHash(Sha256Hash::hash(&preimage.0).to_byte_array());
         let mut fulfilled = false;
+        if let Some(issued) = self.issued_invoices.get_mut(&payment_hash) {
+            if !issued.is_fulfilled {
+                issued.is_fulfilled = true;
+                fulfilled = true;
+            }
+        }
         if let Some(payment) = self.payments.get_mut(&payment_hash) {
             // Getting an HTLC preimage moves HTLC values to the virtual balance of the recipient
             // on both input and output.
@@ -3801,6 +3813,7 @@ mod tests {
 
         {
             let mut state = node.get_state();
+            assert!(!state.issued_invoices.get(&hash).unwrap().is_fulfilled);
             // Underpaid
             state
                 .validate_and_apply_payments(
@@ -3812,6 +3825,7 @@ mod tests {
                 )
                 .expect("ok");
             assert!(!state.payments.get(&hash).unwrap().is_fulfilled());
+            assert!(!state.issued_invoices.get(&hash).unwrap().is_fulfilled);
             // Paid
             state
                 .validate_and_apply_payments(
@@ -3823,6 +3837,7 @@ mod tests {
                 )
                 .expect("ok");
             assert!(state.payments.get(&hash).unwrap().is_fulfilled());
+            assert!(state.issued_invoices.get(&hash).unwrap().is_fulfilled);
             // Already paid
             state
                 .validate_and_apply_payments(
@@ -3834,6 +3849,30 @@ mod tests {
                 )
                 .expect("ok");
             assert!(state.payments.get(&hash).unwrap().is_fulfilled());
+            assert!(state.issued_invoices.get(&hash).unwrap().is_fulfilled);
+        }
+    }
+
+    #[test]
+    fn issued_invoice_fulfilled_on_preimage_test() {
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        let preimage = PaymentPreimage([1; 32]);
+        let hash = PaymentHash(Sha256Hash::hash(&preimage.0).to_byte_array());
+
+        let raw_invoice = build_test_invoice("invoice", &hash);
+        node.sign_bolt11_invoice(raw_invoice).unwrap();
+
+        let mut policy = make_default_simple_policy(Network::Testnet);
+        policy.enforce_balance = true;
+        let factory = SimpleValidatorFactory::new_with_policy(policy);
+        let invoice_validator = factory.make_validator(Network::Testnet, node.get_id(), None);
+
+        {
+            let mut state = node.get_state();
+            assert!(!state.issued_invoices.get(&hash).unwrap().is_fulfilled);
+            state.htlc_fulfilled(&channel_id, preimage, invoice_validator.clone());
+            assert!(state.issued_invoices.get(&hash).unwrap().is_fulfilled);
         }
     }
 
