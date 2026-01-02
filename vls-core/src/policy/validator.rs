@@ -214,6 +214,27 @@ pub trait Validator {
         invoiced_amount_msat: Option<u64>,
     ) -> Result<(), ValidationError>;
 
+    /// Validate CLTV delta for routed payment.
+    /// Ensures that the difference between incoming and outgoing CLTV expiry
+    /// is sufficient to safely claim the incoming HTLC after the outgoing expires.
+    fn validate_payment_cltv(
+        &self,
+        incoming_cltv: u32,
+        outgoing_cltv: u32,
+    ) -> Result<(), ValidationError> {
+        if incoming_cltv <= outgoing_cltv {
+            policy_err!(
+                self,
+                "policy-routing-cltv-delta",
+                "incoming CLTV {} must be greater than outgoing CLTV {}",
+                incoming_cltv,
+                outgoing_cltv
+            );
+        }
+
+        Ok(())
+    }
+
     /// Whether the policy specifies that holder balance should be tracked and
     /// enforced.
     fn enforce_balance(&self) -> bool {
