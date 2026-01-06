@@ -537,6 +537,7 @@ def start_vlsd(n, procs):
                   '--log-level', LOG_LEVEL.lower(),
                   '--network=regtest',
                   '--policy-filter=policy-commitment-htlc-routing-balance:warn',  # FIXME we need add_invoice on vlsd
+                  '--policy-filter=policy-routing-cltv-delta:warn',
                   '--datadir', f'{OUTPUT_DIR}/vls{n}',
                   '--rpc-server-port', str(6600 + INSTANCE_OFFSET + n),
                   '--connect', f"http://127.0.0.1:{str(7700 + INSTANCE_OFFSET + n)}",
