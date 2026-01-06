@@ -1,13 +1,16 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin::{self, ScriptBuf, Transaction};
+    use bitcoin::bip32::DerivationPath;
+    use bitcoin::{self, Amount, OutPoint, ScriptBuf, Transaction};
     use lightning::ln::chan_utils::{
         build_htlc_transaction, get_htlc_redeemscript, make_funding_redeemscript,
     };
 
     use test_log::test;
 
-    use crate::channel::{Channel, ChannelBase, ChannelSetup, CommitmentType, TypedSignature};
+    use crate::channel::{
+        Channel, ChannelBase, ChannelSetup, CommitmentType, InputUtxo, TypedSignature,
+    };
     use crate::node::NodeMonitor;
     use crate::policy::validator::{ChainState, EnforcementState};
     use crate::util::status::{Code, Status};
@@ -251,8 +254,15 @@ mod tests {
 
             assert_eq!(chan.enforcement_state.channel_closed, true);
 
-            let (tx_r, _htlc_txs_r, _revocable_script_r, _uck_r, _revocation_pubkey_r) =
-                chan.sign_holder_commitment_tx_for_recovery()?;
+            let (tx_r, _htlc_txs_r, _revocable_script_r, _uck_r, _revocation_pubkey_r) = chan
+                .sign_holder_commitment_tx_for_recovery(
+                    commit_tx_ctx.feerate_per_kw as u32,
+                    &[InputUtxo {
+                        outpoint: OutPoint::new(tx.transaction.compute_txid(), 0),
+                        value: Amount::from_sat(commit_tx_ctx.to_countersignatory),
+                        derivation_path: DerivationPath::master(),
+                    }],
+                )?;
             assert_eq!(tx_r.compute_txid(), tx.transaction.compute_txid());
             // TODO(303) HTLC recovery is not implemented yet
 

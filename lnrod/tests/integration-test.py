@@ -349,6 +349,8 @@ def run(disaster_recovery_block_explorer, existing_bitcoin_rpc):
     assert_equal_delta((NUM_PAYMENTS * PAYMENT_MSAT) / 1000 - 1000, bob_sweep)
 
     if disaster_recovery_block_explorer is not None:
+        utxos = fund_vls_addresses(btc, vls_port=6600 + INSTANCE_OFFSET + 3, count=2, amount=0.01)
+
         print('Disaster recovery at charlie')
         stop_proc(charlie_proc)
         stop_proc(charlie_proc1)
@@ -363,23 +365,32 @@ def run(disaster_recovery_block_explorer, existing_bitcoin_rpc):
         else:
             raise ValueError(f'Unknown block explorer {disaster_recovery_block_explorer}')
 
+        input_utxo = format_input_utxo(utxos[0])
+        input_utxo2 = format_input_utxo(utxos[1])
+        fee_rate = 100
+
         p = call([vlsd,
                   '--network=regtest',
                   '--datadir', f'{OUTPUT_DIR}/vls3',
                   '--recover-type', recover_type,
                   '--recover-rpc', recover_rpc,
-                  '--recover-to', destination])
+                  '--recover-to', destination,
+                  '--fee-rate', str(fee_rate),
+                  '--input-utxo', input_utxo])
         assert p == 0
         print('Sweep at charlie')
         btc.mine(145)
         # wait for Charlie to see the mined blocks
         time.sleep(5)
+
         p = call([vlsd,
                   '--network=regtest',
                   '--datadir', f'{OUTPUT_DIR}/vls3',
                   '--recover-type', recover_type,
                   '--recover-rpc', recover_rpc,
-                  '--recover-to', destination])
+                  '--recover-to', destination,
+                  '--fee-rate', str(fee_rate),
+                  '--input-utxo', input_utxo2])
         assert p == 0
         print('Swept at charlie')
     else:
@@ -436,17 +447,101 @@ def connect_bitcoind(bitcoin_rpc):
     return btc
 
 
+def format_input_utxo(utxo: dict) -> str:
+    """
+    Format a UTXO for vlsd --input-utxo CLI argument.
+
+    Expected keys:
+      - txid
+      - vout
+      - amount (BTC)
+      - path (derivation path)
+    """
+    value_sats = int(utxo["amount"] * 100_000_000)
+    return f"{utxo['txid']}:{utxo['vout']}:{value_sats}:{utxo['path']}"
+
+
+def fund_vls_addresses(btc: Bitcoind, vls_port: int, amounts: List[float] = None, count: int = 1, amount: float = None):
+    """
+    Fund VLS-controlled addresses.
+
+    Gets addresses from VLS and sends bitcoin to them, returning the resulting UTXOs.
+
+    - If `amounts` is provided, funds one address for each amount in the list.
+    - If `count` and `amount` are provided, funds `count` addresses each with `amount`.
+    """
+
+    if amounts is None:
+        if amount is None:
+            raise ValueError("Must provide either `amounts` list or (`count` + `amount`).")
+        amounts = [amount] * count
+
+    result = run_vls_cli_command(
+        vls_port,
+        ["addresses", "list", "--count", str(len(amounts))]
+    )
+    addresses = json.loads(result.stdout)["addresses"]
+
+    utxos = []
+    for addr_info, amt in zip(addresses, amounts):
+        address = addr_info["address"]
+        txid = btc.sendtoaddress(address, amt)
+        btc.mine(1)
+
+        tx = btc.gettransaction(txid)
+        vout = None
+
+        for detail in tx.get("details", []):
+            if detail.get("address") == address and detail.get("category") == "send":
+                vout = detail.get("vout")
+                break
+
+        if vout is None:
+            raise ValueError(f"Could not find vout for address {address} in transaction {txid}")
+
+        utxos.append({
+            **addr_info,
+            "txid": txid,
+            "vout": vout,
+            "amount": amt,
+        })
+
+    return utxos
+
+
+def run_vls_cli_command(port: int, args: List[str]) -> subprocess.CompletedProcess:
+    rpc_uri = f"--rpc-uri=http://127.0.0.1:{port}"
+    full_args = [
+        f"{VLS_BINARIES_PATH}/vls-cli",
+        "--rpc-user=vls",
+        "--rpc-password=bitcoin",
+        rpc_uri,
+    ] + args
+    try:
+        result = subprocess.run(
+            full_args,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result
+    except subprocess.CalledProcessError as e:
+        raise Exception(f"vls-cli command failed: {e.stderr}") from e
+
+
 def start_vlsd(n, procs):
     print("Starting signer for node", n)
 
     vlsd = VLS_BINARIES_PATH + '/vlsd'
     popen_args = [vlsd,
-               '--log-level', LOG_LEVEL.lower(),
-               '--network=regtest',
-               '--policy-filter=policy-commitment-htlc-routing-balance:warn',  # FIXME we need add_invoice on vlsd
-               '--datadir', f'{OUTPUT_DIR}/vls{n}',
-               '--rpc-server-port', str(6600 + INSTANCE_OFFSET + n),
-               '--connect', f"http://127.0.0.1:{str(7700 + INSTANCE_OFFSET + n)}"]
+                  '--log-level', LOG_LEVEL.lower(),
+                  '--network=regtest',
+                  '--policy-filter=policy-commitment-htlc-routing-balance:warn',  # FIXME we need add_invoice on vlsd
+                  '--datadir', f'{OUTPUT_DIR}/vls{n}',
+                  '--rpc-server-port', str(6600 + INSTANCE_OFFSET + n),
+                  '--connect', f"http://127.0.0.1:{str(7700 + INSTANCE_OFFSET + n)}",
+                  '--rpc-user=vls',
+                  '--rpc-pass=bitcoin']
     p = new_proc(popen_args, f'vlsd{n}.log')
     procs['signers'].append(p)
     time.sleep(1)
@@ -458,14 +553,14 @@ def start_node(n, bitcoin_rpc, procs):
 
     lnrod = LNROD_BINARIES_PATH + '/lnrod'
     popen_args = ([lnrod,
-               '--log-level-console', LOG_LEVEL.upper(),
-               '--regtest',
-               '--datadir', f'{OUTPUT_DIR}/data{n}',
-               '--signer', SIGNER,
-               '--vlsport', str(7700 + INSTANCE_OFFSET + n),
-               '--rpcport', str(8800 + INSTANCE_OFFSET + n),
-               '--lnport', str(9900 + INSTANCE_OFFSET + n),
-               '--bitcoin', bitcoin_rpc])
+                   '--log-level-console', LOG_LEVEL.upper(),
+                   '--regtest',
+                   '--datadir', f'{OUTPUT_DIR}/data{n}',
+                   '--signer', SIGNER,
+                   '--vlsport', str(7700 + INSTANCE_OFFSET + n),
+                   '--rpcport', str(8800 + INSTANCE_OFFSET + n),
+                   '--lnport', str(9900 + INSTANCE_OFFSET + n),
+                   '--bitcoin', bitcoin_rpc])
     p = new_proc(popen_args, f'node{n}.log')
     procs['nodes'].append(p)
     time.sleep(2)  # FIXME allow gRPC to function before signer connects so we can ping instead of randomly waiting

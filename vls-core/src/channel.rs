@@ -9,7 +9,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::{self, ecdsa::Signature, All, Message, PublicKey, Secp256k1, SecretKey};
 use bitcoin::sighash::EcdsaSighashType;
 use bitcoin::sighash::SighashCache;
-use bitcoin::{Amount, Network, OutPoint, Script, ScriptBuf, Transaction};
+use bitcoin::{Amount, Network, OutPoint, Script, ScriptBuf, Transaction, Txid};
 use lightning::chain;
 use lightning::ln::chan_utils;
 use lightning::ln::chan_utils::{
@@ -43,6 +43,22 @@ use crate::util::transaction_utils::add_holder_sig;
 use crate::util::INITIAL_COMMITMENT_NUMBER;
 use crate::wallet::Wallet;
 use crate::{catch_panic, policy_err, Arc, CommitmentPointProvider, Weak};
+
+/// Represents a UTXO provided as input to a transaction.
+///
+/// This can be used for various purposes including:
+/// - Paying transaction fees
+/// - UTXO consolidation
+/// - Providing additional input for any reason
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InputUtxo {
+    /// The outpoint identifying the UTXO (txid + vout).
+    pub outpoint: OutPoint,
+    /// The value of the UTXO.
+    pub value: Amount,
+    /// The derivation path of the UTXO.
+    pub derivation_path: DerivationPath,
+}
 
 /// Channel identifier
 ///
@@ -1298,6 +1314,8 @@ impl Channel {
     /// Also returns the unilateral close key material
     pub fn sign_holder_commitment_tx_for_recovery(
         &mut self,
+        fee_rate: u32,
+        fee_utxo: &[InputUtxo],
     ) -> Result<
         (Transaction, Vec<Transaction>, ScriptBuf, (SecretKey, Vec<Vec<u8>>), PublicKey),
         Status,

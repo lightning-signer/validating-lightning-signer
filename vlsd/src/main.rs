@@ -80,7 +80,26 @@ pub async fn main() {
         if let Some(max_index) = args.recover_l1_range {
             recover_l1(network, recover_type, args.recover_rpc, &address, keys, max_index).await;
         } else {
-            recover_close(network, recover_type, args.recover_rpc, &address, keys).await;
+            let fee_rate = args.fee_rate.unwrap_or_else(|| {
+                eprintln!("Error: --fee-rate must be specified for recovery");
+                std::process::exit(1);
+            });
+
+            if args.input_utxos.is_empty() {
+                eprintln!("Error: at least one --input-utxo must be provided for recovery");
+                std::process::exit(1);
+            }
+
+            recover_close(
+                network,
+                recover_type,
+                args.recover_rpc,
+                &address,
+                keys,
+                fee_rate,
+                &args.input_utxos,
+            )
+            .await;
         }
         return;
     }

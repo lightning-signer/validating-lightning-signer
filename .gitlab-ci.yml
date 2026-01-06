@@ -124,6 +124,7 @@ rust-latest:
   artifacts:
     paths:
       - "target/debug/vlsd"
+      - "target/debug/vls-cli"
       - "lnrod/target/debug/lnrod"
 
 rust-latest-extras:

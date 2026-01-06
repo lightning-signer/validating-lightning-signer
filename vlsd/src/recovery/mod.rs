@@ -14,6 +14,7 @@ use lightning_signer::bitcoin::address::{NetworkChecked, NetworkUnchecked};
 use lightning_signer::bitcoin::bip32::{ChildNumber, DerivationPath};
 use lightning_signer::bitcoin::consensus::encode::serialize_hex;
 use lightning_signer::bitcoin::{Amount, Sequence, TxOut, Txid};
+use lightning_signer::channel::InputUtxo;
 use lightning_signer::lightning::ln::channel_keys::RevocationKey;
 use lightning_signer::node::{Allowable, ToStringForNetwork};
 use lightning_signer::util::status::Status;
@@ -63,6 +64,8 @@ pub trait RecoveryKeys {
 pub trait RecoverySign {
     fn sign_holder_commitment_tx_for_recovery(
         &self,
+        fee_rate: u32,
+        fee_utxo: &[InputUtxo],
     ) -> Result<
         (Transaction, Vec<Transaction>, ScriptBuf, (SecretKey, Vec<Vec<u8>>), PublicKey),
         Status,
@@ -220,6 +223,8 @@ pub async fn recover_close<R: RecoveryKeys>(
     block_explorer_rpc: Option<Url>,
     destination: &str,
     keys: R,
+    fee_rate: u32,
+    input_utxos: &[InputUtxo],
 ) {
     let explorer_client = match block_explorer_rpc {
         Some(url) => Some(explorer_from_url(network, block_explorer_type, url).await),
@@ -232,7 +237,7 @@ pub async fn recover_close<R: RecoveryKeys>(
         info!("# funding {:?}", signer.funding_outpoint());
 
         let (tx, htlc_txs, revocable_script, uck, revocation_pubkey) =
-            signer.sign_holder_commitment_tx_for_recovery().expect("sign");
+            signer.sign_holder_commitment_tx_for_recovery(fee_rate, input_utxos).expect("sign");
         let txid = tx.compute_txid();
         debug!("closing tx {:?}", &tx);
         info!("closing txid {}", txid);
