@@ -832,7 +832,7 @@ impl Channel {
             &mut self.enforcement_state,
             commitment_number + 1,
             *remote_per_commitment_point,
-            info2,
+            info2.clone(),
         )?;
 
         state.apply_payments(
@@ -841,6 +841,7 @@ impl Channel {
             &outgoing_payment_summary,
             &delta,
             validator,
+            Some(&info2),
         );
 
         trace_enforcement_state!(self);
@@ -865,7 +866,60 @@ impl Channel {
             let payment = state.payments.entry(*hash).or_insert_with(|| RoutedPayment::new());
             let incoming_sat = incoming_payment_summary.get(hash).map(|a| *a).unwrap_or(0);
             let outgoing_sat = outgoing_payment_summary.get(hash).map(|a| *a).unwrap_or(0);
-            payment.apply(&self.id0, incoming_sat, outgoing_sat);
+
+            let min_incoming_cltv = self
+                .enforcement_state
+                .current_holder_commit_info
+                .as_ref()
+                .and_then(|info| {
+                    info.received_htlcs
+                        .iter()
+                        .filter(|h| &h.payment_hash == hash)
+                        .map(|h| h.cltv_expiry)
+                        .min()
+                })
+                .or_else(|| {
+                    self.enforcement_state.current_counterparty_commit_info.as_ref().and_then(
+                        |info| {
+                            info.offered_htlcs
+                                .iter()
+                                .filter(|h| &h.payment_hash == hash)
+                                .map(|h| h.cltv_expiry)
+                                .min()
+                        },
+                    )
+                });
+
+            let max_outgoing_cltv = self
+                .enforcement_state
+                .current_holder_commit_info
+                .as_ref()
+                .and_then(|info| {
+                    info.offered_htlcs
+                        .iter()
+                        .filter(|h| &h.payment_hash == hash)
+                        .map(|h| h.cltv_expiry)
+                        .max()
+                })
+                .or_else(|| {
+                    self.enforcement_state.current_counterparty_commit_info.as_ref().and_then(
+                        |info| {
+                            info.received_htlcs
+                                .iter()
+                                .filter(|h| &h.payment_hash == hash)
+                                .map(|h| h.cltv_expiry)
+                                .max()
+                        },
+                    )
+                });
+
+            payment.apply(
+                &self.id0,
+                incoming_sat,
+                outgoing_sat,
+                min_incoming_cltv,
+                max_outgoing_cltv,
+            );
         }
     }
 
@@ -1232,7 +1286,7 @@ impl Channel {
             .advance_holder_commitment_state(
                 validator.clone(),
                 new_current_commitment_number,
-                info2,
+                info2.clone(),
                 sigs,
             )?;
 
@@ -1242,6 +1296,7 @@ impl Channel {
             &outgoing_payment_summary,
             &delta,
             validator,
+            Some(&info2),
         );
 
         trace_enforcement_state!(self);
@@ -2221,7 +2276,7 @@ impl Channel {
             &mut self.enforcement_state,
             commit_num + 1,
             point,
-            info2,
+            info2.clone(),
         )?;
 
         state.apply_payments(
@@ -2230,6 +2285,7 @@ impl Channel {
             &outgoing_payment_summary,
             &delta,
             validator,
+            Some(&info2),
         );
 
         trace_enforcement_state!(self);
@@ -2857,12 +2913,14 @@ impl CommitmentPointProvider for ChannelCommitmentPointProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bitcoin::hashes::sha256::Hash as Sha256Hash;
     use bitcoin::secp256k1::{self, Secp256k1, SecretKey};
     use lightning::ln::chan_utils::HTLCOutputInCommitment;
     use lightning::types::payment::PaymentHash;
     use lightning::util::ser::Writeable;
 
     use crate::channel::ChannelBase;
+    use crate::util::test_utils::htlc::{make_commit_info_with_htlcs, make_htlc};
     use crate::util::test_utils::{
         init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
     };
@@ -3042,5 +3100,80 @@ mod tests {
         let stub_bal = ChannelBalance::stub();
         assert_eq!(stub_bal.stub_count, 1);
         assert_eq!(stub_bal.claimable, 0);
+    }
+
+    #[test]
+    fn test_restore_payments_rebuilds_from_holder_commit_info() {
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+
+        let hash1 = PaymentHash(Sha256Hash::hash(&[1u8; 32]).to_byte_array());
+        let hash2 = PaymentHash(Sha256Hash::hash(&[2u8; 32]).to_byte_array());
+
+        let holder_commit_info = make_commit_info_with_htlcs(
+            vec![make_htlc(hash1, 90_000, 1000)],
+            vec![
+                make_htlc(hash1, 60_000, 1100),
+                make_htlc(hash1, 40_000, 1050),
+                make_htlc(hash2, 80_000, 1200),
+            ],
+        );
+
+        let channel = node.get_channel(&channel_id).unwrap();
+        let mut ch = channel.lock().unwrap();
+        assert!(matches!(&*ch, ChannelSlot::Ready(_)));
+        if let ChannelSlot::Ready(ref mut ready_channel) = &mut *ch {
+            ready_channel.enforcement_state.current_holder_commit_info = Some(holder_commit_info);
+
+            ready_channel.restore_payments();
+        }
+
+        let state = node.get_state();
+
+        let payment1 = state.payments.get(&hash1).unwrap();
+        assert_eq!(payment1.incoming_cltv_min, Some(1050));
+        assert_eq!(payment1.outgoing_cltv_max, Some(1000));
+
+        let payment2 = state.payments.get(&hash2).unwrap();
+        assert_eq!(payment2.incoming_cltv_min, Some(1200));
+        assert_eq!(payment2.outgoing_cltv_max, None);
+    }
+
+    #[test]
+    fn test_restore_payments_rebuilds_from_counterparty_commit_info() {
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+
+        let hash1 = PaymentHash(Sha256Hash::hash(&[1u8; 32]).to_byte_array());
+        let hash2 = PaymentHash(Sha256Hash::hash(&[2u8; 32]).to_byte_array());
+
+        let counterparty_commit_info = make_commit_info_with_htlcs(
+            vec![
+                make_htlc(hash1, 60_000, 1100),
+                make_htlc(hash1, 40_000, 1050),
+                make_htlc(hash2, 80_000, 1200),
+            ],
+            vec![make_htlc(hash1, 90_000, 1000)],
+        );
+
+        let channel = node.get_channel(&channel_id).unwrap();
+        let mut ch = channel.lock().unwrap();
+        assert!(matches!(&*ch, ChannelSlot::Ready(_)));
+        if let ChannelSlot::Ready(ref mut ready_channel) = &mut *ch {
+            ready_channel.enforcement_state.current_counterparty_commit_info =
+                Some(counterparty_commit_info);
+
+            ready_channel.restore_payments();
+        }
+
+        let state = node.get_state();
+
+        let payment1 = state.payments.get(&hash1).unwrap();
+        assert_eq!(payment1.incoming_cltv_min, Some(1050));
+        assert_eq!(payment1.outgoing_cltv_max, Some(1000));
+
+        let payment2 = state.payments.get(&hash2).unwrap();
+        assert_eq!(payment2.incoming_cltv_min, Some(1200));
+        assert_eq!(payment2.outgoing_cltv_max, None);
     }
 }

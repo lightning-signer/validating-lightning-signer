@@ -1,3 +1,4 @@
+pub mod htlc;
 pub mod invoice;
 pub mod key;
 

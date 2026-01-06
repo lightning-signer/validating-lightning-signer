@@ -60,7 +60,7 @@ use crate::prelude::*;
 use crate::signer::derive::KeyDerivationStyle;
 use crate::signer::my_keys_manager::MyKeysManager;
 use crate::signer::StartingTimeFactory;
-use crate::tx::tx::PreimageMap;
+use crate::tx::tx::{CommitmentInfo2, PreimageMap};
 use crate::txoo::get_latest_checkpoint;
 use crate::util::clock::Clock;
 use crate::util::crypto_utils::{
@@ -181,6 +181,10 @@ pub struct RoutedPayment {
     pub incoming: OrderedMap<ChannelId, u64>,
     /// Outgoing payments per channel in satoshi
     pub outgoing: OrderedMap<ChannelId, u64>,
+    /// Minimum incoming CLTV expiry (block height) across all channels
+    pub incoming_cltv_min: Option<u32>,
+    /// Maximum outgoing CLTV expiry (block height) across all channels
+    pub outgoing_cltv_max: Option<u32>,
     /// The preimage for the hash, filled in on success
     pub preimage: Option<PaymentPreimage>,
 }
@@ -188,7 +192,13 @@ pub struct RoutedPayment {
 impl RoutedPayment {
     /// Create an empty routed payment
     pub fn new() -> RoutedPayment {
-        RoutedPayment { incoming: OrderedMap::new(), outgoing: OrderedMap::new(), preimage: None }
+        RoutedPayment {
+            incoming: OrderedMap::new(),
+            outgoing: OrderedMap::new(),
+            incoming_cltv_min: None,
+            outgoing_cltv_max: None,
+            preimage: None,
+        }
     }
 
     /// Whether we know the preimage, and therefore the incoming is claimable
@@ -235,9 +245,31 @@ impl RoutedPayment {
         channel_id: &ChannelId,
         incoming_amount_sat: u64,
         outgoing_amount_sat: u64,
+        incoming_cltv: Option<u32>,
+        outgoing_cltv: Option<u32>,
     ) {
         self.incoming.insert(channel_id.clone(), incoming_amount_sat);
         self.outgoing.insert(channel_id.clone(), outgoing_amount_sat);
+
+        if let Some(inc_cltv) = incoming_cltv {
+            self.incoming_cltv_min =
+                Some(self.incoming_cltv_min.map_or(inc_cltv, |existing| existing.min(inc_cltv)));
+        }
+
+        if let Some(out_cltv) = outgoing_cltv {
+            self.outgoing_cltv_max =
+                Some(self.outgoing_cltv_max.map_or(out_cltv, |existing| existing.max(out_cltv)));
+        }
+    }
+
+    /// Get CLTV bounds for validation
+    /// Returns Some((incoming_min, outgoing_max)) if both bounds exist (routed payment)
+    /// Returns None if either bound is missing (terminal or originating payment)
+    pub fn get_cltv_bounds(&self) -> Option<(u32, u32)> {
+        match (self.incoming_cltv_min, self.outgoing_cltv_max) {
+            (Some(inc), Some(out)) => Some((inc, out)),
+            _ => None,
+        }
     }
 }
 
@@ -418,6 +450,7 @@ impl NodeState {
             outgoing_payment_summary,
             balance_delta,
             validator.clone(),
+            None,
         );
         Ok(())
     }
@@ -461,6 +494,10 @@ impl NodeState {
                 outgoing_payment_summary.get(&hash).map(|a| *a).unwrap_or(0);
             let payment = self.payments.get(&hash);
             let (incoming_sat, outgoing_sat) = if let Some(p) = payment {
+                if let Some((incoming_cltv, outgoing_cltv)) = p.get_cltv_bounds() {
+                    validator.validate_payment_cltv(incoming_cltv, outgoing_cltv)?;
+                }
+
                 p.updated_incoming_outgoing(
                     channel_id,
                     incoming_for_chan_sat,
@@ -562,6 +599,7 @@ impl NodeState {
         outgoing_payment_summary: &Map<PaymentHash, u64>,
         balance_delta: &BalanceDelta,
         validator: Arc<dyn Validator>,
+        commit_info: Option<&CommitmentInfo2>,
     ) {
         debug!("applying payments on channel {}", channel_id);
 
@@ -632,7 +670,33 @@ impl NodeState {
             let incoming_sat = incoming_payment_summary.get(&hash).map(|a| *a).unwrap_or(0);
             let outgoing_sat = outgoing_payment_summary.get(&hash).map(|a| *a).unwrap_or(0);
             let payment = self.payments.get_mut(&hash).expect("created above");
-            payment.apply(channel_id, incoming_sat, outgoing_sat);
+
+            let (incoming_cltv, outgoing_cltv) = if let Some(info) = commit_info {
+                // For counterparty commitment: offered=incoming (counterparty offers to us),
+                //                              received=outgoing (counterparty receives from us)
+                // For holder commitment: offered=outgoing (we offer to counterparty),
+                //                        received=incoming (we receive from counterparty)
+                let (incoming_htlcs, outgoing_htlcs) = if info.is_counterparty_broadcaster {
+                    (&info.offered_htlcs, &info.received_htlcs)
+                } else {
+                    (&info.received_htlcs, &info.offered_htlcs)
+                };
+                let inc_cltv = incoming_htlcs
+                    .iter()
+                    .filter(|h| h.payment_hash == hash)
+                    .map(|h| h.cltv_expiry)
+                    .min();
+                let out_cltv = outgoing_htlcs
+                    .iter()
+                    .filter(|h| h.payment_hash == hash)
+                    .map(|h| h.cltv_expiry)
+                    .max();
+                (inc_cltv, out_cltv)
+            } else {
+                (None, None)
+            };
+
+            payment.apply(channel_id, incoming_sat, outgoing_sat, incoming_cltv, outgoing_cltv);
         }
 
         trace_node_state!(self);
@@ -3034,7 +3098,15 @@ mod tests {
 
     use crate::channel::{ChannelBase, CommitmentType, InputUtxo};
     use crate::policy::filter::{FilterRule, PolicyFilter};
-    use crate::policy::simple_validator::{make_default_simple_policy, SimpleValidatorFactory};
+    use crate::policy::simple_validator::{
+        make_default_simple_policy, SimpleValidatorFactory, TestSimpleValidatorBuilder,
+    };
+    use crate::util::test_utils::htlc::{
+        make_commit_info_with_htlcs, make_counterparty_commit_info_with_htlcs, make_htlc,
+    };
+    use crate::util::test_utils::key::make_test_pubkey;
+    use bitcoin::hashes::sha256::Hash as Sha256Hash;
+
     use crate::tx::tx::ANCHOR_SAT;
     use crate::util::status::{internal_error, invalid_argument, Code, Status};
     use crate::util::test_utils::invoice::make_test_bolt12_invoice;
@@ -4574,5 +4646,229 @@ mod tests {
 
         // Channel stub is no longer there
         assert!(node.get_channel(&channel_id).is_err());
+    }
+
+    #[test]
+    fn test_apply_payments_cltv_min() {
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        let mut state = node.get_state();
+        let validator = Arc::new(
+            TestSimpleValidatorBuilder::new()
+                .cltv_delta(40)
+                .enforce_balance(true)
+                .node_id(make_test_pubkey(0x42))
+                .build(),
+        );
+        let hash1 = PaymentHash(Sha256Hash::hash(&[1u8; 32]).to_byte_array());
+        let commit_info1 = make_commit_info_with_htlcs(
+            // offered (outgoing)
+            vec![make_htlc(hash1, 70_000, 1000)],
+            // received (incoming)
+            vec![make_htlc(hash1, 50_000, 1200), make_htlc(hash1, 30_000, 1050)],
+        );
+
+        state.apply_payments(
+            &channel_id,
+            &vec![(hash1, 80)].into_iter().collect(),
+            &vec![(hash1, 70)].into_iter().collect(),
+            &Default::default(),
+            validator,
+            Some(&commit_info1),
+        );
+
+        let payment1 = state.payments.get(&hash1).unwrap();
+        assert_eq!(payment1.incoming_cltv_min, Some(1050));
+        assert_eq!(payment1.outgoing_cltv_max, Some(1000));
+    }
+
+    #[test]
+    fn test_apply_payments_cltv_counterparty_commitment() {
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        let mut state = node.get_state();
+        let validator = Arc::new(
+            TestSimpleValidatorBuilder::new()
+                .cltv_delta(40)
+                .enforce_balance(true)
+                .node_id(make_test_pubkey(0x42))
+                .build(),
+        );
+        let hash1 = PaymentHash(Sha256Hash::hash(&[1u8; 32]).to_byte_array());
+
+        let commit_info1 = make_counterparty_commit_info_with_htlcs(
+            vec![make_htlc(hash1, 50_000, 1200), make_htlc(hash1, 30_000, 1050)],
+            vec![make_htlc(hash1, 70_000, 1000)],
+        );
+
+        state.apply_payments(
+            &channel_id,
+            &vec![(hash1, 80)].into_iter().collect(),
+            &vec![(hash1, 70)].into_iter().collect(),
+            &Default::default(),
+            validator,
+            Some(&commit_info1),
+        );
+
+        let payment1 = state.payments.get(&hash1).unwrap();
+        assert_eq!(payment1.incoming_cltv_min, Some(1050));
+        assert_eq!(payment1.outgoing_cltv_max, Some(1000));
+    }
+
+    #[test]
+    fn test_multi_channel_multi_payment_sufficient_cltv() {
+        let (node, _channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        let mut state = node.get_state();
+        let hash1 = PaymentHash(Sha256Hash::hash(&[1u8; 32]).to_byte_array());
+        let hash2 = PaymentHash(Sha256Hash::hash(&[2u8; 32]).to_byte_array());
+        let hash3 = PaymentHash(Sha256Hash::hash(&[3u8; 32]).to_byte_array());
+        let validator = Arc::new(
+            TestSimpleValidatorBuilder::new()
+                .cltv_delta(40)
+                .enforce_balance(true)
+                .node_id(make_test_pubkey(0x42))
+                .build(),
+        );
+
+        let channel_id1 = ChannelId::new(&[1; 32]);
+        let channel_id2 = ChannelId::new(&[2; 32]);
+        let channel_id3 = ChannelId::new(&[3; 32]);
+
+        // delta=50
+        let mut payment1 = RoutedPayment::new();
+        payment1.apply(&channel_id1, 50, 0, Some(1050), None);
+        payment1.apply(&channel_id2, 30, 70, Some(1100), Some(1000));
+        state.payments.insert(hash1, payment1);
+
+        // delta=50
+        let mut payment2 = RoutedPayment::new();
+        payment2.apply(&channel_id1, 100, 0, Some(1100), None);
+        payment2.apply(&channel_id2, 50, 80, Some(1200), Some(1050));
+        payment2.apply(&channel_id3, 0, 60, None, Some(1040));
+        state.payments.insert(hash2, payment2);
+
+        // delta=50
+        let mut payment3 = RoutedPayment::new();
+        payment3.apply(&channel_id1, 60, 55, Some(1300), Some(1250));
+        state.payments.insert(hash3, payment3);
+
+        let result = state.validate_payments(
+            &channel_id1,
+            &vec![(hash1, 50), (hash2, 100), (hash3, 60)].into_iter().collect(),
+            &vec![(hash1, 0), (hash2, 0), (hash3, 55)].into_iter().collect(),
+            &Default::default(),
+            validator,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_multi_channel_multi_payment_one_insufficient_cltv() {
+        let (node, _channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+
+        let hash1 = PaymentHash(Sha256Hash::hash(&[1u8; 32]).to_byte_array());
+        let hash2 = PaymentHash(Sha256Hash::hash(&[2u8; 32]).to_byte_array());
+        let hash3 = PaymentHash(Sha256Hash::hash(&[3u8; 32]).to_byte_array());
+
+        let validator = Arc::new(
+            TestSimpleValidatorBuilder::new()
+                .cltv_delta(40)
+                .enforce_balance(true)
+                .node_id(make_test_pubkey(0x42))
+                .build(),
+        );
+
+        let channel_id1 = ChannelId::new(&[1; 32]);
+        let channel_id2 = ChannelId::new(&[2; 32]);
+
+        let mut state = node.get_state();
+
+        // Payment 1: delta=50 (valid)
+        let mut payment1 = RoutedPayment::new();
+        payment1.apply(&channel_id1, 50, 0, Some(1200), None);
+        payment1.apply(&channel_id2, 30, 70, Some(1050), Some(1000));
+        state.payments.insert(hash1, payment1);
+
+        // Payment 2: delta=20 (invalid)
+        let mut payment2 = RoutedPayment::new();
+        payment2.apply(&channel_id1, 100, 80, Some(1100), Some(1000));
+        payment2.apply(&channel_id2, 50, 60, Some(1020), Some(990));
+        state.payments.insert(hash2, payment2);
+
+        // Payment 3: delta=50 (valid)
+        let mut payment3 = RoutedPayment::new();
+        payment3.apply(&channel_id1, 60, 55, Some(1300), Some(1250));
+        state.payments.insert(hash3, payment3);
+
+        let result = state.validate_payments(
+            &channel_id1,
+            &vec![(hash1, 50), (hash2, 100), (hash3, 60)].into_iter().collect(),
+            &vec![(hash1, 0), (hash2, 80), (hash3, 55)].into_iter().collect(),
+            &Default::default(),
+            validator.clone(),
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.tag, "policy-routing-cltv-delta");
+        assert!(
+            err.to_string().contains("CLTV delta 20 is less than minimum 40"),
+            "Error should mention delta=20 < minimum=40"
+        );
+    }
+
+    #[test]
+    fn test_multi_payment_originating_and_terminal_no_cltv_validation() {
+        let (node, _channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+        let validator = Arc::new(
+            TestSimpleValidatorBuilder::new()
+                .cltv_delta(40)
+                .enforce_balance(true)
+                .node_id(make_test_pubkey(0x42))
+                .build(),
+        );
+
+        let channel_id = ChannelId::new(&[1; 32]);
+        let mut state = node.get_state();
+
+        // only incoming (multiple HTLCs)
+        let terminal_hash1 = PaymentHash(Sha256Hash::hash(&[10u8; 32]).to_byte_array());
+        let mut terminal1 = RoutedPayment::new();
+        terminal1.apply(&channel_id, 100, 0, Some(1000), None);
+        terminal1.apply(&channel_id, 50, 0, Some(1100), None);
+        terminal1.apply(&channel_id, 75, 0, Some(1050), None);
+        state.payments.insert(terminal_hash1, terminal1);
+
+        // only outgoing (multiple HTLCs)
+        let orig_hash1 = PaymentHash(Sha256Hash::hash(&[30u8; 32]).to_byte_array());
+        let mut orig1 = RoutedPayment::new();
+        orig1.apply(&channel_id, 0, 60, None, Some(950));
+        orig1.apply(&channel_id, 0, 40, None, Some(1000));
+        orig1.apply(&channel_id, 0, 50, None, Some(980));
+        state.payments.insert(orig_hash1, orig1);
+
+        let terminal1 = state.payments.get(&terminal_hash1).unwrap();
+        assert_eq!(terminal1.incoming_cltv_min, Some(1000));
+        assert_eq!(terminal1.outgoing_cltv_max, None);
+        assert!(terminal1.get_cltv_bounds().is_none());
+
+        let orig1 = state.payments.get(&orig_hash1).unwrap();
+        assert_eq!(orig1.incoming_cltv_min, None);
+        assert_eq!(orig1.outgoing_cltv_max, Some(1000));
+        assert!(orig1.get_cltv_bounds().is_none());
+
+        let result = state.validate_payments(
+            &channel_id,
+            &vec![(terminal_hash1, 225)].into_iter().collect(),
+            &vec![(orig_hash1, 150)].into_iter().collect(),
+            &Default::default(),
+            validator.clone(),
+        );
+
+        assert!(result.is_ok());
     }
 }
