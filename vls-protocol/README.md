@@ -32,4 +32,22 @@ When adding a new message:
 - Add the matching Rust definitions in `src/msgs.rs` in the same sorted position (by `id`).
 - Keep request/reply pairs adjacent.
 
-**Note**: Run the system’s tests defined in [VLS HSMD](https://gitlab.com/lightning-signer/vls-hsmd) before opening a PR related to protocol message changes with the latest CLN version.
+**Note**: Run the system's tests defined in [VLS HSMD](https://gitlab.com/lightning-signer/vls-hsmd) before opening a PR related to protocol message changes with the latest CLN version.
+
+## Development Setup
+
+For general development prerequisites and Rust toolchain setup, see the main [README.md](../README.md#development-information).
+
+### Running Tests
+
+Most tests run with standard `cargo test`, but some require the `developer` feature:
+
+```bash
+cargo test --package vls-protocol --features developer
+```
+
+For comprehensive testing with all features:
+
+```bash
+cargo test --package vls-protocol --all-features
+```

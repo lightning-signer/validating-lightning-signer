@@ -1,3 +1,9 @@
+# Embedded Signer
+
+> **Prerequisites**: Ensure you have completed the general Rust setup from the main [README.md](../README.md#development-information) first.
+>
+> **Note**: Embedded builds require a specific nightly version: `nightly-2024-10-13`. This differs from the workspace default stable version to ensure compatibility with embedded targets.
+
 # Running
 
 To run the embedded test, first prepare your environment:
@@ -12,6 +18,12 @@ Then:
 ```shell
 source ./scripts/env.sh && cargo +nightly run --target thumbv7m-none-eabi
 ```
+
+> **Tip**: For production embedded builds, use the pinned nightly version:
+> ```bash
+> cargo +nightly-2024-10-13 build --target thumbv7m-none-eabi
+> ```
+> The workspace uses this specific nightly version for embedded targets to ensure consistent behavior across different development environments.
 
 Output should be something like:
 
