@@ -13,10 +13,36 @@
         pkgs = nixpkgs.legacyPackages.${system};
         # build rust application :)
         naersk' = pkgs.callPackage naersk { };
+
+        vlsd = naersk'.buildPackage {
+          pname = "vlsd";
+          src = ./.;
+          cargoBuildOptions = opts: opts ++ [ "-p" "vlsd" ];
+          nativeBuildInputs = with pkgs; [ pkg-config protobuf ];
+          buildInputs = with pkgs; [ openssl ];
+        };
+
+        vls-proxy = naersk'.buildPackage {
+          pname = "vls-proxy";
+          src = ./.;
+          cargoBuildOptions = opts: opts ++ [ "-p" "vls-proxy" ];
+          nativeBuildInputs = with pkgs; [ pkg-config protobuf ];
+          buildInputs = with pkgs; [ openssl ];
+        };
+
+        vls = pkgs.symlinkJoin {
+          name = "vls";
+          paths = [ vlsd vls-proxy ];
+        };
       in
-      rec {
-        # Set up the nix flake derivation
-        packages = { };
+      {
+        packages = {
+          vlsd = vlsd;
+          vls-proxy = vls-proxy;
+          vls = vls;
+          default = vls;
+        };
+
         # FIXME: will be good to have this formatting also the rust code
         formatter = pkgs.nixpkgs-fmt;
 
