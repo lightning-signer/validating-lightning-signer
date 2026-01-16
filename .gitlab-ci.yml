@@ -1,4 +1,4 @@
-image: python:3.8
+image: python:3.14
 
 cache:
   key: vls-global
@@ -44,11 +44,11 @@ get-bitcoin:
   script:
     - ls -l bin
     - if [ ! -e bin/bitcoind ]; then
-      wget --no-verbose https://bitcoin.org/bin/bitcoin-core-0.21.0/bitcoin-0.21.0-x86_64-linux-gnu.tar.gz &&
-      echo da7766775e3f9c98d7a9145429f2be8297c2672fe5b118fd3dc2411fb48e0032  bitcoin-0.21.0-x86_64-linux-gnu.tar.gz | sha256sum -c &&
-      tar xzf bitcoin-0.21.0-x86_64-linux-gnu.tar.gz &&
-      mv bitcoin-0.21.0/bin/bitcoind bin/ &&
-      rm -rf bitcoin-0.21.0 ;
+      wget --no-verbose https://bitcoincore.org/bin/bitcoin-core-29.2/bitcoin-29.2-x86_64-linux-gnu.tar.gz &&
+      echo 1fd58d0ae94b8a9e21bbaeab7d53395a44976e82bd5492b0a894826c135f9009  bitcoin-29.2-x86_64-linux-gnu.tar.gz | sha256sum -c &&
+      tar xzf bitcoin-29.2-x86_64-linux-gnu.tar.gz &&
+      mv bitcoin-29.2/bin/bitcoind bin/ &&
+      rm -rf bitcoin-29.2 ;
       fi
   artifacts:
     paths:
