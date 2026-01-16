@@ -48,7 +48,7 @@ anyhow = { workspace = true, features = ["std"] }
 async-trait = { workspace = true }
 url = { workspace = true, optional = true }
 hex = { workspace = true }
-lru = ">=0.11.0,<0.13.0"
+lru = ">=0.16.3"
 txoo-bitcoind-client = { workspace = true }
 backon = { version = "1.4.1", optional = true }
 
