@@ -283,8 +283,8 @@ impl NodeSigner for KeysManager {
             Recipient::PhantomNode => panic!("phantom node not supported"),
         }
         let node_secret = self.node_secret.clone();
-        let hash = raw_invoice.payment_hash().unwrap();
-        let message = secp256k1::Message::from_digest(hash.0.to_byte_array());
+        let hash = raw_invoice.signable_hash();
+        let message = secp256k1::Message::from_digest(hash);
         Ok(self.secp_ctx.sign_ecdsa_recoverable(&message, &node_secret))
     }
 
