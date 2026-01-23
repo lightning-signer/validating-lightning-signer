@@ -1,10 +1,9 @@
 #!/usr/bin/env -S python3 -u
-import atexit
-import logging
 import os
 import signal
 import subprocess
 import argparse
+from contextlib import contextmanager
 
 import time
 from shutil import rmtree
@@ -22,11 +21,10 @@ from retrying import retry
 from admin_pb2_grpc import AdminStub
 from admin_pb2 import PingRequest, ChannelNewRequest, ChannelCloseRequest, Void, InvoiceNewRequest, PaymentSendRequest, Payment, PeerConnectRequest
 
-processes: List[Popen] = []
 OUTPUT_DIR = 'test-output'
 INSTANCE_OFFSET = 0  # this helps us ensure we use different ports when we run concurrent tests
 NUM_PAYMENTS = 250
-WAIT_TIMEOUT = 1000
+WAIT_TIMEOUT = 30 # this was originally 10s but that accidentally timedout occasionally on CI
 CHANNEL_BALANCE_SYNC_INTERVAL = 50
 CHANNEL_VALUE_SAT = 10_000_000
 EXPECTED_FEE_SAT = 1458
@@ -43,8 +41,6 @@ SIGNER = os.environ.get("SIGNER", "vls-null")
 # options: OFF, ERROR, WARN, INFO, DEBUG, TRACE
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "error")
 
-logger = logging.getLogger()
-
 os.environ['RUST_BACKTRACE'] = "1"
 
 # we want to manage the allowlist ourselves, don't let a stray env var confuse us
@@ -59,33 +55,66 @@ def new_proc(args, log_file):
         return Popen(args, stdout=log_file, stderr=log_file)
 
 
-def kill_all_procs(procs):
-    print('Killing nodes')
-    try:
-        kill_procs(procs, 'nodes')
-    except:
-        # FIXME: Nodes should shut down cleanly
-        print("Nodes didn't exit cleanly")
-    print('Killing signers')
-    kill_procs(procs, 'signers')
-    print('Killing bitcoin')
-    kill_procs(procs, 'bitcoin')
+class ProcessDied(Exception):
+    def __init__(self, name, returncode):
+        self.name = name
+        self.returncode = returncode
+        super().__init__(f'Process {name} died with exit code {returncode}')
 
 
-def kill_procs(processes, key):
-    for p in processes[key]:
-        p.send_signal(signal.SIGTERM)
-    for p in processes[key]:
+@contextmanager
+def managed_processes():
+    """Context manager for subprocess lifecycle and health checking."""
+    procs = {'nodes': [], 'signers': [], 'bitcoin': []}
+    shutting_down = False
+
+    class ProcessManager:
+        def add(self, key, proc):
+            procs[key].append(proc)
+
+        def stop(self, key, proc):
+            """Stop a process and remove it from management."""
+            proc.send_signal(signal.SIGTERM)
+            proc.wait()
+            procs[key].remove(proc)
+
+        def check_alive(self):
+            if shutting_down:
+                return
+            for name, proc_list in procs.items():
+                for i, p in enumerate(proc_list):
+                    ret = p.poll()
+                    if ret is not None:
+                        raise ProcessDied(f'{name}[{i}]', ret)
+
+    def kill_all():
+        nonlocal shutting_down
+        shutting_down = True
+        print('Killing nodes')
         try:
-            p.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            print(f'process {p} did not exit, killing')
-            p.send_signal(signal.SIGKILL)
+            kill_group('nodes')
+        except Exception:
+            # FIXME: Nodes should shut down cleanly
+            print("Nodes didn't exit cleanly")
+        print('Killing signers')
+        kill_group('signers')
+        print('Killing bitcoin')
+        kill_group('bitcoin')
 
+    def kill_group(key):
+        for p in procs[key]:
+            p.send_signal(signal.SIGTERM)
+        for i, p in enumerate(procs[key]):
+            try:
+                p.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                print(f'{key}[{i}] (pid: {p.pid}) did not exit, killing')
+                p.send_signal(signal.SIGKILL)
 
-def stop_proc(p):
-    p.send_signal(signal.SIGTERM)
-    p.wait()
+    try:
+        yield ProcessManager()
+    finally:
+        kill_all()
 
 
 class BitcoindException(Exception):
@@ -157,15 +186,15 @@ class Bitcoind(object):
         except Exception as e:
             error_msg = resp.text if resp is not None else e
             msg = u"{} {}:[{}] \n {}".format('post', method_name, args, error_msg)
-            logger.error(msg)
+            print(msg)
             raise e
 
         if resp.get('error') is not None:
             e = resp['error']
-            logger.error('{}:[{}]\n {}:{}'.format(method_name, args, e['code'], e['message']))
+            print('{}:[{}]\n {}:{}'.format(method_name, args, e['code'], e['message']))
             raise BitcoindException(e)
         elif 'result' not in resp:
-            logger.error('[{}]:[{}]\n MISSING JSON-RPC RESULT'.format(method_name, args, ))
+            print('[{}]:[{}]\n MISSING JSON-RPC RESULT'.format(method_name, args, ))
             raise Exception('missing result')
 
         return resp['result']
@@ -179,11 +208,11 @@ def grpc_client(url):
 
 
 # retry every 0.1 seconds until WAIT_TIMEOUT seconds have passed
-def wait_until(name, func):
-    logger.debug(f'wait for {name}')
+def wait_until(name, func, proc_mgr):
     timeout = WAIT_TIMEOUT * 10
     exc = None
     while timeout > 0:
+        proc_mgr.check_alive()
         try:
             if func():
                 break
@@ -198,7 +227,6 @@ def wait_until(name, func):
         if exc:
             raise exc
         raise Exception(f'Timeout waiting for {name}')
-    logger.debug(f'done {name}')
 
 
 def run(disaster_recovery_block_explorer, existing_bitcoin_rpc):
@@ -206,212 +234,211 @@ def run(disaster_recovery_block_explorer, existing_bitcoin_rpc):
     assert NUM_PAYMENTS % CHANNEL_BALANCE_SYNC_INTERVAL == 0
     assert disaster_recovery_block_explorer is None or SIGNER == 'vls-grpc', "test_disaster only works with vls-grpc"
 
-    procs = {'nodes': [], 'signers': [], 'bitcoin': []}
+    with managed_processes() as proc_mgr:
+        # Local helper that captures proc_mgr
+        def wait(name, func):
+            wait_until(name, func, proc_mgr)
 
-    # Stop the processes in the reverse order they were started
-    atexit.register(lambda: kill_all_procs(procs))
+        rmtree(OUTPUT_DIR, ignore_errors=True)
+        os.mkdir(OUTPUT_DIR)
 
-    rmtree(OUTPUT_DIR, ignore_errors=True)
-    os.mkdir(OUTPUT_DIR)
-
-    if existing_bitcoin_rpc:
-        print('Connecting to bitcoind')
-        btc = connect_bitcoind(existing_bitcoin_rpc)
-        bitcoin_rpc = existing_bitcoin_rpc + "/wallet/default"
-    else:
-        btc, _ = start_bitcoind(procs)
-        # TODO: we have to use 127.0.0.1 instead of localhost because
-        # of a bug in the jsonrpc library which doesn't try all the
-        # resolved addresses when the first fails
-        bitcoin_rpc = 'http://user:pass@127.0.0.1:18443/wallet/default'
-
-    print('Starting nodes')
-    alice, _, _ = start_node(1, bitcoin_rpc, procs)
-    bob, _, _ = start_node(2, bitcoin_rpc, procs)
-    charlie, charlie_proc, charlie_proc1 = start_node(3, bitcoin_rpc, procs)
-
-    print('Generate initial blocks')
-    btc.mine(110)
-    balance = btc.getbalance()
-    assert balance > 0
-
-    time.sleep(5)
-    print("at height", btc.getblockchaininfo()['blocks'])
-
-    alice_id = alice.NodeInfo(Void()).node_id
-    bob_id = bob.NodeInfo(Void()).node_id
-    charlie_id = charlie.NodeInfo(Void()).node_id
-
-    print('Create channel alice -> bob')
-    try:
-        alice.PeerConnect(PeerConnectRequest(node_id=bob_id, address=f'127.0.0.1:{bob.lnport}'))
-        alice.ChannelNew(ChannelNewRequest(node_id=bob_id, value_sat=CHANNEL_VALUE_SAT, is_public=True))
-    except Exception as e:
-        print(e)
-        time.sleep(10000)
-        raise
-
-    # we have to wait here to prevent a race condition on the bitcoin wallet UTXOs
-    # TODO UTXO locking
-    wait_until('channel at bob', lambda: bob.ChannelList(Void()).channels[0].is_pending)
-    wait_until('channel at alice', lambda: alice.ChannelList(Void()).channels[0].is_pending)
-
-    btc.mine(1)
-    time.sleep(1)
-    btc.mine(1)
-
-    print('Create channel bob -> charlie')
-    try:
-        bob.PeerConnect(PeerConnectRequest(node_id=charlie_id, address=f'127.0.0.1:{charlie.lnport}'))
-        bob.ChannelNew(ChannelNewRequest(node_id=charlie_id, value_sat=CHANNEL_VALUE_SAT, is_public=True))
-    except Exception as e:
-        print(e)
-        raise
-
-    wait_until('channel at charlie', lambda: charlie.ChannelList(Void()).channels[0].is_pending)
-
-    btc.mine(6)
-
-    def channel_active():
-        btc.mine(1)
-        alice_chans = alice.ChannelList(Void())
-        bob_chans = bob.ChannelList(Void())
-        charlie_chans = charlie.ChannelList(Void())
-        return (not alice_chans.channels[0].is_pending and
-                not bob_chans.channels[0].is_pending and
-                not bob_chans.channels[1].is_pending and
-                not charlie_chans.channels[0].is_pending and
-                alice_chans.channels[0].is_active and
-                bob_chans.channels[0].is_active and
-                bob_chans.channels[1].is_active and
-                charlie_chans.channels[0].is_active)
-
-    wait_until('active at both', channel_active)
-
-    time.sleep(5)
-    print("at height", btc.getblockchaininfo()['blocks'])
-
-    def best_block_sync(node):
-        return node.NodeInfo(Void()).best_block_hash[::-1].hex() == btc.getblockchaininfo()['bestblockhash']
-
-    wait_until('alice synced', lambda: best_block_sync(alice))
-    wait_until('bob synced', lambda: best_block_sync(bob))
-    wait_until('charlie synced', lambda: best_block_sync(charlie))
-
-    assert alice.ChannelList(Void()).channels[0].is_active
-    assert bob.ChannelList(Void()).channels[0].is_active
-
-    print(f'Alice initial balance {alice.ChannelList(Void()).channels[0].outbound_msat}')
-    print(PAYMENT_MSAT * CHANNEL_BALANCE_SYNC_INTERVAL)
-
-    time.sleep(5)
-    print("at height", btc.getblockchaininfo()['blocks'])
-
-    for i in range(1, NUM_PAYMENTS + 1):
-        print(f'Pay invoice {i}')
-        invoice = charlie.InvoiceNew(InvoiceNewRequest(value_msat=PAYMENT_MSAT)).invoice
-        alice.PaymentSend(PaymentSendRequest(invoice=invoice))
-
-        if i % CHANNEL_BALANCE_SYNC_INTERVAL == 0:
-            def check_payments():
-                payments = alice.PaymentList(Void()).payments
-                assert len(payments) == i
-                return all(p.status == Payment.PaymentStatus.Succeeded for p in payments)
-
-            print('*** SYNC TO PAYMENT STATUS')
-            wait_until('payments succeed', check_payments)
-
-            print('*** CHECK CHANNEL BALANCE')
-
-            wait_until('channel balance alice',
-                       lambda: assert_equal_delta(CHANNEL_VALUE_SAT * 1000 - EXPECTED_FEE_SAT * 1000 - alice.ChannelList(Void()).channels[0].outbound_msat,
-                                                  i * PAYMENT_MSAT))
-            wait_until('channel balance charlie',
-                       lambda: assert_equal_delta(charlie.ChannelList(Void()).channels[0].outbound_msat,
-                                                  max(0, i * PAYMENT_MSAT)))
-
-    def wait_received(node_id, minimum=1):
-        btc.mine(2)
-        return get_swept_value(node_id) >= minimum
-
-    def get_swept_value(node_id):
-        return int(btc.getreceivedbylabel(f'sweep-{node_id.hex()}') * 100000000)
-
-    print('Closing alice - bob')
-    alice_channel = alice.ChannelList(Void()).channels[0]
-    alice.ChannelClose(ChannelCloseRequest(channel_id=alice_channel.channel_id))
-
-    wait_until('alice sweep', lambda: wait_received(alice_id))
-    wait_until('bob sweep', lambda: wait_received(bob_id))
-    alice_sweep = int(get_swept_value(alice_id))
-    bob_sweep = int(get_swept_value(bob_id))
-    assert_equal_delta(CHANNEL_VALUE_SAT - (NUM_PAYMENTS * PAYMENT_MSAT) / 1000 - 1000, alice_sweep)
-    assert_equal_delta((NUM_PAYMENTS * PAYMENT_MSAT) / 1000 - 1000, bob_sweep)
-
-    if disaster_recovery_block_explorer is not None:
-        utxos = fund_vls_addresses(btc, vls_port=6600 + INSTANCE_OFFSET + 3, count=2, amount=0.01)
-
-        print('Disaster recovery at charlie')
-        stop_proc(charlie_proc)
-        stop_proc(charlie_proc1)
-        destination = btc.getnewaddress(f"sweep-{charlie_id.hex()}")
-        vlsd = VLS_BINARIES_PATH + '/vlsd'
-        if disaster_recovery_block_explorer == 'bitcoind':
-            recover_rpc = bitcoin_rpc
-            recover_type = 'bitcoind'
-        elif disaster_recovery_block_explorer == 'esplora':
-            recover_rpc = 'http://localhost:8094/regtest/api/'
-            recover_type = 'esplora'
+        if existing_bitcoin_rpc:
+            print('Connecting to bitcoind')
+            btc = connect_bitcoind(existing_bitcoin_rpc)
+            bitcoin_rpc = existing_bitcoin_rpc + "/wallet/default"
         else:
-            raise ValueError(f'Unknown block explorer {disaster_recovery_block_explorer}')
+            btc, _ = start_bitcoind(proc_mgr)
+            # TODO: we have to use 127.0.0.1 instead of localhost because
+            # of a bug in the jsonrpc library which doesn't try all the
+            # resolved addresses when the first fails
+            bitcoin_rpc = 'http://user:pass@127.0.0.1:18443/wallet/default'
 
-        input_utxo = format_input_utxo(utxos[0])
-        input_utxo2 = format_input_utxo(utxos[1])
-        fee_rate = 100
+        print('Starting nodes')
+        alice, _, _ = start_node(1, bitcoin_rpc, proc_mgr)
+        bob, _, _ = start_node(2, bitcoin_rpc, proc_mgr)
+        charlie, charlie_proc, charlie_proc1 = start_node(3, bitcoin_rpc, proc_mgr)
 
-        p = call([vlsd,
-                  '--network=regtest',
-                  '--datadir', f'{OUTPUT_DIR}/vls3',
-                  '--recover-type', recover_type,
-                  '--recover-rpc', recover_rpc,
-                  '--recover-to', destination,
-                  '--fee-rate', str(fee_rate),
-                  '--input-utxo', input_utxo])
-        assert p == 0
-        print('Sweep at charlie')
-        btc.mine(145)
-        # wait for Charlie to see the mined blocks
+        print('Generate initial blocks')
+        btc.mine(110)
+        balance = btc.getbalance()
+        assert balance > 0
+
         time.sleep(5)
+        print("at height", btc.getblockchaininfo()['blocks'])
 
-        p = call([vlsd,
-                  '--network=regtest',
-                  '--datadir', f'{OUTPUT_DIR}/vls3',
-                  '--recover-type', recover_type,
-                  '--recover-rpc', recover_rpc,
-                  '--recover-to', destination,
-                  '--fee-rate', str(fee_rate),
-                  '--input-utxo', input_utxo2])
-        assert p == 0
-        print('Swept at charlie')
-    else:
-        print('Force closing bob - charlie at charlie')
-        charlie_channel = charlie.ChannelList(Void()).channels[0]
-        charlie.ChannelClose(ChannelCloseRequest(channel_id=charlie_channel.channel_id, is_force=True))
-        wait_until('bob sweep', lambda: wait_received(bob_id, minimum=bob_sweep + 1))
+        alice_id = alice.NodeInfo(Void()).node_id
+        bob_id = bob.NodeInfo(Void()).node_id
+        charlie_id = charlie.NodeInfo(Void()).node_id
+
+        print('Create channel alice -> bob')
+        try:
+            alice.PeerConnect(PeerConnectRequest(node_id=bob_id, address=f'127.0.0.1:{bob.lnport}'))
+            alice.ChannelNew(ChannelNewRequest(node_id=bob_id, value_sat=CHANNEL_VALUE_SAT, is_public=True))
+        except Exception as e:
+            print(e)
+            time.sleep(10000)
+            raise
+
+        # we have to wait here to prevent a race condition on the bitcoin wallet UTXOs
+        # TODO UTXO locking
+        wait('channel at bob', lambda: bob.ChannelList(Void()).channels[0].is_pending)
+        wait('channel at alice', lambda: alice.ChannelList(Void()).channels[0].is_pending)
+
+        btc.mine(1)
+        time.sleep(1)
+        btc.mine(1)
+
+        print('Create channel bob -> charlie')
+        try:
+            bob.PeerConnect(PeerConnectRequest(node_id=charlie_id, address=f'127.0.0.1:{charlie.lnport}'))
+            bob.ChannelNew(ChannelNewRequest(node_id=charlie_id, value_sat=CHANNEL_VALUE_SAT, is_public=True))
+        except Exception as e:
+            print(e)
+            raise
+
+        # Connect Alice to Charlie for gossip propagation (helps with route discovery)
+        alice.PeerConnect(PeerConnectRequest(node_id=charlie_id, address=f'127.0.0.1:{charlie.lnport}'))
+
+        wait('channel at charlie', lambda: charlie.ChannelList(Void()).channels[0].is_pending)
+
+        btc.mine(6)
+
+        def channel_active():
+            btc.mine(1)
+            alice_chans = alice.ChannelList(Void())
+            bob_chans = bob.ChannelList(Void())
+            charlie_chans = charlie.ChannelList(Void())
+            return (not alice_chans.channels[0].is_pending and
+                    not bob_chans.channels[0].is_pending and
+                    not bob_chans.channels[1].is_pending and
+                    not charlie_chans.channels[0].is_pending and
+                    alice_chans.channels[0].is_active and
+                    bob_chans.channels[0].is_active and
+                    bob_chans.channels[1].is_active and
+                    charlie_chans.channels[0].is_active)
+
+        wait('active at both', channel_active)
+
+        time.sleep(5)
+        print("at height", btc.getblockchaininfo()['blocks'])
+
+        def best_block_sync(node):
+            return node.NodeInfo(Void()).best_block_hash[::-1].hex() == btc.getblockchaininfo()['bestblockhash']
+
+        wait('alice synced', lambda: best_block_sync(alice))
+        wait('bob synced', lambda: best_block_sync(bob))
+        wait('charlie synced', lambda: best_block_sync(charlie))
+
+        assert alice.ChannelList(Void()).channels[0].is_active
+        assert bob.ChannelList(Void()).channels[0].is_active
+
+        print(f'Alice initial balance {alice.ChannelList(Void()).channels[0].outbound_msat}')
+        print(PAYMENT_MSAT * CHANNEL_BALANCE_SYNC_INTERVAL)
+
+        time.sleep(5)
+        print("at height", btc.getblockchaininfo()['blocks'])
+
+        for i in range(1, NUM_PAYMENTS + 1):
+            print(f'Pay invoice {i}')
+            invoice = charlie.InvoiceNew(InvoiceNewRequest(value_msat=PAYMENT_MSAT)).invoice
+            alice.PaymentSend(PaymentSendRequest(invoice=invoice))
+
+            if i % CHANNEL_BALANCE_SYNC_INTERVAL == 0:
+                def check_payments():
+                    payments = alice.PaymentList(Void()).payments
+                    assert len(payments) == i
+                    return all(p.status == Payment.PaymentStatus.Succeeded for p in payments)
+
+                print('*** SYNC TO PAYMENT STATUS')
+                wait('payments succeed', check_payments)
+
+                print('*** CHECK CHANNEL BALANCE')
+
+                wait('channel balance alice',
+                     lambda: assert_equal_delta(CHANNEL_VALUE_SAT * 1000 - EXPECTED_FEE_SAT * 1000 - alice.ChannelList(Void()).channels[0].outbound_msat,
+                                                i * PAYMENT_MSAT))
+                wait('channel balance charlie',
+                     lambda: assert_equal_delta(charlie.ChannelList(Void()).channels[0].outbound_msat,
+                                                max(0, i * PAYMENT_MSAT)))
+
+        def wait_received(node_id, minimum=1):
+            btc.mine(2)
+            return get_swept_value(node_id) >= minimum
+
+        def get_swept_value(node_id):
+            return int(btc.getreceivedbylabel(f'sweep-{node_id.hex()}') * 100000000)
+
+        print('Closing alice - bob')
+        alice_channel = alice.ChannelList(Void()).channels[0]
+        alice.ChannelClose(ChannelCloseRequest(channel_id=alice_channel.channel_id))
+
+        wait('alice sweep', lambda: wait_received(alice_id))
+        wait('bob sweep', lambda: wait_received(bob_id))
+        alice_sweep = int(get_swept_value(alice_id))
         bob_sweep = int(get_swept_value(bob_id))
-        # bob, as router, is flat except for fees
-        assert_equal_delta(CHANNEL_VALUE_SAT - 2000, bob_sweep)
+        assert_equal_delta(CHANNEL_VALUE_SAT - (NUM_PAYMENTS * PAYMENT_MSAT) / 1000 - 1000, alice_sweep)
+        assert_equal_delta((NUM_PAYMENTS * PAYMENT_MSAT) / 1000 - 1000, bob_sweep)
 
-        # charlie should not have been able to sweep yet
+        if disaster_recovery_block_explorer is not None:
+            utxos = fund_vls_addresses(btc, vls_port=6600 + INSTANCE_OFFSET + 3, count=2, amount=0.01)
+
+            print('Disaster recovery at charlie')
+            proc_mgr.stop('nodes', charlie_proc)
+            proc_mgr.stop('signers', charlie_proc1)
+            destination = btc.getnewaddress(f"sweep-{charlie_id.hex()}")
+            vlsd = VLS_BINARIES_PATH + '/vlsd'
+            if disaster_recovery_block_explorer == 'bitcoind':
+                recover_rpc = bitcoin_rpc
+                recover_type = 'bitcoind'
+            elif disaster_recovery_block_explorer == 'esplora':
+                recover_rpc = 'http://localhost:8094/regtest/api/'
+                recover_type = 'esplora'
+            else:
+                raise ValueError(f'Unknown block explorer {disaster_recovery_block_explorer}')
+
+            input_utxo = format_input_utxo(utxos[0])
+            input_utxo2 = format_input_utxo(utxos[1])
+            fee_rate = 100
+
+            recover_args = [vlsd,
+                            '--network=regtest',
+                            '--datadir', f'{OUTPUT_DIR}/vls3',
+                            '--recover-type', recover_type,
+                            '--recover-rpc', recover_rpc,
+                            '--recover-to', destination,
+                            '--fee-rate', str(fee_rate)]
+
+            with open(f'{OUTPUT_DIR}/recover1.log', 'w') as log:
+                p = call(recover_args + ['--input-utxo', input_utxo], stdout=log, stderr=log)
+            assert p == 0
+            print('Sweep at charlie')
+            btc.mine(145)
+            # wait for Charlie to see the mined blocks
+            time.sleep(5)
+
+            with open(f'{OUTPUT_DIR}/recover2.log', 'w') as log:
+                p = call(recover_args + ['--input-utxo', input_utxo2], stdout=log, stderr=log)
+            assert p == 0
+            print('Swept at charlie')
+        else:
+            print('Force closing bob - charlie at charlie')
+            charlie_channel = charlie.ChannelList(Void()).channels[0]
+            charlie.ChannelClose(ChannelCloseRequest(channel_id=charlie_channel.channel_id, is_force=True))
+            wait('bob sweep', lambda: wait_received(bob_id, minimum=bob_sweep + 1))
+            bob_sweep = int(get_swept_value(bob_id))
+            # bob, as router, is flat except for fees
+            assert_equal_delta(CHANNEL_VALUE_SAT - 2000, bob_sweep)
+
+            # charlie should not have been able to sweep yet
+            charlie_sweep = int(get_swept_value(charlie_id))
+            assert charlie_sweep == 0
+
+        # charlie eventually sweeps their payments
+        wait('charlie sweep', lambda: wait_received(charlie_id))
         charlie_sweep = int(get_swept_value(charlie_id))
-        assert charlie_sweep == 0
+        assert_equal_delta((NUM_PAYMENTS * PAYMENT_MSAT) / 1000 - 1000, charlie_sweep)
 
-    # charlie eventually sweeps their payments
-    wait_until('charlie sweep', lambda: wait_received(charlie_id))
-    charlie_sweep = int(get_swept_value(charlie_id))
-    assert_equal_delta((NUM_PAYMENTS * PAYMENT_MSAT) / 1000 - 1000, charlie_sweep)
-
-    print('Done')
+        print('Done')
 
 
 def assert_equal_delta(a, b):
@@ -420,7 +447,7 @@ def assert_equal_delta(a, b):
     return True
 
 
-def start_bitcoind(procs):
+def start_bitcoind(proc_mgr):
     print("Starting bitcoind")
 
     popen_args = [
@@ -430,7 +457,7 @@ def start_bitcoind(procs):
         # '--debug=rpc',
         f'--datadir={OUTPUT_DIR}']
     btc_proc = new_proc(popen_args, 'btc.log')
-    procs['bitcoin'].append(btc_proc)
+    proc_mgr.add('bitcoin', btc_proc)
     btc = Bitcoind('btc-regtest', 'http://user:pass@localhost:18443')
     time.sleep(2)
     btc.wait_for_ready()
@@ -529,7 +556,7 @@ def run_vls_cli_command(port: int, args: List[str]) -> subprocess.CompletedProce
         raise Exception(f"vls-cli command failed: {e.stderr}") from e
 
 
-def start_vlsd(n, procs):
+def start_vlsd(n, proc_mgr):
     print("Starting signer for node", n)
 
     vlsd = VLS_BINARIES_PATH + '/vlsd'
@@ -544,12 +571,12 @@ def start_vlsd(n, procs):
                   '--rpc-user=vls',
                   '--rpc-pass=bitcoin']
     p = new_proc(popen_args, f'vlsd{n}.log')
-    procs['signers'].append(p)
+    proc_mgr.add('signers', p)
     time.sleep(1)
     return p
 
 
-def start_node(n, bitcoin_rpc, procs):
+def start_node(n, bitcoin_rpc, proc_mgr):
     print('Starting node', n)
 
     lnrod = LNROD_BINARIES_PATH + '/lnrod'
@@ -563,11 +590,11 @@ def start_node(n, bitcoin_rpc, procs):
                    '--lnport', str(9900 + INSTANCE_OFFSET + n),
                    '--bitcoin', bitcoin_rpc])
     p = new_proc(popen_args, f'node{n}.log')
-    procs['nodes'].append(p)
+    proc_mgr.add('nodes', p)
     time.sleep(2)  # FIXME allow gRPC to function before signer connects so we can ping instead of randomly waiting
     p2 = None
     if SIGNER == 'vls-grpc':
-        p2 = start_vlsd(n, procs)
+        p2 = start_vlsd(n, proc_mgr)
 
     print("Starting gRPC client")
     lnrod = grpc_client(f'localhost:{8800 + INSTANCE_OFFSET + n}')
@@ -575,7 +602,6 @@ def start_node(n, bitcoin_rpc, procs):
     return lnrod, p, p2
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
     parser.add_argument("--test-disaster", help=f"test disaster recovery, with choice of block explorer / bitcoind",
                         choices=['bitcoind', 'esplora'])
