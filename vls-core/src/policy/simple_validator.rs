@@ -43,8 +43,6 @@ use crate::util::transaction_utils::{
 use crate::util::velocity::VelocityControlSpec;
 use crate::wallet::Wallet;
 
-extern crate scopeguard;
-
 const SAFE_COMMITMENT_TYPE: &[CommitmentType] =
     &[CommitmentType::StaticRemoteKey, CommitmentType::AnchorsZeroFeeHtlc];
 
@@ -116,6 +114,8 @@ pub struct SimplePolicy {
     /// Maximum layer-2 percentage fee, this is setting
     /// up the max fee percentage to pay for a payment.
     pub max_feerate_percentage: u8,
+    /// Minimum CLTV delta for routed payments (in blocks)
+    pub cltv_delta: u32,
     /// Developer flags - DO NOT USE IN PRODUCTION
     pub dev_flags: Option<PolicyDevFlags>,
     /// Policy filter
@@ -1761,6 +1761,35 @@ impl Validator for SimpleValidator {
         Ok(())
     }
 
+    fn validate_payment_cltv(
+        &self,
+        incoming_cltv: u32,
+        outgoing_cltv: u32,
+    ) -> Result<(), ValidationError> {
+        if incoming_cltv <= outgoing_cltv {
+            policy_err!(
+                self,
+                "policy-routing-cltv-delta",
+                "incoming CLTV {} must be greater than outgoing CLTV {}",
+                incoming_cltv,
+                outgoing_cltv
+            );
+        }
+
+        let delta = incoming_cltv - outgoing_cltv;
+        if delta < self.policy.cltv_delta {
+            policy_err!(
+                self,
+                "policy-routing-cltv-delta",
+                "CLTV delta {} is less than minimum {}",
+                delta,
+                self.policy.cltv_delta
+            );
+        }
+
+        Ok(())
+    }
+
     fn enforce_balance(&self) -> bool {
         self.policy.enforce_balance
     }
@@ -1982,6 +2011,7 @@ pub fn make_default_simple_policy(network: Network) -> SimplePolicy {
             enforce_balance: false,
             max_routing_fee_msat: 10_000,
             max_feerate_percentage: 10,
+            cltv_delta: 34, // 3R+2G+2S as defined by bolt-2
             dev_flags: None,
             filter: PolicyFilter::default(),
             global_velocity_control: VelocityControlSpec::UNLIMITED,
@@ -2004,12 +2034,112 @@ pub fn make_default_simple_policy(network: Network) -> SimplePolicy {
             enforce_balance: false,
             max_routing_fee_msat: 222_000, // CLN test_pay_avoid_low_fee_chan_1: 200_000
             max_feerate_percentage: 10,
+            cltv_delta: 6,
             dev_flags: None,
             filter: PolicyFilter::default(),
             global_velocity_control: VelocityControlSpec::UNLIMITED,
             max_channels: MAX_CHANNELS,
             max_invoices: MAX_INVOICES,
             fee_velocity_control: DEFAULT_FEE_VELOCITY_CONTROL,
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(missing_docs)]
+pub struct TestSimpleValidatorBuilder {
+    cltv_delta: Option<u32>,
+    node_id: Option<PublicKey>,
+    enforce_balance: Option<bool>,
+    max_channel_size_sat: Option<u64>,
+    min_delay: Option<u16>,
+    max_delay: Option<u16>,
+    max_htlc_value_sat: Option<u64>,
+    use_chain_state: Option<bool>,
+    network: Network,
+}
+
+#[cfg(test)]
+#[allow(missing_docs)]
+impl TestSimpleValidatorBuilder {
+    pub fn new() -> Self {
+        TestSimpleValidatorBuilder {
+            cltv_delta: None,
+            node_id: None,
+            enforce_balance: None,
+            max_channel_size_sat: None,
+            min_delay: None,
+            max_delay: None,
+            max_htlc_value_sat: None,
+            use_chain_state: None,
+            network: Network::Testnet,
+        }
+    }
+
+    pub fn cltv_delta(mut self, cltv_delta: u32) -> Self {
+        self.cltv_delta = Some(cltv_delta);
+        self
+    }
+
+    pub fn enforce_balance(mut self, enforce_balance: bool) -> Self {
+        self.enforce_balance = Some(enforce_balance);
+        self
+    }
+
+    pub fn node_id(mut self, node_id: PublicKey) -> Self {
+        self.node_id = Some(node_id);
+        self
+    }
+
+    pub fn max_channel_size_sat(mut self, max_channel_size_sat: u64) -> Self {
+        self.max_channel_size_sat = Some(max_channel_size_sat);
+        self
+    }
+
+    pub fn min_delay(mut self, min_delay: u16) -> Self {
+        self.min_delay = Some(min_delay);
+        self
+    }
+
+    pub fn max_delay(mut self, max_delay: u16) -> Self {
+        self.max_delay = Some(max_delay);
+        self
+    }
+
+    pub fn max_htlc_value_sat(mut self, max_htlc_value_sat: u64) -> Self {
+        self.max_htlc_value_sat = Some(max_htlc_value_sat);
+        self
+    }
+
+    pub fn use_chain_state(mut self, use_chain_state: bool) -> Self {
+        self.use_chain_state = Some(use_chain_state);
+        self
+    }
+
+    pub fn build(self) -> SimpleValidator {
+        let mut policy = make_default_simple_policy(self.network);
+        policy.cltv_delta = self.cltv_delta.unwrap_or(policy.cltv_delta);
+        policy.enforce_balance = self.enforce_balance.unwrap_or(policy.enforce_balance);
+        if let Some(val) = self.max_channel_size_sat {
+            policy.max_channel_size_sat = val;
+        }
+        if let Some(val) = self.min_delay {
+            policy.min_delay = val;
+        }
+        if let Some(val) = self.max_delay {
+            policy.max_delay = val;
+        }
+        if let Some(val) = self.max_htlc_value_sat {
+            policy.max_htlc_value_sat = val;
+        }
+        if let Some(val) = self.use_chain_state {
+            policy.use_chain_state = val;
+        }
+
+        SimpleValidator {
+            policy,
+            node_id: self.node_id.unwrap_or(PublicKey::from_slice(&[2u8; 33]).unwrap()),
+            channel_id: None,
         }
     }
 }
@@ -2025,38 +2155,9 @@ mod tests {
 
     use super::*;
 
-    fn make_test_validator() -> SimpleValidator {
-        let policy = SimplePolicy {
-            min_delay: 5,
-            max_delay: 1440,
-            max_channel_size_sat: 100_000_000,
-            epsilon_sat: 100_000,
-            max_htlcs: 1000,
-            max_htlc_value_sat: 10_000_000,
-            use_chain_state: true,
-            min_feerate_per_kw: 1000,
-            max_feerate_per_kw: 1000 * 1000,
-            max_feerate_percentage: 10,
-            enforce_balance: false,
-            max_routing_fee_msat: 10000,
-            dev_flags: None,
-            filter: PolicyFilter::default(),
-            global_velocity_control: VelocityControlSpec::UNLIMITED,
-            max_channels: MAX_CHANNELS,
-            max_invoices: MAX_INVOICES,
-            fee_velocity_control: DEFAULT_FEE_VELOCITY_CONTROL,
-        };
-
-        SimpleValidator {
-            policy,
-            node_id: PublicKey::from_slice(&[2u8; 33]).unwrap(),
-            channel_id: None,
-        }
-    }
-
     #[test]
     fn decode_commitment_test() {
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().build();
         let info = validator
             .decode_commitment_tx(
                 &make_test_channel_keys(),
@@ -2071,7 +2172,7 @@ mod tests {
 
     #[test]
     fn validate_policy_commitment_version() {
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().build();
         let mut tx = make_test_commitment_tx();
         tx.version = Version::ONE;
         let res = validator.decode_commitment_tx(
@@ -2091,7 +2192,7 @@ mod tests {
     #[test]
     fn validate_channel_value_test() {
         let mut setup = make_test_channel_setup();
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().max_channel_size_sat(100_000_000).build();
         setup.channel_value_sat = 100_000_000;
         assert!(validator.validate_channel_value(&setup).is_ok());
         setup.channel_value_sat = 100_000_001;
@@ -2136,7 +2237,7 @@ mod tests {
 
     #[test]
     fn validate_commitment_tx_test() {
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().build();
         let mut enforcement_state = EnforcementState::new(0);
         let commit_num = 23;
         enforcement_state
@@ -2162,7 +2263,7 @@ mod tests {
     fn validate_to_holder_min_delay_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let mut setup = make_test_channel_setup();
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().min_delay(5).build();
         setup.holder_selected_contest_delay = 5;
         let derivation_path = DerivationPath::master();
         assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_ok());
@@ -2179,7 +2280,7 @@ mod tests {
     fn validate_safe_modes_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let mut setup = make_test_channel_setup();
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().build();
 
         let derivation_path = DerivationPath::master();
         assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_ok());
@@ -2209,7 +2310,7 @@ mod tests {
     fn validate_to_holder_max_delay_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let mut setup = make_test_channel_setup();
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().max_delay(1440).build();
         setup.holder_selected_contest_delay = 1440;
         let derivation_path = DerivationPath::master();
         assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_ok());
@@ -2227,7 +2328,7 @@ mod tests {
     fn validate_to_counterparty_min_delay_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let mut setup = make_test_channel_setup();
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().min_delay(5).build();
         setup.counterparty_selected_contest_delay = 5;
         let derivation_path = DerivationPath::master();
         assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_ok());
@@ -2246,7 +2347,7 @@ mod tests {
     fn validate_to_counterparty_max_delay_test() {
         let node = init_node(TEST_NODE_CONFIG, TEST_SEED[1]);
         let mut setup = make_test_channel_setup();
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().max_delay(1440).build();
         setup.counterparty_selected_contest_delay = 1440;
         let derivation_path = DerivationPath::master();
         assert!(validator.validate_setup_channel(&*node, &setup, &derivation_path).is_ok());
@@ -2262,7 +2363,7 @@ mod tests {
     // policy-commitment-fee-range
     #[test]
     fn validate_commitment_tx_shortage_test() {
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().build();
         let enforcement_state = EnforcementState::new(0);
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
@@ -2286,7 +2387,7 @@ mod tests {
     // policy-commitment-fee-range
     #[test]
     fn validate_commitment_tx_htlc_shortage_test() {
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().build();
         let htlc =
             HTLCInfo2 { value_sat: 100_000, payment_hash: PaymentHash([0; 32]), cltv_expiry: 1005 };
         let mut enforcement_state = EnforcementState::new(0);
@@ -2326,7 +2427,7 @@ mod tests {
     // policy-commitment-first-no-htlcs
     #[test]
     fn validate_commitment_tx_initial_with_htlcs() {
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().build();
         let htlc =
             HTLCInfo2 { value_sat: 199_000, payment_hash: PaymentHash([0; 32]), cltv_expiry: 1005 };
         let enforcement_state = EnforcementState::new(0);
@@ -2354,7 +2455,7 @@ mod tests {
     // policy-commitment-initial-funding-value
     #[test]
     fn validate_commitment_tx_initial_with_bad_fundee_output() {
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().build();
         let enforcement_state = EnforcementState::new(0);
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
@@ -2380,7 +2481,7 @@ mod tests {
     // policy-commitment-htlc-count-limit
     #[test]
     fn validate_commitment_tx_htlc_count_test() {
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().build();
         let enforcement_state = EnforcementState::new(0);
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
@@ -2405,7 +2506,7 @@ mod tests {
     // policy-commitment-htlc-inflight-limit
     #[test]
     fn validate_commitment_tx_htlc_value_test() {
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().max_htlc_value_sat(10_000_000).build();
         let enforcement_state = EnforcementState::new(0);
         let commit_num = 0;
         let commit_point = make_test_pubkey(0x12);
@@ -2435,8 +2536,11 @@ mod tests {
 
     #[test]
     fn validate_commitment_tx_htlc_delay_test() {
-        // setup
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new()
+            .min_delay(5)
+            .max_delay(1440)
+            .use_chain_state(true)
+            .build();
         let mut enforcement_state = EnforcementState::new(0);
         let commit_num = 23;
         enforcement_state
@@ -2517,7 +2621,7 @@ mod tests {
     #[test]
     fn enforcement_state_previous_counterparty_point_test() {
         let mut state = EnforcementState::new(0);
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().build();
 
         let point0 = make_test_pubkey(0x12);
         let commit_info = make_test_commitment_info();
@@ -2637,8 +2741,78 @@ mod tests {
 
     #[test]
     fn validate_payment_balance_with_zero_invoiced_amount_test() {
-        let validator = make_test_validator();
+        let validator = TestSimpleValidatorBuilder::new().build();
         let result = validator.validate_payment_balance(100, 100, Some(0));
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_cltv_delta_sufficient() {
+        let validator = TestSimpleValidatorBuilder::new().cltv_delta(40).build();
+        let incoming_cltv = 1000;
+        let outgoing_cltv = 960;
+
+        assert!(validator.validate_payment_cltv(incoming_cltv, outgoing_cltv).is_ok());
+    }
+
+    #[test]
+    fn test_validate_cltv_delta_insufficient() {
+        let validator = TestSimpleValidatorBuilder::new().cltv_delta(40).build();
+        let incoming_cltv = 1000;
+        let outgoing_cltv = 970;
+
+        let result = validator.validate_payment_cltv(incoming_cltv, outgoing_cltv);
+        assert_policy_err!(
+            result,
+            "policy-routing-cltv-delta",
+            "validate_payment_cltv: CLTV delta 30 is less than minimum 40"
+        );
+    }
+
+    #[test]
+    fn test_validate_cltv_delta_inverted() {
+        let validator = TestSimpleValidatorBuilder::new().cltv_delta(40).build();
+        let incoming_cltv = 1000;
+        let outgoing_cltv = 1050;
+
+        let result = validator.validate_payment_cltv(incoming_cltv, outgoing_cltv);
+        assert_policy_err!(
+            result,
+            "policy-routing-cltv-delta",
+            "validate_payment_cltv: incoming CLTV 1000 must be greater than outgoing CLTV 1050"
+        );
+    }
+
+    #[test]
+    fn test_validate_cltv_delta_zero_policy_pass() {
+        let validator = TestSimpleValidatorBuilder::new().cltv_delta(0).build();
+        let incoming_cltv = 1001;
+        let outgoing_cltv = 1000;
+
+        assert!(validator.validate_payment_cltv(incoming_cltv, outgoing_cltv).is_ok());
+    }
+
+    #[test]
+    fn test_validate_cltv_delta_equal_cltvs() {
+        let validator = TestSimpleValidatorBuilder::new().cltv_delta(10).build();
+        let incoming_cltv = 1000;
+        let outgoing_cltv = 1000;
+
+        let result = validator.validate_payment_cltv(incoming_cltv, outgoing_cltv);
+        assert_policy_err!(
+            result,
+            "policy-routing-cltv-delta",
+            "validate_payment_cltv: incoming CLTV 1000 must be greater than outgoing CLTV 1000"
+        );
+    }
+
+    #[test]
+    fn test_validate_cltv_delta_exact_match() {
+        let validator = TestSimpleValidatorBuilder::new().cltv_delta(40).build();
+        let incoming_cltv = 1040;
+        let outgoing_cltv = 1000;
+
+        // Delta is exactly 40, should pass
+        assert!(validator.validate_payment_cltv(incoming_cltv, outgoing_cltv).is_ok());
     }
 }

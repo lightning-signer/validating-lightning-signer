@@ -331,6 +331,14 @@ impl Validator for OnchainValidator {
         self.inner.validate_payment_balance(incoming_msat, outgoing_msat, invoiced_amount_msat)
     }
 
+    fn validate_payment_cltv(
+        &self,
+        incoming_cltv: u32,
+        outgoing_cltv: u32,
+    ) -> Result<(), ValidationError> {
+        self.inner.validate_payment_cltv(incoming_cltv, outgoing_cltv)
+    }
+
     fn minimum_initial_balance(&self, holder_value_msat: u64) -> u64 {
         self.inner.minimum_initial_balance(holder_value_msat)
     }

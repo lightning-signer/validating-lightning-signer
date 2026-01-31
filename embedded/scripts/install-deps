@@ -1,9 +1,21 @@
 #!/bin/sh
 
-if [ -f /etc/redhat-release ] ; then
+set -e
+
+if [ "$(uname -s)" = "Darwin" ] ; then
+    if ! command -v brew >/dev/null 2>&1 ; then
+        echo "Homebrew not found. Install it from https://brew.sh/ and re-run." >&2
+        exit 1
+    fi
+    brew install qemu
+    brew --cask gcc-arm-embedded
+elif [ -f /etc/redhat-release ] ; then
     dnf install gcc-arm-linux-gnu qemu-system-arm
 elif [ -f /etc/debian_version ] ; then
     apt install gcc-arm-none-eabi qemu-system-arm gdb-multiarch
 elif [ -f /etc/arch-release ] ; then
     pacman -S arm-none-eabi-gcc arm-none-eabi-newlib qemu-system-arm
+else
+    echo "Unsupported OS. Please install qemu-system-arm and an ARM GCC toolchain." >&2
+    exit 1
 fi

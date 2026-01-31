@@ -1,4 +1,4 @@
-#![cfg_attr(feature = "device", feature(alloc_error_handler, panic_info_message))]
+#![cfg_attr(feature = "device", feature(alloc_error_handler))]
 #![cfg_attr(feature = "device", no_std)]
 #![cfg_attr(feature = "device", no_main)]
 

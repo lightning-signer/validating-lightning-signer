@@ -168,6 +168,7 @@ pub fn test_lightning_signer(postscript: fn()) {
         trusted_oracle_pubkeys: vec![],
     };
     let node = Arc::new(Node::new(config, &seed, Vec::new(), services.clone()));
+
     let starting_time_factory2 = FixedStartingTimeFactory::new(2, 2);
     let services2 = NodeServices {
         validator_factory,
@@ -181,7 +182,7 @@ pub fn test_lightning_signer(postscript: fn()) {
     assert_eq!(node.ecdh(&node1.get_id()), node1.ecdh(&node.get_id()));
 
     let (channel_id, _) = node.new_channel_with_random_id(&node).unwrap();
-    let (channel_id1, _) = node1.new_channel_with_random_id(&node).unwrap();
+    let (channel_id1, _) = node1.new_channel_with_random_id(&node1).unwrap();
     myprintln!("stub channel IDs: {} {}", channel_id, channel_id1);
 
     sign_funding(&node);
@@ -217,8 +218,8 @@ pub fn test_lightning_signer(postscript: fn()) {
 
     let invoice = make_test_invoice(&node1, "invoice1", hash1);
     node.add_invoice(invoice).unwrap();
-    let htlc = HTLCInfo2 { value_sat: 1_000_000, payment_hash: hash1, cltv_expiry: 50 };
-    next_state(&mut channel, &mut channel1, commit_num, 1_999_000, 0, vec![htlc], vec![]);
+    let offered_htlc = HTLCInfo2 { value_sat: 1_000_000, payment_hash: hash1, cltv_expiry: 50 };
+    next_state(&mut channel, &mut channel1, commit_num, 1_999_000, 0, vec![offered_htlc], vec![]);
 
     // Fulfill HTLC
     commit_num = 2;
