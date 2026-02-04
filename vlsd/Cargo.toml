@@ -7,7 +7,7 @@ edition = "2021"
 description = "A Lightning signer that connects to the node using a gRPC protocol"
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
-rust-version = "1.74.0"
+rust-version = "1.85.0"
 build = "build.rs"
 
 [features]

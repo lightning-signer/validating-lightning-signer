@@ -8,7 +8,7 @@ cache:
 variables:
   CARGO_HOME: "$CI_PROJECT_DIR/.cache/cargo"
   VLS_REGISTRY: registry.gitlab.com/lightning-signer/validating-lightning-signer
-  RUST_QEMU_NIGHTLY_VERSION: "nightly-1-84-2024-10-13"
+  RUST_QEMU_NIGHTLY_VERSION: "nightly-1-95-2026-02-26"
   RUNNER_TAG: "saas-linux-large-amd64"
 
 workflow:
@@ -160,9 +160,9 @@ rust-latest-extras:
 rust-msrv:
   tags: [ $RUNNER_TAG ]
   stage: build
-  image: rust:1.74.0
+  image: rust:1.85.0
   cache:
-    key: vls-compile-1_74
+    key: vls-compile-1_85
     paths:
       - bin
       - .cache/cargo
@@ -176,9 +176,9 @@ rust-msrv:
 rust-msrv-lss:
   tags: [$RUNNER_TAG]
   stage: build
-  image: rust:1.74.0
+  image: rust:1.85.0
   cache:
-    key: vls-compile-lss-1_74
+    key: vls-compile-lss-1_85
     paths:
       - bin
       - .cache/cargo
