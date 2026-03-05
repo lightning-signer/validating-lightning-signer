@@ -23,6 +23,7 @@ workflow:
     - when: never
 
 before_script:
+  - git fetch "$CI_REPOSITORY_URL" --tags --force
   - ls -al
   - mkdir -p bin
 
