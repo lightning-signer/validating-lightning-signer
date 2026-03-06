@@ -7,7 +7,7 @@ edition = "2021"
 description = "Utility functions for the Validating Lightning Signer"
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
-rust-version = "1.74.0"
+rust-version = "1.85.0"
 build = "build.rs"
 
 [features]

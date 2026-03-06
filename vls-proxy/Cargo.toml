@@ -7,7 +7,7 @@ edition = "2021"
 description = "A library for implementing a Lightning signer, which externalizes and secures cryptographic operations."
 homepage = "https://gitlab.com/lightning-signer/docs/"
 repository = "https://gitlab.com/lightning-signer/validating-lightning-signer"
-rust-version = "1.74.0"
+rust-version = "1.85.0"
 
 [features]
 default = ["grpc", "main", "debug"]
