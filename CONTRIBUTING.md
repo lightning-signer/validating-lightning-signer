@@ -139,6 +139,42 @@ Unsure where to begin contributing to VLS? You can start by looking through thes
 
 Both issue lists are sorted by popularity. While not perfect, popularity is a reasonable proxy for impact a given change will have.
 
+### Development Workflow
+
+#### Useful Scripts
+
+The `scripts/` directory provides helpful tools for development:
+- `./scripts/build-all` - Build all crates including excluded ones (embedded, wasm, lnrod, etc.)
+- `./scripts/build-nostd` - Build no_std targets
+- `./scripts/clean-all` - Clean all build artifacts
+- `./scripts/fmt-all` - Format all crates with nightly rustfmt
+- `./scripts/update-all` - Update all dependencies and run cargo audit
+
+See the main [README.md](./README.md#development-information) for complete build and test instructions.
+
+#### Testing with Feature Flags
+
+When writing tests, be aware of important feature flags:
+- `vls-core` requires `test_utils` feature for comprehensive testing
+- Use `cargo test --features test_utils` or see crate-specific dev-dependencies
+- System tests require `--features system-test`
+
+Example commands:
+```bash
+cargo test --features system-test
+cargo test --package vls-core --features test_utils
+cargo test --package vls-proxy --test frontend_system_test --features system-test
+```
+
+#### Crate-Specific Guides
+
+Many crates have their own READMEs with specific instructions:
+- [vls-protocol/README.md](./vls-protocol/README.md) - Protocol message definitions and sorting requirements
+- [lnrod/README.md](./lnrod/README.md) - LDK integration and testing
+- [embedded/README.md](./embedded/README.md) - Bare-metal signer setup
+- [vls-signer-stm32/README.md](./vls-signer-stm32/README.md) - STM32 development
+- [fuzz/README.md](./fuzz/README.md) - Fuzzing setup and usage
+
 ### Merge Requests
 
 The process described here has several goals:

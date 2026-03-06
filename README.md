@@ -45,6 +45,25 @@ Build VLS and related crates:
 
     cargo build
 
+### Workspace Structure
+
+This is a Cargo workspace with multiple crates:
+
+**Workspace members** (built with `cargo build`):
+- Core: `vls-core`, `vls-protocol`, `vls-protocol-signer`, `vls-persist`, `vls-frontend`
+- Integration: `vls-proxy`, `vlsd`, `vls-cli`
+- Support: `bolt-derive`, `vls-policy-derive`, `vls-util`
+
+**Excluded crates** (require special build steps):
+- `vls-signer-stm32` - STM32 microcontroller port (requires `cargo +nightly-2024-10-13`)
+- `embedded` - Bare-metal implementation
+- `wasm` - WebAssembly build
+- `lnrod` - LDK-based Lightning node reference
+- `lightning-storage-server` - Cloud storage service
+- `vls-core-test` - Benchmarking utilities
+
+Use `./scripts/build-all` to build all crates including excluded ones.
+
 ### Running Unit Tests
 
     cargo test
@@ -52,6 +71,36 @@ Build VLS and related crates:
 To enable logging for a failing test (adjust log level to preference):
 
     RUST_LOG=trace cargo test
+
+### Running System Tests
+
+Some crates have system tests that require additional features:
+
+    cargo test --features system-test
+
+For vls-proxy specifically:
+
+    cargo test --package vls-proxy --test frontend_system_test --features system-test
+
+### Important Feature Flags
+
+When testing or developing, be aware of these feature flags:
+
+**vls-core**:
+- `test_utils` - Required for comprehensive testing (enables testing utilities)
+- `no-std` - For embedded/bare-metal environments
+- `grpc` - Auto-conversion to tonic::Status
+- `debug` - Enable state tracing
+- `txoo-source` - UTXO oracle integration
+
+**vls-protocol**:
+- `developer` - Test-only helpers and additional tests
+- `log-secrets` - ⚠️ DANGEROUS: Prints secrets in debug output (never use in production)
+
+Example:
+
+    cargo build --features system-test,redb-kvv
+    cargo test --package vls-core --features test_utils
 
 ### Using llvm-cov for Code Coverage
 
@@ -73,6 +122,16 @@ There are a few crates with lock files. You can update them all and
 view the results of `cargo audit` in one command:
 
     scripts/update-all
+
+### Additional Development Scripts
+
+The `scripts/` directory contains helpful development tools:
+
+- `./scripts/build-all` - Build all crates including excluded ones (embedded, wasm, lnrod, etc.)
+- `./scripts/build-nostd` - Build no_std targets
+- `./scripts/clean-all` - Clean all build artifacts across workspace
+- `./scripts/fmt-all` - Format all crates with nightly rustfmt
+- `./scripts/do-all` - Run a command across all workspace members
 
 ## Benchmarks
 
