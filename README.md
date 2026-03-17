@@ -137,23 +137,28 @@ The `scripts/` directory contains helpful development tools:
 
 ### Running Benchmarks
 
-    cargo bench -p vls-core --bench secp_bench
-
-Note that you might need to add `--features=test_utils` if you want to run all benches in vls-core.
+    cargo bench --manifest-path vls-core-test/Cargo.toml --bench secp_bench
 
 Without optimizations:
 
-    cargo bench -p vls-core --bench secp_bench --profile=dev
+    cargo bench --manifest-path vls-core-test/Cargo.toml --bench secp_bench --profile=dev
 
 Expect something like:
 
 ```
-    test fib1_bench        ... bench:           1 ns/iter (+/- 0)
-    test fib_bench         ... bench:      17,247 ns/iter (+/- 198)
-    test hash_bench        ... bench:         258 ns/iter (+/- 2)
-    test secp_create_bench ... bench:      49,981 ns/iter (+/- 642)
-    test sign_bench        ... bench:      25,692 ns/iter (+/- 391)
-    test verify_bench      ... bench:      31,705 ns/iter (+/- 1,445)
+hash bench              time:   [116.14 ns 116.65 ns 117.29 ns]
+                        change: [-3.5998% -2.8971% -2.0825%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 14 outliers among 100 measurements (14.00%)
+  3 (3.00%) high mild
+  11 (11.00%) high severe
+
+secp create bench       time:   [10.684 µs 10.721 µs 10.769 µs]
+                        change: [-2.2977% -1.7787% -1.2637%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 13 outliers among 100 measurements (13.00%)
+  8 (8.00%) high mild
+  5 (5.00%) high severe
 ```
 
 i.e. around 30 microseconds per secp256k1 crypto operation.  We also see
