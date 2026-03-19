@@ -2851,6 +2851,132 @@ impl Channel {
     fn dummy_sig() -> Signature {
         Signature::from_compact(&Vec::from_hex("eb299947b140c0e902243ee839ca58c71291f4cce49ac0367fb4617c4b6e890f18bc08b9be6726c090af4c6b49b2277e134b34078f710a72a5752e39f0139149").unwrap()).unwrap()
     }
+
+    /// Analyzes a broadcasted commitment transaction to identify spendable HTLC outputs.
+    ///
+    /// HTLCs are considered spendable if:
+    /// - We have the preimage for HTLCs we received (counterparty offered).
+    /// - For HTLCs we offered, they're always spendable after timeout.
+    pub fn get_spendable_htlc_indices(
+        &self,
+        tx: &Transaction,
+        commitment_number: u64,
+    ) -> Result<Vec<u32>, Status> {
+        let (is_counterparty_tx, info) = self.get_commitment_info(tx, commitment_number)?;
+
+        let per_commitment_point = if is_counterparty_tx {
+            // Safe to unwrap: get_commitment_info above already validated the commitment_number
+            // so point must exist unless state is inconsistent.
+            self.get_counterparty_commitment_point(commitment_number).unwrap()
+        } else {
+            self.get_per_commitment_point(commitment_number).unwrap()
+        };
+
+        let txkeys = if is_counterparty_tx {
+            self.make_counterparty_tx_keys(&per_commitment_point)
+        } else {
+            self.make_holder_tx_keys(&per_commitment_point)
+        };
+
+        let htlcs = Self::htlcs_info2_to_oic(&info.offered_htlcs, &info.received_htlcs);
+        let features = self.setup.features();
+        let node = self.get_node();
+        let payments = &node.get_state().payments;
+
+        let mut spendable_htlcs: UnorderedSet<ScriptBuf> = UnorderedSet::new();
+        for htlc in &htlcs {
+            let can_spend = match (htlc.offered, is_counterparty_tx) {
+                // Counterparty offered or we received: needs preimage
+                (true, true) | (false, false) =>
+                    payments.get(&htlc.payment_hash).and_then(|p| p.preimage.as_ref()).is_some(),
+                // We offered: spendable after timeout
+                (true, false) | (false, true) => true,
+            };
+
+            if can_spend {
+                let redeemscript = get_htlc_redeemscript(htlc, &features, &txkeys);
+                spendable_htlcs.insert(redeemscript.to_p2wsh());
+            }
+        }
+
+        let spendable_indices = tx
+            .output
+            .iter()
+            .enumerate()
+            .filter_map(|(index, output)| {
+                if spendable_htlcs.contains(&output.script_pubkey) {
+                    Some(index as u32)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        Ok(spendable_indices)
+    }
+
+    fn get_commitment_info(
+        &self,
+        tx: &Transaction,
+        commitment_number: u64,
+    ) -> Result<(bool, CommitmentInfo2), Status> {
+        let es = &self.enforcement_state;
+
+        let current_holder_commit_num = es.next_holder_commit_num.saturating_sub(1);
+        let next_holder_commit_num = es.next_holder_commit_num;
+
+        if commitment_number == current_holder_commit_num {
+            if let Some(info) = &es.current_holder_commit_info {
+                let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
+                let txkeys = self.make_holder_tx_keys(&per_commitment_point);
+                let htlcs = Self::htlcs_info2_to_oic(
+                    &info.offered_htlcs.clone(),
+                    &info.received_htlcs.clone(),
+                );
+                let expected_tx = self.make_holder_commitment_tx(
+                    commitment_number,
+                    &txkeys,
+                    info.feerate_per_kw,
+                    info.to_broadcaster_value_sat,
+                    info.to_countersigner_value_sat,
+                    htlcs,
+                );
+                if expected_tx.trust().built_transaction().transaction.compute_txid()
+                    == tx.compute_txid()
+                {
+                    return Ok((false, info.clone()));
+                }
+            }
+        } else if commitment_number == next_holder_commit_num {
+            if let Some((info, _)) = &es.next_holder_commit_info {
+                let per_commitment_point = self.get_per_commitment_point(commitment_number)?;
+                let txkeys = self.make_holder_tx_keys(&per_commitment_point);
+                let htlcs = Self::htlcs_info2_to_oic(&info.offered_htlcs, &info.received_htlcs);
+                let expected_tx = self.make_holder_commitment_tx(
+                    commitment_number,
+                    &txkeys,
+                    info.feerate_per_kw,
+                    info.to_broadcaster_value_sat,
+                    info.to_countersigner_value_sat,
+                    htlcs,
+                );
+                if expected_tx.trust().built_transaction().transaction.compute_txid()
+                    == tx.compute_txid()
+                {
+                    return Ok((false, info.clone()));
+                }
+            }
+        }
+
+        if let Some(info) = es.get_previous_counterparty_commit_info(commitment_number) {
+            return Ok((true, info));
+        }
+
+        Err(Status::invalid_argument(format!(
+            "commitment info not available for commitment number {}",
+            commitment_number
+        )))
+    }
 }
 
 #[derive(Clone)]
@@ -2905,6 +3031,19 @@ impl CommitmentPointProvider for ChannelCommitmentPointProvider {
         chan.make_channel_parameters()
     }
 
+    fn get_spendable_htlc_indices(
+        &self,
+        tx: &Transaction,
+        commitment_number: u64,
+    ) -> Result<Vec<u32>, Status> {
+        let slot = self.get_channel();
+        let chan = match &*slot {
+            ChannelSlot::Stub(_) => return Err(invalid_argument("cannot analyze HTLCs on stub")),
+            ChannelSlot::Ready(c) => c,
+        };
+        chan.get_spendable_htlc_indices(tx, commitment_number)
+    }
+
     fn clone_box(&self) -> Box<dyn CommitmentPointProvider> {
         Box::new(ChannelCommitmentPointProvider { chan: self.chan.clone() })
     }
@@ -2920,9 +3059,13 @@ mod tests {
     use lightning::util::ser::Writeable;
 
     use crate::channel::ChannelBase;
-    use crate::util::test_utils::htlc::{make_commit_info_with_htlcs, make_htlc};
+    use crate::util::test_utils::htlc::{
+        make_commit_info_with_htlcs, make_counterparty_commit_info_with_htlcs, make_htlc,
+    };
+    use crate::util::test_utils::key::make_test_pubkey;
     use crate::util::test_utils::{
-        init_node_and_channel, make_test_channel_setup, TEST_NODE_CONFIG, TEST_SEED,
+        init_node_and_channel, make_test_channel_setup, make_test_payment_hashes, TEST_NODE_CONFIG,
+        TEST_SEED,
     };
     use bitcoin::Network;
 
@@ -3147,7 +3290,7 @@ mod tests {
         let hash1 = PaymentHash(Sha256Hash::hash(&[1u8; 32]).to_byte_array());
         let hash2 = PaymentHash(Sha256Hash::hash(&[2u8; 32]).to_byte_array());
 
-        let counterparty_commit_info = make_commit_info_with_htlcs(
+        let counterparty_commit_info = make_counterparty_commit_info_with_htlcs(
             vec![
                 make_htlc(hash1, 60_000, 1100),
                 make_htlc(hash1, 40_000, 1050),
@@ -3175,5 +3318,244 @@ mod tests {
         let payment2 = state.payments.get(&hash2).unwrap();
         assert_eq!(payment2.incoming_cltv_min, Some(1200));
         assert_eq!(payment2.outgoing_cltv_max, None);
+    }
+
+    #[test]
+    fn test_get_spendable_htlc_indices_current_holder() {
+        let (node, channel_id, _, offered_htlcs, received_htlcs) = setup_test_channel_with_htlcs();
+        let commit_num = 23;
+        let feerate_per_kw = 1000;
+        let to_holder = 100000;
+        let to_cp = 200000;
+
+        node.with_channel(&channel_id, |chan| {
+            let holder_tx = setup_holder_commitment(
+                chan,
+                commit_num,
+                to_holder,
+                to_cp,
+                &offered_htlcs,
+                &received_htlcs,
+                feerate_per_kw,
+            )?;
+            let indices = chan.get_spendable_htlc_indices(&holder_tx, commit_num)?;
+            assert_eq!(indices.len(), 3);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn test_get_spendable_htlc_indices_next_holder() {
+        let (node, channel_id, _, offered_htlcs, received_htlcs) = setup_test_channel_with_htlcs();
+        let commit_num = 23;
+        let next_commit_num = commit_num + 1;
+        let feerate_per_kw = 1000;
+        let to_holder = 100000;
+        let to_cp = 200000;
+
+        node.with_channel(&channel_id, |chan| {
+            let next_holder_info2 = chan.build_holder_commitment_info(
+                to_holder + 1000,
+                to_cp - 1000,
+                received_htlcs.to_vec(),
+                offered_htlcs.to_vec(),
+                feerate_per_kw,
+            )?;
+
+            let dummy_sigs = CommitmentSignatures(Channel::dummy_sig(), vec![]);
+            chan.enforcement_state.next_holder_commit_info = Some((next_holder_info2, dummy_sigs));
+            chan.set_next_holder_commit_num_for_testing(next_commit_num);
+
+            let per_commitment_point = chan.get_per_commitment_point(next_commit_num)?;
+            let txkeys = chan.make_holder_tx_keys(&per_commitment_point);
+            let holder_htlcs = Channel::htlcs_info2_to_oic(&received_htlcs, &offered_htlcs);
+            let next_holder_tx = chan.make_holder_commitment_tx(
+                next_commit_num,
+                &txkeys,
+                feerate_per_kw,
+                to_holder + 1000,
+                to_cp - 1000,
+                holder_htlcs,
+            );
+            let next_holder_tx = next_holder_tx.trust().built_transaction().transaction.clone();
+
+            let indices = chan.get_spendable_htlc_indices(&next_holder_tx, next_commit_num)?;
+            assert_eq!(indices.len(), 3);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn test_get_spendable_htlc_indices_current_counterparty() {
+        let (node, channel_id, _, offered_htlcs, received_htlcs) = setup_test_channel_with_htlcs();
+        let commit_num = 23;
+        let feerate_per_kw = 1000;
+        let to_holder = 100000;
+        let to_cp = 200000;
+
+        node.with_channel(&channel_id, |chan| {
+            let cp_tx = setup_counterparty_commitment(
+                chan,
+                commit_num,
+                to_holder,
+                to_cp,
+                offered_htlcs.clone(),
+                received_htlcs.clone(),
+                feerate_per_kw,
+            )?;
+            let indices = chan.get_spendable_htlc_indices(&cp_tx, commit_num)?;
+            assert_eq!(indices.len(), 3);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn test_get_spendable_htlc_indices_no_htlcs() {
+        let (node, channel_id, _, _, _) = setup_test_channel_with_htlcs();
+        let commit_num = 23;
+        let feerate_per_kw = 1000;
+        let to_holder = 100000;
+        let to_cp = 200000;
+
+        node.with_channel(&channel_id, |chan| {
+            let cp_tx = setup_counterparty_commitment(
+                chan,
+                commit_num,
+                to_holder,
+                to_cp,
+                vec![],
+                vec![],
+                feerate_per_kw,
+            )?;
+            let indices = chan.get_spendable_htlc_indices(&cp_tx, commit_num)?;
+            assert_eq!(indices, Vec::<u32>::new());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn test_get_spendable_htlc_indices_errors() {
+        let (node, channel_id, _, offered_htlcs, received_htlcs) = setup_test_channel_with_htlcs();
+        let commit_num = 23;
+        let feerate_per_kw = 1000;
+        let to_holder = 100000;
+        let to_cp = 200000;
+
+        node.with_channel(&channel_id, |chan| {
+            let holder_tx = setup_holder_commitment(
+                chan,
+                commit_num,
+                to_holder,
+                to_cp,
+                &offered_htlcs,
+                &received_htlcs,
+                feerate_per_kw,
+            )?;
+
+            let result = chan.get_spendable_htlc_indices(&holder_tx, commit_num + 5);
+            assert!(result.is_err());
+            assert!(result.unwrap_err().message().contains("commitment info not available"));
+
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    fn setup_test_channel_with_htlcs(
+    ) -> (Arc<Node>, ChannelId, Vec<(PaymentPreimage, PaymentHash)>, Vec<HTLCInfo2>, Vec<HTLCInfo2>)
+    {
+        let (node, channel_id) =
+            init_node_and_channel(TEST_NODE_CONFIG, TEST_SEED[1], make_test_channel_setup());
+
+        let payment_hashes = make_test_payment_hashes(4);
+        let (preimage_1, hash_1) = payment_hashes[0];
+        let (_, hash_2) = payment_hashes[1];
+        let (_, hash_3) = payment_hashes[2];
+        let (_, hash_4) = payment_hashes[3];
+
+        let offered_htlcs = vec![make_htlc(hash_1, 500, 100), make_htlc(hash_2, 600, 150)];
+        let received_htlcs = vec![make_htlc(hash_3, 500, 200), make_htlc(hash_4, 600, 250)];
+
+        {
+            let mut node_state = node.get_state();
+            let mut payment = RoutedPayment::new();
+            payment.preimage = Some(preimage_1);
+            node_state.payments.insert(hash_1, payment);
+        }
+
+        (node, channel_id, payment_hashes, offered_htlcs, received_htlcs)
+    }
+
+    fn setup_holder_commitment(
+        chan: &mut Channel,
+        commit_num: u64,
+        to_holder: u64,
+        to_cp: u64,
+        offered_htlcs: &[HTLCInfo2],
+        received_htlcs: &[HTLCInfo2],
+        feerate_per_kw: u32,
+    ) -> Result<Transaction, Status> {
+        let holder_info2 = chan.build_holder_commitment_info(
+            to_holder,
+            to_cp,
+            received_htlcs.to_vec(),
+            offered_htlcs.to_vec(),
+            feerate_per_kw,
+        )?;
+
+        chan.set_next_holder_commit_num_for_testing(commit_num + 1);
+        let per_commitment_point = chan.get_per_commitment_point(commit_num)?;
+        let txkeys = chan.make_holder_tx_keys(&per_commitment_point);
+        chan.enforcement_state.current_holder_commit_info = Some(holder_info2);
+
+        let holder_htlcs = Channel::htlcs_info2_to_oic(&received_htlcs, &offered_htlcs);
+        let holder_commitment_tx = chan.make_holder_commitment_tx(
+            commit_num,
+            &txkeys,
+            feerate_per_kw,
+            to_holder,
+            to_cp,
+            holder_htlcs,
+        );
+        Ok(holder_commitment_tx.trust().built_transaction().transaction.clone())
+    }
+
+    fn setup_counterparty_commitment(
+        chan: &mut Channel,
+        commit_num: u64,
+        to_holder: u64,
+        to_cp: u64,
+        offered_htlcs: Vec<HTLCInfo2>,
+        received_htlcs: Vec<HTLCInfo2>,
+        feerate_per_kw: u32,
+    ) -> Result<Transaction, Status> {
+        let per_commitment_point = make_test_pubkey(12);
+        let cp_info2 = chan.build_counterparty_commitment_info(
+            to_holder,
+            to_cp,
+            offered_htlcs.clone(),
+            received_htlcs.clone(),
+            feerate_per_kw,
+        )?;
+        chan.set_next_counterparty_commit_num_for_testing(
+            commit_num + 1,
+            per_commitment_point.clone(),
+        );
+        chan.enforcement_state.current_counterparty_commit_info = Some(cp_info2);
+
+        let htlcs = Channel::htlcs_info2_to_oic(&offered_htlcs, &received_htlcs);
+        let cp_commitment_tx = chan.make_counterparty_commitment_tx(
+            &per_commitment_point,
+            commit_num,
+            feerate_per_kw,
+            to_holder,
+            to_cp,
+            htlcs,
+        );
+        Ok(cp_commitment_tx.trust().built_transaction().transaction.clone())
     }
 }

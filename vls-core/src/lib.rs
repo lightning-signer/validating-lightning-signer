@@ -20,6 +20,7 @@ extern crate core;
 extern crate tonic;
 
 pub use bitcoin;
+use bitcoin::Transaction;
 pub use lightning;
 pub use lightning_invoice;
 pub use txoo;
@@ -96,8 +97,8 @@ pub mod prelude {
 #[doc(hidden)]
 pub use prelude::SendSync;
 
+use crate::util::status::Status;
 use prelude::*;
-
 /// A trait for getting a commitment point for a given commitment number,
 /// if known.
 pub trait CommitmentPointProvider: SendSync {
@@ -109,6 +110,12 @@ pub trait CommitmentPointProvider: SendSync {
     fn get_counterparty_commitment_point(&self, commitment_number: u64) -> Option<PublicKey>;
     /// Get channel transaction parameters, for decoding on-chain transactions
     fn get_transaction_parameters(&self) -> ChannelTransactionParameters;
+    /// Analyze HTLC outputs from a commitment transaction and return indices of spendable HTLCs.
+    fn get_spendable_htlc_indices(
+        &self,
+        tx: &Transaction,
+        commitment_number: u64,
+    ) -> Result<Vec<u32>, Status>;
     /// Clone
     fn clone_box(&self) -> Box<dyn CommitmentPointProvider>;
 }

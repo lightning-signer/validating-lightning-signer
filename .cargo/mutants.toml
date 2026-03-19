@@ -1,0 +1,4 @@
+# Exclude files matching these glob patterns.
+exclude_globs = [
+    "vls-core/src/util/test_utils/**/*.rs"
+]

@@ -2140,6 +2140,14 @@ impl CommitmentPointProvider for DummyCommitmentPointProvider {
         unimplemented!()
     }
 
+    fn get_spendable_htlc_indices(
+        &self,
+        _tx: &Transaction,
+        _commitment_number: u64,
+    ) -> Result<Vec<u32>, Status> {
+        Ok(vec![])
+    }
+
     fn clone_box(&self) -> Box<dyn CommitmentPointProvider> {
         Box::new(DummyCommitmentPointProvider {})
     }
@@ -2153,4 +2161,37 @@ impl CheckBase32 for Vec<u8> {
     fn check_base32(self) -> Result<Vec<Fe32>, ()> {
         self.into_iter().map(|x| Fe32::try_from(x).map_err(|_| ())).collect()
     }
+}
+
+/// Makes a vector of test PaymentPreimage and corresponding PaymentHash pairs.
+pub fn make_test_payment_hashes(count: usize) -> Vec<(PaymentPreimage, PaymentHash)> {
+    (1..=count)
+        .map(|i| {
+            let preimage = PaymentPreimage([i as u8; 32]);
+            let hash = PaymentHash::from(preimage);
+            (preimage, hash)
+        })
+        .collect()
+}
+
+/// Extracts transaction ID and output indices from a commitment transaction.
+pub fn extract_tx_info(
+    tx: &Transaction,
+    to_holder: u64,
+    to_cp: u64,
+    htlcs: &[HTLCOutputInCommitment],
+) -> (Txid, u32, u32, Vec<u32>) {
+    let txid = tx.compute_txid();
+    let holder_output_index =
+        tx.output.iter().position(|out| out.value.to_sat() == to_holder).unwrap() as u32;
+    let cp_output_index =
+        tx.output.iter().position(|out| out.value.to_sat() == to_cp).unwrap() as u32;
+    let htlc_output_indices: Vec<u32> = htlcs
+        .iter()
+        .map(|htlc| {
+            tx.output.iter().position(|out| out.value.to_sat() == htlc.amount_msat / 1000).unwrap()
+                as u32
+        })
+        .collect();
+    (txid, holder_output_index, cp_output_index, htlc_output_indices)
 }
