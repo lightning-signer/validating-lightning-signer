@@ -951,6 +951,19 @@ pub struct ValidateCommitmentTx2 {
 }
 
 ///
+/// LDK only
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(1036)]
+pub struct GetSecureRandomBytes {}
+
+///
+#[derive(SerBolt, Debug, Encodable, Decodable)]
+#[message_id(1136)]
+pub struct GetSecureRandomBytesReply {
+    pub random_bytes: Secret,
+}
+
+///
 #[derive(SerBolt, Debug, Encodable, Decodable)]
 #[message_id(2002)]
 pub struct TipInfo {}
@@ -1198,6 +1211,8 @@ pub enum Message {
     SignCommitmentTxWithHtlcsReply(SignCommitmentTxWithHtlcsReply),
     SignMutualCloseTx2(SignMutualCloseTx2),
     ValidateCommitmentTx2(ValidateCommitmentTx2),
+    GetSecureRandomBytes(GetSecureRandomBytes),
+    GetSecureRandomBytesReply(GetSecureRandomBytesReply),
     TipInfo(TipInfo),
     TipInfoReply(TipInfoReply),
     ForwardWatches(ForwardWatches),

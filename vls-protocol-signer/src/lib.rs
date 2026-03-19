@@ -14,6 +14,8 @@ extern crate alloc;
 pub mod approver;
 /// Protocol handler
 pub mod handler;
+#[cfg(test)]
+pub(crate) mod test_utils;
 /// Utilities
 pub mod util;
 

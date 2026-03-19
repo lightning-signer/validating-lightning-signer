@@ -1,3 +1,6 @@
+use serde::Deserialize;
+use serde::Serialize;
+
 use crate::channel::ChannelId;
 use crate::channel::ChannelSetup;
 use crate::node::NodeState;
@@ -14,7 +17,7 @@ pub struct NodeEntry {
 
 /// A persistence layer entry for a channel
 #[allow(missing_docs)]
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelEntry {
     pub channel_value_satoshis: u64,
     pub channel_setup: Option<ChannelSetup>,
