@@ -1657,7 +1657,11 @@ impl Node {
         arc_self: &Arc<Node>,
     ) -> Result<(ChannelId, Option<ChannelSlot>), Status> {
         if self.get_state().dbid_high_water_mark >= dbid {
-            return Err(Status::invalid_argument("dbid not above the high water mark"));
+            return Err(policy_error(
+                "policy-channel-original-channel-id-reuse",
+                format!("original channel id {} is potentially being reused", dbid),
+            )
+            .into());
         }
 
         let channel_id = ChannelId::new_from_peer_id_and_oid(peer_id, dbid);
@@ -3176,6 +3180,9 @@ mod tests {
 
         let res = node.new_channel(dbid, &peer_id, &node);
         assert!(res.is_err());
+        let error_msg = res.unwrap_err().to_string();
+        assert!(error_msg
+            .contains("policy failure: original channel id 1234 is potentially being reused"));
     }
 
     #[test]
@@ -3189,6 +3196,9 @@ mod tests {
 
         let res = node.new_channel(dbid - 1, &peer_id, &node);
         assert!(res.is_err());
+        let error_msg = res.unwrap_err().to_string();
+        assert!(error_msg
+            .contains("policy failure: original channel id 1233 is potentially being reused"));
     }
 
     #[test]
