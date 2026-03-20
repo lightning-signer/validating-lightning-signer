@@ -25,6 +25,8 @@ use bitcoin::blockdata::script;
 use bitcoin::consensus::deserialize;
 use bitcoin::psbt::Psbt;
 use bitcoin::secp256k1;
+#[cfg(feature = "std")]
+use bitcoin::secp256k1::rand::{rngs::OsRng, RngCore};
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::taproot::TapLeafHash;
 use bitcoin::{Address, Network};
@@ -1055,6 +1057,23 @@ impl Handler for RootHandler {
                     psbt: WithSize(PsbtWrapper { inner: psbt }),
                 }))
             }
+            Message::GetSecureRandomBytes(_m) => {
+                #[cfg(feature = "std")]
+                {
+                    let mut bytes = [0u8; 32];
+                    let mut rng = OsRng;
+                    rng.fill_bytes(&mut bytes);
+
+                    Ok(Box::new(msgs::GetSecureRandomBytesReply { random_bytes: Secret(bytes) }))
+                }
+
+                #[cfg(not(feature = "std"))]
+                {
+                    Err(Status::failed_precondition(
+                        "GetSecureRandomBytes unavailable in no-std build",
+                    ))?
+                }
+            }
             m => unimplemented!("loop {}: unimplemented message {:?}", self.id, m),
         }
     }
@@ -1766,7 +1785,45 @@ fn extract_htlcs(htlcs: &[Htlc]) -> (Vec<HTLCInfo2>, Vec<HTLCInfo2>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::SignerTestHarnessBuilder;
     use lightning_signer::channel::CommitmentType;
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn get_secure_random_bytes_returns_reply() {
+        let harness = SignerTestHarnessBuilder::new().build();
+        let handler = harness.root_handler();
+
+        let reply = handler
+            .handle(Message::GetSecureRandomBytes(msgs::GetSecureRandomBytes {}))
+            .expect("get secure random bytes reply");
+
+        let random_reply = reply
+            .as_any()
+            .downcast_ref::<msgs::GetSecureRandomBytesReply>()
+            .expect("expected GetSecureRandomBytesReply");
+
+        assert_eq!(random_reply.random_bytes.0.len(), 32);
+    }
+
+    #[test]
+    #[cfg(not(feature = "std"))]
+    fn get_secure_random_bytes_reports_unavailable_in_no_std() {
+        let harness = SignerTestHarnessBuilder::new().build();
+        let handler = harness.root_handler();
+
+        let err = handler
+            .handle(Message::GetSecureRandomBytes(msgs::GetSecureRandomBytes {}))
+            .expect_err("expected no-std build to reject GetSecureRandomBytes");
+
+        match err {
+            Error::Signing(status) => {
+                assert_eq!(status.code(), Code::FailedPrecondition);
+                assert!(status.message().contains("unavailable in no-std"));
+            }
+            other => panic!("expected signing error, got {:?}", other),
+        }
+    }
 
     #[test]
     fn test_der() {

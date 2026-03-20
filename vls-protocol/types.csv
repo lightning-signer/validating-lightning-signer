@@ -104,3 +104,4 @@ msgtype,ldk_sign_remote_commitment_tx_2,1019,done
 msgtype,ldk_sign_commitment_tx_with_htlcs_reply,1119,done
 msgtype,ldk_sign_mutual_close_tx_2,1021,done
 msgtype,ldk_validate_commitment_tx_2,1035,done
+msgtype,ldk_get_secure_random_bytes,1036,done

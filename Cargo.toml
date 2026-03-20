@@ -51,3 +51,4 @@ proc-macro2 = "1.0"
 quote = "1.0"
 bitcoin = { version = "0.32.0", default-features = false }
 bitcoin-consensus-derive = "0.2.1"
+mockall = "0.13.1"

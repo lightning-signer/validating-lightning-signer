@@ -221,6 +221,7 @@ fn track_char(msg: &Message) -> char {
 
         Message::Ping(_m) => '.',
         Message::Memleak(_m) => '_',
+        Message::GetSecureRandomBytes(_m) => 'r',
         Message::Unknown(_m) => ' ',
 
         // we shouldn't see any of these
@@ -272,7 +273,8 @@ fn track_char(msg: &Message) -> char {
         | Message::RemoveBlockReply(_)
         | Message::GetHeartbeatReply(_)
         | Message::SignGossipMessage(_)
-        | Message::SignGossipMessageReply(_) => {
+        | Message::SignGossipMessageReply(_)
+        | Message::GetSecureRandomBytesReply(_) => {
             panic!("{:?} invalid in this context", msg);
         }
     }

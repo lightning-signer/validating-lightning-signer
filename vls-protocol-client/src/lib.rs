@@ -49,13 +49,13 @@ use vls_protocol::model::{
 use vls_protocol::msgs::{
     DeBolt, Ecdh, EcdhReply, GetChannelBasepoints, GetChannelBasepointsReply,
     GetPerCommitmentPoint, GetPerCommitmentPoint2, GetPerCommitmentPoint2Reply,
-    GetPerCommitmentPointReply, HsmdInit2, HsmdInit2Reply, NewChannel, NewChannelReply, SerBolt,
-    SetupChannel, SetupChannelReply, SignChannelAnnouncement, SignChannelAnnouncementReply,
-    SignCommitmentTxReply, SignCommitmentTxWithHtlcsReply, SignGossipMessage,
-    SignGossipMessageReply, SignInvoice, SignInvoiceReply, SignLocalCommitmentTx2,
-    SignLocalHtlcTx2, SignMutualCloseTx2, SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal,
-    SignWithdrawalReply, ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation,
-    ValidateRevocationReply,
+    GetPerCommitmentPointReply, GetSecureRandomBytes, GetSecureRandomBytesReply, HsmdInit2,
+    HsmdInit2Reply, NewChannel, NewChannelReply, SerBolt, SetupChannel, SetupChannelReply,
+    SignChannelAnnouncement, SignChannelAnnouncementReply, SignCommitmentTxReply,
+    SignCommitmentTxWithHtlcsReply, SignGossipMessage, SignGossipMessageReply, SignInvoice,
+    SignInvoiceReply, SignLocalCommitmentTx2, SignLocalHtlcTx2, SignMutualCloseTx2,
+    SignRemoteCommitmentTx2, SignTxReply, SignWithdrawal, SignWithdrawalReply,
+    ValidateCommitmentTx2, ValidateCommitmentTxReply, ValidateRevocation, ValidateRevocationReply,
 };
 #[cfg(feature = "developer")]
 use vls_protocol::msgs::{HsmdDevPreinit, HsmdDevPreinitReply};
@@ -605,10 +605,10 @@ impl KeysManagerClient {
 
 impl EntropySource for KeysManagerClient {
     fn get_secure_random_bytes(&self) -> [u8; 32] {
-        let mut rng = OsRng;
-        let mut bytes = [0; 32];
-        rng.fill_bytes(&mut bytes);
-        bytes
+        let result: GetSecureRandomBytesReply =
+            self.call(GetSecureRandomBytes {}).expect("signer must provide secure random bytes");
+
+        result.random_bytes.0
     }
 }
 
@@ -788,5 +788,59 @@ impl InnerSign for SignerClient {
 
     fn vwrite(&self, writer: &mut Vec<u8>) -> Result<(), bitcoin::io::Error> {
         self.write(writer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoin::bip32::Xpub;
+    use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
+    use lightning::ln::inbound_payment::ExpandedKey;
+    use mockall::mock;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use vls_protocol::model::{PubKey, Secret};
+    use vls_protocol::msgs::{self, GetSecureRandomBytesReply, Message, SerBolt};
+
+    mock! {
+        pub TestTransport {}
+        impl Transport for TestTransport {
+            fn node_call(&self, message: Vec<u8>) -> Result<Vec<u8>, Error>;
+            fn call(&self, dbid: u64, peer_id: PubKey, message: Vec<u8>) -> Result<Vec<u8>, Error>;
+        }
+    }
+
+    fn make_test_keys_manager_client(transport: Arc<MockTestTransport>) -> KeysManagerClient {
+        let secp_ctx = Secp256k1::new();
+        let sk = SecretKey::from_slice(&[1; 32]).unwrap();
+        let pk = PublicKey::from_secret_key(&secp_ctx, &sk);
+        let xpriv = bitcoin::bip32::Xpriv::new_master(bitcoin::Network::Testnet, &[1; 32]).unwrap();
+        let xpub = Xpub::from_priv(&secp_ctx, &xpriv);
+
+        KeysManagerClient {
+            transport,
+            next_dbid: AtomicU64::new(1),
+            key_material: ExpandedKey::new([1; 32]),
+            xpub,
+            node_id: pk,
+        }
+    }
+
+    #[test]
+    fn test_get_secure_random_bytes() {
+        let mut mock_transport = MockTestTransport::new();
+
+        mock_transport.expect_node_call().times(1).returning(|message| {
+            let msg = msgs::from_vec(message).unwrap();
+            assert!(matches!(msg, Message::GetSecureRandomBytes(_)));
+
+            Ok(GetSecureRandomBytesReply { random_bytes: Secret([42u8; 32]) }.as_vec())
+        });
+
+        let kmc = make_test_keys_manager_client(Arc::new(mock_transport));
+        let bytes = kmc.get_secure_random_bytes();
+
+        assert_eq!(bytes, [42u8; 32]);
     }
 }
