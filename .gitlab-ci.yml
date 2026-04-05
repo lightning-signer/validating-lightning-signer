@@ -7,6 +7,7 @@ cache:
 
 variables:
   CARGO_HOME: "$CI_PROJECT_DIR/.cache/cargo"
+  VLS_REPOSITORY: https://gitlab.com/lightning-signer/validating-lightning-signer.git
   VLS_REGISTRY: registry.gitlab.com/lightning-signer/validating-lightning-signer
   RUST_QEMU_NIGHTLY_VERSION: "nightly-1-95-2026-02-26"
   RUNNER_TAG: "saas-linux-large-amd64"
@@ -23,7 +24,8 @@ workflow:
     - when: never
 
 before_script:
-  - git fetch "$CI_REPOSITORY_URL" --tags --force
+  # Always fetch from upstream to ensure tags are available (handles forks which don't sync tags)
+  - git fetch "$VLS_REPOSITORY" --tags --force
   - ls -al
   - mkdir -p bin
 
